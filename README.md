@@ -7,4 +7,6 @@ This data set is designed to show different levels of congestion in the network 
 GNS3 emulator is used to create and save network traffic (PCAP). The general architecture for building the first version of the dataset is given in the figure below.
 
 ## Network Architecture
+In the design of the network architecture, host-switch, switch-gateway, and gateway-gateway connections have been implemented. This network consists of four local networks connected to each other through three routers. The iperf tool is used to add overhead to the network. Adding overhead causes congestion, which affects network performance metrics such as delay, jitter, loss, and throughput. These changes vary depending on the volume of load exchanged within the network.
+
 ![Project Logo](images/GNS3_Arch.png)
