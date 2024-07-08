@@ -6,3 +6,5 @@ The multiscale computer network dataset (MSCN) is a multiclass traffic at differ
 This data set is designed to show different levels of congestion in the network and currently includes 5 different behavior classes: HTTP, VIDEO, SSH, SFTP, SMTP.
 GNS3 emulator is used to create and save network traffic (PCAP). The general architecture for building the first version of the dataset is given in the figure below.
 
+## Network Architecture
+![Project Logo](images/GNS3_Arch.png)
