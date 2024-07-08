@@ -6,7 +6,7 @@ from sklearn.impute import SimpleImputer
 import re
 
 # Directory where your dataset files are stored and where to save preprocessed files
-directory = 'add your flow directory'
+directory = 'VIDEO\\'
 # Function to remove columns with very low diversity
 def remove_low_diversity_columns(df, threshold=0.05):
     variances = df.var()
