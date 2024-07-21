@@ -1,0 +1,55 @@
+Flgs,Proto,Cause,Dir,State,TcpOpt
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSRPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSRPA_SPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e *      ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e *      ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e *      ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e *      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e        ,tcp,Start,   ->,FSRPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e d      ,tcp,Start,   ->,FSRPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e *      ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e d      ,tcp,Start,   ->,SRPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSRPA_SPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e        ,tcp,Start,   ->,FSA_FSA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e *      ,tcp,Start,   ->,FSRPA_SPA,Mws   T
+ e *      ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e        ,tcp,Start,   ->,SRPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e *      ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e *      ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e d      ,tcp,Start,   ->,FSRPA_SPA,MwsS  T
+ e        ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e *      ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e *      ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Start,   ->,FSA_FSA,Mws   T
+ e        ,tcp,Status,   ->,PA_R,Mws   T
+ e        ,tcp,Status,   ->,FA_R,Mws   T
+ e d      ,tcp,Start,   ->,FSRPA_SPA,MwsS  T

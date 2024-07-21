@@ -1,0 +1,1616 @@
+Flgs,Proto,Cause,Dir,State,TcpOpt
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,SPA_SPA,Mws   T
+ e *      ,tcp,Status,   ->,SPA_SPA,Mws   T
+ e *      ,tcp,Status,   ->,SPA_SPA,Mws   T
+ e *      ,tcp,Status,   ->,SPA_SPA,Mws   T
+ e *      ,tcp,Status,   ->,SPA_SPA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,FPA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FPA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FPA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FPA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,R_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e *      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e *      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e *      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e *      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e d      ,tcp,Status,   ->,A_FPA,MwsS  T
+ e *      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,PA_SPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,FPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e *      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,R_PA,MwsS  T
+ e d      ,tcp,Status,   ->,R_PA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,_FPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,R_SA,Mws   T
+ e d      ,tcp,Status,   ->,R_SA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,SA_SA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e *      ,tcp,Status,   ->,SPA_SPA,Mws   T
+ e d      ,tcp,Status,   ->,FPA_FPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,SA_SA,Mws   T
+ e        ,tcp,Start,   ->,SA_SA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_FPA,MwsS  T
+ e *      ,tcp,Status,   ->,SA_SA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,PA_FPA,Mws   T
+ e d      ,tcp,Status,   ->,A_A,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,PA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,PA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e        ,tcp,Status,   ->,FPA_FPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,SPA_SPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_FPA,Mws   T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_FPA,Mws   T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FPA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,_FPA,Mws   T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_FPA,Mws   T
+ e d      ,tcp,Status,   ->,PA_SPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_A,Mws   T
+ e d      ,tcp,Status,   ->,A_FPA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_A,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e d      ,tcp,Status,   ->,A_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,Mws   T
+ e        ,tcp,Start,   ->,SA_SA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FA,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e        ,tcp,Status,   ->,A_FA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Status,   ->,A_PA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,FPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e *      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,_FPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e d      ,tcp,Status,   ->,_PA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,_FPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,_FPA,Mws   T
+ e d      ,tcp,Status,   ->,_FPA,Mws   T
+ e        ,tcp,Status,   ->,A_A,Mws   T
+ e        ,tcp,Status,   ->,A_A,Mws   T
+ e        ,tcp,Status,   ->,A_A,Mws   T
+ e d      ,tcp,Status,   ->,_FPA,Mws   T
+ e        ,tcp,Status,   ->,A_A,Mws   T
+ e d      ,tcp,Status,   ->,A_FPA,Mws   T
+ e        ,tcp,Status,   ->,A_A,Mws   T
+ e        ,tcp,Status,   ->,A_A,Mws   T
+ e        ,tcp,Status,   ->,A_A,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Start,   ->,SR_SA,Mws   T
+ e        ,tcp,Start,   ->,SR_SA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,A_FPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Status,   ->,A_FPA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,A_FPA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Status,   ->,A_PA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,A_,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Status,   ->,A_FPA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,_FPA,Mws   T
+ e d      ,tcp,Status,   ->,_FPA,Mws   T
+ e d      ,tcp,Status,   ->,PA_SPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e d      ,tcp,Status,   ->,A_FPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e d      ,tcp,Status,   ->,_PA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,A_A,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,PA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e        ,tcp,Status,   ->,A_A,Mws   T
+ e        ,tcp,Status,   ->,A_A,Mws   T
+ e        ,tcp,Status,   ->,A_A,Mws   T
+ e        ,tcp,Status,   ->,A_A,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e        ,tcp,Status,   ->,PA_FPA,Mws   T
+ e        ,tcp,Start,   ->,SA_SA,Mws   T
+ e        ,tcp,Status,   ->,PA_A,MwsS  T
+ e d      ,tcp,Status,   ->,_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FA,Mws   T
+ e        ,tcp,Status,   ->,PA_A,MwsS  T
+ e d      ,tcp,Status,   ->,A_FPA,MwsS  T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e *      ,tcp,Status,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_FPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,A_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SA_SA,Mws   T
+ e        ,tcp,Start,   ->,SA_SA,Mws   T
+ e g      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e g      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e g      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e *      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e g      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e *      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e g      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e g      ,tcp,Status,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e g      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e g      ,tcp,Status,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,FPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e        ,tcp,Status,   ->,FPA_FPA,Mws   T
+ e        ,tcp,Status,   ->,FPA_FPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FPA_FPA,Mws   T
+ e        ,tcp,Status,   ->,FPA_FPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSRPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSRPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSRPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSRPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSRPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SR_SA,Mws   T
+ e        ,tcp,Start,   ->,SR_SA,Mws   T
+ e        ,tcp,Start,   ->,SR_SA,Mws   T
+ e        ,tcp,Start,   ->,SR_SA,Mws   T
+ e        ,tcp,Start,   ->,SR_SA,Mws   T
+ e        ,tcp,Start,   ->,SR_SA,Mws   T
+ e        ,tcp,Start,   ->,SR_SA,Mws   T
+ e        ,tcp,Start,   ->,SR_SA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,Mws   T
+ e        ,tcp,Status,   ->,A_PA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,RA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FRA_PA,Mws   T
+ e d      ,tcp,Status,   ->,FRPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FRPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,R_,MwsS  T
+ e        ,tcp,Status,   ->,R_A,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e *      ,tcp,Status,   ->,SA_SA,Mws   T
+ e d      ,tcp,Status,   ->,R_A,MwsS  T
+ e        ,tcp,Status,   ->,FPA_FPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,PA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e d      ,tcp,Status,   ->,PA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e d      ,tcp,Status,   ->,FPA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FPA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FPA_FPA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e d      ,tcp,Status,   ->,FPA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e        ,tcp,Status,   ->,FPA_FPA,Mws   T
+ e d      ,tcp,Status,   ->,PA_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,_SA,Mws   T
+ e        ,tcp,Status,   ->,FPA_FPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e *      ,tcp,Status,   ->,S_SA,Mws   T
+ e d      ,tcp,Status,   ->,FPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,PA_SPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e        ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SA_SA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Status,   ->,FPA_FPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,FSPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e        ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SA_SA,Mws   T
+ e        ,tcp,Start,   ->,SA_SA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_PA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Status,   ->,FPA_FPA,Mws   T
+ e        ,tcp,Status,   ->,FPA_FPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e *      ,tcp,Start,   ->,S_SA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SA_SA,Mws   T
+ e        ,tcp,Status,   ->,A_,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Status,   ->,FA_A,Mws   T
+ e        ,tcp,Status,   ->,FA_FA,Mws   T
+ e        ,tcp,Status,   ->,FA_FA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,S_SA,Mws   T
+ e d      ,tcp,Start,   ->,SPA_SPA,MwsS  T
+ e d      ,tcp,Start,   ->,SPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SPA_SPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e *      ,tcp,Status,   ->,SA_SA,Mws   T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,A_PA,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,_A,MwsS  T
+ e d      ,tcp,Status,   ->,FA_A,MwsS  T
+ e        ,tcp,Status,   ->,FPA_FPA,Mws   T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e d      ,tcp,Status,   ->,FA_FPA,MwsS  T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,SR_SA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
+ e        ,tcp,Start,   ->,FSPA_FSPA,Mws   T
