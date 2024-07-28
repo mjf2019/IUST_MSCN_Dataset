@@ -108,7 +108,16 @@ class PreprocessNetflow:
                 if label_match:
                     label_value = int(label_match.group(1))
                     filepath = os.path.join(self.ori_directory_path, filename)
-                    df = pd.read_csv(filepath)
+                    try:
+                        df = pd.read_csv(filepath)
+                        if df.empty:
+                            print("The CSV file has headers but no data rows. Skipped it")
+                            continue
+                        else:
+                            print("DataFrame loaded successfully")
+                    except pd.errors.EmptyDataError:
+                        print("The file is empty. Skipped it.")
+                        continue
                     # Separate features (X) and labels (y)
                     y = pd.Series(label_value, index=range(len(df)))
                     combined_X = pd.concat([combined_X, df], ignore_index=True)
