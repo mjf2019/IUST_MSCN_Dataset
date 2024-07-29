@@ -1,13 +1,13 @@
 # preprocess config
-original_dataset_path: original_dataset\\scale_60\\Big_SMTP\\flow\\all\\
-preprossed_dataset_path: preprocessed_dataset\\scale_60\\Big_SMTP\\all\\
+original_dataset_path: original_dataset\\scale_1\\VIDEO\\flow\\freq\\
+preprossed_dataset_path: preprocessed_dataset\\scale_1\\VIDEO\\freq\\
 
 # Standardization 
-preprocessed_dataset_path: preprocessed_dataset\\scale_0.001\\
-all_classes_dataset_path: all_classes_preprocessed_dataset\\scale_60\\
-standard_dataset_path: standard_dataset\\scale_0.001\\
+preprocessed_dataset_path: preprocessed_dataset\\scale_1\\
+all_classes_dataset_path: all_classes_preprocessed_dataset\\scale_1\\
+standard_dataset_path: standard_dataset\\scale_1\\
 label_column: label
-feature_type: all
+feature_type: time
 class_types:
   - Big_SMTP
   - SFTP
@@ -17,7 +17,7 @@ class_types:
   - VIDEO
 
 # Combination
-merged_standard_dataset: merged_standard_dataset\\scale_0.001\\
+merged_standard_dataset: merged_standard_dataset\\scale_1\\
 
-
-
+# Clustering 
+cluster_dataset_path: D:\Dataset\IUST_MSCN_Dataset\preprocessed_dataset\scale_1\HTTP\time\preprocessed_dataset.csv
