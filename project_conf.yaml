@@ -1,11 +1,11 @@
 # preprocess config
-original_dataset_path: original_dataset\\scale_30\\SFTP\\flow\\all\\
-preprossed_dataset_path: preprocessed_dataset\\scale_30\\SFTP\\all\\
+original_dataset_path: original_dataset\\scale_1\\Big_SMTP\\flow\\all\\
+preprossed_dataset_path: preprocessed_dataset\\scale_1\\Big_SMTP\\all\\
 
 # Standardization 
-preprocessed_dataset_path: preprocessed_dataset\\scale_30\\
-all_classes_dataset_path: all_classes_preprocessed_dataset\\scale_30\\
-standard_dataset_path: standard_dataset\\scale_30\\
+preprocessed_dataset_path: preprocessed_dataset\\scale_1\\
+all_classes_dataset_path: all_classes_preprocessed_dataset\\scale_1\\
+standard_dataset_path: standard_dataset\\scale_1\\
 label_column: label
 feature_type: all
 class_types:
@@ -17,7 +17,15 @@ class_types:
   - VIDEO
 
 # Combination
-merged_standard_dataset: merged_standard_dataset\\scale_30\\
+merged_standard_dataset: merged_standard_dataset\\scale_1\\
 
+# Clustering 
+cluster_dataset_path: D:\Dataset\IUST_MSCN_Dataset\preprocessed_dataset\scale_1\VIDEO\all\preprocessed_dataset.csv
 
+# Random Forest Classifier
+#mode: separate_files  # or 'single_file'
+mode: 'single_file'
+train_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_1.csv'
+test_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_12.csv'  # Only used if mode is 'separate_files'
+random_state: 42
 
