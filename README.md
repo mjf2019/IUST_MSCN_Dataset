@@ -37,7 +37,7 @@ preprossed_dataset_path: "preprocessed_dataset\\scale_30\\SFTP\\all\\"
 
 Run preprocess code:
 
-    python preprocesses_netflow.py
+    python preprocess_netflow.py
 
 ## Standardization and combination of CSV files
 In order to equalize the number of features:
@@ -46,10 +46,11 @@ Run following command for integrate preprocessed dataset:
     
     python standard_pre_data_integration.py
 
-Run following command for create 55 features for all class of dataset:
+Run following command.
 
-    python dataset_stanard.py
+    python dataset_standard.py
 
+NOTE: Feature count depending on the netflow scale, it will be from 43 to 56 features.
 NOTE: standard_dataset is for analysis each class in different of congestion in network.
 
 For combination of different classes at different levels:
