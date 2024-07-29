@@ -25,7 +25,9 @@ cluster_dataset_path: D:\Dataset\IUST_MSCN_Dataset\preprocessed_dataset\scale_1\
 # Random Forest Classifier
 #mode: separate_files  # or 'single_file'
 mode: 'single_file'
-train_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_1.csv'
-test_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_12.csv'  # Only used if mode is 'separate_files'
+train_csv: 'VIDEO_Feature_Removed.csv'
+#train_csv: D:\Dataset\IUST_MSCN_Dataset\preprocessed_dataset\scale_0.001\VIDEO\all\preprocessed_dataset.csv
+#train_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_7.csv'
+test_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_1.csv'  # Only used if mode is 'separate_files'
 random_state: 42
 
