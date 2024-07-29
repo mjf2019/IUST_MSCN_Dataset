@@ -4,12 +4,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score
 import yaml
 
 class ClusteringAnalysis:
-    def __init__(self, config_path, random_state=0):
+    def __init__(self, config_path, n_clusters=2, random_state=0):
         self.config_path = config_path
+        self.n_clusters = n_clusters
         self.random_state = random_state
         self.data = None
         self.labels = None
@@ -19,7 +19,7 @@ class ClusteringAnalysis:
         self.primary_cluster_info = None
         self.pca_data = None
         self.file_path = self.load_config()
-        self.n_clusters = None  # Placeholder for the optimal number of clusters
+        self.kmeans_centroids = None  # Placeholder for KMeans centroids
 
     def load_config(self):
         with open(self.config_path, 'r') as file:
@@ -31,50 +31,10 @@ class ClusteringAnalysis:
         self.labels = self.data.iloc[:, -1]  # Assuming the label is in the last column
         self.data = self.data.iloc[:, :-1]  # Exclude the label from the features
     
-    def determine_optimal_clusters(self, max_clusters=10):
-        """ Determine the optimal number of clusters using the Elbow Method. """
-        inertia = []
-        silhouette_scores = []
-        
-        for n in range(2, max_clusters + 1):
-            kmeans = KMeans(n_clusters=n, random_state=self.random_state)
-            kmeans.fit(self.pca_data)  # Use PCA-transformed data
-            inertia.append(kmeans.inertia_)
-            if n > 1:
-                silhouette_avg = silhouette_score(self.pca_data, kmeans.labels_)
-                silhouette_scores.append(silhouette_avg)
-        
-        # Plot the Elbow Method
-        plt.figure(figsize=(12, 6))
-        plt.subplot(1, 2, 1)
-        plt.plot(range(2, max_clusters + 1), inertia, marker='o')
-        plt.xlabel('Number of clusters')
-        plt.ylabel('Inertia')
-        plt.title('Elbow Method')
-
-        # Plot Silhouette Scores
-        plt.subplot(1, 2, 2)
-        plt.plot(range(2, max_clusters + 1), silhouette_scores, marker='o')
-        plt.xlabel('Number of clusters')
-        plt.ylabel('Silhouette Score')
-        plt.title('Silhouette Scores')
-        
-        plt.tight_layout()
-        plt.show()
-        
-        # Choose the optimal number of clusters (can be improved by more sophisticated methods)
-        self.n_clusters = int(input("Enter the optimal number of clusters based on the plots: "))
-
     def cluster_data(self):
-        # Perform PCA before clustering
-        pca = PCA(n_components=2)
-        self.pca_data = pca.fit_transform(self.data)
-        
-        if self.n_clusters is None:
-            self.determine_optimal_clusters()
-        
         kmeans = KMeans(n_clusters=self.n_clusters, random_state=self.random_state)
-        self.clusters = kmeans.fit_predict(self.pca_data)
+        self.clusters = kmeans.fit_predict(self.data)
+        self.kmeans_centroids = kmeans.cluster_centers_  # Save centroids
         self.results = pd.DataFrame({'Label': self.labels, 'Cluster': self.clusters})
     
     def analyze_clusters(self):
@@ -147,7 +107,7 @@ class ClusteringAnalysis:
         plt.grid(True)
         plt.show()
 
-    def list_feature_importance(self):
+    def list_pca_feature_importance(self):
         pca = PCA(n_components=2)
         pca.fit(self.data)
         feature_importance = pd.DataFrame({'Feature': self.data.columns, 'Importance': np.abs(pca.components_[0])})
@@ -155,13 +115,25 @@ class ClusteringAnalysis:
         print("\nFeature importance based on PCA component 1:")
         print(feature_importance)
 
+    def list_kmeans_feature_importance(self):
+        if self.kmeans_centroids is not None:
+            # Calculate feature importance based on centroids
+            centroids_df = pd.DataFrame(self.kmeans_centroids, columns=self.data.columns)
+            importance_df = centroids_df.abs().mean().sort_values(ascending=False)
+            importance_df = importance_df[importance_df > 0]  # Filter values greater than 0
+            print("\nFeature importance based on KMeans centroids:")
+            print(importance_df)
+        else:
+            print("\nKMeans centroids are not available. Run clustering first.")
+    
     def run_analysis(self):
         self.load_data()
         self.cluster_data()
         self.analyze_clusters()
         self.visualize_clusters()
         self.perform_pca()
-        self.list_feature_importance()
+        self.list_pca_feature_importance()
+        self.list_kmeans_feature_importance()
 
 if __name__ == "__main__":
     # Path to your YAML file
