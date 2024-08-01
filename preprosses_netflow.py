@@ -27,8 +27,8 @@ class PreprocessNetflow:
         try:
             with open(self.yaml_file_path, 'r') as file:
                 config = yaml.safe_load(file)
-                self.pre_directory_path = config.get('preprossed_dataset_path')
-                self.ori_directory_path = config.get('original_dataset_path')
+                self.pre_directory_path = config['pre']['output_dataset_path']
+                self.ori_directory_path = config['pre']['input_dataset_path']
         except yaml.YAMLError as exc:
             print(f"Error: Failed to parse YAML file. {exc}")
     
@@ -87,10 +87,10 @@ class PreprocessNetflow:
             
             # Remove columns with very low diversity
             # Scale features
-            scaler = MinMaxScaler()
-            df_scaled = pd.DataFrame(scaler.fit_transform(df_preprocessed), columns=df_preprocessed.columns)
+            #scaler = MinMaxScaler()
+            #df_scaled = pd.DataFrame(scaler.fit_transform(df_preprocessed), columns=df_preprocessed.columns)
             
-            return df_scaled
+            return df_preprocessed
         else:
             return pd.DataFrame()
 

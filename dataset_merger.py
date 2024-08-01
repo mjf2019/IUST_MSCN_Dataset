@@ -5,11 +5,12 @@ import yaml
 class DatasetMerger:
     def __init__(self, config_path):
         self.config = self.load_config(config_path)
-        self.input_directory = self.config['standard_dataset_path']
-        self.input_directory = os.path.join(self.input_directory, self.config['feature_type'])
-        self.output_directory = self.config['merged_standard_dataset']
-        self.output_directory = os.path.join(self.output_directory, self.config['feature_type'])
-        self.label_data = {i: [] for i in range(1, 15)}  # Label numbers 1 to 14
+        self.input_directory = self.config['mr']['input_dataset_path']
+        self.input_directory = os.path.join(self.input_directory, self.config['mr']['feature_type'])
+        self.output_directory = self.config['mr']['output_dataset_path']
+        self.output_directory = os.path.join(self.output_directory, self.config['mr']['feature_type'])
+        self.level_cnt = self.config['mr']['level_count'] + 1  # Label numbers 1 to 3
+        self.label_data = {i: [] for i in range(1, self.level_cnt)}  # Label numbers 1 to 3
         # Ensure the output directory exists
         os.makedirs(self.output_directory, exist_ok=True)
     
@@ -32,7 +33,7 @@ class DatasetMerger:
                 df['source'] = prefix
                 
                 # Append rows to the corresponding label list
-                for label in range(1, 15):
+                for label in range(1, self.level_cnt):
                     if label in df['label'].values:
                         # Filter rows with the specific label number
                         label_df = df[df['label'] == label]

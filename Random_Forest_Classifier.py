@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
+from scaler_processor import ScalerHandler
 import yaml
 
 class ModelTrainer:
@@ -22,10 +23,10 @@ class ModelTrainer:
         with open(self.config_path, 'r') as file:
             config = yaml.safe_load(file)
         
-        self.mode = config.get('mode', 'single_file')
-        self.train_csv = config.get('train_csv')
-        self.test_csv = config.get('test_csv', None)
-        self.random_state = config.get('random_state', 42)
+        self.mode = config['mode']
+        self.train_csv = config['train_csv']
+        self.test_csv = config['test_csv']
+        self.random_state = config['random_state']
         
         if self.mode == 'single_file':
             self.use_separate_files = False
@@ -38,12 +39,19 @@ class ModelTrainer:
         # Load training data
         df_train = pd.read_csv(self.train_csv)
         self.X_train = df_train.drop(columns=['label'])
+        sh = ScalerHandler()
+        scaler = sh.load_scaler()
+        self.X_train = pd.DataFrame(scaler.fit_transform(self.X_train), columns=self.X_train.columns)
         self.y_train = df_train['label']
+
         
         if self.use_separate_files and self.test_csv:
             # Load test data if separate files are used
             df_test = pd.read_csv(self.test_csv)
             self.X_test = df_test.drop(columns=['label'])
+            sh = ScalerHandler()
+            scaler = sh.load_scaler()
+            self.X_test = pd.DataFrame(scaler.fit_transform(self.X_test), columns=self.X_test.columns)
             self.y_test = df_test['label']
         else:
             # Split the data into train and test sets (for evaluation)
