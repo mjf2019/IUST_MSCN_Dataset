@@ -4,12 +4,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
+from scaler_processor import ScalerHandler
 import yaml
 
 class ClusteringAnalysis:
-    def __init__(self, config_path, n_clusters=2, random_state=0):
+    def __init__(self, config_path, random_state=0):
         self.config_path = config_path
-        self.n_clusters = n_clusters
+        self.n_clusters = None
         self.random_state = random_state
         self.data = None
         self.labels = None
@@ -24,12 +25,16 @@ class ClusteringAnalysis:
     def load_config(self):
         with open(self.config_path, 'r') as file:
             config = yaml.safe_load(file)
-        return config['cluster_dataset_path']
+            self.n_clusters = config['cluster']['cluster_num']
+        return config['cluster']['cluster_dataset_path']
 
     def load_data(self):
         self.data = pd.read_csv(self.file_path)
+        sh = ScalerHandler()
+        scaler = sh.load_scaler()
         self.labels = self.data.iloc[:, -1]  # Assuming the label is in the last column
         self.data = self.data.iloc[:, :-1]  # Exclude the label from the features
+        self.data = pd.DataFrame(scaler.fit_transform(self.data), columns=self.data.columns)
     
     def cluster_data(self):
         kmeans = KMeans(n_clusters=self.n_clusters, random_state=self.random_state)

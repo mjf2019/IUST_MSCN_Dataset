@@ -1,33 +1,56 @@
-# preprocess config
-original_dataset_path: original_dataset\\scale_1\\Big_SMTP\\flow\\all\\
-preprossed_dataset_path: preprocessed_dataset\\scale_1\\Big_SMTP\\all\\
+###### Scaler Section #####
+scaler:
+  scaler_type: zscore # minmax or robust
+  output_directory: scaler_dir
+  input_csv_directory: kpi_not_scale_mr_std_dataset/scale_0.001/all/
+  input_csv_name: level_1.csv
 
-# Standardization 
-preprocessed_dataset_path: preprocessed_dataset\\scale_1\\
-all_classes_dataset_path: all_classes_preprocessed_dataset\\scale_1\\
-standard_dataset_path: standard_dataset\\scale_1\\
-label_column: label
-feature_type: all
-class_types:
-  - Big_SMTP
-  - SFTP
-  - HTTP
-  - SSH
-  - SMTP
-  - VIDEO
+##### Preprocess Section #####
+pre:
+  input_dataset_path: original_dataset/scale_0.001/VIDEO/flow/all/
+  output_dataset_path: not_scale_preprocessed_dataset/scale_0.001/VIDEO/all/
+##### KPI Convertor Section #####
+# Convert 14 Levels to 3 KPI Levels
+kpi:
+  input_dataset_path: 'not_scale_preprocessed_dataset/scale_0.001/VIDEO/all/preprocessed_dataset.csv'
+  output_dataset_path: 'kpi_not_scale_pre_dataset/scale_0.001/all/VIDEO_preprocessed_dataset.csv'
+  level_1: [3, 5, 7, 13]
+  level_2: [1, 2, 6, 8, 9]
+  level_3: [4, 10, 11, 12, 14]
 
-# Combination
-merged_standard_dataset: merged_standard_dataset\\scale_1\\
+##### Standardization Section #####
+# Standardization to equalize the number of columns
+std:
+  input_dataset_path: kpi_not_scale_pre_dataset/scale_0.001/
+  out_dataset_path: kpi_not_scale_std_dataset/scale_0.001/
+  label_column: label
+  feature_type: all
+  class_types:
+    - SFTP
+    - HTTP
+    - SSH
+    - SMTP
+    - VIDEO
 
-# Clustering 
-cluster_dataset_path: D:\Dataset\IUST_MSCN_Dataset\preprocessed_dataset\scale_1\VIDEO\all\preprocessed_dataset.csv
+##### Merger Section #####
+mr:
+  input_dataset_path: kpi_not_scale_std_dataset/scale_0.001/
+  output_dataset_path: kpi_not_scale_mr_std_dataset/scale_0.001/
+  feature_type: all
+  level_count: 3
 
-# Random Forest Classifier
+##### Clustering Section #####
+cluster:
+  cluster_dataset_path: kpi_not_scale_std_dataset/scale_0.001/all/SFTP_standard.csv
+  cluster_num: 3
+  n_components: 2
+
+##### Random Forest Classifier Section #####
 #mode: separate_files  # or 'single_file'
 mode: 'single_file'
-train_csv: 'merged_FI_data.csv'
-#train_csv: D:\Dataset\IUST_MSCN_Dataset\preprocessed_dataset\scale_0.001\SMTP\all\preprocessed_dataset.csv
+#train_csv: 'kpi_not_scale_mr_std_dataset/scale_0.001/all/level_1.csv'
+train_csv: kpi_not_scale_std_dataset/scale_0.001/all/VIDEO_standard.csv
 #train_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_7.csv'
-test_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_1.csv'  # Only used if mode is 'separate_files'
+test_csv: 'kpi_not_scale_mr_std_dataset/scale_0.001/all/level_3.csv'  # Only used if mode is 'separate_files'
 random_state: 42
 

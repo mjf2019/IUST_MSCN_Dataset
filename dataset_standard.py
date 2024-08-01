@@ -5,11 +5,11 @@ import yaml
 class DataFrameProcessor:
     def __init__(self, config_path):
         self.config = self.load_config(config_path)
-        self.input_directory = self.config['all_classes_dataset_path']
-        self.input_directory = os.path.join(self.input_directory, self.config['feature_type'])
-        self.output_directory = self.config['standard_dataset_path']
-        self.output_directory = os.path.join(self.output_directory, self.config['feature_type'])
-        self.label_column = self.config['label_column']
+        self.input_directory = self.config['std']['input_dataset_path']
+        self.input_directory = os.path.join(self.input_directory, self.config['std']['feature_type'])
+        self.output_directory = self.config['std']['out_dataset_path']
+        self.output_directory = os.path.join(self.output_directory, self.config['std']['feature_type'])
+        self.label_column = self.config['std']['label_column']
         self.dataframes_by_prefix = {}
 
         # Ensure the output directory exists
