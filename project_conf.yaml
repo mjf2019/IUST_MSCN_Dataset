@@ -2,21 +2,26 @@
 scaler:
   scaler_type: zscore # minmax or robust
   output_directory: scaler_dir
-  input_csv_directory: kpi_not_scale_mr_std_dataset/scale_0.001/all/
+  input_csv_directory: kpi_not_scale_mr_std_dataset/scale_1/all/
   input_csv_name: level_1.csv
+###### Feature Analysis Section ######
+fa:
+  features: ['TcpRtt', 'SynAck', 'AckDat']
+  input_directory: kpi_not_scale_mr_std_dataset/scale_1/all
+  output_directory: state_feature_3_level/
 
 ##### Preprocess Section #####
 pre:
-  input_dataset_path: original_dataset/scale_0.001/VIDEO/flow/all/
-  output_dataset_path: not_scale_preprocessed_dataset/scale_0.001/VIDEO/all/
+  input_dataset_path: original_dataset/scale_1/SMTP/flow/all/
+  output_dataset_path: not_scale_preprocessed_dataset/scale_1/SMTP/all/
 ##### KPI Convertor Section #####
 # Convert 14 Levels to 3 KPI Levels
 kpi:
-  input_dataset_path: 'not_scale_preprocessed_dataset/scale_0.001/VIDEO/all/preprocessed_dataset.csv'
-  output_dataset_path: 'kpi_not_scale_pre_dataset/scale_0.001/all/VIDEO_preprocessed_dataset.csv'
-  level_1: [3, 5, 7, 13]
-  level_2: [1, 2, 6, 8, 9]
-  level_3: [4, 10, 11, 12, 14]
+  input_dataset_path: 'not_scale_preprocessed_dataset/scale_1/HTTP/all/preprocessed_dataset.csv'
+  output_dataset_path: 'kpi_not_scale_pre_dataset/scale_1/all/HTTP_preprocessed_dataset.csv'
+  level_1: [1, 2, 3, 4, 9, 11, 13]
+  level_2: [5, 6, 8]
+  level_3: [7, 10, 12, 14]
 
 ##### Standardization Section #####
 # Standardization to equalize the number of columns
@@ -41,7 +46,7 @@ mr:
 
 ##### Clustering Section #####
 cluster:
-  cluster_dataset_path: kpi_not_scale_std_dataset/scale_0.001/all/SFTP_standard.csv
+  cluster_dataset_path: kpi_not_scale_std_dataset/scale_1/all/SFTP_standard.csv
   cluster_num: 3
   n_components: 2
 
