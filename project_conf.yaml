@@ -39,7 +39,9 @@ mr:
 fs:
   input_dataset_path: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/
   output_dataset_path: 5_kpi_not_scale_FS_dataset/scale_0.001/
-  extract_features: ['SynAck', 'TcpRtt', 'AckDat', 'label']
+  extract_features: ['TcpRtt', 'label']
+  #extract_features: ['SynAck', 'TcpRtt', 'AckDat', 'label']
+  #extract_features: ['SynAck', 'TcpRtt', 'AckDat', 'SrcWin', TotBytes, Rate, Load, Sum, Max, Dur, Mean, Min, DstBytes, dMeanPktSz, SrcBytes, DstLoad, TotPkts, SrcLoad, DstRate, TcpOpt_MwsS  T, sMeanPktSz, SrcRate,  'label']
   level_num: 14
 
 ##### STEP 6: Feature extraction Section #####
@@ -47,14 +49,19 @@ fs:
 fe:
   input_dataset_path: 5_kpi_not_scale_FS_dataset/scale_0.001/
   output_dataset_path: 6_kpi_not_scale_FE_dataset/scale_0.001/
-  features: ['SynAck', 'TcpRtt', 'AckDat']
+  features: ['TcpRtt']
+  #features: ['SynAck', 'TcpRtt', 'AckDat']
+  #features: ['SynAck', 'TcpRtt', 'AckDat', 'SrcWin', TotBytes, Rate, Load, Sum, Max, Dur, Mean, Min, DstBytes, dMeanPktSz, SrcBytes, DstLoad, TotPkts, SrcLoad, DstRate, TcpOpt_MwsS  T, sMeanPktSz, SrcRate]
   level_num: 14
 
 ##### STEP 7: LSTM feature modeling Section #####
+# Run lstm_feature_modeling.py
 lfm:
   input_dataset_path: 6_kpi_not_scale_FE_dataset/scale_0.001/
   output_dataset_path: 7_LSTM_Feature_Modeling_dataset/scale_0.001/
-  
+  window_size: 3
+
+
 
 ###### other STEPs: Scaler Section #####
 scaler:
@@ -92,7 +99,7 @@ cluster:
 #mode: separate_files  # or 'single_file'
 mode: 'single_file'
 #train_csv: 'kpi_not_scale_mr_std_dataset/scale_0.001/all/level_1.csv'
-train_csv: kpi_not_scale_std_dataset/scale_0.001/all/HTTP_standard.csv
+train_csv: 3_kpi_not_scale_std_dataset/scale_0.001/all/HTTP_standard.csv
 #train_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_7.csv'
 test_csv: 'kpi_not_scale_mr_std_dataset/scale_0.001/all/level_3.csv'  # Only used if mode is 'separate_files'
 random_state: 42
