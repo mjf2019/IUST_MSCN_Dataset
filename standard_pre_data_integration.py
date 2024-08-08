@@ -5,10 +5,10 @@ import yaml
 class DatasetIntegrator:
     def __init__(self, config_path):
         self.config = self.load_config(config_path)
-        self.preprocessed_dataset_path = self.config['preprocessed_dataset_path']
-        self.output_dataset_path = self.config['all_classes_dataset_path']
-        self.feature_type = self.config['feature_type']
-        self.class_types = self.config['class_types']
+        self.preprocessed_dataset_path = self.config['pre_std']['input_dataset_path']
+        self.output_dataset_path = self.config['pre_std']['output_dataset_path']
+        self.feature_type = self.config['pre_std']['feature_type']
+        self.class_types = self.config['pre_std']['class_types']
 
     def load_config(self, config_path):
         with open(config_path, 'r') as file:

@@ -1,4 +1,5 @@
 import os
+import re
 import pandas as pd
 import yaml
 import numpy as np
@@ -201,9 +202,19 @@ def create_feature_csv(dfs, filenames, features, output_directory):
         # Select only required columns and save to CSV
         columns_to_save = ['TcpRtt', 'SynAck', 'AckDat'] + state_columns + ['label']
         df_to_save = df[columns_to_save]
+
+        # Check if the directory exists
+        if not os.path.exists(output_directory):
+            print("Directory does not exist. Creating now.")
+            os.makedirs(output_directory)
         
         output_path = os.path.join(output_directory, f'processed_{filename}')
         df_to_save.to_csv(output_path, index=False)
+
+# Function to extract the numeric part from the filename
+def extract_number(filename):
+    match = re.search(r'level_(\d+)', filename)
+    return int(match.group(1)) if match else float('inf')
 
 def main(yaml_file):
     # Read features, input directory, and output directory from YAML file
@@ -221,26 +232,31 @@ def main(yaml_file):
             print(f"  {dataset}: {metrics}")
     
     # Plot feature values
-    #plot_feature_values(dfs, filenames, features)
+    plot_feature_values(dfs, filenames, features)
     
     # Calculate and print differences
     differences_results = calculate_differences(dfs, filenames, features)
     print("\nFeature Differences Results:")
     for feature, results in differences_results.items():
+        # Sort the dictionary keys based on the extracted numeric value
+        results = dict(sorted(results.items(), key=lambda item: extract_number(item[0])))
         print(f"\nFeature: {feature}")
         for dataset, metrics in results.items():
-            print(f"  {dataset}: {metrics}")
+            print(f"  {dataset}")
+            #print(f"  {dataset}: {metrics}")
     
     # Calculate and plot states
     state_counts = calculate_states(dfs, filenames, features)
     print("\nCombined State Counts:")
+    # Sort the dictionary keys based on the extracted numeric value
+    state_counts = dict(sorted(state_counts.items(), key=lambda item: extract_number(item[0])))
     for dataset, counts in state_counts.items():
         print(f"\nDataset: {dataset}")
         for state, count in counts.items():
             print(f"  State {state}: {count}")
     
     # Plot state distributions
-    #plot_state_distribution(state_counts)
+    plot_state_distribution(state_counts)
     
     # Create new CSV files with updated data
     create_feature_csv(dfs, filenames, features, output_directory)

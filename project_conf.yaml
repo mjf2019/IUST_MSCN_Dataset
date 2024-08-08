@@ -1,34 +1,14 @@
-###### Scaler Section #####
-scaler:
-  scaler_type: zscore # minmax or robust
-  output_directory: scaler_dir
-  input_csv_directory: kpi_not_scale_mr_std_dataset/scale_1/all/
-  input_csv_name: level_1.csv
-###### Feature Analysis Section ######
-fa:
-  features: ['TcpRtt', 'SynAck', 'AckDat']
-  input_directory: kpi_not_scale_mr_std_dataset/scale_1/all
-  output_directory: state_feature_3_level/
-
-##### Preprocess Section #####
+##### STEP 1: Preprocess Section #####
+# Run preprocess_netflow.py
 pre:
-  input_dataset_path: original_dataset/scale_1/SMTP/flow/all/
-  output_dataset_path: not_scale_preprocessed_dataset/scale_1/SMTP/all/
-##### KPI Convertor Section #####
-# Convert 14 Levels to 3 KPI Levels
-kpi:
-  input_dataset_path: 'not_scale_preprocessed_dataset/scale_1/HTTP/all/preprocessed_dataset.csv'
-  output_dataset_path: 'kpi_not_scale_pre_dataset/scale_1/all/HTTP_preprocessed_dataset.csv'
-  level_1: [1, 2, 3, 4, 9, 11, 13]
-  level_2: [5, 6, 8]
-  level_3: [7, 10, 12, 14]
+  input_dataset_path: 0_original_dataset/scale_0.001/VIDEO/flow/all/
+  output_dataset_path: 1_not_scale_preprocessed_dataset/scale_0.001/VIDEO/all/
 
-##### Standardization Section #####
-# Standardization to equalize the number of columns
-std:
-  input_dataset_path: kpi_not_scale_pre_dataset/scale_0.001/
-  out_dataset_path: kpi_not_scale_std_dataset/scale_0.001/
-  label_column: label
+##### STEP 2: Pre standardization Section #####
+# Run standard_pre_data_integration.py
+pre_std:
+  input_dataset_path:  1_not_scale_preprocessed_dataset/scale_0.001/
+  output_dataset_path: 2_kpi_not_scale_pre_dataset/scale_0.001/
   feature_type: all
   class_types:
     - SFTP
@@ -37,16 +17,74 @@ std:
     - SMTP
     - VIDEO
 
-##### Merger Section #####
-mr:
-  input_dataset_path: kpi_not_scale_std_dataset/scale_0.001/
-  output_dataset_path: kpi_not_scale_mr_std_dataset/scale_0.001/
+##### STEP 3: Pre standardization Section #####
+# Standardization to equalize the number of columns
+# Run dataset_standard.py
+std:
+  input_dataset_path: 2_kpi_not_scale_pre_dataset/scale_0.001/
+  out_dataset_path: 3_kpi_not_scale_std_dataset/scale_0.001/
+  label_column: label
   feature_type: all
-  level_count: 3
+
+##### STEP 4: Merger Section #####
+# Run dataset_merger.py
+mr:
+  input_dataset_path: 3_kpi_not_scale_std_dataset/scale_0.001/
+  output_dataset_path: 4_kpi_not_scale_mr_std_dataset/scale_0.001/
+  feature_type: all
+  level_count: 14
+
+##### STEP 5: Feature splitter Section #####
+# Run feature_splitter.py
+fs:
+  input_dataset_path: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/
+  output_dataset_path: 5_kpi_not_scale_FS_dataset/scale_0.001/
+  extract_features: ['SynAck', 'TcpRtt', 'AckDat', 'label']
+  level_num: 14
+
+##### STEP 6: Feature extraction Section #####
+# Run feature_extractor.py
+fe:
+  input_dataset_path: 5_kpi_not_scale_FS_dataset/scale_0.001/
+  output_dataset_path: 6_kpi_not_scale_FE_dataset/scale_0.001/
+  features: ['SynAck', 'TcpRtt', 'AckDat']
+  level_num: 14
+
+##### STEP 7: LSTM feature modeling Section #####
+lfm:
+  input_dataset_path: 6_kpi_not_scale_FE_dataset/scale_0.001/
+  output_dataset_path: 7_LSTM_Feature_Modeling_dataset/scale_0.001/
+  
+
+###### other STEPs: Scaler Section #####
+scaler:
+  scaler_type: zscore # minmax or robust
+  output_directory: scaler_dir
+  input_csv_directory: kpi_not_scale_mr_std_dataset/scale_0.001/all/
+  input_csv_name: level_1.csv
+
+###### STEP 4: Feature Analysis Section ######
+fa:
+  features: ['TcpRtt', 'SynAck', 'AckDat']
+  input_directory: kpi_not_scale_mr_std_dataset/scale_0.001/all
+  output_directory: state_feature_14_level/
+
+
+
+##### KPI Convertor Section #####
+# Convert 14 Levels to 3 KPI Levels
+kpi:
+  input_dataset_path: 'not_scale_preprocessed_dataset/scale_0.001/HTTP/all/preprocessed_dataset.csv'
+  output_dataset_path: 'kpi_not_scale_pre_dataset/scale_0.001/all/HTTP_preprocessed_dataset.csv'
+  level_1: [1, 2, 3, 4, 9, 11, 13]
+  level_2: [5, 6, 8]
+  level_3: [7, 10, 12, 14]
+
+
 
 ##### Clustering Section #####
 cluster:
-  cluster_dataset_path: kpi_not_scale_std_dataset/scale_1/all/SFTP_standard.csv
+  cluster_dataset_path: kpi_not_scale_std_dataset/scale_0.001/all/SFTP_standard.csv
   cluster_num: 3
   n_components: 2
 
@@ -54,7 +92,7 @@ cluster:
 #mode: separate_files  # or 'single_file'
 mode: 'single_file'
 #train_csv: 'kpi_not_scale_mr_std_dataset/scale_0.001/all/level_1.csv'
-train_csv: kpi_not_scale_std_dataset/scale_0.001/all/VIDEO_standard.csv
+train_csv: kpi_not_scale_std_dataset/scale_0.001/all/HTTP_standard.csv
 #train_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_7.csv'
 test_csv: 'kpi_not_scale_mr_std_dataset/scale_0.001/all/level_3.csv'  # Only used if mode is 'separate_files'
 random_state: 42
