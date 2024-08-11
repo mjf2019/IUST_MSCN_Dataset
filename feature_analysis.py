@@ -132,11 +132,9 @@ def calculate_states(dfs, filenames, features):
                 state_vectors.append(states)
             else:
                 state_vectors.append(pd.Series([None] * len(df)))
-        
         # Combine state vectors
         combined_states = pd.concat(state_vectors, axis=1)
         combined_states = combined_states.dropna()  # Drop rows with missing values
-        
         # Convert state vectors to tuples for counting
         state_tuples = [tuple(row) for row in combined_states.to_numpy()]
         state_counts[filename] = Counter(state_tuples)
@@ -179,6 +177,7 @@ def create_feature_csv(dfs, filenames, features, output_directory):
                 state_change = tuple((row[feature] > previous_row[feature]) for feature in features)
                 state_changes.append(state_change)
             previous_row = row
+
         
         # Add state columns
         state_columns = ['100', '010', '001', '110', '101', '011', '111']
@@ -232,10 +231,11 @@ def main(yaml_file):
             print(f"  {dataset}: {metrics}")
     
     # Plot feature values
-    plot_feature_values(dfs, filenames, features)
+    #plot_feature_values(dfs, filenames, features)
     
     # Calculate and print differences
     differences_results = calculate_differences(dfs, filenames, features)
+    print("--------------------------------------")
     print("\nFeature Differences Results:")
     for feature, results in differences_results.items():
         # Sort the dictionary keys based on the extracted numeric value
@@ -243,20 +243,31 @@ def main(yaml_file):
         print(f"\nFeature: {feature}")
         for dataset, metrics in results.items():
             print(f"  {dataset}")
-            #print(f"  {dataset}: {metrics}")
+            print(f"  {dataset}: {metrics}")
     
     # Calculate and plot states
     state_counts = calculate_states(dfs, filenames, features)
     print("\nCombined State Counts:")
     # Sort the dictionary keys based on the extracted numeric value
     state_counts = dict(sorted(state_counts.items(), key=lambda item: extract_number(item[0])))
+    # Remove key-value pairs where the values are less than 100
+    state_counts = {
+        outer_key: {
+            inner_key: value
+            for inner_key, value in inner_dict.items()
+            if value >= 1000
+        }
+        for outer_key, inner_dict in state_counts.items()
+        if any(value >= 100 for value in inner_dict.values())
+    }
+    print("--------------------------------------")
     for dataset, counts in state_counts.items():
         print(f"\nDataset: {dataset}")
-        for state, count in counts.items():
-            print(f"  State {state}: {count}")
+        #for state, count in counts.items():
+        #    print(f"  State {state}: {count}")
     
     # Plot state distributions
-    plot_state_distribution(state_counts)
+    #plot_state_distribution(state_counts)
     
     # Create new CSV files with updated data
     create_feature_csv(dfs, filenames, features, output_directory)

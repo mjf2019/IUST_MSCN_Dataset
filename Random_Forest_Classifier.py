@@ -1,3 +1,5 @@
+import os
+import glob
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -12,7 +14,7 @@ class ModelTrainer:
     def __init__(self, config_path):
         self.config_path = config_path
         self.load_config()
-        self.rf = RandomForestClassifier(n_estimators=30, random_state=self.random_state)
+        self.rf = RandomForestClassifier(n_estimators=100, random_state=self.random_state)
         self.X_train = None
         self.y_train = None
         self.X_test = None
@@ -27,6 +29,7 @@ class ModelTrainer:
         self.train_csv = config['train_csv']
         self.test_csv = config['test_csv']
         self.random_state = config['random_state']
+        self.dir_mode = config['dir_mode']
         
         if self.mode == 'single_file':
             self.use_separate_files = False
@@ -37,8 +40,29 @@ class ModelTrainer:
 
     def load_data(self):
         # Load training data
-        df_train = pd.read_csv(self.train_csv)
-        self.X_train = df_train.drop(columns=['label'])
+        if self.dir_mode:
+            directory, filename = os.path.split(self.train_csv)
+            # Get a list of all CSV files in the directory
+            csv_files = glob.glob(os.path.join(directory, '*.csv'))
+            print(csv_files)
+
+            # Initialize a list to hold DataFrames
+            dfs = []
+
+            # Loop through the list of files and read each one into a DataFrame
+            for file in csv_files:
+                df = pd.read_csv(file)
+                dfs.append(df)
+
+            # Concatenate all DataFrames into a single DataFrame
+            merged_df = pd.concat(dfs, ignore_index=True)
+            df_train = merged_df
+            self.X_train = df_train.drop(columns=['label','class'])
+
+        else:
+            df_train = pd.read_csv(self.train_csv)
+            self.X_train = df_train.drop(columns=['label'])
+
         sh = ScalerHandler()
         scaler = sh.load_scaler()
         self.X_train = pd.DataFrame(scaler.fit_transform(self.X_train), columns=self.X_train.columns)
