@@ -62,6 +62,15 @@ fa:
   output_directory: 5_state_feature_3_level/
   out_filename: 'merged_data_set.csv'
 
+##### STEP 6: Statictical Feature Extraction Section #####
+# Run: incremental_statistical.py
+sf:
+  input_directory: '4_kpi_not_scale_mr_std_dataset/scale_0.001/all/'
+  features: ['SynAck', 'TcpRtt', 'AckDat']  # Replace with your feature column names
+  label_column: 'label'  # Replace with your label column name
+  output_directory: '5_statictical_dataset/'
+  out_filename: 'not_scale_dataset.csv'
+
 ##### STEP 5: Feature splitter Section #####
 # Run feature_splitter.py
 fs:
@@ -101,11 +110,12 @@ cluster:
 
 ##### Random Forest Classifier Section #####
 #mode: separate_files  # or 'single_file'
-mode: single_file
+mode: separate_files
 dir_mode: False
-train_csv: 5_statictical_dataset/not_scale_dataset.csv
+#train_csv: 5_statictical_dataset/not_scale_dataset.csv
 #train_csv: 3_kpi_not_scale_std_dataset/scale_0.001/all/HTTP_standard.csv
 #train_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_7.csv'
+train_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_1.csv
 test_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_3.csv
 random_state: 42
 

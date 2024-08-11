@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import numpy as np
 import re
+import yaml
 
 def read_and_merge_csvs(directory_path):
     # List all CSV files in the directory
@@ -58,23 +59,26 @@ def main(directory_path, feature_list, label_column):
     
     return result_df
 
+def read_yaml_features(yaml_file):
+    """Reads feature list and directory path from a YAML file."""
+    with open(yaml_file, 'r') as file:
+        config = yaml.safe_load(file)
+    return config['sf']['features'], config['sf']['input_directory'], config['sf']['output_directory'], config['sf']['out_filename'], config['sf']['label_column']
+
 
 if __name__ == '__main__':
-    # Example usage
-    directory_path = '4_kpi_not_scale_mr_std_dataset/scale_0.001/all/'
-    feature_list = ['SynAck', 'TcpRtt', 'AckDat']  # Replace with your feature column names
-    label_column = 'label'  # Replace with your label column name
-    out_dir = '5_statictical_dataset/'
-    file_name = 'not_scale_dataset.csv'
+    yaml_file = 'project_conf.yaml'
+    # Read features, input directory, and output directory from YAML file
+    features, input_directory, output_directory, name_of_out_file, label = read_yaml_features(yaml_file)
 
-    result = main(directory_path, feature_list, label_column)
+    result = main(input_directory, features, label)
 
     # Create the directory if it does not exist
-    if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
-        print(f"Directory '{out_dir}' created.")
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+        print(f"Directory '{output_directory}' created.")
 
-    file_path = os.path.join(out_dir, file_name)
+    file_path = os.path.join(output_directory, name_of_out_file)
     # Save the merged DataFrame to a CSV file
     result.to_csv(file_path, index=False)
     print(f"Merged DataFrame saved to '{file_path}'")
