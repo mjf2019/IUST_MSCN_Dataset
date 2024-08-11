@@ -46,6 +46,14 @@ mr:
   feature_type: all
   level_count: 3
 
+###### STEP 5: Feature Analysis Section ######
+# Run feature_analysis.py
+fa:
+  features: ['TcpRtt', 'SynAck', 'AckDat']
+  input_directory: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all
+  output_directory: 5_state_feature_3_level/
+  out_filename: 'merged_data_set.csv'
+
 ##### STEP 5: Feature splitter Section #####
 # Run feature_splitter.py
 fs:
@@ -85,12 +93,6 @@ scaler:
   input_csv_directory: kpi_not_scale_mr_std_dataset/scale_0.001/all/
   input_csv_name: level_1.csv
 
-###### STEP 4: Feature Analysis Section ######
-fa:
-  features: ['TcpRtt', 'SynAck', 'AckDat', TotBytes, Rate, Load, Max, Dur, Mean, Min, DstBytes, dMeanPktSz, SrcBytes]
-  input_directory: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all
-  output_directory: state_feature_14_level/
-
 ##### Clustering Section #####
 cluster:
   cluster_dataset_path: kpi_not_scale_std_dataset/scale_0.001/all/SFTP_standard.csv
@@ -100,8 +102,8 @@ cluster:
 ##### Random Forest Classifier Section #####
 #mode: separate_files  # or 'single_file'
 mode: single_file
-dir_mode: True
-train_csv: 6_kpi_not_scale_FE_dataset/scale_0.001/level_1.csv
+dir_mode: False
+train_csv: 5_state_feature_3_level/merged_data_set.csv
 #train_csv: 3_kpi_not_scale_std_dataset/scale_0.001/all/HTTP_standard.csv
 #train_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_7.csv'
 test_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_3.csv

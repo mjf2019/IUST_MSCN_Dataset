@@ -21,7 +21,7 @@ def read_yaml_features(yaml_file):
     """Reads feature list and directory path from a YAML file."""
     with open(yaml_file, 'r') as file:
         config = yaml.safe_load(file)
-    return config['fa']['features'], config['fa']['input_directory'], config['fa']['output_directory']
+    return config['fa']['features'], config['fa']['input_directory'], config['fa']['output_directory'], config['fa']['out_filename']
 
 def analyze_features(dfs, filenames, features):
     """Analyzes the distribution and statistical measures of specified features in the DataFrames."""
@@ -115,12 +115,30 @@ def calculate_differences(dfs, filenames, features):
     
     return differences_results
 
-def calculate_states(dfs, filenames, features):
+def calculate_states(dfs, filenames, features, out_dir, name_of_out_file):
     """Calculates and counts the combined states of features."""
     state_counts = {}
+    new_dfs = []
+    file_path = os.path.join(out_dir, name_of_out_file)
+
+    # Create the directory if it does not exist
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+        print(f"Directory '{out_dir}' created.")
     
     for i, (df, filename) in enumerate(zip(dfs, filenames)):
         state_vectors = []
+
+        # Use regular expression to extract the number
+        match = re.search(r'_(\d+)', filename)
+        if match:
+            number = match.group(1)
+            print(f"Extracted number: {number}")
+        else:
+            print("No number found in the filename.")
+       
+        df['label'] = number
+        label = df['label']
         
         for feature in features:
             if feature in df.columns:
@@ -134,10 +152,20 @@ def calculate_states(dfs, filenames, features):
                 state_vectors.append(pd.Series([None] * len(df)))
         # Combine state vectors
         combined_states = pd.concat(state_vectors, axis=1)
+        combined_states = pd.concat([combined_states, label], axis=1)
         combined_states = combined_states.dropna()  # Drop rows with missing values
+        new_dfs.append(combined_states)
+        print(combined_states)
         # Convert state vectors to tuples for counting
         state_tuples = [tuple(row) for row in combined_states.to_numpy()]
         state_counts[filename] = Counter(state_tuples)
+    
+    # Merge the DataFrames
+    merged_df = pd.concat(new_dfs, ignore_index=True)
+
+    # Save the merged DataFrame to a CSV file
+    merged_df.to_csv(file_path, index=False)
+    print(f"Merged DataFrame saved to '{file_path}'")
     
     return state_counts
 
@@ -163,52 +191,6 @@ def plot_state_distribution(state_counts):
         plt.grid(True)
         plt.show()
 
-def create_feature_csv(dfs, filenames, features, output_directory):
-    """Creates new CSV files with specified columns and values for each dataset."""
-    for i, (df, filename) in enumerate(zip(dfs, filenames)):
-        df = df.copy()
-        
-        # Calculate state changes
-        state_changes = []
-        previous_row = None
-        
-        for _, row in df.iterrows():
-            if previous_row is not None:
-                state_change = tuple((row[feature] > previous_row[feature]) for feature in features)
-                state_changes.append(state_change)
-            previous_row = row
-
-        
-        # Add state columns
-        state_columns = ['100', '010', '001', '110', '101', '011', '111']
-        for state in state_columns:
-            df[state] = 0
-        
-        # Add state change values
-        for idx, change in enumerate(state_changes):
-            state_str = ''.join(map(str, change))
-            if state_str in state_columns:
-                df.loc[idx + 1, state_str] = 1
-        
-        # Fill in dummy values and label
-        df['TcpRtt'] = df['TcpRtt'].fillna(0)  # Use existing values or placeholders
-        df['SynAck'] = df['SynAck'].fillna(0)
-        df['AckDat'] = df['AckDat'].fillna(0)
-        
-        # Create label based on the new state values
-        df['label'] = (df[state_columns].sum(axis=1) > 0).astype(int)
-        
-        # Select only required columns and save to CSV
-        columns_to_save = ['TcpRtt', 'SynAck', 'AckDat'] + state_columns + ['label']
-        df_to_save = df[columns_to_save]
-
-        # Check if the directory exists
-        if not os.path.exists(output_directory):
-            print("Directory does not exist. Creating now.")
-            os.makedirs(output_directory)
-        
-        output_path = os.path.join(output_directory, f'processed_{filename}')
-        df_to_save.to_csv(output_path, index=False)
 
 # Function to extract the numeric part from the filename
 def extract_number(filename):
@@ -217,7 +199,7 @@ def extract_number(filename):
 
 def main(yaml_file):
     # Read features, input directory, and output directory from YAML file
-    features, input_directory, output_directory = read_yaml_features(yaml_file)
+    features, input_directory, output_directory, name_of_out_file = read_yaml_features(yaml_file)
     
     # Read CSV files
     dfs, filenames = read_csv_files(input_directory)
@@ -246,7 +228,7 @@ def main(yaml_file):
             print(f"  {dataset}: {metrics}")
     
     # Calculate and plot states
-    state_counts = calculate_states(dfs, filenames, features)
+    state_counts = calculate_states(dfs, filenames, features, output_directory, name_of_out_file)
     print("\nCombined State Counts:")
     # Sort the dictionary keys based on the extracted numeric value
     state_counts = dict(sorted(state_counts.items(), key=lambda item: extract_number(item[0])))
@@ -269,9 +251,6 @@ def main(yaml_file):
     # Plot state distributions
     #plot_state_distribution(state_counts)
     
-    # Create new CSV files with updated data
-    create_feature_csv(dfs, filenames, features, output_directory)
-
 # Example usage
 if __name__ == "__main__":
     main('project_conf.yaml')
