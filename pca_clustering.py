@@ -45,7 +45,7 @@ def pca_clustering(config):
         os.makedirs(output_dir)
     
     # Save the DataFrame with cluster labels to a new CSV file
-    df.to_csv(output_file, index=False)
+    #df.to_csv(output_file, index=False)
     print(f"Data with cluster labels saved to: {output_file}")
 
     # Plot the clusters

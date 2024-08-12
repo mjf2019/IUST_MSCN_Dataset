@@ -4,7 +4,7 @@ import numpy as np
 import re
 import yaml
 
-def read_and_merge_csvs(directory_path):
+def read_csvs(directory_path):
     # List all CSV files in the directory
     csv_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
     df_list = []
@@ -21,10 +21,8 @@ def read_and_merge_csvs(directory_path):
         df = pd.read_csv(os.path.join(directory_path, f))
         df['label'] = number
         df_list.append(df)
-
-    merged_df = pd.concat(df_list, ignore_index=True)
     
-    return merged_df
+    return df_list
 
 def compute_incremental_statistics(df, feature_list, label_column):
     # Initialize a DataFrame to store the results
@@ -46,18 +44,24 @@ def compute_incremental_statistics(df, feature_list, label_column):
 
 def main(directory_path, feature_list, label_column):
     # Read and merge all CSV files
-    merged_df = read_and_merge_csvs(directory_path)
+    new_df_list = []
+    df_list = read_csvs(directory_path)
+    for df in df_list:
     
-    # Check if all features and label_column are present in the DataFrame
-    missing_cols = [col for col in feature_list + [label_column] if col not in merged_df.columns]
-    if missing_cols:
-        raise ValueError(f"Missing columns: {', '.join(missing_cols)}")
+        # Check if all features and label_column are present in the DataFrame
+        missing_cols = [col for col in feature_list + [label_column] if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"Missing columns: {', '.join(missing_cols)}")
     
-    # Compute incremental statistics
-    result_df = compute_incremental_statistics(merged_df, feature_list, label_column)
-    result_df = result_df.dropna()
+        # Compute incremental statistics
+        result_df = compute_incremental_statistics(df, feature_list, label_column)
+        result_df = result_df.dropna()
+        new_df_list.append(result_df)
+
+    merged_new_df = pd.concat(new_df_list, ignore_index=True)
+
     
-    return result_df
+    return merged_new_df
 
 def read_yaml_features(yaml_file):
     """Reads feature list and directory path from a YAML file."""

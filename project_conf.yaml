@@ -104,18 +104,18 @@ lfm:
 
 ##### Clustering Section #####
 cluster:
-  cluster_dataset_path: kpi_not_scale_std_dataset/scale_0.001/all/SFTP_standard.csv
+  cluster_dataset_path: 5_statictical_dataset/not_scale_dataset.csv
   cluster_num: 3
   n_components: 2
 
 ##### Random Forest Classifier Section #####
 #mode: separate_files  # or 'single_file'
-mode: separate_files
+mode: single_file
 dir_mode: False
-#train_csv: 5_statictical_dataset/not_scale_dataset.csv
+train_csv: 5_statictical_dataset/not_scale_dataset.csv
 #train_csv: 3_kpi_not_scale_std_dataset/scale_0.001/all/HTTP_standard.csv
 #train_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_7.csv'
-train_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_1.csv
+#train_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_1.csv
 test_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_3.csv
 random_state: 42
 

@@ -86,7 +86,7 @@ class ModelTrainer:
         self.rf.fit(self.X_train, self.y_train)
         
         # Perform cross-validation
-        cv_scores = cross_val_score(self.rf, self.X_test, self.y_test, cv=10, scoring='accuracy')
+        cv_scores = cross_val_score(self.rf, self.X_test, self.y_test, cv=5, scoring='accuracy')
         print(f"Cross-Validation Accuracy: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
         
         # Make predictions
@@ -101,8 +101,6 @@ class ModelTrainer:
             'True_Label': self.y_test,
             'Predicted_Label': y_pred
         })
-        predictions_df.to_csv('test_predictions.csv', index=False)
-        print("Test predictions saved to 'test_predictions.csv'")
         
         # Compute and plot confusion matrix
         cm = confusion_matrix(self.y_test, y_pred)
