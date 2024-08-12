@@ -1,3 +1,5 @@
+import os
+import glob
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -27,6 +29,7 @@ class ModelTrainer:
         self.train_csv = config['train_csv']
         self.test_csv = config['test_csv']
         self.random_state = config['random_state']
+        self.dir_mode = config['dir_mode']
         
         if self.mode == 'single_file':
             self.use_separate_files = False
@@ -37,8 +40,29 @@ class ModelTrainer:
 
     def load_data(self):
         # Load training data
-        df_train = pd.read_csv(self.train_csv)
-        self.X_train = df_train.drop(columns=['label'])
+        if self.dir_mode:
+            directory, filename = os.path.split(self.train_csv)
+            # Get a list of all CSV files in the directory
+            csv_files = glob.glob(os.path.join(directory, '*.csv'))
+            print(csv_files)
+
+            # Initialize a list to hold DataFrames
+            dfs = []
+
+            # Loop through the list of files and read each one into a DataFrame
+            for file in csv_files:
+                df = pd.read_csv(file)
+                dfs.append(df)
+
+            # Concatenate all DataFrames into a single DataFrame
+            merged_df = pd.concat(dfs, ignore_index=True)
+            df_train = merged_df
+            self.X_train = df_train.drop(columns=['label','class'])
+
+        else:
+            df_train = pd.read_csv(self.train_csv)
+            self.X_train = df_train.drop(columns=['label'])
+
         sh = ScalerHandler()
         scaler = sh.load_scaler()
         self.X_train = pd.DataFrame(scaler.fit_transform(self.X_train), columns=self.X_train.columns)
@@ -62,7 +86,7 @@ class ModelTrainer:
         self.rf.fit(self.X_train, self.y_train)
         
         # Perform cross-validation
-        cv_scores = cross_val_score(self.rf, self.X_train, self.y_train, cv=5, scoring='accuracy')
+        cv_scores = cross_val_score(self.rf, self.X_test, self.y_test, cv=5, scoring='accuracy')
         print(f"Cross-Validation Accuracy: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
         
         # Make predictions
@@ -77,8 +101,6 @@ class ModelTrainer:
             'True_Label': self.y_test,
             'Predicted_Label': y_pred
         })
-        predictions_df.to_csv('test_predictions.csv', index=False)
-        print("Test predictions saved to 'test_predictions.csv'")
         
         # Compute and plot confusion matrix
         cm = confusion_matrix(self.y_test, y_pred)

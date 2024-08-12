@@ -34,7 +34,7 @@ class ClusteringAnalysis:
         scaler = sh.load_scaler()
         self.labels = self.data.iloc[:, -1]  # Assuming the label is in the last column
         self.data = self.data.iloc[:, :-1]  # Exclude the label from the features
-        self.data = pd.DataFrame(scaler.fit_transform(self.data), columns=self.data.columns)
+        #self.data = pd.DataFrame(scaler.fit_transform(self.data), columns=self.data.columns)
     
     def cluster_data(self):
         kmeans = KMeans(n_clusters=self.n_clusters, random_state=self.random_state)

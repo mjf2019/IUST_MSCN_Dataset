@@ -1,29 +1,15 @@
-###### Scaler Section #####
-scaler:
-  scaler_type: zscore # minmax or robust
-  output_directory: scaler_dir
-  input_csv_directory: kpi_not_scale_mr_std_dataset/scale_0.001/all/
-  input_csv_name: level_1.csv
-
-##### Preprocess Section #####
+##### STEP 1: Preprocess Section #####
+# Run preprocess_netflow.py
 pre:
-  input_dataset_path: original_dataset/scale_0.001/VIDEO/flow/all/
-  output_dataset_path: not_scale_preprocessed_dataset/scale_0.001/VIDEO/all/
-##### KPI Convertor Section #####
-# Convert 14 Levels to 3 KPI Levels
-kpi:
-  input_dataset_path: 'not_scale_preprocessed_dataset/scale_0.001/VIDEO/all/preprocessed_dataset.csv'
-  output_dataset_path: 'kpi_not_scale_pre_dataset/scale_0.001/all/VIDEO_preprocessed_dataset.csv'
-  level_1: [3, 5, 7, 13]
-  level_2: [1, 2, 6, 8, 9]
-  level_3: [4, 10, 11, 12, 14]
+  input_dataset_path: 0_original_dataset/scale_0.001/VIDEO/flow/all/
+  output_dataset_path: 1_not_scale_preprocessed_dataset/scale_0.001/VIDEO/all/
 
-##### Standardization Section #####
-# Standardization to equalize the number of columns
-std:
-  input_dataset_path: kpi_not_scale_pre_dataset/scale_0.001/
-  out_dataset_path: kpi_not_scale_std_dataset/scale_0.001/
-  label_column: label
+# NOTE: if use 14 level dataset use following code for create data
+##### STEP 2: Pre standardization Section #####
+# Run standard_pre_data_integration.py
+pre_std:
+  input_dataset_path:  1_not_scale_preprocessed_dataset/scale_0.001/
+  output_dataset_path: 2_kpi_not_scale_pre_dataset/scale_0.001/
   feature_type: all
   class_types:
     - SFTP
@@ -32,25 +18,104 @@ std:
     - SMTP
     - VIDEO
 
-##### Merger Section #####
+# NOTE: if use 3 level dataset use following code for create data
+##### STEP 2: KPI Convertor Section #####
+# Convert 14 Levels to 3 KPI Levels
+# Run kpi_level_convertor.py
+kpi:
+  input_dataset_path: '1_not_scale_preprocessed_dataset/scale_0.001/SFTP/all/preprocessed_dataset.csv'
+  output_dataset_path: '2_kpi_not_scale_pre_dataset/scale_0.001/all/SFTP_preprocessed_dataset.csv'
+  level_1: [1, 2, 3]
+  level_2: [4, 5, 6, 7, 8, 9, 10, 11]
+  level_3: [12, 13, 14]
+
+##### STEP 3: Pre standardization Section #####
+# Standardization to equalize the number of columns
+# Run dataset_standard.py
+std:
+  input_dataset_path: 2_kpi_not_scale_pre_dataset/scale_0.001/
+  out_dataset_path: 3_kpi_not_scale_std_dataset/scale_0.001/
+  label_column: label
+  feature_type: all
+
+##### STEP 4: Merger Section #####
+# Run dataset_merger.py
 mr:
-  input_dataset_path: kpi_not_scale_std_dataset/scale_0.001/
-  output_dataset_path: kpi_not_scale_mr_std_dataset/scale_0.001/
+  input_dataset_path: 3_kpi_not_scale_std_dataset/scale_0.001/
+  output_dataset_path: 4_kpi_not_scale_mr_std_dataset/scale_0.001/
   feature_type: all
   level_count: 3
 
+###### STEP 5: Scaler Section #####
+# Run scaler_processor.py
+scaler:
+  scaler_type: zscore # minmax or robust
+  output_directory: scaler_dir
+  input_csv_directory: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/
+  input_csv_name: level_1.csv
+
+###### STEP 5: Feature Analysis Section ######
+# Run feature_analysis.py
+fa:
+  features: ['TcpRtt', 'SynAck', 'AckDat']
+  input_directory: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all
+  output_directory: 5_state_feature_3_level/
+  out_filename: 'merged_data_set.csv'
+
+##### STEP 6: Statictical Feature Extraction Section #####
+# Run: incremental_statistical.py
+sf:
+  input_directory: '4_kpi_not_scale_mr_std_dataset/scale_0.001/all/'
+  features: ['SynAck', 'TcpRtt', 'AckDat']  # Replace with your feature column names
+  label_column: 'label'  # Replace with your label column name
+  output_directory: '5_statictical_dataset/'
+  out_filename: 'not_scale_dataset.csv'
+
+##### STEP 5: Feature splitter Section #####
+# Run feature_splitter.py
+fs:
+  input_dataset_path: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/
+  output_dataset_path: 5_kpi_not_scale_FS_dataset/scale_0.001/
+  #extract_features: ['TcpRtt', 'label']
+  extract_features: ['SynAck', 'TcpRtt', 'AckDat', 'label']
+  #extract_features: ['SynAck', 'TcpRtt', 'AckDat', 'SrcWin', TotBytes, Rate, Load, Sum, Max, Dur, Mean, Min, DstBytes, dMeanPktSz, SrcBytes, DstLoad, TotPkts, SrcLoad, DstRate, TcpOpt_MwsS  T, sMeanPktSz, SrcRate,  'label']
+  #extract_features: [Dur,IdleTime,Mean,StdDev,Sum,Min,Max,sTtl,dTtl,TcpRtt,SynAck,AckDat,label]
+  level_num: 3
+
+##### STEP 6: Feature extraction Section #####
+# Run feature_extractor.py
+fe:
+  input_dataset_path: 5_kpi_not_scale_FS_dataset/scale_0.001/
+  output_dataset_path: 6_kpi_not_scale_FE_dataset/scale_0.001/
+  #features: ['TcpRtt']
+  features: ['SynAck', 'TcpRtt', 'AckDat']
+  #features: ['SynAck', 'TcpRtt', 'AckDat', 'SrcWin', TotBytes, Rate, Load, Sum, Max, Dur, Mean, Min, DstBytes, dMeanPktSz, SrcBytes, DstLoad, TotPkts, SrcLoad, DstRate, TcpOpt_MwsS  T, sMeanPktSz, SrcRate]
+  #features: [Dur,IdleTime,Mean,StdDev,Sum,Min,Max,sTtl,dTtl,TcpRtt,SynAck,AckDat]
+  level_num: 3
+
+##### STEP 7: LSTM feature modeling Section #####
+# Run lstm_feature_modeling.py
+lfm:
+  input_dataset_path: 6_kpi_not_scale_FE_dataset/scale_0.001/
+  output_dataset_path: 7_LSTM_Feature_Modeling_dataset/scale_0.001/
+  window_size: 3
+
+
+
 ##### Clustering Section #####
 cluster:
-  cluster_dataset_path: kpi_not_scale_std_dataset/scale_0.001/all/SFTP_standard.csv
+  cluster_dataset_path: 5_statictical_dataset/not_scale_dataset.csv
   cluster_num: 3
   n_components: 2
 
 ##### Random Forest Classifier Section #####
 #mode: separate_files  # or 'single_file'
-mode: 'single_file'
-#train_csv: 'kpi_not_scale_mr_std_dataset/scale_0.001/all/level_1.csv'
-train_csv: kpi_not_scale_std_dataset/scale_0.001/all/VIDEO_standard.csv
+mode: single_file
+dir_mode: False
+train_csv: 5_statictical_dataset/not_scale_dataset.csv
+#train_csv: 3_kpi_not_scale_std_dataset/scale_0.001/all/HTTP_standard.csv
 #train_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_7.csv'
-test_csv: 'kpi_not_scale_mr_std_dataset/scale_0.001/all/level_3.csv'  # Only used if mode is 'separate_files'
+#train_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_1.csv
+test_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_3.csv
 random_state: 42
 
