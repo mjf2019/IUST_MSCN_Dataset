@@ -54,15 +54,7 @@ scaler:
   input_csv_directory: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/
   input_csv_name: level_1.csv
 
-###### STEP 5: Feature Analysis Section ######
-# Run feature_analysis.py
-fa:
-  features: ['TcpRtt', 'SynAck', 'AckDat']
-  input_directory: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all
-  output_directory: 5_state_feature_3_level/
-  out_filename: 'merged_data_set.csv'
-
-##### STEP 6: Statictical Feature Extraction Section #####
+##### STEP 5: Statictical Feature Extraction Section #####
 # Run: incremental_statistical.py
 sf:
   input_directory: '4_kpi_not_scale_mr_std_dataset/scale_0.001/all/'
@@ -71,34 +63,18 @@ sf:
   output_directory: '5_statictical_dataset/'
   out_filename: 'not_scale_dataset.csv'
 
-##### STEP 5: Feature splitter Section #####
-# Run feature_splitter.py
-fs:
-  input_dataset_path: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/
-  output_dataset_path: 5_kpi_not_scale_FS_dataset/scale_0.001/
-  #extract_features: ['TcpRtt', 'label']
-  extract_features: ['SynAck', 'TcpRtt', 'AckDat', 'label']
-  #extract_features: ['SynAck', 'TcpRtt', 'AckDat', 'SrcWin', TotBytes, Rate, Load, Sum, Max, Dur, Mean, Min, DstBytes, dMeanPktSz, SrcBytes, DstLoad, TotPkts, SrcLoad, DstRate, TcpOpt_MwsS  T, sMeanPktSz, SrcRate,  'label']
-  #extract_features: [Dur,IdleTime,Mean,StdDev,Sum,Min,Max,sTtl,dTtl,TcpRtt,SynAck,AckDat,label]
-  level_num: 3
 
-##### STEP 6: Feature extraction Section #####
-# Run feature_extractor.py
-fe:
-  input_dataset_path: 5_kpi_not_scale_FS_dataset/scale_0.001/
-  output_dataset_path: 6_kpi_not_scale_FE_dataset/scale_0.001/
-  #features: ['TcpRtt']
-  features: ['SynAck', 'TcpRtt', 'AckDat']
-  #features: ['SynAck', 'TcpRtt', 'AckDat', 'SrcWin', TotBytes, Rate, Load, Sum, Max, Dur, Mean, Min, DstBytes, dMeanPktSz, SrcBytes, DstLoad, TotPkts, SrcLoad, DstRate, TcpOpt_MwsS  T, sMeanPktSz, SrcRate]
-  #features: [Dur,IdleTime,Mean,StdDev,Sum,Min,Max,sTtl,dTtl,TcpRtt,SynAck,AckDat]
-  level_num: 3
-
-##### STEP 7: LSTM feature modeling Section #####
-# Run lstm_feature_modeling.py
-lfm:
-  input_dataset_path: 6_kpi_not_scale_FE_dataset/scale_0.001/
-  output_dataset_path: 7_LSTM_Feature_Modeling_dataset/scale_0.001/
-  window_size: 3
+##### STEP 6: Random Forest Classifier Section #####
+rf:
+  #mode: separate_files  # or 'single_file'
+  mode: single_file
+  dir_mode: False
+  # for level seperation
+  train_csv: 5_statictical_dataset/not_scale_dataset.csv
+  # for traffic classification and drift display
+  #train_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_1.csv
+  test_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_3.csv
+  random_state: 42
 
 
 
@@ -107,15 +83,3 @@ cluster:
   cluster_dataset_path: 5_statictical_dataset/not_scale_dataset.csv
   cluster_num: 3
   n_components: 2
-
-##### Random Forest Classifier Section #####
-#mode: separate_files  # or 'single_file'
-mode: single_file
-dir_mode: False
-train_csv: 5_statictical_dataset/not_scale_dataset.csv
-#train_csv: 3_kpi_not_scale_std_dataset/scale_0.001/all/HTTP_standard.csv
-#train_csv: 'merged_standard_dataset\\scale_0.001\\all\\level_7.csv'
-#train_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_1.csv
-test_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_3.csv
-random_state: 42
-

@@ -25,11 +25,11 @@ class ModelTrainer:
         with open(self.config_path, 'r') as file:
             config = yaml.safe_load(file)
         
-        self.mode = config['mode']
-        self.train_csv = config['train_csv']
-        self.test_csv = config['test_csv']
-        self.random_state = config['random_state']
-        self.dir_mode = config['dir_mode']
+        self.mode = config['rf']['mode']
+        self.train_csv = config['rf']['train_csv']
+        self.test_csv = config['rf']['test_csv']
+        self.random_state = config['rf']['random_state']
+        self.dir_mode = config['rf']['dir_mode']
         
         if self.mode == 'single_file':
             self.use_separate_files = False
