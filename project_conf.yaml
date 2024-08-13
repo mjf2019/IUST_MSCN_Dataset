@@ -49,10 +49,14 @@ mr:
 ###### STEP 5: Scaler Section #####
 # Run scaler_processor.py
 scaler:
-  scaler_type: zscore # minmax or robust
+  scaler_type: zscore # minmax or robust or zscore
+  scaler_orig_mode: original
+  scaler_sta_mode: statistical
   output_directory: scaler_dir
-  input_csv_directory: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/
-  input_csv_name: level_1.csv
+  orig_input_csv_directory: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/
+  orig_input_csv_name: level_1.csv
+  sta_input_csv_directory: 5_statictical_dataset/
+  sta_input_csv_name: not_scale_dataset.csv
 
 ##### STEP 5: Statictical Feature Extraction Section #####
 # Run: incremental_statistical.py
@@ -75,6 +79,7 @@ rf:
   #train_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_1.csv
   test_csv: 4_kpi_not_scale_mr_std_dataset/scale_0.001/all/level_3.csv
   random_state: 42
+  scaler_orig: True # or False for statistical mode
 
 
 

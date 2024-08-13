@@ -30,6 +30,7 @@ class ModelTrainer:
         self.test_csv = config['rf']['test_csv']
         self.random_state = config['rf']['random_state']
         self.dir_mode = config['rf']['dir_mode']
+        self.scaler_orig = config['rf']['scaler_orig']
         
         if self.mode == 'single_file':
             self.use_separate_files = False
@@ -64,22 +65,29 @@ class ModelTrainer:
             self.X_train = df_train.drop(columns=['label'])
 
         sh = ScalerHandler()
-        scaler = sh.load_scaler()
+        if self.scaler_orig:
+            scaler = sh.load_orig_scaler()
+        else:
+            scaler = sh.load_statistical_scaler()
         self.X_train = pd.DataFrame(scaler.fit_transform(self.X_train), columns=self.X_train.columns)
         self.y_train = df_train['label']
-
         
         if self.use_separate_files and self.test_csv:
             # Load test data if separate files are used
             df_test = pd.read_csv(self.test_csv)
             self.X_test = df_test.drop(columns=['label'])
             sh = ScalerHandler()
-            scaler = sh.load_scaler()
+            if self.scaler_orig:
+                scaler = sh.load_orig_scaler()
+            else:
+                scaler = sh.load_statistical_scaler()
+                
             self.X_test = pd.DataFrame(scaler.fit_transform(self.X_test), columns=self.X_test.columns)
             self.y_test = df_test['label']
         else:
             # Split the data into train and test sets (for evaluation)
             self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X_train, self.y_train, test_size=0.3, random_state=self.random_state)
+            print(self.X_train)
 
     def train_and_evaluate(self):
         # Train the Random Forest classifier
@@ -95,12 +103,6 @@ class ModelTrainer:
         # Evaluate the classifier
         print("\nClassification Report for Test Data:")
         print(classification_report(self.y_test, y_pred, zero_division=0))
-        
-        # Save predictions to a new CSV file
-        predictions_df = pd.DataFrame({
-            'True_Label': self.y_test,
-            'Predicted_Label': y_pred
-        })
         
         # Compute and plot confusion matrix
         cm = confusion_matrix(self.y_test, y_pred)

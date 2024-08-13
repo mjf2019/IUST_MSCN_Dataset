@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 from sklearn.cluster import DBSCAN, AgglomerativeClustering
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
@@ -32,7 +32,6 @@ agg_clustering = AgglomerativeClustering(n_clusters=3)
 agg_labels = agg_clustering.fit_predict(X)
 
 # Evaluate DBSCAN
-# Silhouette score is not well-defined for DBSCAN if it produces noise (-1 labels)
 dbscan_score = silhouette_score(X, dbscan_labels) if len(set(dbscan_labels)) > 1 else 'N/A'
 print(f'DBSCAN Silhouette Score: {dbscan_score}')
 
@@ -43,19 +42,40 @@ print(f'Agglomerative Clustering Silhouette Score: {agg_score:.2f}')
 # PCA for visualization
 pca = PCA(n_components=2)
 X_pca = pca.fit_transform(X)
+df_pca = pd.DataFrame(X_pca, columns=['PC1', 'PC2'])
+df_pca['DBSCAN Cluster'] = dbscan_labels
+df_pca['Agglomerative Cluster'] = agg_labels
 
 # Plot DBSCAN results
-plt.figure(figsize=(14, 6))
-
-plt.subplot(1, 2, 1)
-plt.scatter(X_pca[:, 0], X_pca[:, 1], c=dbscan_labels, cmap='viridis', marker='o')
-plt.title('DBSCAN Clustering')
-plt.colorbar(label='Cluster Label')
+fig_dbscan = go.Figure(data=go.Scattergl(
+    x=df_pca['PC1'],
+    y=df_pca['PC2'],
+    mode='markers',
+    marker=dict(color=df_pca['DBSCAN Cluster'], colorscale='viridis', size=50),
+    text=df_pca['DBSCAN Cluster']
+))
+fig_dbscan.update_layout(
+    title='DBSCAN Clustering',
+    xaxis_title='Principal Component 1',
+    yaxis_title='Principal Component 2',
+    coloraxis_colorbar=dict(title='Cluster Label')
+)
 
 # Plot Agglomerative Clustering results
-plt.subplot(1, 2, 2)
-plt.scatter(X_pca[:, 0], X_pca[:, 1], c=agg_labels, cmap='viridis', marker='o')
-plt.title('Agglomerative Clustering')
-plt.colorbar(label='Cluster Label')
+fig_agg = go.Figure(data=go.Scattergl(
+    x=df_pca['PC1'],
+    y=df_pca['PC2'],
+    mode='markers',
+    marker=dict(color=df_pca['Agglomerative Cluster'], colorscale='viridis', size=50),
+    text=df_pca['Agglomerative Cluster']
+))
+fig_agg.update_layout(
+    title='Agglomerative Clustering',
+    xaxis_title='Principal Component 1',
+    yaxis_title='Principal Component 2',
+    coloraxis_colorbar=dict(title='Cluster Label')
+)
 
-plt.show()
+# Show the plots
+fig_dbscan.show()
+fig_agg.show()
