@@ -19,6 +19,8 @@ def read_csvs(directory_path):
         else:
             print("No number found in the filename.")
         df = pd.read_csv(os.path.join(directory_path, f))
+        # Rename the column
+        df.rename(columns={'label': 'class'}, inplace=True)
         df['label'] = number
         df_list.append(df)
     
