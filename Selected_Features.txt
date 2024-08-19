@@ -1,0 +1,154 @@
+Binary Classifier:
+    Top 10 Feature Importances 2:
+    Feature sTtl: 0.2737
+    Feature pLoss: 0.1138
+    Feature Flgs_ e s      : 0.0926
+    Feature State_S_: 0.0714
+    Feature Mean: 0.0382
+    Feature dTtl: 0.0373
+    Feature dMeanPktSz: 0.0347
+    Feature TcpRtt: 0.0320
+    Feature TotPkts: 0.0299
+    Feature Min: 0.0281
+
+    Top 10 Feature Importances 4:
+    Feature sTtl: 0.2897
+    Feature SrcBytes: 0.1007
+    Feature TotBytes: 0.0686
+    Feature PCRatio: 0.0682
+    Feature State_S_: 0.0522      
+    Feature TotPkts: 0.0454
+    Feature Mean: 0.0446
+    Feature IdleTime: 0.0433
+    Feature Dur: 0.0432
+    Feature Min: 0.0425
+
+    Top 10 Feature Importances 5-11:
+    Feature SrcBytes: 0.1625
+    Feature TotPkts: 0.1420
+    Feature sTtl: 0.1312
+    Feature DstPkts: 0.0934
+    Feature dMeanPktSz: 0.0883
+    Feature PCRatio: 0.0748
+    Feature TotBytes: 0.0736
+    Feature Dur: 0.0405
+    Feature Min: 0.0316
+    Feature Sum: 0.0263
+
+------------------------------------------------------------------------------------
+Selected Feature: sTtl, pLoss, Flgs_ e s      , State_S_, Mean, SrcBytes, TotBytes, PCRatio, TotPkts, DstPkts, dMeanPktSz
+------------------------------------------------------------------------------------
+
+Multi class Classifier:
+    Top 10 Feature Importances 0.001:
+    Feature IdleTime: 0.3059
+    Feature dTtl: 0.2030
+    Feature sTtl: 0.1899
+    Feature TotBytes: 0.0609
+    Feature SynAck: 0.0399
+    Feature TcpRtt: 0.0364
+    Feature DstBytes: 0.0344
+    Feature SrcBytes: 0.0292
+    Feature dMeanPktSz: 0.0270
+    Feature AckDat: 0.0124
+
+    Top 10 Feature Importances 5:
+    Feature IdleTime: 0.3652
+    Feature dTtl: 0.1074
+    Feature sTtl: 0.0464
+    Feature Rate: 0.0448
+    Feature Min: 0.0402         
+    Feature Mean: 0.0400
+    Feature Sum: 0.0377
+    Feature Dur: 0.0352
+    Feature DstBytes: 0.0334
+    Feature dMeanPktSz: 0.0330
+
+    Top 10 Feature Importances 60:
+    Feature IdleTime: 0.2512
+    Feature dTtl: 0.0864
+    Feature Mean: 0.0743
+    Feature Dur: 0.0688
+    Feature Min: 0.0631
+    Feature Sum: 0.0624
+    Feature dMeanPktSz: 0.0536
+    Feature Rate: 0.0508
+    Feature sTtl: 0.0487
+    Feature DstBytes: 0.0317
+
+------------------------------------------------------------------------------------
+    Feature Selected: IdleTime, dTtl, sTtl, TotBytes, SynAck, Rate, Min, Mean, Dur
+------------------------------------------------------------------------------------
+
+Congestion Dataset:
+
+Feature Importance level-1:
+            feature  importance
+0            DstWin    0.222265
+1          IdleTime    0.144122
+2            SrcWin    0.101248
+3        sMeanPktSz    0.075809
+4          SrcBytes    0.062240
+5    TcpOpt_MwsS  T    0.043356
+6            TcpRtt    0.039493
+7            AckDat    0.037079
+8           SrcLoad    0.034056
+9          DstBytes    0.028361
+10         TotBytes    0.027479
+
+Feature Importance level-2:
+            feature  importance
+0            DstWin    0.264053
+1          IdleTime    0.145537
+2            SrcWin    0.143784         
+3    TcpOpt_MwsS  T    0.094702
+4        sMeanPktSz    0.051388
+5          SrcBytes    0.042245
+6        dMeanPktSz    0.035561
+7          DstBytes    0.028585
+8          TotBytes    0.026635
+9            SynAck    0.020716
+10           AckDat    0.019632
+
+Feature Importance level-3:
+            feature  importance
+0            DstWin    0.278220
+1            SrcWin    0.126049
+2          IdleTime    0.108348
+3            AckDat    0.058765
+4            TcpRtt    0.054586
+5    TcpOpt_MwsS  T    0.050600
+6          SrcBytes    0.048304
+7        sMeanPktSz    0.042766
+8            SynAck    0.032165
+9          DstBytes    0.029332
+10       dMeanPktSz    0.028111
+
+
+------------------------------------------------------------------------------------
+Selected Features: DstWin, IdleTime, SrcWin, sMeanPktSz, SrcBytes, TcpOpt_MwsS  T, AckDat, TcpRtt
+------------------------------------------------------------------------------------
+
+
+###################################
+###################################
+
+Conclusion:
+
+ISCX_VPN
+------------------------------------------------------------------------------------
+Selected Feature: sTtl, pLoss, Flgs_ e s      , State_S_, Mean, SrcBytes, TotBytes, PCRatio, TotPkts, DstPkts, dMeanPktSz
+------------------------------------------------------------------------------------
+
+CTU-13
+------------------------------------------------------------------------------------
+Feature Selected: IdleTime, dTtl, sTtl, TotBytes, SynAck, Rate, Min, Mean, Dur
+------------------------------------------------------------------------------------
+
+Congestion
+------------------------------------------------------------------------------------
+Selected Features: DstWin, IdleTime, SrcWin, sMeanPktSz, SrcBytes, TcpOpt_MwsS  T, AckDat, TcpRtt
+------------------------------------------------------------------------------------
+
+Sorted by descending importance:
+sTtl, Mean, SrcBytes, TotBytes, IdleTime, DstWin, SrcWin, sMeanPktSz, AckDat, TcpRtt, TcpOpt_MwsS  T, dTtl, SynAck, Rate, Min, Dur, pLoss, Flgs_ e s      , State_S_, PCRatio, TotPkts, DstPkts, dMeanPktSz
