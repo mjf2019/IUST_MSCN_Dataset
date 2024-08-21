@@ -1,0 +1,208 @@
+############# Test Round 1 #############
+
+features = [
+    'sTtl', 'Mean', 'SrcBytes', 'TotBytes', 'IdleTime', 'DstWin', 'SrcWin', 'sMeanPktSz', 'AckDat', 
+    'TcpRtt', 'TcpOpt_MwsS  T', 'dTtl', 'SynAck', 'Rate', 'Min', 'Dur', 'pLoss', 'Flgs_ e s      ',
+        'State_S_', 'PCRatio', 'TotPkts', 'DstPkts', 'dMeanPktSz'
+]
+
+++++ RF result:
+
+Cross-Validation Accuracy: 0.9711 ± 0.0456
+Cross-Validation F1 Score: 0.9623 ± 0.0615
+Cross-Validation Recall: 0.9740 ± 0.0342
+Cross-Validation Precision: 0.9664 ± 0.0580
+
+++++ CDRMSC result:
+
+Cluster 0 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.9999
+Cross-Validation F1 Score: 0.9997
+Cross-Validation Recall: 0.9995
+
+Cluster 1 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.9371
+Cross-Validation F1 Score: 0.9339
+Cross-Validation Recall: 0.9447
+
+Cluster 2 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.9994
+Cross-Validation F1 Score: 0.9949
+Cross-Validation Recall: 0.9947
+
+
+############# Test Round 2 #############
+
+features = [
+    'sTtl', 'Mean', 'SrcBytes', 'TotBytes', 'DstWin', 'SrcWin', 'AckDat', 
+    'TcpRtt', 'TcpOpt_MwsS  T', 'dTtl', 'SynAck', 'Rate', 'Min', 'Dur', 'Flgs_ e s      ',
+        'State_S_', 'PCRatio', 'TotPkts', 'DstPkts', 'dMeanPktSz'
+]
+
+++++ RF result:
+
+Cross-Validation Accuracy: 0.8449 ± 0.0445
+Cross-Validation F1 Score: 0.5537 ± 0.0498
+Cross-Validation Recall: 0.5421 ± 0.0372
+Cross-Validation Precision: 0.5966 ± 0.0755
+
+++++ CDRMSC result:
+
+Cluster 0 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.9307
+Cross-Validation F1 Score: 0.7627
+Cross-Validation Recall: 0.7500
+Cross-Validation Precision: 0.7925
+
+Cluster 1 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.9069
+Cross-Validation F1 Score: 0.8870
+Cross-Validation Recall: 0.8767
+Cross-Validation Precision: 0.9028
+
+Cluster 2 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.8591
+Cross-Validation F1 Score: 0.7043
+Cross-Validation Recall: 0.7229
+Cross-Validation Precision: 0.7192
+
+############# Test Round 3 #############
+
+features = [
+    'sTtl', 'Mean', 'DstWin', 'SrcWin', 'AckDat', 'TcpRtt', 'TcpOpt_MwsS  T',
+    'dTtl', 'SynAck', 'Rate', 'Min', 'Dur', 'Flgs_ e s      ',
+    'State_S_', 'PCRatio', 'TotPkts', 'DstPkts'
+]
+
+++++ RF result:
+
+Cross-Validation Accuracy: 0.7442 ± 0.0434
+Cross-Validation F1 Score: 0.4221 ± 0.0239
+Cross-Validation Recall: 0.4144 ± 0.0202
+Cross-Validation Precision: 0.4924 ± 0.0560
+
+++++ CDRMSC result:
+
+Cluster 0 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.8970
+Cross-Validation F1 Score: 0.6966
+Cross-Validation Recall: 0.6814
+Cross-Validation Precision: 0.7509
+
+Cluster 1 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.8946
+Cross-Validation F1 Score: 0.8659
+Cross-Validation Recall: 0.8435
+Cross-Validation Precision: 0.9045
+
+Cluster 2 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.7864
+Cross-Validation F1 Score: 0.5312
+Cross-Validation Recall: 0.5109
+Cross-Validation Precision: 0.6071
+
+############# Test Round 4 #############
+
+features = [
+    'sTtl', 'Mean', 'DstWin', 'SrcWin', 'AckDat', 'TcpRtt', 'TcpOpt_MwsS  T',
+    'dTtl', 'SynAck', 'Rate', 'Min', 'Dur',
+    'State_S_', 'PCRatio'
+]
+
+++++ RF result:
+
+Cross-Validation Accuracy: 0.5885 ± 0.0392
+Cross-Validation F1 Score: 0.3018 ± 0.0143
+Cross-Validation Recall: 0.3051 ± 0.0094
+Cross-Validation Precision: 0.4078 ± 0.0646
+
+++++ CDRMSC result:
+
+Cluster 0 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.7975
+Cross-Validation F1 Score: 0.5648
+Cross-Validation Recall: 0.5596
+Cross-Validation Precision: 0.6863
+
+Cluster 1 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.8934
+Cross-Validation F1 Score: 0.8640
+Cross-Validation Recall: 0.8415
+Cross-Validation Precision: 0.9034
+
+Cluster 2 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.7547
+Cross-Validation F1 Score: 0.4967
+Cross-Validation Recall: 0.4770
+Cross-Validation Precision: 0.5803
+
+############# Test Round 5 #############
+
+features = [
+    'sTtl', 'DstWin', 'SrcWin', 'AckDat', 'TcpRtt',
+    'TcpOpt_MwsS  T','dTtl', 'SynAck', 'Dur',
+    'State_S_', 'PCRatio'
+]
+
+++++ RF result:
+
+Cross-Validation Accuracy: 0.4658 ± 0.0621
+Cross-Validation F1 Score: 0.2191 ± 0.0100
+Cross-Validation Recall: 0.2354 ± 0.0115
+Cross-Validation Precision: 0.3597 ± 0.1027
+
+++++ CDRMSC result:
+
+Cluster 0 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.6884
+Cross-Validation F1 Score: 0.4708
+Cross-Validation Recall: 0.4796
+Cross-Validation Precision: 0.5628
+
+Cluster 1 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.8329
+Cross-Validation F1 Score: 0.7893
+Cross-Validation Recall: 0.7741
+Cross-Validation Precision: 0.8216
+
+Cluster 2 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.7336
+Cross-Validation F1 Score: 0.4254
+Cross-Validation Recall: 0.4169
+Cross-Validation Precision: 0.5136
+
+
+############# Test Round 6 #############
+
+features = [
+    'sTtl', 'AckDat', 'TcpRtt',
+    'TcpOpt_MwsS  T','dTtl', 'SynAck',
+    'State_S_', 'PCRatio'
+]
+
+++++ RF result:
+
+Cross-Validation Accuracy: 0.3150 ± 0.0299
+Cross-Validation F1 Score: 0.0934 ± 0.0361
+Cross-Validation Recall: 0.1509 ± 0.0279
+Cross-Validation Precision: 0.2286 ± 0.1111
+
+++++ CDRMSC result:
+
+Cluster 0 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.6092
+Cross-Validation F1 Score: 0.3509
+Cross-Validation Recall: 0.3996
+Cross-Validation Precision: 0.3625
+
+Cluster 1 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.7235
+Cross-Validation F1 Score: 0.4796
+Cross-Validation Recall: 0.5449
+Cross-Validation Precision: 0.6591
+
+Cluster 2 - Random Forest Classifier Performance:
+Cross-Validation Accuracy: 0.6839
+Cross-Validation F1 Score: 0.3138
+Cross-Validation Recall: 0.3429
+Cross-Validation Precision: 0.5163
