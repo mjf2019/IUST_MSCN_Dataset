@@ -1,0 +1,52 @@
+0            DstWin    0.264053
+1          IdleTime    0.145537
+2            SrcWin    0.143784
+3    TcpOpt_MwsS  T    0.094702
+4        sMeanPktSz    0.051388
+5          SrcBytes    0.042245
+6        dMeanPktSz    0.035561
+7          DstBytes    0.028585
+8          TotBytes    0.026635
+9            SynAck    0.020716
+
+
+Feature Importance:
+            feature  importance
+0            DstWin    0.278220
+1            SrcWin    0.126049
+2          IdleTime    0.108348
+3            AckDat    0.058765
+4            TcpRtt    0.054586
+5    TcpOpt_MwsS  T    0.050600
+6          SrcBytes    0.048304
+7        sMeanPktSz    0.042766
+8            SynAck    0.032165
+9          DstBytes    0.029332
+
+
+Feature Importance:
+            feature  importance
+0            DstWin    0.222265
+1          IdleTime    0.144122
+2            SrcWin    0.101248
+3        sMeanPktSz    0.075809
+4          SrcBytes    0.062240
+5    TcpOpt_MwsS  T    0.043356
+6            TcpRtt    0.039493
+7            AckDat    0.037079
+8           SrcLoad    0.034056
+9          DstBytes    0.028361
+
+
+# most importance top 1o features in all three lavel
+
+0            DstWin    0.264053
+1          IdleTime    0.145537
+2            SrcWin    0.143784
+3    TcpOpt_MwsS  T    0.094702
+4        sMeanPktSz    0.051388
+5          SrcBytes    0.042245
+9          DstBytes    0.028361
+3            AckDat    0.058765
+6            TcpRtt    0.039493
+8            SynAck    0.032165

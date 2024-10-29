@@ -14,7 +14,7 @@ class ModelTrainer:
     def __init__(self, config_path):
         self.config_path = config_path
         self.load_config()
-        self.rf = RandomForestClassifier(n_estimators=100, random_state=self.random_state)
+        self.rf = RandomForestClassifier(n_estimators=10, random_state=self.random_state)
         self.X_train = None
         self.y_train = None
         self.X_test = None
