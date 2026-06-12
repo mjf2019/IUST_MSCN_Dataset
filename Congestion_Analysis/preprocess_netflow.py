@@ -103,11 +103,14 @@ class PreprocessNetflow:
         for filename in os.listdir(self.ori_directory_path):
             # Datasets are stored in .flow format
             if filename.endswith(".flow"):
+                print(filename)
                 # Extract number from filename as label value
                 label_match = re.search(r'(\d+)', filename)
+                print(label_match)
                 if label_match:
                     label_value = int(label_match.group(1))
                     filepath = os.path.join(self.ori_directory_path, filename)
+                    print(filepath)
                     try:
                         df = pd.read_csv(filepath)
                         if df.empty:

@@ -1,15 +1,15 @@
 ##### STEP 1: Preprocess Section #####
 # Run preprocess_netflow.py
 pre:
-  input_dataset_path: 0_original_dataset/scale_0.001/VIDEO/flow/all/
-  output_dataset_path: 1_not_scale_preprocessed_dataset/scale_0.001/VIDEO/all/
+  input_dataset_path: 0_original_dataset/scale_5/VIDEO/flow/all/
+  output_dataset_path: 1_not_scale_preprocessed_dataset/scale_5/VIDEO/all/
 
 # NOTE: if use 14 level dataset use following code for create data
 ##### STEP 2: Pre standardization Section #####
 # Run standard_pre_data_integration.py
 pre_std:
-  input_dataset_path:  1_not_scale_preprocessed_dataset/scale_0.001/
-  output_dataset_path: 2_kpi_not_scale_pre_dataset/scale_0.001/
+  input_dataset_path:  1_not_scale_preprocessed_dataset/scale_5/
+  output_dataset_path: 2_kpi_not_scale_pre_dataset/scale_5/
   feature_type: all
   class_types:
     - SFTP
@@ -23,8 +23,8 @@ pre_std:
 # Convert 14 Levels to 3 KPI Levels
 # Run kpi_level_convertor.py
 kpi:
-  input_dataset_path: '1_not_scale_preprocessed_dataset/scale_0.001/SFTP/all/preprocessed_dataset.csv'
-  output_dataset_path: '2_kpi_not_scale_pre_dataset/scale_0.001/all/SFTP_preprocessed_dataset.csv'
+  input_dataset_path: '1_not_scale_preprocessed_dataset/scale_5/VIDEO/all/preprocessed_dataset.csv'
+  output_dataset_path: '2_kpi_not_scale_pre_dataset/scale_5/all/VIDEO_preprocessed_dataset.csv'
   level_1: [1, 2, 3]
   level_2: [4, 5, 6, 7, 8, 9, 10, 11]
   level_3: [12, 13, 14]
@@ -33,16 +33,16 @@ kpi:
 # Standardization to equalize the number of columns
 # Run dataset_standard.py
 std:
-  input_dataset_path: 2_kpi_not_scale_pre_dataset/scale_0.001/
-  out_dataset_path: 3_kpi_not_scale_std_dataset/scale_0.001/
+  input_dataset_path: 2_kpi_not_scale_pre_dataset/scale_5/
+  out_dataset_path: 3_kpi_not_scale_std_dataset/scale_5/
   label_column: label
   feature_type: all
 
 ##### STEP 4: Merger Section #####
 # Run dataset_merger.py
 mr:
-  input_dataset_path: 3_kpi_not_scale_std_dataset/scale_0.001/
-  output_dataset_path: 4_kpi_not_scale_mr_std_dataset/scale_0.001/
+  input_dataset_path: 3_kpi_not_scale_std_dataset/scale_5/
+  output_dataset_path: 4_kpi_not_scale_mr_std_dataset/scale_5/
   feature_type: all
   level_count: 3
 
