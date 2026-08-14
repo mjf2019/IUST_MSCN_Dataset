@@ -49,32 +49,13 @@ Each switch and router has a specific service capacity. The node with the lowest
 
 The bottleneck service rate is defined as:
 
-$
-\mu_{\mathrm{bottleneck}}
-=
-\min_{i=1,\ldots,N} \mu_i
-$
+$\mu_{\mathrm{bottleneck}} = \min_{i=1,\ldots,N} \mu_i$
 
 where $\mu_i$ is the service rate of node $i$.
 
 The required iPerf traffic rate is calculated based on the target utilization of the bottleneck node and the existing background traffic:
 
-\[
-b_{\mathrm{iPerf}}(t)
-=
-\max\left(
-0,\,
-\rho_{\mathrm{target}}(t)
-\mu_{\mathrm{bottleneck}}
--
-\lambda_{\mathrm{background}}(t)
-\right)
-\left(
-L_{\mathrm{packet}}
-+
-H_{\mathrm{UDP}}
-\right)
-\]
+$b_{\mathrm{iPerf}}(t) = \max\left( 0,\, \rho_{\mathrm{target}}(t) \mu_{\mathrm{bottleneck}} - \lambda_{\mathrm{background}}(t) \right) \left(L_{\mathrm{packet}} + H_{\mathrm{UDP}}\right)$
 
 where:
 
@@ -217,48 +198,7 @@ The resulting `merged_standard_dataset` is intended for experiments involving mu
 
 The complete dataset generation and processing pipeline is:
 
-```
-GNS3 Network
-     |
-     v
-Application Traffic
-HTTP / VIDEO / SSH / SFTP / SMTP
-     |
-     +
-     |
-iPerf UDP Traffic
-     |
-     v
-Controlled Congestion
-Low / Medium / High
-     |
-     v
-PCAP Files
-     |
-     v
-Argus
-     |
-     v
-NetFlow
-     |
-     v
-Preprocessing
-     |
-     v
-Dataset Integration
-     |
-     v
-Standardization
-     |
-     +-------------------------+
-     |                         |
-     v                         v
-standard_dataset       merged_standard_dataset
-     |                         |
-     v                         v
-Per-Class Analysis     Multiclass / Multi-label
-                       Classification Analysis
-```
+![Processing Pipline](images/Dataset_Workflow.png)
 
 ## Dataset Structure
 
