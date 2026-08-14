@@ -9,7 +9,7 @@ GNS3 emulator is used to create and save network traffic (PCAP). The general arc
 ## Network Architecture
 In the design of the network architecture, host-switch, switch-gateway, and gateway-gateway connections have been implemented. This network consists of four local networks connected to each other through three routers. The iperf tool is used to add overhead to the network. Adding overhead causes congestion, which affects network performance metrics such as delay, jitter, loss, and throughput. These changes vary depending on the volume of load exchanged within the network.
 
-![Project Logo](images/GNS3_Arch.png)
+![Project Logo](images/Dataset_Arch.png)
 
 To create different levels of network performance, hosts are used as follows:
 
@@ -62,4 +62,14 @@ Run following command:
 NOTE: merged_standard_dataset is for analysis multi label classifier in various level on congestion.
 
 
+## Methods
+
+Each evaluated method is organized in a separate folder at the root of the repository. The corresponding folder contains the implementation and required files for that method.
+
+The repository currently includes the following methods:
+
+* **CDR-MLC** — located in the `CDR-MLC/` folder.
+* **AMCAL** — located in the `AMCAL/` folder.
+
+To reproduce the results for a specific method, navigate to its corresponding folder and follow the instructions provided in its README or execution scripts.
 
