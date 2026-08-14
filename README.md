@@ -49,11 +49,11 @@ Each switch and router has a specific service capacity. The node with the lowest
 
 The bottleneck service rate is defined as:
 
-\[
+$
 \mu_{\mathrm{bottleneck}}
 =
 \min_{i=1,\ldots,N} \mu_i
-\]
+$
 
 where $\mu_i$ is the service rate of node $i$.
 
