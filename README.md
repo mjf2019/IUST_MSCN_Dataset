@@ -49,28 +49,24 @@ Each switch and router has a specific service capacity. The node with the lowest
 
 The bottleneck service rate is defined as:
 
-$$
+\[
 \mu_{\mathrm{bottleneck}}
-=========================
-
+=
 \min_{i=1,\ldots,N} \mu_i
-$$
+\]
 
 where $\mu_i$ is the service rate of node $i$.
 
 The required iPerf traffic rate is calculated based on the target utilization of the bottleneck node and the existing background traffic:
 
-$$
+\[
 b_{\mathrm{iPerf}}(t)
-=====================
-
-\max
-\left(
-0,,
+=
+\max\left(
+0,\,
 \rho_{\mathrm{target}}(t)
 \mu_{\mathrm{bottleneck}}
--------------------------
-
+-
 \lambda_{\mathrm{background}}(t)
 \right)
 \left(
@@ -78,7 +74,7 @@ L_{\mathrm{packet}}
 +
 H_{\mathrm{UDP}}
 \right)
-$$
+\]
 
 where:
 
