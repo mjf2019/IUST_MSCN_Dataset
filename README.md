@@ -198,7 +198,9 @@ The resulting `merged_standard_dataset` is intended for experiments involving mu
 
 The complete dataset generation and processing pipeline is:
 
-![Processing Pipline](images/Dataset_Workflow.png)
+<p align="center">
+  <img src="images/Dataset_Workflow.png" alt="Processing Pipeline" height= "600" width="400">
+</p>
 
 ## Dataset Structure
 
