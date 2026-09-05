@@ -1,0 +1,131 @@
+{
+  "scenario": "scenario_3",
+  "seed": 42,
+  "train_file": "DATASETS/CDR-MLC/scale_1/Short/level_2.csv",
+  "test_file": "DATASETS/CDR-MLC/scale_1/Short/level_3.csv",
+  "train_samples": 2943,
+  "test_samples": 2263,
+  "config": {
+    "target_column": "label",
+    "congestion_features": [
+      "SynAck",
+      "AckDat",
+      "TcpRtt"
+    ],
+    "window_statistics": [
+      "mean",
+      "median",
+      "std",
+      "min",
+      "max"
+    ],
+    "window_size": 3,
+    "n_clusters": 3,
+    "n_estimators": 20,
+    "random_state": 42,
+    "drop_columns": [
+      "IdleTime"
+    ]
+  },
+  "metrics": {
+    "accuracy": 0.8674326115775519,
+    "precision_weighted": 0.8764357023851248,
+    "recall_weighted": 0.8674326115775519,
+    "f1_weighted": 0.8677323742252131,
+    "f1_macro": 0.8726563844438164
+  },
+  "timing": {
+    "fit_seconds": 0.40639891800014993,
+    "predict_seconds": 0.22282369099980315,
+    "microseconds_per_sample": 98.4638493149815,
+    "samples_per_second": 10156.011642415524
+  },
+  "route_counts": {
+    "0": 1328,
+    "1": 935
+  },
+  "model": {
+    "config": {
+      "target_column": "label",
+      "congestion_features": [
+        "SynAck",
+        "AckDat",
+        "TcpRtt"
+      ],
+      "window_statistics": [
+        "mean",
+        "median",
+        "std",
+        "min",
+        "max"
+      ],
+      "window_size": 3,
+      "n_clusters": 3,
+      "n_estimators": 20,
+      "random_state": 42,
+      "drop_columns": [
+        "IdleTime"
+      ]
+    },
+    "classification_feature_count": 32,
+    "classification_features": [
+      "pRetran",
+      "SrcRetra",
+      "PCRatio",
+      "SrcWin",
+      "SrcLoss",
+      "DstRate",
+      "SrcLoad",
+      "Load",
+      "DstLoad",
+      "Sum",
+      "dTtl",
+      "Min",
+      "pLoss",
+      "DstLoss",
+      "Loss",
+      "StdDev",
+      "Rate",
+      "SrcRate",
+      "Dur",
+      "SrcPkts",
+      "SrcGap",
+      "DstBytes",
+      "DstGap",
+      "sTtl",
+      "DstWin",
+      "TotPkts",
+      "DstPkts",
+      "Mean",
+      "SrcBytes",
+      "TotBytes",
+      "dMeanPktSz",
+      "DstRetra"
+    ],
+    "classes": [
+      "HTTP",
+      "SFTP",
+      "SMTP",
+      "SSH",
+      "VIDEO"
+    ],
+    "expert_training_classes": {
+      "0": [
+        "HTTP",
+        "SFTP",
+        "SMTP",
+        "SSH",
+        "VIDEO"
+      ],
+      "1": [
+        "HTTP",
+        "SMTP",
+        "SSH",
+        "VIDEO"
+      ],
+      "2": [
+        "VIDEO"
+      ]
+    }
+  }
+}
