@@ -1,5 +1,8 @@
 venv/
 __pycache__/
+.venv/
+.ipynb_checkpoints/
+*.py[cod]
 Congestion_Analysis/7_LSTM_Feature_Modeling_dataset/
 Congestion_Analysis/6_kpi_not_scale_FE_dataset/
 Congestion_Analysis/5_kpi_not_scale_FS_dataset/
@@ -16,6 +19,8 @@ FTSC_Dataset.pickle
 Perturbation_test.ipynb
 DATASETS/AdDDoSDN
 DATASETS/CDR-MLC/scale_0.001
+/CDR_MLC/DATASETS/CDR-MLC/scale_0.001/
+/CDR_MLC/results/runs/
 DATASETS/CTU-13
 DATASETS/SDN-TCP-SYN-DDOS
 AdaFlow/

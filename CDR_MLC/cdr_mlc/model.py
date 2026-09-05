@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import asdict, dataclass
-from typing import Iterable, Sequence
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -48,37 +47,25 @@ class CausalWindowTransformer:
         if missing:
             raise ValueError(f"Missing congestion features: {sorted(missing)}")
 
-        windows = {name: deque(maxlen=self.window_size) for name in self.features}
-        rows: list[list[float]] = []
-        for values in frame.loc[:, self.features].itertuples(index=False, name=None):
-            row: list[float] = []
-            for feature, value in zip(self.features, values):
-                windows[feature].append(float(value))
-                current = np.asarray(windows[feature], dtype=float)
-                for statistic in self.statistics:
-                    row.append(self._statistic(current, statistic))
-            rows.append(row)
-
-        columns = [
-            f"{feature}_{statistic}"
-            for feature in self.features
-            for statistic in self.statistics
-        ]
-        return pd.DataFrame(rows, columns=columns, index=frame.index)
-
-    @staticmethod
-    def _statistic(values: np.ndarray, statistic: str) -> float:
-        if statistic == "mean":
-            return float(np.mean(values))
-        if statistic == "median":
-            return float(np.median(values))
-        if statistic == "std":
-            return float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
-        if statistic == "min":
-            return float(np.min(values))
-        if statistic == "max":
-            return float(np.max(values))
-        raise AssertionError(f"Unreachable statistic: {statistic}")
+        # Pandas rolling is vectorised and, with center=False, contains only the
+        # current and previous rows. This is substantially faster than a Python
+        # row loop on the full 1.43 GB experiment dataset.
+        columns: dict[str, pd.Series] = {}
+        for feature in self.features:
+            values = frame[feature].astype(np.float32, copy=False)
+            rolling = values.rolling(window=self.window_size, min_periods=1)
+            statistic_series = {
+                "mean": rolling.mean(),
+                "median": rolling.median(),
+                "std": rolling.std(ddof=1).fillna(0.0),
+                "min": rolling.min(),
+                "max": rolling.max(),
+            }
+            for statistic in self.statistics:
+                columns[f"{feature}_{statistic}"] = statistic_series[statistic].astype(
+                    np.float32
+                )
+        return pd.DataFrame(columns, index=frame.index)
 
 
 class CDRMLC:
@@ -105,6 +92,7 @@ class CDRMLC:
         )
         self.experts: dict[int, RandomForestClassifier] = {}
         self.classification_features_: list[str] = []
+        self.training_route_counts_: dict[int, int] = {}
         self.classes_: np.ndarray | None = None
         self.is_fitted_ = False
 
@@ -120,6 +108,10 @@ class CDRMLC:
         scaled_routing = self.routing_scaler.fit_transform(routing_features)
         self.router.fit(scaled_routing)
         train_clusters = self.router.predict(scaled_routing)
+        self.training_route_counts_ = {
+            int(cluster): int(count)
+            for cluster, count in zip(*np.unique(train_clusters, return_counts=True))
+        }
 
         predictors = prepared.loc[:, self.classification_features_]
         self.experts = {}
@@ -179,6 +171,7 @@ class CDRMLC:
                 str(cluster): expert.classes_.tolist()
                 for cluster, expert in self.experts.items()
             },
+            "training_route_counts": self.training_route_counts_,
         }
 
     def _prepare_frame(self, frame: pd.DataFrame, require_target: bool) -> pd.DataFrame:
@@ -215,9 +208,10 @@ class CDRMLC:
         )
 
     def _validate_inference_schema(self, frame: pd.DataFrame) -> None:
-        missing = set(self.classification_features_) - set(frame.columns)
+        required = set(self.classification_features_) | set(self.config.congestion_features)
+        missing = required - set(frame.columns)
         if missing:
-            raise ValueError(f"Missing classification features: {sorted(missing)}")
+            raise ValueError(f"Missing required inference features: {sorted(missing)}")
 
     def _require_fitted(self) -> None:
         if not self.is_fitted_:

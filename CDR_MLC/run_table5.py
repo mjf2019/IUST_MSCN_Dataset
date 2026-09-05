@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import time
 from dataclasses import asdict
@@ -14,6 +15,8 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
 from cdr_mlc import CDRMLC, CDRMLCConfig
+
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 
 def scenario_paths(data_root: Path) -> dict[str, tuple[Path, Path]]:
@@ -41,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-root",
         type=Path,
-        default=Path("DATASETS/CDR-MLC/scale_1"),
+        default=PROJECT_ROOT / "DATASETS/CDR-MLC/scale_0.001",
         help="Directory containing Short/ and Long/",
     )
     parser.add_argument(
@@ -53,14 +56,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seeds", nargs="+", type=int, default=[42])
     parser.add_argument("--window-size", type=int, default=3)
     parser.add_argument("--n-estimators", type=int, default=20)
-    parser.add_argument("--output-dir", type=Path, default=Path("CDR_MLC/results/table5"))
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=PROJECT_ROOT / "results/runs/table5",
+        help="Generated files go here; results/runs is ignored by Git.",
+    )
     return parser.parse_args()
 
 
 def load_frame(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Required Table 5 dataset is missing: {path}")
-    return pd.read_csv(path)
+    header = pd.read_csv(path, nrows=0)
+    if "label" not in header.columns:
+        raise ValueError(f"Required target column 'label' is missing from {path}")
+    ignored = {"IdleTime"}
+    columns = [column for column in header.columns if column not in ignored]
+    dtypes = {column: np.float32 for column in columns if column != "label"}
+    try:
+        frame = pd.read_csv(path, usecols=columns, dtype=dtypes)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"Non-numeric feature or invalid value in {path}: {error}") from error
+    numeric = frame.select_dtypes(include=[np.number])
+    if numeric.isna().any().any() or not np.isfinite(numeric.to_numpy()).all():
+        raise ValueError(f"NaN or infinite numeric value found in {path}")
+    return frame
 
 
 def run_once(
@@ -71,9 +92,8 @@ def run_once(
     window_size: int,
     n_estimators: int,
 ) -> dict[str, object]:
+    print(f"[{scenario} seed={seed}] loading training data: {train_path}", flush=True)
     train = load_frame(train_path)
-    test = load_frame(test_path)
-    y_test = test["label"].to_numpy()
     config = CDRMLCConfig(
         window_size=window_size,
         n_estimators=n_estimators,
@@ -81,11 +101,22 @@ def run_once(
     )
     model = CDRMLC(config)
 
+    print(f"[{scenario} seed={seed}] fitting {len(train):,} samples", flush=True)
     fit_started = time.perf_counter()
     model.fit(train)
     fit_seconds = time.perf_counter() - fit_started
+    train_samples = len(train)
+    del train
+    gc.collect()
+
+    # Load the test set only after fitting, avoiding simultaneous train/test
+    # DataFrames in memory for the full-scale experiments.
+    print(f"[{scenario} seed={seed}] loading test data: {test_path}", flush=True)
+    test = load_frame(test_path)
+    y_test = test.pop("label").to_numpy()
+    print(f"[{scenario} seed={seed}] predicting {len(test):,} samples", flush=True)
     predict_started = time.perf_counter()
-    predictions, routes = model.predict_with_routes(test.drop(columns=["label"]))
+    predictions, routes = model.predict_with_routes(test)
     predict_seconds = time.perf_counter() - predict_started
 
     return {
@@ -93,7 +124,7 @@ def run_once(
         "seed": seed,
         "train_file": str(train_path),
         "test_file": str(test_path),
-        "train_samples": len(train),
+        "train_samples": train_samples,
         "test_samples": len(test),
         "config": asdict(config),
         "metrics": {

@@ -21,16 +21,12 @@ python -m pytest CDR_MLC/tests -q
 All manuscript metrics produced before this correction must be treated as invalid until
 the corrected pipeline has been rerun with the documented train/test scenarios.
 
-## First corrected baseline
+## Existing smoke results
 
-The first smoke run uses Scenario 2 (low-congestion training data and
-high-congestion test data), seed 42, three clusters, and a causal window of size 3.
-It produces 32 classification features after excluding the three routing features.
-The corrected single-run accuracy is `0.868758` and weighted F1 is `0.865043`.
-
-The submitted Table 5 values for this scenario must not be reused. This smoke result
-is stored in `results/validity/scenario_2_seed_42.json`; final manuscript values will
-be based on repeated runs and statistical uncertainty estimates.
+Results under `results/validity` and `results/table5/scale_1` are development checks
+on the small `scale_1` data. They are not replacements for the manuscript's Table 5.
+Final values must be generated from `scale_0.001`, with its original sample counts,
+and should be reported over repeated deterministic seeds.
 
 ## Leakage-safe reference implementation
 
@@ -49,10 +45,8 @@ enforces the intended hard-gated mixture-of-experts contract:
 Run a Table 5 scenario with:
 
 ```bash
-python CDR_MLC/run_table5.py \
-  --data-root DATASETS/CDR-MLC/scale_1 \
-  --scenarios scenario_2 \
-  --seeds 42
+cd CDR_MLC
+python run_table5.py --scenarios scenario_2 --seeds 42
 ```
 
 Use the exact dataset scale and sample counts reported in the manuscript for final
