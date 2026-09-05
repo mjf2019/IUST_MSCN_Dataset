@@ -31,3 +31,30 @@ The corrected single-run accuracy is `0.868758` and weighted F1 is `0.865043`.
 The submitted Table 5 values for this scenario must not be reused. This smoke result
 is stored in `results/validity/scenario_2_seed_42.json`; final manuscript values will
 be based on repeated runs and statistical uncertainty estimates.
+
+## Leakage-safe reference implementation
+
+`cdr_mlc/model.py` is the reference implementation for all revised experiments. It
+enforces the intended hard-gated mixture-of-experts contract:
+
+1. The Mini-Batch K-Means router is fitted only on causal window statistics of
+   `SynAck`, `AckDat`, and `TcpRtt`.
+2. Training samples are assigned with the fitted router's `predict` method; traffic
+   class labels never alter cluster assignments.
+3. Each cluster fits one multiclass Random Forest expert using 32 non-congestion
+   traffic features and 20 trees by default.
+4. Inference selects exactly one expert using the router. Target columns and
+   target-derived metadata are ignored even if supplied by a caller.
+
+Run a Table 5 scenario with:
+
+```bash
+python CDR_MLC/run_table5.py \
+  --data-root DATASETS/CDR-MLC/scale_1 \
+  --scenarios scenario_2 \
+  --seeds 42
+```
+
+Use the exact dataset scale and sample counts reported in the manuscript for final
+comparisons. The runner records configuration, feature names, routing counts, runtime,
+and metrics in machine-readable JSON files.
