@@ -1,0 +1,22 @@
+{
+  "status": "corrected_label_free_baseline",
+  "scenario": "IUST_MSCN_1 low congestion to high congestion",
+  "train_file": "DATASETS/CDR-MLC/scale_1/Short/level_1.csv",
+  "test_file": "DATASETS/CDR-MLC/scale_1/Short/level_3.csv",
+  "train_samples": 1930,
+  "test_samples": 2263,
+  "random_state": 42,
+  "n_clusters": 3,
+  "window_size": 3,
+  "window_statistics": ["mean", "median", "std", "min", "max"],
+  "routing": "minibatch_kmeans_nearest_centroid",
+  "classification_feature_count": 32,
+  "metrics": {
+    "accuracy": 0.8687582854617764,
+    "precision_weighted": 0.8717880434237225,
+    "recall_weighted": 0.8687582854617764,
+    "f1_weighted": 0.8650431201943182,
+    "f1_macro": 0.8762496914777899
+  },
+  "warning": "This is a single-seed validity baseline, not a final manuscript result."
+}
