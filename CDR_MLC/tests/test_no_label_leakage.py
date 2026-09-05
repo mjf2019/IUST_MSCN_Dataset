@@ -52,6 +52,24 @@ def test_classifier_features_exclude_every_label_representation():
     assert forbidden.isdisjoint(result["classification_features"])
 
 
+def test_sliding_window_features_do_not_use_future_rows():
+    ns = load_pipeline_namespace()
+    original = make_dataset(8, size=6)
+    changed_future = original.copy()
+    changed_future.loc[3:, ["SynAck", "AckDat", "TcpRtt"]] = 1_000_000
+
+    original_stats, _ = ns["compute_sliding_window_stats"](
+        original, ["SynAck", "AckDat", "TcpRtt"], 3,
+        ["mean", "median", "std", "min", "max"]
+    )
+    changed_stats, _ = ns["compute_sliding_window_stats"](
+        changed_future, ["SynAck", "AckDat", "TcpRtt"], 3,
+        ["mean", "median", "std", "min", "max"]
+    )
+
+    pd.testing.assert_frame_equal(original_stats.iloc[:3], changed_stats.iloc[:3])
+
+
 def test_deployment_prediction_is_independent_of_supplied_label():
     ns = load_pipeline_namespace()
     result = ns["universal_clustering_pipeline"](
