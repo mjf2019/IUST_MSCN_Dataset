@@ -1,0 +1,520 @@
+{
+  "scope": "Engineering validation on committed scale_1/Short CSVs, not reproduction of published metrics",
+  "tests_passed": 12,
+  "scenarios": {
+    "1": {
+      "config": {
+        "window_size": 3,
+        "n_clusters": 3,
+        "n_estimators": 20,
+        "random_state": 42,
+        "batch_size": 1024,
+        "n_init": 10,
+        "max_iter": 100,
+        "scale_trends": true,
+        "std_ddof": 1,
+        "n_jobs": -1
+      },
+      "metrics": {
+        "n_samples": 2943,
+        "accuracy": 0.7957866123003737,
+        "classification_report": {
+          "HTTP": {
+            "precision": 0.7394209354120267,
+            "recall": 0.89568345323741,
+            "f1-score": 0.8100854005693371,
+            "support": 1112.0
+          },
+          "SFTP": {
+            "precision": 0.9736842105263158,
+            "recall": 0.9296482412060302,
+            "f1-score": 0.9511568123393316,
+            "support": 199.0
+          },
+          "SMTP": {
+            "precision": 0.6535087719298246,
+            "recall": 0.8142076502732241,
+            "f1-score": 0.7250608272506083,
+            "support": 183.0
+          },
+          "SSH": {
+            "precision": 0.8424657534246576,
+            "recall": 0.7592592592592593,
+            "f1-score": 0.7987012987012987,
+            "support": 162.0
+          },
+          "VIDEO": {
+            "precision": 0.8614341085271318,
+            "recall": 0.6907536907536908,
+            "f1-score": 0.7667097887020268,
+            "support": 1287.0
+          },
+          "accuracy": 0.7957866123003737,
+          "macro avg": {
+            "precision": 0.8141027559639913,
+            "recall": 0.8179104589459228,
+            "f1-score": 0.8103428255125206,
+            "support": 2943.0
+          },
+          "weighted avg": {
+            "precision": 0.8089488593493991,
+            "recall": 0.7957866123003737,
+            "f1-score": 0.7947422395258614,
+            "support": 2943.0
+          }
+        },
+        "confusion_matrix": [
+          [
+            996,
+            4,
+            8,
+            2,
+            102
+          ],
+          [
+            2,
+            185,
+            0,
+            0,
+            12
+          ],
+          [
+            9,
+            0,
+            149,
+            3,
+            22
+          ],
+          [
+            19,
+            1,
+            12,
+            123,
+            7
+          ],
+          [
+            321,
+            0,
+            59,
+            18,
+            889
+          ]
+        ],
+        "confusion_matrix_labels": [
+          "HTTP",
+          "SFTP",
+          "SMTP",
+          "SSH",
+          "VIDEO"
+        ],
+        "unseen_test_classes": []
+      },
+      "train_files": [
+        {
+          "path": "/workspace/scratch/0f6cf5971a40/repo/CDR_MLC/DATASETS/CDR-MLC/scale_1/Short/level_1.csv",
+          "sha256": "273b898226e00902aac4114d8133f898e8fb3668b013d97ef610765872f86410",
+          "rows": 1930
+        }
+      ],
+      "test_files": [
+        {
+          "path": "/workspace/scratch/0f6cf5971a40/repo/CDR_MLC/DATASETS/CDR-MLC/scale_1/Short/level_2.csv",
+          "sha256": "f9551808ca5b713b736c8028ad897613a6ac34e754c8eb5b1076f7902489154e",
+          "rows": 2943
+        }
+      ],
+      "versions": {
+        "python": "3.12.14",
+        "sklearn": "1.8.0",
+        "numpy": "2.3.5",
+        "pandas": "2.2.3"
+      },
+      "missing_classes_per_expert": {
+        "0": [
+          "HTTP",
+          "SFTP",
+          "SSH"
+        ],
+        "1": [
+          "SFTP"
+        ],
+        "2": [
+          "SSH"
+        ]
+      },
+      "feature_overlap_rows": 16,
+      "train_cluster_counts": [
+        82,
+        672,
+        1176
+      ],
+      "test_cluster_counts": [
+        308,
+        1199,
+        1436
+      ]
+    },
+    "2": {
+      "config": {
+        "window_size": 3,
+        "n_clusters": 3,
+        "n_estimators": 20,
+        "random_state": 42,
+        "batch_size": 1024,
+        "n_init": 10,
+        "max_iter": 100,
+        "scale_trends": true,
+        "std_ddof": 1,
+        "n_jobs": -1
+      },
+      "metrics": {
+        "n_samples": 2263,
+        "accuracy": 0.8541758727353072,
+        "classification_report": {
+          "HTTP": {
+            "precision": 0.8380332610267535,
+            "recall": 0.9445802770986145,
+            "f1-score": 0.8881226053639847,
+            "support": 1227.0
+          },
+          "SFTP": {
+            "precision": 0.9618320610687023,
+            "recall": 0.9333333333333333,
+            "f1-score": 0.9473684210526315,
+            "support": 135.0
+          },
+          "SMTP": {
+            "precision": 0.8814814814814815,
+            "recall": 0.9596774193548387,
+            "f1-score": 0.918918918918919,
+            "support": 124.0
+          },
+          "SSH": {
+            "precision": 0.8787878787878788,
+            "recall": 0.7016129032258065,
+            "f1-score": 0.7802690582959642,
+            "support": 124.0
+          },
+          "VIDEO": {
+            "precision": 0.858252427184466,
+            "recall": 0.6768759571209801,
+            "f1-score": 0.7568493150684932,
+            "support": 653.0
+          },
+          "accuracy": 0.8541758727353072,
+          "macro avg": {
+            "precision": 0.8836774219098563,
+            "recall": 0.8432159780267146,
+            "f1-score": 0.8583056637399984,
+            "support": 2263.0
+          },
+          "weighted avg": {
+            "precision": 0.855866714604047,
+            "recall": 0.8541758727353072,
+            "f1-score": 0.8495550532647309,
+            "support": 2263.0
+          }
+        },
+        "confusion_matrix": [
+          [
+            1159,
+            5,
+            3,
+            2,
+            58
+          ],
+          [
+            0,
+            126,
+            2,
+            0,
+            7
+          ],
+          [
+            3,
+            0,
+            119,
+            0,
+            2
+          ],
+          [
+            29,
+            0,
+            2,
+            87,
+            6
+          ],
+          [
+            192,
+            0,
+            9,
+            10,
+            442
+          ]
+        ],
+        "confusion_matrix_labels": [
+          "HTTP",
+          "SFTP",
+          "SMTP",
+          "SSH",
+          "VIDEO"
+        ],
+        "unseen_test_classes": []
+      },
+      "train_files": [
+        {
+          "path": "/workspace/scratch/0f6cf5971a40/repo/CDR_MLC/DATASETS/CDR-MLC/scale_1/Short/level_1.csv",
+          "sha256": "273b898226e00902aac4114d8133f898e8fb3668b013d97ef610765872f86410",
+          "rows": 1930
+        }
+      ],
+      "test_files": [
+        {
+          "path": "/workspace/scratch/0f6cf5971a40/repo/CDR_MLC/DATASETS/CDR-MLC/scale_1/Short/level_3.csv",
+          "sha256": "79b8e7436b190c6ad49243d794498c2a0d7d3411e0b7a9c4cf92dd1b8c3eee2c",
+          "rows": 2263
+        }
+      ],
+      "versions": {
+        "python": "3.12.14",
+        "sklearn": "1.8.0",
+        "numpy": "2.3.5",
+        "pandas": "2.2.3"
+      },
+      "missing_classes_per_expert": {
+        "0": [
+          "HTTP",
+          "SFTP",
+          "SSH"
+        ],
+        "1": [
+          "SFTP"
+        ],
+        "2": [
+          "SSH"
+        ]
+      },
+      "feature_overlap_rows": 8,
+      "train_cluster_counts": [
+        82,
+        672,
+        1176
+      ],
+      "test_cluster_counts": [
+        2,
+        989,
+        1272
+      ]
+    },
+    "3": {
+      "config": {
+        "window_size": 3,
+        "n_clusters": 3,
+        "n_estimators": 20,
+        "random_state": 42,
+        "batch_size": 1024,
+        "n_init": 10,
+        "max_iter": 100,
+        "scale_trends": true,
+        "std_ddof": 1,
+        "n_jobs": -1
+      },
+      "metrics": {
+        "n_samples": 2263,
+        "accuracy": 0.866548828988069,
+        "classification_report": {
+          "HTTP": {
+            "precision": 0.9149305555555556,
+            "recall": 0.8590057049714751,
+            "f1-score": 0.8860865910046238,
+            "support": 1227.0
+          },
+          "SFTP": {
+            "precision": 0.9712230215827338,
+            "recall": 1.0,
+            "f1-score": 0.9854014598540146,
+            "support": 135.0
+          },
+          "SMTP": {
+            "precision": 0.8962962962962963,
+            "recall": 0.9758064516129032,
+            "f1-score": 0.9343629343629344,
+            "support": 124.0
+          },
+          "SSH": {
+            "precision": 0.9473684210526315,
+            "recall": 0.5806451612903226,
+            "f1-score": 0.72,
+            "support": 124.0
+          },
+          "VIDEO": {
+            "precision": 0.7608409986859396,
+            "recall": 0.886676875957121,
+            "f1-score": 0.8189533239038189,
+            "support": 653.0
+          },
+          "accuracy": 0.866548828988069,
+          "macro avg": {
+            "precision": 0.8981318586346314,
+            "recall": 0.8604268387663645,
+            "f1-score": 0.8689608618250784,
+            "support": 2263.0
+          },
+          "weighted avg": {
+            "precision": 0.8745817484195852,
+            "recall": 0.866548828988069,
+            "f1-score": 0.8661842548003371,
+            "support": 2263.0
+          }
+        },
+        "confusion_matrix": [
+          [
+            1054,
+            4,
+            4,
+            2,
+            163
+          ],
+          [
+            0,
+            135,
+            0,
+            0,
+            0
+          ],
+          [
+            3,
+            0,
+            121,
+            0,
+            0
+          ],
+          [
+            33,
+            0,
+            0,
+            72,
+            19
+          ],
+          [
+            62,
+            0,
+            10,
+            2,
+            579
+          ]
+        ],
+        "confusion_matrix_labels": [
+          "HTTP",
+          "SFTP",
+          "SMTP",
+          "SSH",
+          "VIDEO"
+        ],
+        "unseen_test_classes": []
+      },
+      "train_files": [
+        {
+          "path": "/workspace/scratch/0f6cf5971a40/repo/CDR_MLC/DATASETS/CDR-MLC/scale_1/Short/level_2.csv",
+          "sha256": "f9551808ca5b713b736c8028ad897613a6ac34e754c8eb5b1076f7902489154e",
+          "rows": 2943
+        }
+      ],
+      "test_files": [
+        {
+          "path": "/workspace/scratch/0f6cf5971a40/repo/CDR_MLC/DATASETS/CDR-MLC/scale_1/Short/level_3.csv",
+          "sha256": "79b8e7436b190c6ad49243d794498c2a0d7d3411e0b7a9c4cf92dd1b8c3eee2c",
+          "rows": 2263
+        }
+      ],
+      "versions": {
+        "python": "3.12.14",
+        "sklearn": "1.8.0",
+        "numpy": "2.3.5",
+        "pandas": "2.2.3"
+      },
+      "missing_classes_per_expert": {
+        "0": [],
+        "1": [
+          "SFTP"
+        ],
+        "2": [
+          "HTTP",
+          "SFTP",
+          "SMTP",
+          "SSH"
+        ]
+      },
+      "feature_overlap_rows": 17,
+      "train_cluster_counts": [
+        1552,
+        1247,
+        144
+      ],
+      "test_cluster_counts": [
+        1328,
+        935,
+        0
+      ]
+    }
+  },
+  "all_levels_in_sample_clustering": {
+    "n_samples": 7136,
+    "cluster_counts": [
+      2928,
+      4084,
+      124
+    ],
+    "silhouette_sample_size": 1000,
+    "silhouette": 0.47836820181803263,
+    "silhouette_scope": "fixed random sample; MBK labels from fitted training router",
+    "distance_above_train_q99_fraction": 0.010089686098654708,
+    "distance_note": "Heuristic distribution-shift diagnostic, not a calibrated rejection threshold",
+    "cluster_by_class": {
+      "0": {
+        "HTTP": 1057,
+        "SFTP": 0,
+        "SMTP": 171,
+        "SSH": 409,
+        "VIDEO": 1291
+      },
+      "1": {
+        "HTTP": 2470,
+        "SFTP": 446,
+        "SMTP": 329,
+        "SSH": 7,
+        "VIDEO": 832
+      },
+      "2": {
+        "HTTP": 0,
+        "SFTP": 0,
+        "SMTP": 0,
+        "SSH": 0,
+        "VIDEO": 124
+      }
+    },
+    "class_adjusted_rand": 0.08719060932403125,
+    "class_normalized_mutual_info": 0.13761832439265612,
+    "cluster_by_level": {
+      "0": {
+        "1": 678,
+        "2": 1304,
+        "3": 946
+      },
+      "1": {
+        "1": 1248,
+        "2": 1519,
+        "3": 1317
+      },
+      "2": {
+        "1": 4,
+        "2": 120,
+        "3": 0
+      }
+    },
+    "level_adjusted_rand": -0.001627115238898885,
+    "level_normalized_mutual_info": 0.01888619964698427,
+    "agglomerative_silhouette": 0.459785982744353,
+    "agglomerative_scope": "Ward clustering fitted on the same sampled rows; diagnostic only"
+  }
+}
