@@ -1,21 +1,30 @@
-# CDR-MLC — clean restart
+# CDR-MLC — paper implementation
 
 ## Active work
 
-- `DATASETS/CDR-MLC/New_Version/`: 15 Argus CSV exports, five applications × three congestion levels. Includes corrected SMTP Low.
-- `CDR-MLC-New-Version-Feature-Analysis.ipynb`: exploratory feature audit. Run All to regenerate local reports; static initial-run notes refer to older data and are not current results.
-- `analysis_outputs/`: generated locally and ignored by Git.
+- `DATASETS/CDR-MLC/New_Version/`: 15 Argus CSV exports, five applications × three congestion levels; includes corrected SMTP Low.
+- `CDR-MLC.ipynb`: new paper-aligned implementation and three available cross-congestion scenarios.
+- `CDR-MLC-New-Version-Feature-Analysis.ipynb`: exploratory feature audit. Its static initial-run notes refer to older data.
+- `outputs/` and `analysis_outputs/`: generated locally and ignored by Git.
+
+## Run
+
+Use Python with numpy, pandas, scipy, scikit-learn, matplotlib and Jupyter installed. Open `CDR-MLC.ipynb` and Run All. The notebook locates the dataset relative to the repository or notebook directory and writes reports under `outputs/paper_implementation/`. Git stores the notebook without cell outputs; its initial validation note records the executed results and versions.
+
+The core uses 15 trailing-window timing statistics, training-only scaling and MiniBatchKMeans with three clusters, and three 20-tree Random Forest experts on original non-timing features. Two 100-tree pooled RF references are evaluated on the same test records. Raw datasets are not modified.
+
+## Fidelity and limitations
+
+- Scenarios 1–3: Low → Medium, Low → High, Medium → High.
+- Scenarios 4–5 require the independent second-server capture and are not simulated from the first-server dataset.
+- The supplied paper does not enumerate all 35 original fields or specify every implementation setting. The notebook explicitly records the available feature schema and assumptions, including a three-record window. This is not a claim of exact numerical reproduction.
+- Additional paper baselines, including AF, DFE and CNN, require separate faithful implementations.
+- Scaling, imputation, category encoding and clustering are fitted only on training data. Application and congestion labels are evaluation metadata, not prediction inputs.
+- Windows stay within externally identified capture sequences. Runtime sequence identifiers must not be inferred from unknown application labels.
+- Validation checks batch/streaming equivalence and prediction invariance to hidden test labels.
+- Initial execution passed all eight code cells on 106,512 filtered records. CDR-MLC did not outperform the pooled RF references in these three runs. Report results as observed; do not select features to weaken a baseline.
+- Timing sensitivity alone is not proof of a causal congestion effect.
 
 ## Preserved previous work
 
-The complete pre-cleanup repository is preserved on branch `archive/cdr-mlc-before-restart-20260918`, commit `0a556328237ffa9c42d01d7b49f835a040d02c13`. Old notebooks, datasets (including ISCX), models and intermediate results remain accessible there. No Git history was rewritten. This cleanup reduces the active folder, not historical repository size.
-
-## Implementation sequence
-
-1. Read the submitted paper and record its exact feature definitions, window construction, clustering, classifiers, hyperparameters and evaluation scenarios. Mark ambiguities explicitly.
-2. Validate service endpoints and schemas before labeling records. Keep source data immutable and report exclusions.
-3. Define train/validation/test sequence boundaries before preprocessing or overlapping windows. Fit scaling, feature selection and congestion clustering on training data only.
-4. Implement the paper from scratch in `CDR-MLC.ipynb` with explicit, documented corrections for leakage. Keep exploratory variants outside the primary implementation.
-5. Evaluate identical splits/features for comparisons and report both routing and classification results. Never select features to weaken a baseline.
-
-The new paper implementation is not yet included. File-level congestion labels and application labels are evaluation metadata, not classifier inputs. Timing sensitivity is not proof of causal congestion effects or traffic-class separability.
+The complete pre-cleanup repository is preserved on branch `archive/cdr-mlc-before-restart-20260918`, commit `0a556328237ffa9c42d01d7b49f835a040d02c13`. Old notebooks, datasets, models and intermediate results remain accessible there. No Git history was rewritten.
