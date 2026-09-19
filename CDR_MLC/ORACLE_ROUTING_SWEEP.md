@@ -1,32 +1,35 @@
-# Oracle routing upper bound
+# Oracle congestion-level experts
 
-این آزمایش مشخص می‌کند اگر Router برای هر نمونه همیشه بهترین Expert را انتخاب کند،
-حداکثر عملکرد قابل دستیابی CDR-MLC چقدر است. برای هر نمونه آزمون، خروجی هر سه
-Expert محاسبه می‌شود. Oracle با مشاهده برچسب واقعی application، Expert درست را
-انتخاب می‌کند؛ اگر هیچ Expert پاسخ درست نداشته باشد، خطا حفظ می‌شود.
+داده آموزشی به سه بخش سطحی تقسیم می‌شود:
 
-این نتیجه عمداً دارای inference leakage است، قابل استقرار نیست و فقط باید به‌عنوان
-upper-bound و تحلیل ضعف Router استفاده شود.
+- مدل Low با ۱۰۰٪ داده Low؛
+- مدل Medium با prefix زمانی داده Medium؛
+- مدل High با prefix زمانی داده High.
 
-## اجرای هم‌زمان حالت صفر و بیست درصد
+Router فرضی سطح واقعی ازدحام را می‌داند. tail آزمون Medium فقط به مدل Medium و
+tail آزمون High فقط به مدل High فرستاده می‌شود. این Router قابل استقرار نیست و
+فقط upper bound اثر مسیریابی صحیح را اندازه می‌گیرد.
+
+## اجرای صفر و بیست درصد
 
 ```powershell
-python CDR_MLC/oracle_cdr_mlc_sweep.py --fractions 0 0.20 --scenarios 1 2 3 --window 3 --output CDR_MLC/outputs/oracle_routing_sweep
+python CDR_MLC/oracle_cdr_mlc_sweep.py --fractions 0 0.20 --output CDR_MLC/outputs/oracle_level_experts
 ```
 
-در حالت ۰٪، هیچ prefix از سطح غیرمبدأ وارد train نمی‌شود. در حالت ۲۰٪، prefix
-زمانی Medium و High مطابق پروتکل calibration وارد development می‌شود و tail
-هشتاددرصدی برای آزمون می‌ماند.
+در حالت صفر درصد، مدل Medium و High داده‌ای ندارند و
+`Oracle_Level_Expert` صریحاً به مدل Low fallback می‌کند. در حالت بیست درصد،
+مدل Medium و High هرکدام با ۲۰٪ ابتدایی captureهای سطح خود آموزش می‌بینند و
+۸۰٪ tail سطح خود را طبقه‌بندی می‌کنند.
 
-برای هر سناریو سه خروجی مقایسه می‌شوند:
+سه روش گزارش می‌شود:
 
-- `CDR_MLC_actual_router`: مسیریابی واقعی KMeans؛
-- `CDR_MLC_oracle_router`: بهترین انتخاب Expert با برچسب واقعی؛
-- `RF_expert_inputs`: RF بدون سه ویژگی timing.
+- `Oracle_Level_Expert`: مدل متناظر با سطح واقعی؛
+- `Low_Expert`: مدل آموزش‌دیده با کل Low؛
+- `Pooled_RF`: یک مدل واحد روی Low و prefixهای calibration.
 
-فایل اصلی `oracle_summary.csv` است. اختلاف Oracle با Actual ظرفیت بهبود Router را
-نشان می‌دهد. اگر Oracle نیز از RF ضعیف‌تر باشد، مشکل اصلی Router نیست و خود
-Expertها یا ویژگی‌های classifier محدودکننده‌اند.
+خروجی اصلی `oracle_level_expert_summary.csv` است. ویژگی‌های `TcpRtt`،
+`SynAck` و `AckDat` از classifierهای سطحی حذف شده‌اند تا ورودی با Expertهای
+CDR-MLC یکسان باشد. این آزمایش clustering واقعی را اجرا نمی‌کند؛ حالت ایده‌آل
+«خوشه دقیقاً برابر سطح ازدحام» را شبیه‌سازی می‌کند.
 
-`oracle_predictions.csv` شامل پیش‌بینی هر سه Expert، مسیر واقعی و Oracle و تعداد
-Expertهای درست برای هر نمونه است. کد طبق درخواست کاربر در محیط توسعه اجرا نشده است.
+کد طبق درخواست کاربر اجرا نشده است.
