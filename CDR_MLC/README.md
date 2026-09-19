@@ -58,3 +58,13 @@ python CDR_MLC/feature_bias_argus_audit.py
 ```
 
 The audit was committed without execution at the user's request.
+## Clean-Valid comparison
+
+[CLEAN_VALID_COMPARISON.md](CLEAN_VALID_COMPARISON.md) documents the two-stage reproducible pipeline. `build_clean_valid.py` creates 15 cleaned captures without modifying the revised source files. `compare_clean_valid.py` then compares fixed CDR-MLC, the primary all-valid-feature RF, an expert-input RF ablation, and Adaptive CDR-MLC in scenarios 1–3 on identical target rows.
+
+```bash
+python CDR_MLC/build_clean_valid.py
+python CDR_MLC/compare_clean_valid.py --scenarios 1 2 3 --fixed-window 3 --windows 3 10 20 --ranking-top-k 5 --selection-seeds 42 --gating soft
+```
+
+Both scripts were committed without execution or testing at the user's request.
