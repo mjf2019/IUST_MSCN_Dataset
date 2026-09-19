@@ -26,7 +26,7 @@ def main():
     parser.add_argument("--congestion-features", nargs="+", default=list(DEFAULT_CONGESTION_FEATURES))
     parser.add_argument("--expert-trees", type=int, default=20)
     parser.add_argument("--utility-trees", type=int, default=150)
-    parser.add_argument("--meta-trees", type=int, default=250)
+    parser.add_argument("--meta-trees", type=int, default=20)
     parser.add_argument("--rf-trees", type=int, default=100)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
