@@ -205,7 +205,7 @@ def select_and_fit(source: pd.DataFrame, output, config: SensitiveConfig):
     train, validation = chronological_split(source)
     ranking = temporal_sensitivity_ranking(train, config)
     top = ranking.feature.head(min(config.ranking_top_k, len(ranking))).tolist()
-    trials, best = [], None
+    trials, candidates = [], []
     for features in itertools.combinations(top, 3):
         for window in config.windows:
             base = {"features": "|".join(features), "window": window}
@@ -221,20 +221,41 @@ def select_and_fit(source: pd.DataFrame, output, config: SensitiveConfig):
                                "smallest_cluster_fraction": balance,
                                "validation_rows": len(observed)})
                 key = (score, balance, -window, features)
-                if best is None or key > best[0]:
-                    best = (key, features, window)
+                candidates.append((key, features, window))
             except ValueError as error:
                 trials.append({**base, "status": "rejected", "reason": str(error)})
-    if best is None:
+    if not candidates:
         raise ValueError("no valid sensitivity-selected CDR configuration")
     output.mkdir(parents=True, exist_ok=True)
     ranking.to_csv(output / "sensitive_feature_ranking.csv", index=False)
+    # A configuration can be balanced on the chronological training prefix but
+    # become unbalanced after refitting on the complete source capture. Preserve
+    # validation ranking and take the highest-ranked candidate that is also
+    # feasible on the full source. The target level is never consulted.
+    final = None
+    selected_candidate = None
+    for key, features, window in sorted(candidates, reverse=True):
+        try:
+            final = fit_model(source, features, window, config)
+            selected_candidate = (key, features, window)
+            break
+        except ValueError as error:
+            trials.append({
+                "features": "|".join(features), "window": window,
+                "status": "rejected_at_full_source_refit", "reason": str(error),
+            })
     pd.DataFrame(trials).to_csv(output / "sensitive_selection_trials.csv", index=False)
-    final = fit_model(source, best[1], best[2], config)
+    if final is None or selected_candidate is None:
+        raise ValueError(
+            "no validation-ranked configuration remains balanced after full-source refit; "
+            "reduce --sensitive-min-cluster-fraction explicitly or expand candidates"
+        )
+    best = selected_candidate
     selected = {
         "features": list(best[1]), "window": int(best[2]),
         "source_validation_macro_f1": float(best[0][0]),
-        "smallest_cluster_fraction": float(best[0][1]),
+        "source_validation_smallest_cluster_fraction": float(best[0][1]),
+        "full_source_smallest_cluster_fraction": float(min(final["cluster_fractions"])),
         "modulation": "1 + strength * clipped robust temporal severity",
         "uses_true_congestion_level": False,
     }
