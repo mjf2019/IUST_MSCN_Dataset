@@ -8,6 +8,7 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import f1_score
 
+from adaptive_cdr_mlc import APPLICATIONS
 from compare_clean_valid import fit_fixed_cdr
 from congestion_feature_cdr_mlc import DEFAULT_CONGESTION_FEATURES, CongestionRouterConfig
 from congestion_selective_router_cdr_mlc import _enhanced_outputs
@@ -27,6 +28,9 @@ class UtilityRouterConfig:
     expert_train_fraction: float = .60
     utility_train_fraction: float = .20
     utility_gain_candidates: tuple[float, ...] = (.00, .05, .10, .15, .20, .30, 1.01)
+    soft_temperatures: tuple[float, ...] = (.25, .50, 1.0, 2.0)
+    soft_kmeans_priors: tuple[float, ...] = (.00, .25, .50, 1.0, 2.0)
+    expert_probability_powers: tuple[float, ...] = (.50, 1.0, 2.0)
     random_state: int = 42
 
     def validate(self):
@@ -118,6 +122,21 @@ def _level_scores(truth, prediction, levels):
     return scores
 
 
+def _soft_mixture(probabilities, utility, kroute, temperature,
+                  kmeans_prior, probability_power):
+    """Blend all expert posteriors using calibrated expected correctness."""
+    safe_utility = np.clip(utility, 1e-6, 1.0)
+    weights = safe_utility ** (1.0 / temperature)
+    weights[np.arange(len(kroute)), kroute] += kmeans_prior
+    weights /= weights.sum(axis=1, keepdims=True)
+
+    calibrated = np.clip(probabilities, 1e-12, 1.0) ** probability_power
+    calibrated /= calibrated.sum(axis=2, keepdims=True)
+    mixture = np.einsum("ne,nec->nc", weights, calibrated)
+    mixture /= mixture.sum(axis=1, keepdims=True)
+    return mixture, weights
+
+
 def fit_utility_router(source, config: UtilityRouterConfig):
     config.validate()
     congestion_config = _congestion_config(config)
@@ -140,7 +159,7 @@ def fit_utility_router(source, config: UtilityRouterConfig):
         features, predictions, truth, raw.congestion_level.to_numpy(), config
     )
 
-    validation_raw, _, validation_kroute, _, validation_pred, validation_features, _ = _enhanced_outputs(
+    validation_raw, _, validation_kroute, validation_prob, validation_pred, validation_features, _ = _enhanced_outputs(
         preliminary, split["threshold"], congestion_config
     )
     validation_truth = validation_raw.traffic_label.to_numpy()
@@ -175,6 +194,65 @@ def fit_utility_router(source, config: UtilityRouterConfig):
         trial["worst_level_delta"], trial["macro_f1"],
         trial["minimum_utility_gain"], -trial["overrides"],
     ))
+
+    selected_hard_route, _, _, _ = _utility_routes(
+        validation_kroute, utilities, selected["minimum_utility_gain"]
+    )
+    hard_prediction = validation_pred[row, selected_hard_route]
+    hard_level_scores = _level_scores(
+        validation_truth, hard_prediction, validation_levels
+    )
+    soft_trials = [{
+        "mode": "hard_fallback",
+        "temperature": None,
+        "kmeans_prior": None,
+        "probability_power": None,
+        "macro_f1": float(f1_score(
+            validation_truth, hard_prediction, average="macro", zero_division=0
+        )),
+        "level_macro_f1": hard_level_scores,
+        "level_macro_f1_delta_vs_hard": {
+            level: 0.0 for level in hard_level_scores
+        },
+        "worst_level_delta_vs_hard": 0.0,
+    }]
+    for temperature in config.soft_temperatures:
+        for kmeans_prior in config.soft_kmeans_priors:
+            for probability_power in config.expert_probability_powers:
+                mixture, weights = _soft_mixture(
+                    validation_prob, utilities, validation_kroute,
+                    temperature, kmeans_prior, probability_power,
+                )
+                # Expert posteriors always follow the global APPLICATIONS order.
+                prediction = np.asarray(APPLICATIONS)[mixture.argmax(axis=1)]
+                level_scores = _level_scores(
+                    validation_truth, prediction, validation_levels
+                )
+                deltas = {
+                    level: level_scores[level] - hard_level_scores[level]
+                    for level in level_scores
+                }
+                soft_trials.append({
+                    "mode": "soft",
+                    "temperature": float(temperature),
+                    "kmeans_prior": float(kmeans_prior),
+                    "probability_power": float(probability_power),
+                    "macro_f1": float(f1_score(
+                        validation_truth, prediction, average="macro", zero_division=0
+                    )),
+                    "level_macro_f1": level_scores,
+                    "level_macro_f1_delta_vs_hard": deltas,
+                    "worst_level_delta_vs_hard": float(min(deltas.values())),
+                    "mean_max_weight": float(weights.max(axis=1).mean()),
+                })
+    soft_feasible = [
+        trial for trial in soft_trials
+        if trial["worst_level_delta_vs_hard"] >= -1e-12
+    ]
+    selected_soft = max(soft_feasible, key=lambda trial: (
+        trial["worst_level_delta_vs_hard"], trial["macro_f1"],
+        trial["mode"] == "hard_fallback",
+    ))
     full_model.update({
         "utility_router_config": config,
         "congestion_config": congestion_config,
@@ -183,6 +261,8 @@ def fit_utility_router(source, config: UtilityRouterConfig):
         "utility_constants": constants,
         "selected_utility_gain": selected["minimum_utility_gain"],
         "utility_gain_trials": trials,
+        "soft_mixture_trials": soft_trials,
+        "selected_soft_mixture": selected_soft,
         "utility_training_rows": len(raw),
         "utility_correctness_counts": correctness_counts,
         "utility_kmeans_error_rate": float(np.mean(
@@ -205,10 +285,22 @@ def predict_all(model, frame):
     truth = raw.traffic_label.to_numpy()
     oracle = _oracle_route(truth, probabilities, predictions)
     row = np.arange(len(raw))
+    selected_soft = model["selected_soft_mixture"]
+    if selected_soft["mode"] == "hard_fallback":
+        soft_prediction = predictions[row, route]
+        soft_weights = np.eye(3)[route]
+    else:
+        mixture, soft_weights = _soft_mixture(
+            probabilities, utility, kroute,
+            selected_soft["temperature"], selected_soft["kmeans_prior"],
+            selected_soft["probability_power"],
+        )
+        soft_prediction = np.asarray(APPLICATIONS)[mixture.argmax(axis=1)]
     return {
         "observed": raw,
         "CDR_MLC_actual_router": predictions[row, kroute],
         "CDR_MLC_utility_router": predictions[row, route],
+        "CDR_MLC_soft_utility_router": soft_prediction,
         "CDR_MLC_oracle_router": predictions[row, oracle],
         "routes": pd.DataFrame({
             "kmeans_route": kroute, "utility_alternative": alternative,
@@ -217,5 +309,6 @@ def predict_all(model, frame):
             "utility_matches_oracle": route == oracle,
             "kmeans_matches_oracle": kroute == oracle,
             **{f"expert_{expert}_utility": utility[:, expert] for expert in range(3)},
+            **{f"expert_{expert}_soft_weight": soft_weights[:, expert] for expert in range(3)},
         }, index=raw.index),
     }
