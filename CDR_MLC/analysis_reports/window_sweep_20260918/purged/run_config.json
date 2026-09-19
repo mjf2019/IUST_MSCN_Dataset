@@ -1,0 +1,70 @@
+{
+  "source_commit": "89e221d1a40ea0ee2d95e5f846e74c9e996fa9fd",
+  "purge_mode": "five-tuple",
+  "windows": [
+    1,
+    3,
+    5,
+    10,
+    20
+  ],
+  "seeds": [
+    0,
+    21,
+    42,
+    84,
+    123
+  ],
+  "raw_records": 106512,
+  "service_records": 106512,
+  "timing_features": [
+    "TcpRtt",
+    "SynAck",
+    "AckDat"
+  ],
+  "statistics": [
+    "mean",
+    "max",
+    "median",
+    "min",
+    "std"
+  ],
+  "std_ddof": 0,
+  "split": {
+    "train": 0.6,
+    "validation": 0.2,
+    "reserved_not_evaluated": 0.2
+  },
+  "common_endpoints": "All 20 preceding records including current must be eligible; same rows for all W",
+  "purge": "Training excludes tuples in validation/reserved; validation excludes reserved tuples; gaps invalidate windows",
+  "silhouette_sample_size": 1000,
+  "silhouette_sampling_seed": 20260918,
+  "clusterer": {
+    "name": "MiniBatchKMeans",
+    "n_clusters": 3,
+    "batch_size": 1024,
+    "n_init": 10,
+    "max_iter": 100,
+    "reassignment_ratio": 0.01
+  },
+  "scaling": "StandardScaler fitted separately on training only for each app/window",
+  "selection": "Highest mean validation ARI across seeds; smallest W breaks ties. Exploratory, NOT test accuracy.",
+  "mapping": "Training-only Hungarian mapping, equal weights for Low/Medium/High",
+  "versions": {
+    "python": "3.12.14",
+    "numpy": "2.3.5",
+    "pandas": "2.2.3",
+    "scipy": "1.17.0",
+    "sklearn": "1.8.0"
+  },
+  "limitations": [
+    "Conservative tuple purge can also remove distinct connections reusing an ephemeral port; surviving windows form a selected subset.",
+    "Only one capture per application/level: level is confounded with run conditions.",
+    "Application identity conditions this diagnostic; do not use unknown labels to route deployment.",
+    "Reserved tail not scored; these captures have prior exploratory use and are not globally pristine.",
+    "Overlapping windows are dependent; seed std is optimizer variability, not statistical confidence.",
+    "Row-count windows have different time spans across applications/captures.",
+    "No cross-level boundary transitions tested; windows reset at capture boundaries."
+  ],
+  "elapsed_seconds": 6.7672200202941895
+}

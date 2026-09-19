@@ -28,3 +28,9 @@ The core uses 15 trailing-window timing statistics, training-only scaling and Mi
 ## Preserved previous work
 
 The complete pre-cleanup repository is preserved on branch `archive/cdr-mlc-before-restart-20260918`, commit `0a556328237ffa9c42d01d7b49f835a040d02c13`. Old notebooks, datasets, models and intermediate results remain accessible there. No Git history was rewritten.
+
+## Per-application sliding-window comparison (new data)
+
+See [WINDOW_SWEEP.md](WINDOW_SWEEP.md) for the 300-fit study on all 15 `New_Version` captures.
+`CDR-MLC-Window-Sweep.ipynb` and `window_sweep.py` compare 1/3/5/10/20/50/100-record windows separately for each application across all three congestion levels.
+Two protocols distinguish dependent within-capture temporal validation from a conservative five-tuple-purged sensitivity check. Committed reports include all seeds, contingency tables, hashes and plots; the reserved tail was not scored. This is exploratory clustering analysis, not a change to the paper classifier or proof of independent-capture generalization.
