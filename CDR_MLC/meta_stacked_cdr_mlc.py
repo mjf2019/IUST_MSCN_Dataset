@@ -15,7 +15,8 @@ from congestion_feature_cdr_mlc import DEFAULT_CONGESTION_FEATURES, CongestionRo
 from congestion_selective_router_cdr_mlc import _enhanced_outputs
 from learned_router_cdr_mlc import LearnedRouterConfig, _oracle_route, _refit_experts_with_frozen_router
 from utility_router_cdr_mlc import (
-    _fit_utility_models, _level_scores, _utility_matrix, _utility_routes,
+    _balanced_weights, _fit_utility_models, _level_scores, _utility_matrix,
+    _utility_routes,
 )
 
 
@@ -144,6 +145,24 @@ def fit_meta_stacker(source, config: MetaStackConfig):
         n_jobs=-1,
         random_state=config.random_state + 500,
     ).fit(meta_x, meta_truth)
+    level_balanced_meta_model = RandomForestClassifier(
+        n_estimators=config.meta_trees,
+        max_depth=config.meta_max_depth,
+        min_samples_leaf=config.meta_min_samples_leaf,
+        max_features="sqrt",
+        class_weight=None,
+        n_jobs=-1,
+        random_state=config.random_state + 700,
+    ).fit(
+        meta_x, meta_truth,
+        sample_weight=_balanced_weights(
+            meta_raw.congestion_level.to_numpy(), meta_truth
+        ),
+    )
+    meta_models = {
+        "class_balanced": meta_model,
+        "level_class_balanced": level_balanced_meta_model,
+    }
 
     selection_raw, _, selection_route, selection_prob, selection_predictions, selection_base, _ = _enhanced_outputs(
         preliminary, split["selection"], congestion_config
@@ -152,7 +171,6 @@ def fit_meta_stacker(source, config: MetaStackConfig):
         utility_models, utility_constants, selection_base
     )
     selection_x = _meta_features(selection_base, selection_utility)
-    meta_probability = _aligned_meta_probabilities(meta_model, selection_x)
     hard_route, _, _, _ = _utility_routes(selection_route, selection_utility, 0.0)
     row = np.arange(len(selection_raw))
     hard_prediction = selection_predictions[row, hard_route]
@@ -160,27 +178,32 @@ def fit_meta_stacker(source, config: MetaStackConfig):
     levels = selection_raw.congestion_level.to_numpy()
     hard_level_scores = _level_scores(truth, hard_prediction, levels)
     trials = []
-    for threshold in config.meta_confidence_candidates:
-        prediction, _, confidence, use_meta = _hybrid_prediction(
-            meta_probability, hard_prediction, threshold
+    for variant, candidate_model in meta_models.items():
+        meta_probability = _aligned_meta_probabilities(
+            candidate_model, selection_x
         )
-        level_scores = _level_scores(truth, prediction, levels)
-        deltas = {
-            level: level_scores[level] - hard_level_scores[level]
-            for level in level_scores
-        }
-        trials.append({
-            "meta_confidence_threshold": float(threshold),
-            "macro_f1": float(f1_score(
-                truth, prediction, average="macro", zero_division=0
-            )),
-            "meta_rows": int(use_meta.sum()),
-            "meta_fraction": float(use_meta.mean()),
-            "mean_meta_confidence": float(confidence.mean()),
-            "level_macro_f1": level_scores,
-            "level_macro_f1_delta_vs_hard": deltas,
-            "worst_level_delta_vs_hard": float(min(deltas.values())),
-        })
+        for threshold in config.meta_confidence_candidates:
+            prediction, _, confidence, use_meta = _hybrid_prediction(
+                meta_probability, hard_prediction, threshold
+            )
+            level_scores = _level_scores(truth, prediction, levels)
+            deltas = {
+                level: level_scores[level] - hard_level_scores[level]
+                for level in level_scores
+            }
+            trials.append({
+                "meta_variant": variant,
+                "meta_confidence_threshold": float(threshold),
+                "macro_f1": float(f1_score(
+                    truth, prediction, average="macro", zero_division=0
+                )),
+                "meta_rows": int(use_meta.sum()),
+                "meta_fraction": float(use_meta.mean()),
+                "mean_meta_confidence": float(confidence.mean()),
+                "level_macro_f1": level_scores,
+                "level_macro_f1_delta_vs_hard": deltas,
+                "worst_level_delta_vs_hard": float(min(deltas.values())),
+            })
     feasible = [trial for trial in trials if trial["worst_level_delta_vs_hard"] >= -1e-12]
     selected = max(feasible, key=lambda trial: (
         trial["worst_level_delta_vs_hard"], trial["macro_f1"],
@@ -193,7 +216,8 @@ def fit_meta_stacker(source, config: MetaStackConfig):
         "utility_models": utility_models,
         "utility_constants": utility_constants,
         "utility_correctness_counts": correctness_counts,
-        "meta_model": meta_model,
+        "meta_models": meta_models,
+        "selected_meta_variant": selected["meta_variant"],
         "selected_meta_confidence": selected["meta_confidence_threshold"],
         "meta_selection_trials": trials,
         "partition_rows": {
@@ -215,7 +239,9 @@ def predict_all(model, frame):
     row = np.arange(len(raw))
     hard_prediction = predictions[row, utility_route]
     meta_x = _meta_features(base_features, utility)
-    meta_probability = _aligned_meta_probabilities(model["meta_model"], meta_x)
+    meta_probability = _aligned_meta_probabilities(
+        model["meta_models"][model["selected_meta_variant"]], meta_x
+    )
     stacked, meta_prediction, confidence, use_meta = _hybrid_prediction(
         meta_probability, hard_prediction, model["selected_meta_confidence"]
     )
