@@ -38,6 +38,10 @@ NUMERIC = [
     "DstWin", "TcpRtt", "SynAck", "AckDat",
 ]
 OUTPUT_COLUMNS = SERVICE_METADATA + CATEGORICAL + NUMERIC
+TEXT_COLUMNS = {
+    "StartTime", "SrcAddr", "DstAddr", "Proto", "Flgs", "State", "TcpOpt",
+    "Label", "Cause", "Dir",
+}
 
 # Reasons are fixed before the model comparison and written into the manifest.
 REMOVAL_POLICY = {
@@ -71,8 +75,8 @@ def clean_capture(path: Path, application: str) -> tuple[pd.DataFrame, dict]:
     missing = sorted(set(OUTPUT_COLUMNS) - set(raw.columns))
     if missing:
         raise ValueError(f"{path.name}: missing required Clean-Valid fields {missing}")
-    for column in raw.select_dtypes("object"):
-        raw[column] = raw[column].str.strip().replace("", np.nan)
+    for column in TEXT_COLUMNS & set(raw.columns):
+        raw[column] = raw[column].astype("string").str.strip().replace("", pd.NA)
 
     server, port = SERVICES[application]
     sport = pd.to_numeric(raw.Sport, errors="coerce")
