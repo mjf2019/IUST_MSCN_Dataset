@@ -27,7 +27,7 @@ class MetaStackConfig:
     congestion_features: tuple[str, ...] = DEFAULT_CONGESTION_FEATURES
     expert_trees: int = 20
     utility_trees: int = 150
-    meta_trees: int = 250
+    meta_trees: int = 20
     utility_max_depth: int = 12
     utility_min_samples_leaf: int = 12
     meta_max_depth: int = 14
