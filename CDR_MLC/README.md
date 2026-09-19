@@ -40,3 +40,12 @@ Two protocols distinguish dependent within-capture temporal validation from a co
 [ADAPTIVE_CDR_MLC.md](ADAPTIVE_CDR_MLC.md) documents the research extension in `adaptive_cdr_mlc.py`. It selects three congestion-routing features and a trailing-window size separately for each application using train/validation only. At inference, a preliminary label-probability gate combines the label-specific router/expert banks; true test labels and congestion levels are never routing inputs. The fixed paper implementation remains available for the required baseline comparison.
 
 The adaptive implementation was committed without execution or testing at the user's request. Start with the documented reduced search, then return the generated configuration, trial, metric, prediction and manifest files for analysis.
+## Adaptive cross-congestion scenarios
+
+[ADAPTIVE_SCENARIOS.md](ADAPTIVE_SCENARIOS.md) documents `adaptive_cdr_mlc_scenarios.py`, which runs Scenario 1 (Low → Medium), Scenario 2 (Low → High), and Scenario 3 (Medium → High). Feature/window selection is performed separately per application using only a temporal split of the source congestion level; the target level remains untouched until final evaluation.
+
+```bash
+python CDR_MLC/adaptive_cdr_mlc_scenarios.py --scenarios 1 2 3 --windows 3 10 20 --ranking-top-k 5 --selection-seeds 42 --gating soft
+```
+
+This runner was committed without execution or testing at the user's request.
