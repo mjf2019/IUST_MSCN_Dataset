@@ -67,4 +67,4 @@ python CDR_MLC/build_clean_valid.py
 python CDR_MLC/compare_clean_valid.py --scenarios 1 2 3 --fixed-window 3 --windows 3 10 20 --ranking-top-k 5 --selection-seeds 42 --gating soft
 ```
 
-Both scripts were committed without execution or testing at the user's request.
+Both scripts were committed without execution or testing at the user's request. The comparison now also includes `sensitive_cdr_mlc.py`: source-only temporal feature/window selection, unsupervised severity modulation, soft expert routing, and a global-RF blend. True target congestion levels are never used as weights.
