@@ -58,6 +58,10 @@ FORBIDDEN = {
     "timestamp", "partition", "level_id", "route_cluster", "IdleTime",
 }
 CATEGORICAL = ["Flgs", "State", "TcpOpt"]
+TEXT_COLUMNS = {
+    "StartTime", "SrcAddr", "DstAddr", "Proto", "Flgs", "State", "TcpOpt",
+    "Label", "Cause", "Dir",
+}
 
 
 @dataclass(frozen=True)
@@ -108,8 +112,11 @@ def load_dataset(data_dir: Path, candidates: tuple[str, ...]):
         required = {"StartTime", "SrcAddr", "DstAddr", "Proto", "Sport", "Dport"}
         if required - set(frame):
             raise ValueError(f"{path.name}: missing {sorted(required-set(frame))}")
-        for column in frame.select_dtypes("object"):
-            frame[column] = frame[column].str.strip().replace("", np.nan)
+        # Restrict string cleanup to known Argus text fields. With recent
+        # pandas versions, mixed numeric columns may have object dtype and a
+        # blanket .str.strip() becomes a slow Python-element loop.
+        for column in TEXT_COLUMNS & set(frame.columns):
+            frame[column] = frame[column].astype("string").str.strip().replace("", pd.NA)
         frame["source_row"] = np.arange(len(frame)) + 2
         dport = pd.to_numeric(frame.Dport, errors="coerce")
         sport = pd.to_numeric(frame.Sport, errors="coerce")
