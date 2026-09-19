@@ -60,6 +60,58 @@ CLEAN_ROUTER_CANDIDATES = (
 )
 
 
+def chronological_level_calibration(data: pd.DataFrame, fraction: float):
+    """Return first-fraction calibration and disjoint remaining tails per capture."""
+    calibration, held_out = [], []
+    for _, group in data.groupby("sequence_id", sort=False):
+        group = group.sort_values(["timestamp", "source_row"], kind="stable")
+        cut = int(len(group) * fraction)
+        if fraction > 0 and not 0 < cut < len(group):
+            raise ValueError(f"capture too short for adaptation fraction {fraction}")
+        calibration.append(group.iloc[:cut].copy())
+        held_out.append(group.iloc[cut:].copy())
+    empty = data.iloc[:0].copy()
+    return (
+        pd.concat(calibration, ignore_index=True) if calibration and fraction > 0 else empty,
+        pd.concat(held_out, ignore_index=True) if held_out else empty,
+    )
+
+
+def build_calibrated_protocol(data: pd.DataFrame, source_level: str,
+                              adaptation_fraction: float):
+    """Build source development data and disjoint target tails.
+
+    A source level is retained in full. For Medium/High levels not already the
+    source, the chronological prefix is added to development and the remaining
+    tail is reserved. Thus Low-source scenarios share one frozen calibrated
+    model, while Medium-source scenario 3 adds only the High prefix.
+    """
+    development_parts = [data[data.congestion_level.eq(source_level)].copy()]
+    target_tails = {}
+    calibration_audit = []
+    for level in ("Medium", "High"):
+        level_data = data[data.congestion_level.eq(level)].copy()
+        if level == source_level:
+            target_tails[level] = level_data.reset_index(drop=True)
+            calibration_audit.append({
+                "level": level, "role": "full_source_level",
+                "calibration_rows": len(level_data), "held_out_rows": 0,
+            })
+            continue
+        calibration, held_out = chronological_level_calibration(
+            level_data, adaptation_fraction
+        )
+        if adaptation_fraction > 0:
+            development_parts.append(calibration)
+        target_tails[level] = held_out.reset_index(drop=True)
+        calibration_audit.append({
+            "level": level, "role": "target_level_calibration",
+            "calibration_rows": len(calibration), "held_out_rows": len(held_out),
+        })
+    development = pd.concat(development_parts, ignore_index=True)
+    return development, target_tails, calibration_audit
+
+
 def rf_config(seed: int, trees: int) -> dict:
     return {
         "n_estimators": trees,
@@ -300,12 +352,18 @@ def main() -> None:
     parser.add_argument("--global-blend", type=float, default=.25)
     parser.add_argument("--soft-temperature", type=float, default=1.0)
     parser.add_argument("--save-models", action="store_true")
+    parser.add_argument(
+        "--adaptation-fraction", type=float, default=0.0,
+        help="Chronological prefix of non-source Medium/High captures added to training",
+    )
     args = parser.parse_args()
     manifest_path = args.data_dir / "clean_valid_manifest.json"
     if not manifest_path.exists():
         parser.error("Clean-Valid manifest not found; run build_clean_valid.py first")
     if args.fixed_window < 1:
         parser.error("--fixed-window must be positive")
+    if not 0 <= args.adaptation_fraction < 1:
+        parser.error("--adaptation-fraction must be in [0,1)")
     args.output.mkdir(parents=True, exist_ok=True)
 
     config = Config(
@@ -335,7 +393,9 @@ def main() -> None:
     summary = []
     model_manifests = {}
     for source_level, targets in grouped.items():
-        source = data[data.congestion_level.eq(source_level)].copy()
+        source, target_tails, calibration_audit = build_calibrated_protocol(
+            data, source_level, args.adaptation_fraction
+        )
         models = fit_source_models(
             source, source_level, args.output, config, args.fixed_window,
             args.rf_trees, args.expert_trees, args.min_cluster_fraction,
@@ -354,9 +414,11 @@ def main() -> None:
             "adaptive_development_rows": models["adaptive"]["development_rows"],
             "adaptive_selections": models["adaptive_selections"],
             "sensitive_selection": models["sensitive_selection"],
+            "development_rows_raw": len(source),
+            "calibration_audit": calibration_audit,
         }
         for scenario, target_level in targets:
-            target = data[data.congestion_level.eq(target_level)].copy().reset_index(drop=True)
+            target = target_tails[target_level]
             summary.extend(evaluate_scenario(
                 models, target, scenario, source_level, target_level, args.output
             ))
@@ -367,11 +429,18 @@ def main() -> None:
         "protocol": {
             "scenarios": requested,
             "identical_target_rows_within_each_scenario": True,
-            "target_used_in_training_or_selection": False,
+            "entire_target_level_unseen": args.adaptation_fraction == 0,
             "fixed_cdr_router_features": TIMING,
             "fixed_cdr_window": args.fixed_window,
             "rf_all_clean_valid_is_primary_rf": True,
             "rf_expert_inputs_excludes_fixed_router_features": TIMING,
+            "adaptation_fraction": args.adaptation_fraction,
+            "protocol_name": (
+                "few_shot_multilevel_calibration"
+                if args.adaptation_fraction > 0 else "unseen_cross_congestion"
+            ),
+            "target_level_prefix_used_for_calibration": args.adaptation_fraction > 0,
+            "held_out_target_tail_used_in_training_or_selection": False,
         },
         "adaptive_config": asdict(config),
         "sensitive_config": asdict(sensitive_config),
@@ -385,6 +454,7 @@ def main() -> None:
             "Source-only adaptive selection cannot validate correspondence to three congestion levels.",
             "The fixed and adaptive routers may use different source-window counts; target scoring rows are identical.",
             "Sensitivity modulation is source-only pseudo-severity, not a true High-level weight.",
+            "With adaptation_fraction > 0, target capture prefixes and held-out tails may share TCP connections; this is not independent-capture generalization.",
         ],
     }
     (args.output / "run_manifest.json").write_text(
