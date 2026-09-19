@@ -49,3 +49,12 @@ python CDR_MLC/adaptive_cdr_mlc_scenarios.py --scenarios 1 2 3 --windows 3 10 20
 ```
 
 This runner was committed without execution or testing at the user's request.
+## Whole-dataset feature bias and Argus audit
+
+[FEATURE_BIAS_ARGUS_AUDIT.md](FEATURE_BIAS_ARGUS_AUDIT.md) documents `feature_bias_argus_audit.py`. It audits all 15 revised captures for invalid/constant/identifier-like fields, missing and negative values, application dominance, within-application congestion sensitivity, capture fingerprints and near-duplicate numeric features. Label-aware results are review evidence and never automatic feature-removal rules.
+
+```bash
+python CDR_MLC/feature_bias_argus_audit.py
+```
+
+The audit was committed without execution at the user's request.
