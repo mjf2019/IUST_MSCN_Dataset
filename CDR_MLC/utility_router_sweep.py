@@ -63,6 +63,8 @@ def main():
                 "utility_kmeans_error_rate": model["utility_kmeans_error_rate"],
                 "selected_utility_gain": model["selected_utility_gain"],
                 "utility_gain_trials": model["utility_gain_trials"],
+                "selected_soft_mixture": model["selected_soft_mixture"],
+                "soft_mixture_trials": model["soft_mixture_trials"],
                 "calibration": calibration,
             }
             audits[f"{fraction}:{source_level}"] = audit
