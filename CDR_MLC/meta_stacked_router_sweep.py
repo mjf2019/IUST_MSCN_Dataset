@@ -59,6 +59,7 @@ def main():
                 "partition_rows": model["partition_rows"],
                 "utility_correctness_counts": model["utility_correctness_counts"],
                 "selected_meta_confidence": model["selected_meta_confidence"],
+                "selected_meta_variant": model["selected_meta_variant"],
                 "meta_selection_trials": model["meta_selection_trials"],
                 "calibration": calibration,
             }
