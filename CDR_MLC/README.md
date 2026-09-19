@@ -75,3 +75,10 @@ Both scripts were committed without execution or testing at the user's request. 
 ```bash
 python CDR_MLC/oracle_cdr_mlc_sweep.py --fractions 0 0.20 --output CDR_MLC/outputs/oracle_level_experts
 ```
+## Learned CDR-MLC router
+
+[LEARNED_ROUTER.md](LEARNED_ROUTER.md) documents a minimal learned gate that preserves the fixed CDR-MLC KMeans and three RF experts. Gate targets come from a chronological holdout scored by experts that did not train on those records. The sweep compares actual, learned, oracle, and RF routing at 0% and 20% calibration.
+
+```bash
+python CDR_MLC/learned_router_sweep.py --fractions 0 0.20 --scenarios 1 2 3 --window 3 --output CDR_MLC/outputs/learned_router_sweep
+```
