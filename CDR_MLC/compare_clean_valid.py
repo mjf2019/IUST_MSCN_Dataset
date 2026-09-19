@@ -41,6 +41,9 @@ from adaptive_cdr_mlc import (
     trend_frame,
 )
 from adaptive_cdr_mlc_scenarios import split_source, select_source_configurations
+from sensitive_cdr_mlc import (
+    SensitiveConfig, predict as predict_sensitive, select_and_fit as fit_sensitive,
+)
 
 
 TIMING = ["TcpRtt", "SynAck", "AckDat"]
@@ -176,7 +179,8 @@ def metrics(truth, prediction, labels) -> dict:
 
 def fit_source_models(source: pd.DataFrame, source_level: str, output: Path,
                       config: Config, fixed_window: int, rf_trees: int,
-                      expert_trees: int, min_cluster_fraction: float) -> dict:
+                      expert_trees: int, min_cluster_fraction: float,
+                      sensitive_config: SensitiveConfig) -> dict:
     source_output = output / f"source_{source_level.lower()}"
     source_output.mkdir(parents=True, exist_ok=True)
     fixed = fit_fixed_cdr(source, fixed_window, config.random_state, expert_trees)
@@ -191,6 +195,9 @@ def fit_source_models(source: pd.DataFrame, source_level: str, output: Path,
         parts, config, adaptive_selection_output, min_cluster_fraction
     )
     adaptive = fit_adaptive(parts, selections, config)
+    sensitive, sensitive_selection = fit_sensitive(
+        source, source_output / "sensitive_selection", sensitive_config
+    )
     pd.DataFrame(fixed["cluster_counts"]).to_csv(
         source_output / "fixed_cdr_cluster_counts.csv", index=False
     )
@@ -200,6 +207,8 @@ def fit_source_models(source: pd.DataFrame, source_level: str, output: Path,
         "rf_expert_inputs": rf_expert_inputs,
         "adaptive": adaptive,
         "adaptive_selections": selections,
+        "sensitive": sensitive,
+        "sensitive_selection": sensitive_selection,
     }
 
 
@@ -214,7 +223,12 @@ def evaluate_scenario(models: dict, target: pd.DataFrame, scenario: str,
     adaptive_series = pd.Series(
         adaptive_prediction, index=adaptive_observed.index, name="Adaptive_CDR_MLC"
     )
-    common = sorted(set(fixed_prediction.index) & set(adaptive_series.index))
+    sensitive_prediction, sensitive_routes = predict_sensitive(models["sensitive"], target)
+    common = sorted(
+        set(fixed_prediction.index)
+        & set(adaptive_series.index)
+        & set(sensitive_prediction.index)
+    )
     if not common:
         raise ValueError(f"scenario {scenario}: no common target rows")
     observed = target.loc[common].copy()
@@ -224,6 +238,7 @@ def evaluate_scenario(models: dict, target: pd.DataFrame, scenario: str,
         "RF_all_clean_valid": predict_rf(models["rf_all"], observed),
         "RF_expert_inputs": predict_rf(models["rf_expert_inputs"], observed),
         "Adaptive_CDR_MLC": adaptive_series.loc[common].to_numpy(),
+        "Sensitive_CDR_MLC": sensitive_prediction.loc[common].to_numpy(),
     }
     rows, detailed = [], {}
     for method, prediction in predictions.items():
@@ -251,6 +266,14 @@ def evaluate_scenario(models: dict, target: pd.DataFrame, scenario: str,
     adaptive_routes.loc[common].to_csv(
         scenario_output / "adaptive_routes_common_rows.csv", index=False
     )
+    sensitive_route_frame = pd.DataFrame(
+        sensitive_routes,
+        index=sensitive_prediction.index,
+        columns=[f"sensitive_route_{cluster}" for cluster in range(sensitive_routes.shape[1])],
+    )
+    sensitive_route_frame.loc[common].to_csv(
+        scenario_output / "sensitive_routes_common_rows.csv", index=False
+    )
     return rows
 
 
@@ -272,6 +295,10 @@ def main() -> None:
     parser.add_argument("--rf-trees", type=int, default=100)
     parser.add_argument("--expert-trees", type=int, default=20)
     parser.add_argument("--min-cluster-fraction", type=float, default=.02)
+    parser.add_argument("--sensitive-min-cluster-fraction", type=float, default=.10)
+    parser.add_argument("--modulation-strength", type=float, default=1.0)
+    parser.add_argument("--global-blend", type=float, default=.25)
+    parser.add_argument("--soft-temperature", type=float, default=1.0)
     parser.add_argument("--save-models", action="store_true")
     args = parser.parse_args()
     manifest_path = args.data_dir / "clean_valid_manifest.json"
@@ -289,6 +316,15 @@ def main() -> None:
         gating=args.gating,
         expert_estimators=args.expert_trees,
     ).validate()
+    sensitive_config = SensitiveConfig(
+        windows=tuple(args.windows), ranking_top_k=args.ranking_top_k,
+        random_state=42, expert_trees=args.expert_trees,
+        global_trees=args.rf_trees,
+        modulation_strength=args.modulation_strength,
+        global_blend=args.global_blend,
+        soft_temperature=args.soft_temperature,
+        min_cluster_fraction=args.sensitive_min_cluster_fraction,
+    ).validate()
     data, audit = load_dataset(args.data_dir, config.candidates)
     audit.to_csv(args.output / "clean_valid_input_audit.csv", index=False)
     requested = {scenario: SCENARIOS[scenario] for scenario in args.scenarios}
@@ -303,6 +339,7 @@ def main() -> None:
         models = fit_source_models(
             source, source_level, args.output, config, args.fixed_window,
             args.rf_trees, args.expert_trees, args.min_cluster_fraction,
+            sensitive_config,
         )
         if args.save_models:
             joblib.dump(models, args.output / f"source_{source_level.lower()}" / "models.joblib")
@@ -316,6 +353,7 @@ def main() -> None:
             "rf_expert_inputs_categorical": models["rf_expert_inputs"]["categorical"],
             "adaptive_development_rows": models["adaptive"]["development_rows"],
             "adaptive_selections": models["adaptive_selections"],
+            "sensitive_selection": models["sensitive_selection"],
         }
         for scenario, target_level in targets:
             target = data[data.congestion_level.eq(target_level)].copy().reset_index(drop=True)
@@ -336,6 +374,7 @@ def main() -> None:
             "rf_expert_inputs_excludes_fixed_router_features": TIMING,
         },
         "adaptive_config": asdict(config),
+        "sensitive_config": asdict(sensitive_config),
         "rf_trees": args.rf_trees,
         "expert_trees": args.expert_trees,
         "clean_valid_manifest": json.loads(manifest_path.read_text(encoding="utf-8")),
@@ -345,6 +384,7 @@ def main() -> None:
             "Only one capture exists per application/congestion combination.",
             "Source-only adaptive selection cannot validate correspondence to three congestion levels.",
             "The fixed and adaptive routers may use different source-window counts; target scoring rows are identical.",
+            "Sensitivity modulation is source-only pseudo-severity, not a true High-level weight.",
         ],
     }
     (args.output / "run_manifest.json").write_text(
