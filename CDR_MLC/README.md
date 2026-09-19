@@ -70,8 +70,8 @@ python CDR_MLC/compare_clean_valid.py --scenarios 1 2 3 --fixed-window 3 --windo
 Both scripts were committed without execution or testing at the user's request. The comparison now also includes `sensitive_cdr_mlc.py`: source-only temporal feature/window selection, unsupervised severity modulation, soft expert routing, and a global-RF blend. True target congestion levels are never used as weights.
 ## Oracle routing diagnostic
 
-[ORACLE_ROUTING_SWEEP.md](ORACLE_ROUTING_SWEEP.md) documents `oracle_cdr_mlc_sweep.py`, a deliberately label-leaking upper-bound diagnostic. It compares actual KMeans routing with the best expert choice available for each test record at both 0% and 20% multilevel calibration. Oracle results are diagnostic only and are never deployable performance.
+[ORACLE_ROUTING_SWEEP.md](ORACLE_ROUTING_SWEEP.md) documents `oracle_cdr_mlc_sweep.py`, a deliberately level-leaking upper-bound diagnostic. It trains a Low expert on all Low records and Medium/High experts on their calibration prefixes, then routes each held-out tail to the expert matching its true congestion level. Oracle results are diagnostic only and are never deployable performance.
 
 ```bash
-python CDR_MLC/oracle_cdr_mlc_sweep.py --fractions 0 0.20 --scenarios 1 2 3 --window 3 --output CDR_MLC/outputs/oracle_routing_sweep
+python CDR_MLC/oracle_cdr_mlc_sweep.py --fractions 0 0.20 --output CDR_MLC/outputs/oracle_level_experts
 ```
