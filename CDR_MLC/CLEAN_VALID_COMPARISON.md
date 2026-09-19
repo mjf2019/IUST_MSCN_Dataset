@@ -8,6 +8,7 @@
 - Random Forest روی تمام ویژگی‌های معتبر Clean-Valid؛
 - Random Forest روی ورودی expertها بدون سه ویژگی router، برای ablation؛
 - Adaptive CDR-MLC با انتخاب ویژگی و پنجره فقط از سطح مبدأ.
+- Sensitive CDR-MLC با انتخاب train-only، وزن‌دهی شدت و soft mixture of experts.
 
 ## مرحله ۱: ساخت مجموعه‌داده Clean-Valid
 
@@ -54,8 +55,22 @@ python CDR_MLC/compare_clean_valid.py --scenarios 1 2 3 --fixed-window 3 --windo
 | ۳ | Medium | High |
 
 مدل Low برای سناریوهای ۱ و ۲ فقط یک بار fit می‌شود. سطح مقصد نه در آموزش و نه
-در انتخاب تنظیمات Adaptive استفاده نمی‌شود. در هر سناریو، معیارهای هر چهار خروجی
+در انتخاب تنظیمات Adaptive استفاده نمی‌شود. در هر سناریو، معیارهای هر پنج خروجی
 روی intersection کاملاً یکسان رکوردهای قابل پیش‌بینی محاسبه می‌شوند.
+
+نسخه Sensitive نیز فقط از source استفاده می‌کند. ابتدا ویژگی‌ها را با تغییرات
+زمانی robust رتبه‌بندی می‌کند، سپس ترکیب سه‌ویژگی و پنجره را با Macro-F1 بخش
+validation مبدأ انتخاب می‌کند. وزن هر نمونه از فاصله زمانی استانداردشده و بدون
+خواندن congestion label ساخته می‌شود. expertها با soft routing ترکیب و برای
+کاهش variance با یک RF سراسری blend می‌شوند.
+
+در سناریوهای cross-congestion، گزینه‌ای برای وزن‌دادن مستقیم به نمونه‌های High
+وجود ندارد؛ چون High در سناریوهای ۲ و ۳ test است و استفاده از آن leakage خواهد
+بود. پارامترهای source-only نسخه Sensitive قابل تنظیم‌اند:
+
+```powershell
+python CDR_MLC/compare_clean_valid.py --scenarios 1 2 3 --windows 3 10 20 --sensitive-min-cluster-fraction 0.10 --modulation-strength 1.0 --global-blend 0.25 --soft-temperature 1.0
+```
 
 ## خروجی اصلی
 
@@ -69,6 +84,8 @@ CDR_MLC/outputs/clean_valid_comparison/comparison_summary.csv
 - تنظیمات انتخاب‌شده Adaptive برای sourceهای Low و Medium؛
 - `metrics.json` برای هر سناریو؛
 - `predictions_common_rows.csv` برای تحلیل خطای جفت‌شده؛
+- `sensitive_feature_ranking.csv` و `sensitive_selection_trials.csv`؛
+- `sensitive_selected.json` و soft routeهای نسخه Sensitive؛
 - شمارش کلاس‌ها در سه cluster مدل ثابت؛
 - گزارش ویژگی‌های استفاده‌شده در هر مدل.
 
