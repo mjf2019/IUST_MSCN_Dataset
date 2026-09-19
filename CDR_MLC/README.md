@@ -34,3 +34,9 @@ The complete pre-cleanup repository is preserved on branch `archive/cdr-mlc-befo
 See [WINDOW_SWEEP.md](WINDOW_SWEEP.md) for the 300-fit study on all 15 `New_Version` captures.
 `CDR-MLC-Window-Sweep.ipynb` and `window_sweep.py` compare 1/3/5/10/20/50/100-record windows separately for each application across all three congestion levels.
 Two protocols distinguish dependent within-capture temporal validation from a conservative five-tuple-purged sensitivity check. Committed reports include all seeds, contingency tables, hashes and plots; the reserved tail was not scored. This is exploratory clustering analysis, not a change to the paper classifier or proof of independent-capture generalization.
+
+## Adaptive label-conditioned CDR-MLC
+
+[ADAPTIVE_CDR_MLC.md](ADAPTIVE_CDR_MLC.md) documents the research extension in `adaptive_cdr_mlc.py`. It selects three congestion-routing features and a trailing-window size separately for each application using train/validation only. At inference, a preliminary label-probability gate combines the label-specific router/expert banks; true test labels and congestion levels are never routing inputs. The fixed paper implementation remains available for the required baseline comparison.
+
+The adaptive implementation was committed without execution or testing at the user's request. Start with the documented reduced search, then return the generated configuration, trial, metric, prediction and manifest files for analysis.
