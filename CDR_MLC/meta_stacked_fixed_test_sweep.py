@@ -90,7 +90,6 @@ def build_fixed_test_protocol(data, source_level, adaptation_fraction,
             "role": "target_level_fixed_test",
             "calibration_rows": len(calibration),
             "fixed_test_rows": len(fixed_test),
-            "test_identity_sha256": frame_identity(fixed_test),
             "captures": capture_audit,
         })
     return pd.concat(development_parts, ignore_index=True), fixed_tests, audit
@@ -109,7 +108,7 @@ def main():
     parser.add_argument("--congestion-features", nargs="+", default=list(DEFAULT_CONGESTION_FEATURES))
     parser.add_argument("--expert-trees", type=int, default=20)
     parser.add_argument("--utility-trees", type=int, default=150)
-    parser.add_argument("--meta-trees", type=int, default=250)
+    parser.add_argument("--meta-trees", type=int, default=20)
     parser.add_argument("--rf-trees", type=int, default=100)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -130,6 +129,7 @@ def main():
     input_audit.to_csv(args.output / "input_audit.csv", index=False)
 
     rows, audits, expected_test_identity = [], {}, {}
+    expected_evaluated_identity = {}
     for fraction in args.fractions:
         grouped = {}
         for scenario in args.scenarios:
@@ -175,6 +175,15 @@ def main():
                 target = fixed_tests[target_level]
                 result = predict_all(model, target)
                 observed = result["observed"]
+                evaluated_identity = frame_identity(observed)
+                previous_evaluated = expected_evaluated_identity.setdefault(
+                    target_level, evaluated_identity
+                )
+                if evaluated_identity != previous_evaluated:
+                    raise RuntimeError(
+                        f"evaluated test identity changed for {target_level}: "
+                        f"{previous_evaluated} != {evaluated_identity}"
+                    )
                 truth = observed.traffic_label.to_numpy()
                 predictions = {
                     key: value for key, value in result.items()
@@ -185,17 +194,13 @@ def main():
                     f"scenario_{scenario}_{source_level.lower()}_to_{target_level.lower()}"
                 )
                 scenario_dir.mkdir(parents=True, exist_ok=True)
-                detail = {
-                    "raw_fixed_test_identity_sha256": frame_identity(target),
-                    "evaluated_rows_identity_sha256": frame_identity(observed),
-                }
+                detail = {}
                 for method, prediction in predictions.items():
                     score = metrics(truth, prediction, APPLICATIONS)
                     detail[method] = score
                     rows.append({
                         "adaptation_fraction": fraction,
                         "fixed_test_fraction": args.test_fraction,
-                        "test_identity_sha256": frame_identity(observed),
                         "scenario": scenario, "source": source_level,
                         "target": target_level, "method": method,
                         **{key: score[key] for key in (
@@ -220,16 +225,14 @@ def main():
         ["adaptation_fraction", "scenario", "method"]
     )
     for target_level, group in summary.groupby("target"):
-        identities = group.test_identity_sha256.unique()
         counts = group.groupby("adaptation_fraction").n.unique().map(tuple)
-        if len(identities) != 1 or counts.map(len).max() != 1 or counts.map(lambda x: x[0]).nunique() != 1:
+        if counts.map(len).max() != 1 or counts.map(lambda x: x[0]).nunique() != 1:
             raise RuntimeError(f"evaluated test rows are not fixed for {target_level}")
     summary.to_csv(args.output / "meta_stacked_fixed_test_summary.csv", index=False)
     manifest = {
         "config": asdict(config),
         "fractions": args.fractions,
         "fixed_test_fraction": args.test_fraction,
-        "fixed_test_identity_by_level": expected_test_identity,
         "scenarios": {key: SCENARIOS[key] for key in args.scenarios},
         "audits": audits,
         "leakage_control": (
