@@ -82,3 +82,10 @@ python CDR_MLC/oracle_cdr_mlc_sweep.py --fractions 0 0.20 --output CDR_MLC/outpu
 ```bash
 python CDR_MLC/learned_router_sweep.py --fractions 0 0.20 --scenarios 1 2 3 --window 3 --output CDR_MLC/outputs/learned_router_sweep
 ```
+## Selective correction router
+
+[SELECTIVE_ROUTER.md](SELECTIVE_ROUTER.md) documents the conservative follow-up to the learned gate. KMeans remains the default route; a source-only error detector can override it only when the learned error probability and alternative-expert confidence satisfy validation-selected controls.
+
+```bash
+python CDR_MLC/selective_router_sweep.py --fractions 0 0.20 --scenarios 1 2 3 --window 3 --output CDR_MLC/outputs/selective_router_sweep
+```
