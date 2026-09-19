@@ -46,6 +46,26 @@ python CDR_MLC/build_clean_valid.py --overwrite
 python CDR_MLC/compare_clean_valid.py --scenarios 1 2 3 --fixed-window 3 --windows 3 10 20 --ranking-top-k 5 --selection-seeds 42 --gating soft
 ```
 
+### پروتکل calibration با ۲۰٪ از Medium و High
+
+برای آزمایش exposure به هر سه سطح، ۲۰٪ ابتدایی هر capture غیرمبدأ از Medium و
+High به development اضافه و ۸۰٪ باقی‌مانده همان capture برای آزمون نگه داشته
+می‌شود:
+
+```powershell
+python CDR_MLC/compare_clean_valid.py --scenarios 1 2 3 --fixed-window 3 --windows 3 10 20 --ranking-top-k 5 --selection-seeds 42 --gating soft --sensitive-min-cluster-fraction 0.10 --modulation-strength 1.0 --global-blend 0.25 --soft-temperature 1.0 --adaptation-fraction 0.20 --output CDR_MLC/outputs/clean_valid_comparison_cal20
+```
+
+در سناریوهای ۱ و ۲ مدل مشترک از کل Low به‌علاوه prefix بیست‌درصدی Medium و
+High استفاده می‌کند. در سناریوی ۳، Medium از قبل سطح مبدأ کامل است و فقط prefix
+بیست‌درصدی High اضافه می‌شود. هیچ ردیفی از prefix کالیبراسیون در آزمون باقی
+نمی‌ماند.
+
+این اجرا دیگر cross-congestion کاملاً unseen نیست و باید با عنوان
+`few-shot multilevel calibration` گزارش شود. همچنین prefix و tail از یک capture
+هستند و ممکن است اتصال TCP مشترک داشته باشند؛ بنابراین نتیجه، independent-capture
+generalization محسوب نمی‌شود.
+
 تعریف سناریوها:
 
 | سناریو | آموزش | آزمون |
