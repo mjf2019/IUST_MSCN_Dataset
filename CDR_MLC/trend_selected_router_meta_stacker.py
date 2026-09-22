@@ -203,7 +203,7 @@ def fit_selected_cdr(source, router_features, config):
         x_cluster = preprocessor.fit_transform(raw.loc[mask, columns])
         experts[cluster] = RandomForestClassifier(
             **rf_config(
-                config.random_state + cluster, config.expert_trees
+                config.random_state, config.expert_trees
             )
         ).fit(x_cluster, labels[mask])
         expert_preprocessors[cluster] = preprocessor
