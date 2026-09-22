@@ -47,6 +47,14 @@ def main() -> None:
     parser.add_argument("--meta-trees", type=int, default=20)
     parser.add_argument("--rf-trees", type=int, default=100)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--min-cluster-fraction", type=float, default=0.005,
+        help="Minimum adaptive-router cluster share; legacy data needs a smaller value",
+    )
+    parser.add_argument(
+        "--sensitive-min-cluster-fraction", type=float, default=0.005,
+        help="Minimum sensitive-router cluster share for the small legacy dataset",
+    )
     parser.add_argument("--overwrite-clean", action="store_true")
     parser.add_argument("--skip-clean", action="store_true")
     parser.add_argument("--only-clean", action="store_true")
@@ -56,21 +64,33 @@ def main() -> None:
         parser.error("--skip-clean and --only-clean cannot be used together")
     if any(value < 0 or value > 1 - args.test_fraction for value in args.fractions):
         parser.error("fractions must be nonnegative and must not overlap test tail")
+    for name, value in (
+        ("min-cluster-fraction", args.min_cluster_fraction),
+        ("sensitive-min-cluster-fraction", args.sensitive_min_cluster_fraction),
+    ):
+        if not 0 < value < 1 / 3:
+            parser.error(f"--{name} must be in (0, 1/3)")
 
     args.output.mkdir(parents=True, exist_ok=True)
     py = sys.executable
+    manifest = args.clean_dir / "clean_valid_manifest.json"
     if not args.skip_clean:
-        command = [
-            py, str(root / "build_legacy_clean_valid.py"),
-            "--source", str(args.source),
-            "--output", str(args.clean_dir),
-        ]
-        if args.overwrite_clean:
-            command.append("--overwrite")
-        run(command)
+        if manifest.exists() and not args.overwrite_clean:
+            print(
+                f"\nREUSE: {args.clean_dir} (use --overwrite-clean to rebuild)",
+                flush=True,
+            )
+        else:
+            command = [
+                py, str(root / "build_legacy_clean_valid.py"),
+                "--source", str(args.source),
+                "--output", str(args.clean_dir),
+            ]
+            if args.overwrite_clean:
+                command.append("--overwrite")
+            run(command)
     if args.only_clean:
         return
-    manifest = args.clean_dir / "clean_valid_manifest.json"
     if not manifest.exists():
         parser.error(f"missing {manifest}; run without --skip-clean first")
 
@@ -92,6 +112,9 @@ def main() -> None:
             "--gating", "soft",
             "--rf-trees", str(args.rf_trees),
             "--expert-trees", str(args.expert_trees),
+            "--min-cluster-fraction", str(args.min_cluster_fraction),
+            "--sensitive-min-cluster-fraction",
+            str(args.sensitive_min_cluster_fraction),
             "--adaptation-fraction", str(fraction),
         ])
 
@@ -153,6 +176,14 @@ def main() -> None:
         "fractions": args.fractions,
         "scenarios": args.scenarios,
         "test_fraction": args.test_fraction,
+        "legacy_small_sample_controls": {
+            "adaptive_min_cluster_fraction": args.min_cluster_fraction,
+            "sensitive_min_cluster_fraction": args.sensitive_min_cluster_fraction,
+            "reason": (
+                "The legacy dataset is much smaller than the revised dataset; "
+                "the threshold is explicit and fixed before target evaluation."
+            ),
+        },
         "budget": {
             "experts": f"3 x {args.expert_trees}",
             "utilities": f"3 x {args.utility_trees}",
