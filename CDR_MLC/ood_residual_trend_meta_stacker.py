@@ -43,7 +43,7 @@ class OODResidualConfig(TrendSelectedRouterConfig):
     dg_probability_temperatures: tuple[float, ...] = (1.0, 1.5, 2.0)
     dg_distance_scales: tuple[float, ...] = (1.0, 1.25, 1.5)
     dg_capture_tolerance: float = .01
-    shift_capture_quantile: float = .95
+    shift_threshold_quantile: float = .95
     shift_history_window: int = 10
 
     def validate(self):
@@ -87,7 +87,7 @@ class OODResidualConfig(TrendSelectedRouterConfig):
             )
         if self.dg_capture_tolerance < 0:
             raise ValueError("DG capture tolerance must be nonnegative")
-        if not 0 < self.shift_capture_quantile <= 1:
+        if not 0 < self.shift_threshold_quantile <= 1:
             raise ValueError("shift capture quantile must be in (0,1]")
         if self.shift_history_window < 1:
             raise ValueError("shift history window must be positive")
@@ -747,19 +747,19 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
         source_shift_severity,
         config.shift_history_window,
     )
-    shift_capture_threshold = float(np.quantile(
+    shift_threshold = float(np.quantile(
         source_causal_shift_scores,
-        config.shift_capture_quantile,
+        config.shift_threshold_quantile,
     ))
     selected_shift_adaptive_policy = {
         "mild_shift_policy": "class_balanced_ood_residual",
         "severe_shift_policy": "domain_generalized_meta",
         "distance_scale": float(shift_distance_scale),
         "capture_score": "causal_trailing_median_shift_severity",
-        "capture_threshold_quantile": float(
-            config.shift_capture_quantile
+        "threshold_quantile": float(
+            config.shift_threshold_quantile
         ),
-        "capture_threshold": shift_capture_threshold,
+        "shift_threshold": shift_threshold,
         "history_window": int(config.shift_history_window),
         "source_score_summary": {
             "minimum": float(source_causal_shift_scores.min()),
@@ -936,7 +936,7 @@ def predict_all(model, frame):
         shift_policy["history_window"],
     )
     severe_shift = (
-        causal_shift_score > shift_policy["capture_threshold"]
+        causal_shift_score > shift_policy["shift_threshold"]
     )
     shift_adaptive_prediction = np.where(
         severe_shift,
