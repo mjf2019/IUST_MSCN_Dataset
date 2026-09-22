@@ -67,7 +67,9 @@ def normalize_label(value: object) -> str:
     return mapping[key]
 
 
-def clean_domain(path: Path, domain: str) -> tuple[pd.DataFrame, dict]:
+def clean_domain(
+    path: Path, domain: str, ordering: str
+) -> tuple[pd.DataFrame, dict]:
     raw = pd.read_csv(path, low_memory=False, on_bad_lines="error")
     raw.columns = raw.columns.str.strip()
     label_column = "label" if "label" in raw.columns else "Label"
@@ -93,15 +95,38 @@ def clean_domain(path: Path, domain: str) -> tuple[pd.DataFrame, dict]:
         invalid[column] = int(values.isna().sum())
 
     clean["traffic_label"] = raw[label_column].map(normalize_label).to_numpy()
-    # The raw files contain no reliable event timestamp. This monotonically
-    # increasing value preserves file order and is never a classifier input.
+    clean["_original_source_row"] = np.arange(len(clean)) + 2
+    if ordering == "label_grouped":
+        order = pd.Categorical(
+            clean["traffic_label"], categories=APPLICATIONS, ordered=True
+        )
+        clean = (
+            clean.assign(_label_order=order)
+            .sort_values(
+                ["_label_order", "_original_source_row"], kind="stable"
+            )
+            .drop(columns="_label_order")
+            .reset_index(drop=True)
+        )
+    elif ordering != "file_order":
+        raise ValueError(f"unknown ordering mode: {ordering}")
+
+    # There is no reliable event timestamp. The synthetic timestamp represents
+    # the selected deterministic row order and is forbidden as a model input.
     clean["timestamp"] = (
         pd.Timestamp("2024-01-01")
         + pd.to_timedelta(np.arange(len(clean)), unit="ms")
     )
-    clean["source_row"] = np.arange(len(clean)) + 2
+    clean["source_row"] = clean.pop("_original_source_row").astype(int)
     clean["source_file"] = path.name
-    clean["sequence_id"] = domain
+    if ordering == "label_grouped":
+        # Prevent every trailing window from crossing an application boundary.
+        # This boundary is derived from the true label and is diagnostic only.
+        clean["sequence_id"] = (
+            domain + "_" + clean["traffic_label"].astype(str)
+        )
+    else:
+        clean["sequence_id"] = domain
     clean["congestion_level"] = domain
     counts = clean.traffic_label.value_counts().to_dict()
     return clean, {
@@ -116,6 +141,11 @@ def clean_domain(path: Path, domain: str) -> tuple[pd.DataFrame, dict]:
         "class_counts": {
             label: int(counts.get(label, 0)) for label in APPLICATIONS
         },
+        "ordering": ordering,
+        "sequence_boundary": (
+            "true_application_label"
+            if ordering == "label_grouped" else "whole_file"
+        ),
     }
 
 
@@ -159,6 +189,14 @@ def main() -> None:
         "--overlap-policy", choices=["error", "drop", "allow"], default="error",
         help="Action for exact cleaned test rows also present in training",
     )
+    parser.add_argument(
+        "--ordering", choices=["label_grouped", "file_order"],
+        default="label_grouped",
+        help=(
+            "label_grouped reproduces the legacy label-contiguous preprocessing "
+            "but uses true test labels; file_order is deployable but shuffled"
+        ),
+    )
     parser.add_argument("--window", type=int, default=3)
     parser.add_argument("--congestion-window", type=int, default=10)
     parser.add_argument("--expert-trees", type=int, default=20)
@@ -171,8 +209,12 @@ def main() -> None:
     clean_root = args.output / "clean"
     clean_root.mkdir(parents=True, exist_ok=True)
 
-    train, train_audit = clean_domain(args.train_file, "Long")
-    test, test_audit = clean_domain(args.test_file, "Short")
+    train, train_audit = clean_domain(
+        args.train_file, "Long", args.ordering
+    )
+    test, test_audit = clean_domain(
+        args.test_file, "Short", args.ordering
+    )
     train_hashes = set(row_hash(train).astype("uint64").tolist())
     test_hash = row_hash(test).astype("uint64")
     overlap = test_hash.isin(train_hashes)
@@ -280,7 +322,22 @@ def main() -> None:
         "removal_policy": REMOVAL_POLICY,
         "config": asdict(config),
         "rf_trees": args.rf_trees,
+        "ordering": args.ordering,
+        "evaluation_status": (
+            "diagnostic_label_assisted"
+            if args.ordering == "label_grouped"
+            else "label_free_file_order"
+        ),
         "important_limitations": [
+            (
+                "label_grouped ordering uses the true application label in both "
+                "train and test to define row order and sequence boundaries. "
+                "Results from this mode are diagnostic/offline and must not be "
+                "reported as label-free deployable inference."
+                if args.ordering == "label_grouped"
+                else "file_order does not use labels for ordering, but the raw "
+                "file is shuffled and therefore lacks genuine temporal adjacency."
+            ),
             "The supplied shuffled files contain no congestion-level column; "
             "this is not a Low/Medium/High scenario experiment.",
             "The supplied files contain no reliable event timestamp. Sliding "
