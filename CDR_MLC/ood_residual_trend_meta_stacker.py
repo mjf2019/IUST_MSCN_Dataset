@@ -18,6 +18,7 @@ from sklearn.metrics import f1_score
 
 from adaptive_cdr_mlc import APPLICATIONS
 from congestion_feature_cdr_mlc import CongestionRouterConfig
+from learned_router_cdr_mlc import _oracle_route
 from meta_stacked_cdr_mlc_leakage_safe import (
     _aligned_meta_probabilities, _balanced_weights, _level_scores,
     _meta_features, _utility_matrix, _utility_routes, four_way_split,
@@ -404,11 +405,7 @@ def predict_all(model, frame):
         )
     )
     truth = raw.traffic_label.to_numpy()
-    oracle = np.where(
-        predictions == truth[:, None],
-        probabilities.max(axis=2) + 2.0,
-        probabilities.max(axis=2),
-    ).argmax(axis=1)
+    oracle = _oracle_route(truth, probabilities, predictions)
     return {
         "observed": raw,
         "CDR_MLC_actual_router": actual_prediction,
