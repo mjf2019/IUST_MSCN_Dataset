@@ -44,6 +44,7 @@ class OODResidualConfig(TrendSelectedRouterConfig):
     dg_distance_scales: tuple[float, ...] = (1.0, 1.25, 1.5)
     dg_capture_tolerance: float = .01
     shift_capture_quantile: float = .95
+    shift_history_window: int = 10
 
     def validate(self):
         super().validate()
@@ -88,6 +89,8 @@ class OODResidualConfig(TrendSelectedRouterConfig):
             raise ValueError("DG capture tolerance must be nonnegative")
         if not 0 < self.shift_capture_quantile <= 1:
             raise ValueError("shift capture quantile must be in (0,1]")
+        if self.shift_history_window < 1:
+            raise ValueError("shift history window must be positive")
         return self
 
 
@@ -166,14 +169,21 @@ def _shift_severity(minimum_distance, probability, distance_scale):
     )
 
 
-def _capture_shift_scores(raw, row_severity):
-    scores = {}
-    sequence_ids = raw.sequence_id.astype(str).to_numpy()
-    for sequence_id in np.unique(sequence_ids):
-        scores[str(sequence_id)] = float(np.median(
-            row_severity[sequence_ids == sequence_id]
-        ))
-    return scores
+def _causal_shift_scores(raw, row_severity, window):
+    """Trailing median per sequence; never reads a future observation."""
+    scores = pd.Series(index=raw.index, dtype=float)
+    severity = pd.Series(row_severity, index=raw.index, dtype=float)
+    for _, group in raw.groupby("sequence_id", sort=False):
+        ordered = group.sort_values(
+            ["timestamp", "source_row"], kind="stable"
+        )
+        scores.loc[ordered.index] = (
+            severity.loc[ordered.index]
+            .rolling(window=window, min_periods=1)
+            .median()
+            .to_numpy()
+        )
+    return scores.loc[raw.index].to_numpy(dtype=float)
 
 
 def _ood_threshold(quantile, reference_distances):
@@ -732,23 +742,30 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
         shift_reference_probability,
         shift_distance_scale,
     )
-    source_capture_shift_scores = _capture_shift_scores(
-        selection_raw, source_shift_severity
+    source_causal_shift_scores = _causal_shift_scores(
+        selection_raw,
+        source_shift_severity,
+        config.shift_history_window,
     )
     shift_capture_threshold = float(np.quantile(
-        np.asarray(list(source_capture_shift_scores.values()), dtype=float),
+        source_causal_shift_scores,
         config.shift_capture_quantile,
     ))
     selected_shift_adaptive_policy = {
         "mild_shift_policy": "class_balanced_ood_residual",
         "severe_shift_policy": "domain_generalized_meta",
         "distance_scale": float(shift_distance_scale),
-        "capture_score": "median_row_shift_severity",
+        "capture_score": "causal_trailing_median_shift_severity",
         "capture_threshold_quantile": float(
             config.shift_capture_quantile
         ),
         "capture_threshold": shift_capture_threshold,
-        "source_capture_scores": source_capture_shift_scores,
+        "history_window": int(config.shift_history_window),
+        "source_score_summary": {
+            "minimum": float(source_causal_shift_scores.min()),
+            "median": float(np.median(source_causal_shift_scores)),
+            "maximum": float(source_causal_shift_scores.max()),
+        },
         "uses_traffic_labels": False,
         "uses_congestion_labels": False,
     }
@@ -818,7 +835,7 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
                 "extra_fitted_trees": 0,
             },
             "shift_adaptive_policy": {
-                "selection_unit": "capture",
+                "selection_unit": "causal_row",
                 "shift_evidence": [
                     "KMeans minimum distance",
                     "meta confidence",
@@ -913,13 +930,14 @@ def predict_all(model, frame):
         shift_reference_probability,
         shift_policy["distance_scale"],
     )
-    capture_shift_scores = _capture_shift_scores(raw, shift_severity)
-    sequence_ids = raw.sequence_id.astype(str).to_numpy()
-    severe_shift = np.asarray([
-        capture_shift_scores[str(sequence_id)]
-        > shift_policy["capture_threshold"]
-        for sequence_id in sequence_ids
-    ], dtype=bool)
+    causal_shift_score = _causal_shift_scores(
+        raw,
+        shift_severity,
+        shift_policy["history_window"],
+    )
+    severe_shift = (
+        causal_shift_score > shift_policy["capture_threshold"]
+    )
     shift_adaptive_prediction = np.where(
         severe_shift,
         domain_generalized_residual,
@@ -965,11 +983,8 @@ def predict_all(model, frame):
                 dg_final_probability.max(axis=1)
             ),
             "shift_severity": shift_severity,
-            "capture_shift_score": np.asarray([
-                capture_shift_scores[str(sequence_id)]
-                for sequence_id in sequence_ids
-            ]),
-            "severe_shift_capture": severe_shift,
+            "causal_shift_score": causal_shift_score,
+            "severe_shift_window": severe_shift,
             "shift_adaptive_selected_policy": np.where(
                 severe_shift, "DG-Meta", "CB-Meta"
             ),
