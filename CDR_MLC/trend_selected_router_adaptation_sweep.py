@@ -92,6 +92,28 @@ def fixed_test_and_adaptation(target, adaptation_fraction, test_fraction):
     )
 
 
+def chronological_prefix(frame, fraction):
+    """Take the same fraction from the beginning of every capture."""
+    pieces, audit = [], []
+    for sequence_id, group in frame.groupby("sequence_id", sort=False):
+        group = group.sort_values(
+            ["timestamp", "source_row"], kind="stable"
+        )
+        end = int(len(group) * fraction)
+        if end:
+            pieces.append(group.iloc[:end].copy())
+        audit.append({
+            "sequence_id": sequence_id,
+            "raw_rows": len(group),
+            "adaptation_rows": end,
+        })
+    empty = frame.iloc[:0].copy()
+    return (
+        pd.concat(pieces, ignore_index=True) if pieces else empty,
+        audit,
+    )
+
+
 def as_series(result, prefix):
     index = result["observed"].index
     return {
@@ -125,6 +147,15 @@ def main():
         default=[0.0, 0.10, 0.20, 0.30],
     )
     parser.add_argument("--test-fraction", type=float, default=0.20)
+    parser.add_argument(
+        "--adaptation-scope",
+        choices=("target", "all-missing"),
+        default="target",
+        help=(
+            "target: add only the evaluated target prefix; "
+            "all-missing: add prefixes from every level not in source_levels"
+        ),
+    )
     parser.add_argument("--window", type=int, default=3)
     parser.add_argument("--congestion-window", type=int, default=10)
     parser.add_argument(
@@ -187,10 +218,29 @@ def main():
 
         scenario_test_identity = None
         for fraction in fractions:
-            calibration, target, split_audit = (
+            target_calibration, target, split_audit = (
                 fixed_test_and_adaptation(
                     raw_target, fraction, args.test_fraction
                 )
+            )
+            calibration_parts = [target_calibration]
+            calibration_levels = [target_level]
+            auxiliary_audits = {}
+            if args.adaptation_scope == "all-missing":
+                for level in ("Low", "Medium", "High"):
+                    if level in source_levels or level == target_level:
+                        continue
+                    level_frame = data[
+                        data.congestion_level.eq(level)
+                    ].copy()
+                    level_prefix, level_audit = chronological_prefix(
+                        level_frame, fraction
+                    )
+                    calibration_parts.append(level_prefix)
+                    calibration_levels.append(level)
+                    auxiliary_audits[level] = level_audit
+            calibration = pd.concat(
+                calibration_parts, ignore_index=True
             )
             if scenario_test_identity is None:
                 scenario_test_identity = frame_identity(target)
@@ -262,7 +312,8 @@ def main():
                     "fixed_test_fraction": args.test_fraction,
                     "scenario": scenario,
                     "train_levels": "+".join(source_levels),
-                    "adaptation_level": target_level,
+                    "adaptation_scope": args.adaptation_scope,
+                    "adaptation_levels": "+".join(calibration_levels),
                     "test_level": target_level,
                     "development_rows": len(development),
                     "adaptation_rows": len(calibration),
@@ -291,7 +342,8 @@ def main():
             audits[run_key] = {
                 "scenario": scenario,
                 "source_levels": list(source_levels),
-                "adaptation_level": target_level,
+                "adaptation_scope": args.adaptation_scope,
+                "adaptation_levels": calibration_levels,
                 "adaptation_fraction": fraction,
                 "fixed_test_fraction": args.test_fraction,
                 "raw_source_rows": len(source),
@@ -301,7 +353,8 @@ def main():
                 "fixed_test_rows_before_windowing": len(target),
                 "evaluated_common_test_rows": len(observed),
                 "fixed_test_identity": scenario_test_identity,
-                "split_by_sequence": split_audit,
+                "target_split_by_sequence": split_audit,
+                "auxiliary_adaptation_by_level": auxiliary_audits,
                 "selected_router_features": list(
                     trend_model["selected_router_features"]
                 ),
@@ -349,6 +402,7 @@ def main():
             "fixed_target_tail_with_chronological_target_prefix_adaptation"
         ),
         "adaptation_fractions": list(fractions),
+        "adaptation_scope": args.adaptation_scope,
         "fixed_test_fraction": args.test_fraction,
         "target_test_is_identical_across_fractions": True,
         "target_middle_region_is_unused": True,
@@ -356,7 +410,16 @@ def main():
         "scenarios": {
             key: {
                 "source_levels": list(SCENARIOS[key][0]),
-                "adaptation_and_test_level": SCENARIOS[key][1],
+                "target_adaptation_and_test_level": SCENARIOS[key][1],
+                "additional_adaptation_levels": (
+                    [
+                        level for level in ("Low", "Medium", "High")
+                        if level not in SCENARIOS[key][0]
+                        and level != SCENARIOS[key][1]
+                    ]
+                    if args.adaptation_scope == "all-missing"
+                    else []
+                ),
             }
             for key in args.scenarios
         },
