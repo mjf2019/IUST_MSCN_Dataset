@@ -323,6 +323,12 @@ def main():
                     ],
                     index=residual_result["observed"].index,
                 ),
+                "CB-Meta": pd.Series(
+                    residual_result[
+                        "CDR_MLC_class_balanced_ood_residual_meta_stacker"
+                    ],
+                    index=residual_result["observed"].index,
+                ),
             }
             common = sorted(set.intersection(*(
                 set(series.index)
@@ -441,6 +447,9 @@ def main():
                 "residual_selected_policy": residual_model[
                     "selected_residual_policy"
                 ],
+                "class_balanced_selected_policy": residual_model[
+                    "selected_class_balanced_policy"
+                ],
                 "residual_distance_quantiles": residual_model[
                     "expert_min_distance_quantiles"
                 ],
@@ -498,6 +507,20 @@ def main():
             "selection_constraint": (
                 "non-degrading versus T-Actual in every source temporal block"
             ),
+            "target_labels_used": False,
+        },
+        "class_balanced_ood_residual_policy": {
+            "base": "R-Meta plus existing class-balanced meta probabilities",
+            "extra_trees": 0,
+            "selection_objective": [
+                "macro_f1", "balanced_accuracy",
+                "worst_per_class_recall_delta",
+                "worst_temporal_block_accuracy_delta"
+            ],
+            "selection_constraints": [
+                "non-degrading versus T-Actual in every source temporal block",
+                "per-class recall degradation no worse than configured tolerance"
+            ],
             "target_labels_used": False,
         },
         "rf_clean_valid": {
