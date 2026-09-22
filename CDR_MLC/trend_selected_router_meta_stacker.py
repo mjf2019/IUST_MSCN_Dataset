@@ -51,6 +51,8 @@ class TrendSelectedRouterConfig:
     redundancy_limit: float = .95
     expert_trees: int = 20
     expert_feature_count: int | None = None
+    expert_causal_augmentation: bool = False
+    expert_augmentation_window: int = 10
     utility_trees: int = 10
     meta_trees: int = 20
     utility_max_depth: int = 12
@@ -97,6 +99,15 @@ class TrendSelectedRouterConfig:
             and self.expert_feature_count < 1
         ):
             raise ValueError("expert_feature_count must be positive")
+        if self.expert_augmentation_window < 2:
+            raise ValueError("expert augmentation window must be >= 2")
+        if (
+            self.expert_feature_count is not None
+            and self.expert_causal_augmentation
+        ):
+            raise ValueError(
+                "feature elimination and augmentation are separate variants"
+            )
         return self
 
 
@@ -144,6 +155,42 @@ def _expert_columns(raw, labels, numeric, categorical, count):
     return selected, [], ranking
 
 
+def _causal_expert_frame(raw, numeric, window):
+    """Keep raw fields and add causal, level-relative expert features."""
+    result = raw[list(numeric)].apply(
+        pd.to_numeric, errors="coerce"
+    ).copy()
+    derived = pd.DataFrame(index=raw.index)
+    epsilon = np.finfo(float).eps
+    for _, group in raw.groupby("sequence_id", sort=False):
+        ordered = group.sort_values(
+            ["timestamp", "source_row"], kind="stable"
+        )
+        values = result.loc[ordered.index]
+        median = values.rolling(
+            window=window, min_periods=1
+        ).median()
+        deviation = (values - median).abs()
+        mad = deviation.rolling(
+            window=window, min_periods=2
+        ).median()
+        delta = values.diff().fillna(0.0)
+        relative = (values - median) / (median.abs() + epsilon)
+        robust = (values - median) / (mad + epsilon)
+        for column in numeric:
+            derived.loc[ordered.index, f"{column}__delta1"] = (
+                delta[column].to_numpy()
+            )
+            derived.loc[ordered.index, f"{column}__relmed"] = (
+                relative[column].to_numpy()
+            )
+            derived.loc[ordered.index, f"{column}__robustz"] = (
+                robust[column].to_numpy()
+            )
+    result = pd.concat([result, derived], axis=1)
+    return result.replace([np.inf, -np.inf], np.nan)
+
+
 def fit_selected_cdr(source, router_features, config):
     """Fit the original three-cluster CDR-MLC with a selected feature trio."""
     router_features = tuple(router_features)
@@ -185,11 +232,35 @@ def fit_selected_cdr(source, router_features, config):
     expert_feature_rankings = {}
     shared_preprocessor = None
     shared_x = None
+    augmented_numeric = list(numeric)
+    augmented_frame = None
+    use_augmentation = bool(getattr(
+        config, "expert_causal_augmentation", False
+    ))
+    augmentation_window = int(getattr(
+        config, "expert_augmentation_window", 10
+    ))
     if getattr(config, "expert_feature_count", None) is None:
-        shared_preprocessor = make_preprocessor(numeric, categorical)
-        shared_x = shared_preprocessor.fit_transform(
-            raw[numeric + categorical]
-        )
+        if use_augmentation:
+            augmented_frame = _causal_expert_frame(
+                raw, numeric, augmentation_window
+            )
+            augmented_numeric = list(augmented_frame.columns)
+            shared_preprocessor = make_preprocessor(
+                augmented_numeric, categorical
+            )
+            shared_x = shared_preprocessor.fit_transform(
+                pd.concat(
+                    [augmented_frame, raw[categorical]], axis=1
+                )[augmented_numeric + categorical]
+            )
+        else:
+            shared_preprocessor = make_preprocessor(
+                numeric, categorical
+            )
+            shared_x = shared_preprocessor.fit_transform(
+                raw[numeric + categorical]
+            )
     for cluster in range(3):
         mask = routes == cluster
         if not mask.any():
@@ -203,6 +274,8 @@ def fit_selected_cdr(source, router_features, config):
                 config.expert_feature_count,
             )
         )
+        if use_augmentation:
+            selected_numeric = list(augmented_numeric)
         columns = selected_numeric + selected_categorical
         if getattr(config, "expert_feature_count", None) is None:
             preprocessor = shared_preprocessor
@@ -249,6 +322,9 @@ def fit_selected_cdr(source, router_features, config):
         "expert_categorical": expert_categorical,
         "expert_feature_rankings": expert_feature_rankings,
         "expert_feature_count": config.expert_feature_count,
+        "expert_causal_augmentation": use_augmentation,
+        "expert_augmentation_window": augmentation_window,
+        "expert_base_numeric": list(numeric),
         "source_eligible_index": view.index.tolist(),
         "cluster_counts": cluster_counts,
     }
@@ -261,13 +337,23 @@ def _selected_expert_outputs(model, frame):
     z = model["scaler"].transform(view[model["trend_columns"]])
     distances = model["router"].transform(z)
     routes = model["router"].predict(z)
+    expert_frame = raw
+    if model.get("expert_causal_augmentation", False):
+        augmented = _causal_expert_frame(
+            raw,
+            model["expert_base_numeric"],
+            model["expert_augmentation_window"],
+        )
+        expert_frame = pd.concat(
+            [augmented, raw[model["categorical"]]], axis=1
+        )
     probabilities, predictions = [], []
     for cluster in range(3):
         numeric = model["expert_numeric"][cluster]
         categorical = model["expert_categorical"][cluster]
         columns = numeric + categorical
         x = model["expert_preprocessors"][cluster].transform(
-            raw[columns]
+            expert_frame[columns]
         )
         probability = aligned_probabilities(
             model["experts"][cluster], x, APPLICATIONS
@@ -326,12 +412,23 @@ def _refit_selected_experts(initial, full_source, config):
     expert_preprocessors = {}
     shared_preprocessor = None
     shared_x = None
+    refit_frame = raw
     if getattr(config, "expert_feature_count", None) is None:
         numeric = initial["numeric"]
         categorical = initial["categorical"]
+        if initial.get("expert_causal_augmentation", False):
+            augmented = _causal_expert_frame(
+                raw,
+                initial["expert_base_numeric"],
+                initial["expert_augmentation_window"],
+            )
+            refit_frame = pd.concat(
+                [augmented, raw[categorical]], axis=1
+            )
+            numeric = list(augmented.columns)
         shared_preprocessor = make_preprocessor(numeric, categorical)
         shared_x = shared_preprocessor.fit_transform(
-            raw[numeric + categorical]
+            refit_frame[numeric + categorical]
         )
     for cluster in range(3):
         mask = routes == cluster
