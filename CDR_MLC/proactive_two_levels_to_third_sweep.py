@@ -1,8 +1,11 @@
 """Compare context-aware and proactive stackers on two-to-third level transfer.
 
 Scenarios:
+  1: Low -> Medium
+  2: Low -> High
+  3: Medium -> High
   LM-H: Low + Medium -> High
-  LH-M: Low + High   -> Medium
+  LH-M: Low + High -> Medium
   MH-L: Medium + High -> Low
 
 The target level is never used for fitting, selection, preprocessing, or
@@ -21,7 +24,7 @@ import pandas as pd
 
 from adaptive_cdr_mlc import APPLICATIONS, load_dataset
 from compare_clean_valid import (
-    TIMING, fit_fixed_cdr, fit_rf, metrics, predict_fixed_cdr, predict_rf,
+    TIMING, fit_rf, metrics, predict_rf,
 )
 from congestion_feature_cdr_mlc import DEFAULT_CONGESTION_FEATURES
 from meta_stacked_cdr_mlc import (
@@ -40,6 +43,9 @@ from proactive_meta_stacked_cdr_mlc import (
 
 
 SCENARIOS = {
+    "1": (("Low",), "Medium"),
+    "2": (("Low",), "High"),
+    "3": (("Medium",), "High"),
     "LM-H": (("Low", "Medium"), "High"),
     "LH-M": (("Low", "High"), "Medium"),
     "MH-L": (("Medium", "High"), "Low"),
@@ -127,11 +133,13 @@ def main() -> None:
         if source.empty or target.empty:
             raise ValueError(f"{scenario}: empty source or target")
 
-        fixed = fit_fixed_cdr(
-            source, args.window, args.seed, args.expert_trees
-        )
-        fixed_prediction = predict_fixed_cdr(fixed, target)
-        eligible_source = source.loc[fixed["source_eligible_index"]]
+        legacy_model = fit_legacy_meta(source, config)
+        # The standalone fixed CDR-MLC row was identical to
+        # Legacy_CDR_MLC_actual_router. Reuse the legacy model's eligible
+        # source rows for both RF baselines and avoid fitting it twice.
+        eligible_source = source.loc[
+            legacy_model["source_eligible_index"]
+        ]
         rf_clean_valid = fit_rf(
             eligible_source, (), args.seed, args.rf_trees
         )
@@ -139,7 +147,6 @@ def main() -> None:
             eligible_source, TIMING, args.seed, args.rf_trees
         )
 
-        legacy_model = fit_legacy_meta(source, config)
         safe_model = fit_safe_meta(source, config)
         proactive_model = fit_proactive_meta_stacker(
             source, proactive_config
@@ -151,7 +158,6 @@ def main() -> None:
         )
 
         prediction_series = {
-            "CDR_MLC": fixed_prediction,
             **as_series(legacy_result, "Legacy_"),
             **as_series(safe_result, "Safe_"),
             **as_series(proactive_result, "Proactive_"),
@@ -211,7 +217,7 @@ def main() -> None:
             "evaluated_common_test_rows": len(observed),
             "raw_test_identity": frame_identity(target),
             "evaluated_test_identity": frame_identity(observed),
-            "fixed_cluster_counts": fixed["cluster_counts"],
+            "fixed_cluster_counts": legacy_model["cluster_counts"],
             "legacy_partition_rows": legacy_model["partition_rows"],
             "safe_partition_rows": safe_model["partition_rows"],
             "proactive_partition_rows": (
@@ -269,6 +275,8 @@ def main() -> None:
             "selected_features": 3,
             "forecast": "strictly causal one-step-ahead",
             "selected_features_frozen_for_test": True,
+            "context_features_preserved": True,
+            "proactive_features_are_additive": True,
         },
         "rf_clean_valid": {
             "trees": args.rf_trees,
