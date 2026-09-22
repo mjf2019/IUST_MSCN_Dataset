@@ -40,6 +40,9 @@ class OODResidualConfig(TrendSelectedRouterConfig):
     temporal_selection_blocks: int = 4
     meta_mix_candidates: tuple[float, ...] = (.00, .25, .50, .75, 1.00)
     class_recall_tolerance: float = .005
+    dg_probability_temperatures: tuple[float, ...] = (1.0, 1.5, 2.0)
+    dg_distance_scales: tuple[float, ...] = (1.0, 1.25, 1.5)
+    dg_capture_tolerance: float = .01
 
     def validate(self):
         super().validate()
@@ -64,6 +67,18 @@ class OODResidualConfig(TrendSelectedRouterConfig):
             raise ValueError("meta mix candidates must be in [0,1]")
         if self.class_recall_tolerance < 0:
             raise ValueError("class recall tolerance must be nonnegative")
+        if not self.dg_probability_temperatures or any(
+            value < 1 for value in self.dg_probability_temperatures
+        ):
+            raise ValueError(
+                "DG probability temperatures must be at least 1"
+            )
+        if not self.dg_distance_scales or any(
+            value < 1 for value in self.dg_distance_scales
+        ):
+            raise ValueError("DG distance scales must be at least 1")
+        if self.dg_capture_tolerance < 0:
+            raise ValueError("DG capture tolerance must be nonnegative")
         return self
 
 
@@ -108,6 +123,26 @@ def _class_recalls(truth, prediction):
 def _meta_margin(probability):
     ordered = np.sort(probability, axis=1)
     return ordered[:, -1] - ordered[:, -2]
+
+
+def _temperature_scale(probability, temperature):
+    """Flatten meta evidence to emulate confidence loss under domain shift."""
+    if temperature == 1:
+        return probability
+    scaled = np.power(
+        np.clip(probability, np.finfo(float).tiny, 1.0),
+        1.0 / temperature,
+    )
+    return scaled / scaled.sum(axis=1, keepdims=True)
+
+
+def _capture_accuracy(truth, prediction, capture_ids):
+    return {
+        str(capture): float(np.mean(prediction[capture_ids == capture] == truth[
+            capture_ids == capture
+        ]))
+        for capture in np.unique(capture_ids)
+    }
 
 
 def _ood_threshold(quantile, reference_distances):
@@ -480,6 +515,180 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
         ),
     )
 
+    # Domain-generalized policy selection. Each capture is treated as an
+    # independently held-out environment for policy scoring. In addition,
+    # source-only router evidence is stressed by flattening meta confidence
+    # and inflating KMeans distance. No synthetic row is used to fit a tree.
+    capture_ids = selection_raw.sequence_id.astype(str).to_numpy()
+    actual_capture_accuracy = _capture_accuracy(
+        truth, actual_prediction, capture_ids
+    )
+    dg_trials = []
+    for meta_mix in config.meta_mix_candidates:
+        original_probability = (
+            meta_mix
+            * selection_meta_probability["class_balanced"]
+            + (1.0 - meta_mix)
+            * selection_meta_probability["level_class_balanced"]
+        )
+        for quantile in config.ood_quantile_candidates:
+            distance_threshold = _ood_threshold(
+                quantile, expert_min_distance
+            )
+            for alpha in config.blend_candidates:
+                for confidence_threshold in (
+                    config.meta_confidence_candidates
+                ):
+                    for margin_threshold in (
+                        config.meta_margin_candidates
+                    ):
+                        environments = []
+                        for temperature in (
+                            config.dg_probability_temperatures
+                        ):
+                            stressed_probability = _temperature_scale(
+                                original_probability, temperature
+                            )
+                            for distance_scale in (
+                                config.dg_distance_scales
+                            ):
+                                prediction, _, _, _, eligible = (
+                                    _residual_prediction(
+                                        actual_probability,
+                                        stressed_probability,
+                                        minimum_distance * distance_scale,
+                                        alpha,
+                                        confidence_threshold,
+                                        margin_threshold,
+                                        distance_threshold,
+                                    )
+                                )
+                                block_scores = _block_scores(
+                                    truth, prediction, blocks
+                                )
+                                block_deltas = {
+                                    block: (
+                                        block_scores[block]
+                                        - actual_block_scores[block]
+                                    )
+                                    for block in block_scores
+                                }
+                                capture_accuracy = _capture_accuracy(
+                                    truth, prediction, capture_ids
+                                )
+                                capture_deltas = {
+                                    capture: (
+                                        capture_accuracy[capture]
+                                        - actual_capture_accuracy[capture]
+                                    )
+                                    for capture in capture_accuracy
+                                }
+                                class_recalls = _class_recalls(
+                                    truth, prediction
+                                )
+                                class_deltas = {
+                                    label: (
+                                        class_recalls[label]
+                                        - actual_class_recalls[label]
+                                    )
+                                    for label in APPLICATIONS
+                                }
+                                environments.append({
+                                    "probability_temperature": float(
+                                        temperature
+                                    ),
+                                    "distance_scale": float(distance_scale),
+                                    "macro_f1": float(f1_score(
+                                        truth, prediction,
+                                        labels=APPLICATIONS,
+                                        average="macro",
+                                        zero_division=0,
+                                    )),
+                                    "balanced_accuracy": float(
+                                        balanced_accuracy_score(
+                                            truth, prediction
+                                        )
+                                    ),
+                                    "corrected_fraction": float(
+                                        eligible.mean()
+                                    ),
+                                    "worst_capture_accuracy_delta": float(
+                                        min(capture_deltas.values())
+                                    ),
+                                    "worst_temporal_block_delta": float(
+                                        min(block_deltas.values())
+                                    ),
+                                    "worst_class_recall_delta": float(
+                                        min(class_deltas.values())
+                                    ),
+                                })
+                        dg_trials.append({
+                            "meta_mix_class_balanced": float(meta_mix),
+                            "meta_mix_level_balanced": float(
+                                1.0 - meta_mix
+                            ),
+                            "alpha": float(alpha),
+                            "confidence_threshold": float(
+                                confidence_threshold
+                            ),
+                            "margin_threshold": float(margin_threshold),
+                            "ood_quantile": float(quantile),
+                            "ood_distance_threshold": float(
+                                distance_threshold
+                            ),
+                            "worst_environment_macro_f1": float(min(
+                                item["macro_f1"] for item in environments
+                            )),
+                            "mean_environment_macro_f1": float(np.mean([
+                                item["macro_f1"] for item in environments
+                            ])),
+                            "worst_environment_balanced_accuracy": float(min(
+                                item["balanced_accuracy"]
+                                for item in environments
+                            )),
+                            "worst_capture_accuracy_delta": float(min(
+                                item["worst_capture_accuracy_delta"]
+                                for item in environments
+                            )),
+                            "worst_temporal_block_delta": float(min(
+                                item["worst_temporal_block_delta"]
+                                for item in environments
+                            )),
+                            "worst_class_recall_delta": float(min(
+                                item["worst_class_recall_delta"]
+                                for item in environments
+                            )),
+                            "mean_corrected_fraction": float(np.mean([
+                                item["corrected_fraction"]
+                                for item in environments
+                            ])),
+                            "environment_scores": environments,
+                        })
+    dg_feasible = [
+        trial for trial in dg_trials
+        if (
+            trial["worst_capture_accuracy_delta"]
+            >= -config.dg_capture_tolerance
+            and trial["worst_temporal_block_delta"] >= -1e-12
+            and trial["worst_class_recall_delta"]
+            >= -config.class_recall_tolerance
+        )
+    ]
+    if not dg_feasible:
+        raise RuntimeError("alpha=0 DG fallback was unexpectedly infeasible")
+    selected_dg_policy = max(
+        dg_feasible,
+        key=lambda trial: (
+            trial["worst_environment_macro_f1"],
+            trial["worst_environment_balanced_accuracy"],
+            trial["mean_environment_macro_f1"],
+            trial["worst_capture_accuracy_delta"],
+            trial["worst_class_recall_delta"],
+            -trial["mean_corrected_fraction"],
+            -trial["alpha"],
+        ),
+    )
+
     final = _refit_selected_experts(initial, source, config)
     final.update({
         "ood_residual_config": config,
@@ -495,6 +704,8 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
         "residual_policy_trials": trials,
         "selected_class_balanced_policy": selected_class_policy,
         "class_balanced_policy_trials": class_balanced_trials,
+        "selected_domain_generalized_policy": selected_dg_policy,
+        "domain_generalized_policy_trials": dg_trials,
         "expert_min_distance_quantiles": {
             str(value): _ood_threshold(value, expert_min_distance)
             for value in config.ood_quantile_candidates
@@ -527,6 +738,19 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
                     "macro_f1", "balanced_accuracy",
                     "worst_class_recall_delta"
                 ],
+            },
+            "domain_generalized_policy": {
+                "capture_group_validation": True,
+                "source_only_probability_temperature_stress": list(
+                    config.dg_probability_temperatures
+                ),
+                "source_only_kmeans_distance_stress": list(
+                    config.dg_distance_scales
+                ),
+                "maximum_capture_accuracy_loss": (
+                    config.dg_capture_tolerance
+                ),
+                "extra_fitted_trees": 0,
             },
             "target_or_test_used_for_policy_selection": False,
         },
@@ -587,6 +811,23 @@ def predict_all(model, frame):
         class_policy["margin_threshold"],
         class_policy["ood_distance_threshold"],
     )
+    dg_policy = model["selected_domain_generalized_policy"]
+    dg_probability = (
+        dg_policy["meta_mix_class_balanced"] * class_probability
+        + dg_policy["meta_mix_level_balanced"] * level_probability
+    )
+    (
+        domain_generalized_residual, dg_final_probability,
+        dg_confidence, dg_margin, dg_corrected,
+    ) = _residual_prediction(
+        actual_probability,
+        dg_probability,
+        distances.min(axis=1),
+        dg_policy["alpha"],
+        dg_policy["confidence_threshold"],
+        dg_policy["margin_threshold"],
+        dg_policy["ood_distance_threshold"],
+    )
     truth = raw.traffic_label.to_numpy()
     oracle = _oracle_route(truth, probabilities, predictions)
     return {
@@ -596,6 +837,9 @@ def predict_all(model, frame):
         "CDR_MLC_ood_residual_meta_stacker": residual,
         "CDR_MLC_class_balanced_ood_residual_meta_stacker": (
             class_balanced_residual
+        ),
+        "CDR_MLC_domain_generalized_meta_stacker": (
+            domain_generalized_residual
         ),
         "CDR_MLC_oracle_router": predictions[row, oracle],
         "routes": pd.DataFrame({
@@ -613,6 +857,12 @@ def predict_all(model, frame):
             "corrected_by_class_balanced_meta": class_corrected,
             "class_balanced_probability_max": (
                 class_final_probability.max(axis=1)
+            ),
+            "domain_generalized_meta_confidence": dg_confidence,
+            "domain_generalized_meta_margin": dg_margin,
+            "corrected_by_domain_generalized_meta": dg_corrected,
+            "domain_generalized_probability_max": (
+                dg_final_probability.max(axis=1)
             ),
         }, index=raw.index),
     }
