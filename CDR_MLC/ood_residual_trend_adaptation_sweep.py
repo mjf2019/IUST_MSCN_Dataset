@@ -149,6 +149,36 @@ def fraction_tag(value):
     return f"{int(round(100 * value)):02d}"
 
 
+def shift_route_audit(result):
+    routes = result["routes"].copy()
+    routes["sequence_id"] = (
+        result["observed"].loc[routes.index, "sequence_id"].astype(str)
+    )
+    audit = []
+    for sequence_id, group in routes.groupby(
+        "sequence_id", sort=False
+    ):
+        selected = group[
+            "shift_adaptive_selected_policy"
+        ].value_counts()
+        audit.append({
+            "sequence_id": str(sequence_id),
+            "rows": int(len(group)),
+            "causal_score_min": float(
+                group["causal_shift_score"].min()
+            ),
+            "causal_score_median": float(
+                group["causal_shift_score"].median()
+            ),
+            "causal_score_max": float(
+                group["causal_shift_score"].max()
+            ),
+            "cb_rows": int(selected.get("CB-Meta", 0)),
+            "dg_rows": int(selected.get("DG-Meta", 0)),
+        })
+    return audit
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     root = Path(__file__).resolve().parent
@@ -180,6 +210,8 @@ def main():
     )
     parser.add_argument("--window", type=int, default=3)
     parser.add_argument("--congestion-window", type=int, default=10)
+    parser.add_argument("--shift-window", type=int, default=10)
+    parser.add_argument("--expert-feature-count", type=int, default=12)
     parser.add_argument(
         "--congestion-features", nargs="+",
         default=list(DEFAULT_CONGESTION_FEATURES),
@@ -240,6 +272,21 @@ def main():
         expert_trees=args.expert_trees,
         utility_trees=args.utility_trees,
         meta_trees=args.meta_trees,
+        shift_history_window=args.shift_window,
+        random_state=args.seed,
+    ).validate()
+    expert_residual_config = OODResidualConfig(
+        window=args.window,
+        congestion_window=args.congestion_window,
+        router_candidates=tuple(args.congestion_features),
+        context_features=tuple(args.congestion_features),
+        selected_feature_count=3,
+        trend_window=3,
+        expert_trees=args.expert_trees,
+        expert_feature_count=args.expert_feature_count,
+        utility_trees=args.utility_trees,
+        meta_trees=args.meta_trees,
+        shift_history_window=args.shift_window,
         random_state=args.seed,
     ).validate()
 
@@ -304,6 +351,9 @@ def main():
             residual_model = fit_ood_residual_meta_stacker(
                 development, residual_config
             )
+            expert_residual_model = fit_ood_residual_meta_stacker(
+                development, expert_residual_config
+            )
 
             legacy_result = predict_legacy_meta(legacy_model, target)
             safe_result = predict_safe_meta(safe_model, target)
@@ -313,28 +363,13 @@ def main():
             residual_result = predict_ood_residual(
                 residual_model, target
             )
-            shift_route_frame = residual_result["routes"].copy()
-            shift_route_frame["sequence_id"] = (
-                residual_result["observed"]
-                .loc[shift_route_frame.index, "sequence_id"]
-                .astype(str)
+            expert_residual_result = predict_ood_residual(
+                expert_residual_model, target
             )
-            shift_capture_audit = []
-            for sequence_id, route_group in shift_route_frame.groupby(
-                "sequence_id", sort=False
-            ):
-                shift_capture_audit.append({
-                    "sequence_id": str(sequence_id),
-                    "shift_score": float(
-                        route_group["capture_shift_score"].iloc[0]
-                    ),
-                    "selected_policy": str(
-                        route_group[
-                            "shift_adaptive_selected_policy"
-                        ].iloc[0]
-                    ),
-                    "rows": int(len(route_group)),
-                })
+            shift_capture_audit = shift_route_audit(residual_result)
+            expert_shift_audit = shift_route_audit(
+                expert_residual_result
+            )
             prediction_series = {
                 **as_series(legacy_result, "Legacy_"),
                 **as_series(safe_result, "Safe_"),
@@ -362,6 +397,24 @@ def main():
                         "CDR_MLC_shift_adaptive_meta_stacker"
                     ],
                     index=residual_result["observed"].index,
+                ),
+                "EF-Actual": pd.Series(
+                    expert_residual_result[
+                        "CDR_MLC_actual_router"
+                    ],
+                    index=expert_residual_result["observed"].index,
+                ),
+                "EF-SA-Meta": pd.Series(
+                    expert_residual_result[
+                        "CDR_MLC_shift_adaptive_meta_stacker"
+                    ],
+                    index=expert_residual_result["observed"].index,
+                ),
+                "EF-Oracle": pd.Series(
+                    expert_residual_result[
+                        "CDR_MLC_oracle_router"
+                    ],
+                    index=expert_residual_result["observed"].index,
                 ),
             }
             common = sorted(set.intersection(*(
@@ -490,9 +543,27 @@ def main():
                 "shift_adaptive_selected_policy": residual_model[
                     "selected_shift_adaptive_policy"
                 ],
-                "shift_adaptive_test_capture_decisions": (
+                "shift_adaptive_test_sequence_summary": (
                     shift_capture_audit
                 ),
+                "expert_feature_selected_columns": {
+                    str(cluster): list(columns)
+                    for cluster, columns in (
+                        expert_residual_model["expert_numeric"].items()
+                    )
+                },
+                "expert_feature_rankings": {
+                    str(cluster): ranking
+                    for cluster, ranking in (
+                        expert_residual_model[
+                            "expert_feature_rankings"
+                        ].items()
+                    )
+                },
+                "expert_shift_adaptive_policy": expert_residual_model[
+                    "selected_shift_adaptive_policy"
+                ],
+                "expert_shift_test_decisions": expert_shift_audit,
                 "residual_distance_quantiles": residual_model[
                     "expert_min_distance_quantiles"
                 ],
@@ -540,6 +611,9 @@ def main():
         "meta_config": asdict(meta_config),
         "trend_selected_router_config": asdict(trend_config),
         "ood_residual_config": asdict(residual_config),
+        "expert_feature_residual_config": asdict(
+            expert_residual_config
+        ),
         "ood_residual_policy": {
             "fallback": "T-Actual",
             "correction": "soft probability blend",
@@ -585,14 +659,30 @@ def main():
             "output_method": "SA-Meta",
             "mild_shift_policy": "CB-Meta",
             "severe_shift_policy": "DG-Meta",
-            "selection_unit": "capture",
+            "selection_unit": "causal_row_within_sequence",
             "shift_score": (
-                "normalized KMeans distance plus meta confidence "
-                "and margin uncertainty"
+                "trailing-median of normalized KMeans distance plus "
+                "meta confidence and margin uncertainty"
             ),
-            "threshold_source": "source selection captures only",
+            "history_window": args.shift_window,
+            "future_rows_used": False,
+            "threshold_source": "source-only causal rolling scores",
             "target_or_test_labels_used": False,
             "extra_trees": 0,
+        },
+        "expert_feature_selection": {
+            "output_methods": [
+                "EF-Actual", "EF-SA-Meta", "EF-Oracle"
+            ],
+            "selection_partition": "expert_only",
+            "selection_scope": "independent_per_kmeans_cluster",
+            "score": "between_class_variance_over_within_class_variance",
+            "selected_numeric_features_per_expert": (
+                args.expert_feature_count
+            ),
+            "router_features_excluded": True,
+            "selection_frozen_before_later_partitions": True,
+            "trees_per_expert": args.expert_trees,
         },
         "rf_clean_valid": {
             "trees": args.rf_trees,
