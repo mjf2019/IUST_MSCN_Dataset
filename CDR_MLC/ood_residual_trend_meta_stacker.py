@@ -1,0 +1,429 @@
+"""OOD-aware residual meta-stacking for trend-selected CDR-MLC.
+
+This conservative extension preserves the selected KMeans feature trio and the
+110-tree budget. The meta model acts as a residual correction to the actual
+KMeans-routed expert rather than replacing it unconditionally. Corrections are
+allowed only for sufficiently confident, high-margin, in-distribution rows.
+All policy parameters are selected on source-only temporal blocks with a
+non-degradation constraint relative to the actual KMeans router.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import f1_score
+
+from adaptive_cdr_mlc import APPLICATIONS
+from congestion_feature_cdr_mlc import CongestionRouterConfig
+from meta_stacked_cdr_mlc_leakage_safe import (
+    _aligned_meta_probabilities, _balanced_weights, _level_scores,
+    _meta_features, _utility_matrix, _utility_routes, four_way_split,
+)
+from proactive_meta_stacked_cdr_mlc import select_proactive_features
+from trend_selected_router_meta_stacker import (
+    TrendSelectedRouterConfig, _refit_selected_experts,
+    _selected_enhanced_outputs, _selected_expert_outputs,
+    _utility_config, fit_selected_cdr,
+)
+from utility_router_cdr_mlc import _fit_utility_models
+
+
+@dataclass(frozen=True)
+class OODResidualConfig(TrendSelectedRouterConfig):
+    blend_candidates: tuple[float, ...] = (.00, .25, .50, .75, 1.00)
+    meta_margin_candidates: tuple[float, ...] = (.00, .05, .10, .20)
+    ood_quantile_candidates: tuple[float, ...] = (.90, .95, .99, 1.01)
+    temporal_selection_blocks: int = 4
+
+    def validate(self):
+        super().validate()
+        if not self.blend_candidates:
+            raise ValueError("at least one blend candidate is required")
+        if any(not 0 <= value <= 1 for value in self.blend_candidates):
+            raise ValueError("blend candidates must be in [0,1]")
+        if 0.0 not in self.blend_candidates:
+            raise ValueError("blend candidates must include 0 fallback")
+        if any(value < 0 for value in self.meta_margin_candidates):
+            raise ValueError("meta margins must be nonnegative")
+        if any(
+            not (0 < value <= 1 or value > 1)
+            for value in self.ood_quantile_candidates
+        ):
+            raise ValueError("OOD quantiles must be positive")
+        if self.temporal_selection_blocks < 2:
+            raise ValueError("at least two temporal blocks are required")
+        return self
+
+
+def _temporal_blocks(raw, block_count):
+    """Assign relative-time blocks independently inside each capture."""
+    result = pd.Series(index=raw.index, dtype=int)
+    for _, group in raw.groupby("sequence_id", sort=False):
+        group = group.sort_values(
+            ["timestamp", "source_row"], kind="stable"
+        )
+        positions = np.arange(len(group))
+        blocks = np.minimum(
+            block_count - 1,
+            (positions * block_count) // max(len(group), 1),
+        )
+        result.loc[group.index] = blocks
+    return result.loc[raw.index].to_numpy(dtype=int)
+
+
+def _block_scores(truth, prediction, blocks):
+    scores = {}
+    for block in np.unique(blocks):
+        mask = blocks == block
+        scores[str(int(block))] = float(f1_score(
+            truth[mask], prediction[mask],
+            labels=APPLICATIONS, average="macro", zero_division=0,
+        ))
+    return scores
+
+
+def _meta_margin(probability):
+    ordered = np.sort(probability, axis=1)
+    return ordered[:, -1] - ordered[:, -2]
+
+
+def _ood_threshold(quantile, reference_distances):
+    if quantile > 1:
+        return float("inf")
+    return float(np.quantile(reference_distances, quantile))
+
+
+def _residual_prediction(
+    actual_probability,
+    meta_probability,
+    minimum_distance,
+    alpha,
+    confidence_threshold,
+    margin_threshold,
+    distance_threshold,
+):
+    confidence = meta_probability.max(axis=1)
+    margin = _meta_margin(meta_probability)
+    eligible = (
+        (confidence >= confidence_threshold)
+        & (margin >= margin_threshold)
+        & (minimum_distance <= distance_threshold)
+        & (alpha > 0)
+    )
+    final_probability = actual_probability.copy()
+    if eligible.any():
+        final_probability[eligible] = (
+            (1.0 - alpha) * actual_probability[eligible]
+            + alpha * meta_probability[eligible]
+        )
+    prediction = np.asarray(APPLICATIONS)[
+        final_probability.argmax(axis=1)
+    ]
+    return prediction, final_probability, confidence, margin, eligible
+
+
+def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
+    config.validate()
+    split = four_way_split(source, config)
+
+    selected_features, trend_ranking = select_proactive_features(
+        split["expert"], config
+    )
+    initial = fit_selected_cdr(
+        split["expert"], selected_features, config
+    )
+    congestion_config = CongestionRouterConfig(
+        window=config.congestion_window,
+        features=tuple(config.context_features),
+        expert_trees=config.expert_trees,
+        random_state=config.random_state,
+    ).validate()
+    preliminary = dict(initial)
+    preliminary["congestion_config"] = congestion_config
+
+    # Source-only reference geometry for OOD rejection.
+    _, _, expert_distances, _, _, _ = _selected_expert_outputs(
+        initial, split["expert"]
+    )
+    expert_min_distance = expert_distances.min(axis=1)
+
+    (
+        utility_raw, _, _, _, utility_predictions,
+        utility_features, context_columns,
+    ) = _selected_enhanced_outputs(preliminary, split["utility"])
+    utility_truth = utility_raw.traffic_label.to_numpy()
+    utility_models, utility_constants, correctness_counts = (
+        _fit_utility_models(
+            utility_features,
+            utility_predictions,
+            utility_truth,
+            utility_raw.congestion_level.to_numpy(),
+            _utility_config(config),
+        )
+    )
+
+    (
+        meta_raw, _, _, _, _, meta_base, _,
+    ) = _selected_enhanced_outputs(preliminary, split["meta"])
+    meta_utility = _utility_matrix(
+        utility_models, utility_constants, meta_base
+    )
+    meta_x = _meta_features(meta_base, meta_utility)
+    meta_truth = meta_raw.traffic_label.to_numpy()
+    class_balanced = RandomForestClassifier(
+        n_estimators=config.meta_trees,
+        max_depth=config.meta_max_depth,
+        min_samples_leaf=config.meta_min_samples_leaf,
+        max_features="sqrt",
+        class_weight="balanced",
+        n_jobs=-1,
+        random_state=config.random_state + 500,
+    ).fit(meta_x, meta_truth)
+    level_balanced = RandomForestClassifier(
+        n_estimators=config.meta_trees,
+        max_depth=config.meta_max_depth,
+        min_samples_leaf=config.meta_min_samples_leaf,
+        max_features="sqrt",
+        class_weight=None,
+        n_jobs=-1,
+        random_state=config.random_state + 700,
+    ).fit(
+        meta_x,
+        meta_truth,
+        sample_weight=_balanced_weights(
+            meta_raw.congestion_level.to_numpy(), meta_truth
+        ),
+    )
+    meta_models = {
+        "class_balanced": class_balanced,
+        "level_class_balanced": level_balanced,
+    }
+
+    (
+        selection_raw, selection_distances, selection_route, _,
+        selection_predictions, selection_base, _,
+    ) = _selected_enhanced_outputs(preliminary, split["selection"])
+    selection_utility = _utility_matrix(
+        utility_models, utility_constants, selection_base
+    )
+    selection_x = _meta_features(selection_base, selection_utility)
+    row = np.arange(len(selection_raw))
+    actual_probability = _selected_expert_outputs(
+        preliminary, split["selection"]
+    )[4]
+    # Align the unfiltered expert output to context-eligible selection rows.
+    expert_raw = _selected_expert_outputs(
+        preliminary, split["selection"]
+    )[0]
+    positions = expert_raw.index.get_indexer(selection_raw.index)
+    if (positions < 0).any():
+        raise RuntimeError("selection probability alignment failed")
+    actual_probability = actual_probability[
+        positions, selection_route
+    ]
+    actual_prediction = selection_predictions[row, selection_route]
+    truth = selection_raw.traffic_label.to_numpy()
+    levels = selection_raw.congestion_level.to_numpy()
+    blocks = _temporal_blocks(
+        selection_raw, config.temporal_selection_blocks
+    )
+    actual_block_scores = _block_scores(
+        truth, actual_prediction, blocks
+    )
+    actual_level_scores = _level_scores(
+        truth, actual_prediction, levels
+    )
+    minimum_distance = selection_distances.min(axis=1)
+
+    trials = []
+    for variant, candidate_model in meta_models.items():
+        meta_probability = _aligned_meta_probabilities(
+            candidate_model, selection_x
+        )
+        for quantile in config.ood_quantile_candidates:
+            distance_threshold = _ood_threshold(
+                quantile, expert_min_distance
+            )
+            for alpha in config.blend_candidates:
+                for confidence_threshold in (
+                    config.meta_confidence_candidates
+                ):
+                    for margin_threshold in (
+                        config.meta_margin_candidates
+                    ):
+                        prediction, _, confidence, margin, eligible = (
+                            _residual_prediction(
+                                actual_probability,
+                                meta_probability,
+                                minimum_distance,
+                                alpha,
+                                confidence_threshold,
+                                margin_threshold,
+                                distance_threshold,
+                            )
+                        )
+                        block_scores = _block_scores(
+                            truth, prediction, blocks
+                        )
+                        block_deltas = {
+                            block: (
+                                block_scores[block]
+                                - actual_block_scores[block]
+                            )
+                            for block in block_scores
+                        }
+                        level_scores = _level_scores(
+                            truth, prediction, levels
+                        )
+                        level_deltas = {
+                            level: (
+                                level_scores[level]
+                                - actual_level_scores[level]
+                            )
+                            for level in level_scores
+                        }
+                        trials.append({
+                            "meta_variant": variant,
+                            "alpha": float(alpha),
+                            "confidence_threshold": float(
+                                confidence_threshold
+                            ),
+                            "margin_threshold": float(margin_threshold),
+                            "ood_quantile": float(quantile),
+                            "ood_distance_threshold": float(
+                                distance_threshold
+                            ),
+                            "macro_f1": float(f1_score(
+                                truth, prediction,
+                                labels=APPLICATIONS,
+                                average="macro", zero_division=0,
+                            )),
+                            "corrected_rows": int(eligible.sum()),
+                            "corrected_fraction": float(eligible.mean()),
+                            "mean_meta_confidence": float(
+                                confidence.mean()
+                            ),
+                            "mean_meta_margin": float(margin.mean()),
+                            "temporal_block_macro_f1": block_scores,
+                            "temporal_block_delta_vs_actual": (
+                                block_deltas
+                            ),
+                            "worst_temporal_block_delta_vs_actual": (
+                                float(min(block_deltas.values()))
+                            ),
+                            "level_macro_f1": level_scores,
+                            "level_delta_vs_actual": level_deltas,
+                        })
+
+    feasible = [
+        trial for trial in trials
+        if trial["worst_temporal_block_delta_vs_actual"] >= -1e-12
+    ]
+    if not feasible:
+        raise RuntimeError("alpha=0 fallback was unexpectedly infeasible")
+    selected_trial = max(feasible, key=lambda trial: (
+        trial["macro_f1"],
+        trial["worst_temporal_block_delta_vs_actual"],
+        -trial["corrected_fraction"],
+        -trial["alpha"],
+    ))
+
+    final = _refit_selected_experts(initial, source, config)
+    final.update({
+        "ood_residual_config": config,
+        "congestion_config": congestion_config,
+        "selected_router_features": selected_features,
+        "router_trend_ranking": trend_ranking.to_dict(orient="records"),
+        "context_columns": context_columns,
+        "utility_models": utility_models,
+        "utility_constants": utility_constants,
+        "utility_correctness_counts": correctness_counts,
+        "meta_models": meta_models,
+        "selected_residual_policy": selected_trial,
+        "residual_policy_trials": trials,
+        "expert_min_distance_quantiles": {
+            str(value): _ood_threshold(value, expert_min_distance)
+            for value in config.ood_quantile_candidates
+        },
+        "partition_rows": {
+            "expert_raw": len(split["expert"]),
+            "router_fit_eligible": len(initial["source_eligible_index"]),
+            "utility": len(utility_raw),
+            "meta": len(meta_raw),
+            "selection": len(selection_raw),
+        },
+        "leakage_control": {
+            "router_feature_selection_partition": "expert_only",
+            "router_feature_selection_uses_traffic_labels": False,
+            "router_feature_selection_uses_congestion_labels": False,
+            "ood_reference_partition": "expert_only",
+            "utility_partition": "strictly_after_expert",
+            "meta_partition": "strictly_after_utility",
+            "policy_selection_partition": "strictly_after_meta",
+            "policy_baseline": "actual_kmeans_router",
+            "policy_constraint": (
+                "non_degrading_each_relative_time_block"
+            ),
+            "target_or_test_used_for_policy_selection": False,
+        },
+    })
+    return final
+
+
+def predict_all(model, frame):
+    (
+        raw, distances, route, probabilities, predictions, base, _,
+    ) = _selected_enhanced_outputs(model, frame)
+    utility = _utility_matrix(
+        model["utility_models"], model["utility_constants"], base
+    )
+    utility_route, _, utility_gain, _ = _utility_routes(
+        route, utility, 0.0
+    )
+    row = np.arange(len(raw))
+    utility_prediction = predictions[row, utility_route]
+    actual_probability = probabilities[row, route]
+    actual_prediction = predictions[row, route]
+    meta_x = _meta_features(base, utility)
+    policy = model["selected_residual_policy"]
+    meta_probability = _aligned_meta_probabilities(
+        model["meta_models"][policy["meta_variant"]], meta_x
+    )
+    residual, final_probability, confidence, margin, corrected = (
+        _residual_prediction(
+            actual_probability,
+            meta_probability,
+            distances.min(axis=1),
+            policy["alpha"],
+            policy["confidence_threshold"],
+            policy["margin_threshold"],
+            policy["ood_distance_threshold"],
+        )
+    )
+    truth = raw.traffic_label.to_numpy()
+    oracle = np.where(
+        predictions == truth[:, None],
+        probabilities.max(axis=2) + 2.0,
+        probabilities.max(axis=2),
+    ).argmax(axis=1)
+    return {
+        "observed": raw,
+        "CDR_MLC_actual_router": actual_prediction,
+        "CDR_MLC_utility_router": utility_prediction,
+        "CDR_MLC_ood_residual_meta_stacker": residual,
+        "CDR_MLC_oracle_router": predictions[row, oracle],
+        "routes": pd.DataFrame({
+            "kmeans_route": route,
+            "utility_route": utility_route,
+            "oracle_route": oracle,
+            "utility_gain": utility_gain,
+            "meta_confidence": confidence,
+            "meta_margin": margin,
+            "corrected_by_meta": corrected,
+            "minimum_cluster_distance": distances.min(axis=1),
+            "residual_probability_max": final_probability.max(axis=1),
+        }, index=raw.index),
+    }
