@@ -43,6 +43,7 @@ class OODResidualConfig(TrendSelectedRouterConfig):
     dg_probability_temperatures: tuple[float, ...] = (1.0, 1.5, 2.0)
     dg_distance_scales: tuple[float, ...] = (1.0, 1.25, 1.5)
     dg_capture_tolerance: float = .01
+    shift_capture_quantile: float = .95
 
     def validate(self):
         super().validate()
@@ -85,6 +86,8 @@ class OODResidualConfig(TrendSelectedRouterConfig):
             )
         if self.dg_capture_tolerance < 0:
             raise ValueError("DG capture tolerance must be nonnegative")
+        if not 0 < self.shift_capture_quantile <= 1:
+            raise ValueError("shift capture quantile must be in (0,1]")
         return self
 
 
@@ -149,6 +152,28 @@ def _capture_accuracy(truth, prediction, capture_ids):
         ]))
         for capture in np.unique(capture_ids)
     }
+
+
+def _shift_severity(minimum_distance, probability, distance_scale):
+    """Label-free shift score from router distance and meta uncertainty."""
+    safe_scale = max(float(distance_scale), np.finfo(float).eps)
+    confidence = probability.max(axis=1)
+    margin = _meta_margin(probability)
+    return (
+        minimum_distance / safe_scale
+        + (1.0 - confidence)
+        + (1.0 - margin)
+    )
+
+
+def _capture_shift_scores(raw, row_severity):
+    scores = {}
+    sequence_ids = raw.sequence_id.astype(str).to_numpy()
+    for sequence_id in np.unique(sequence_ids):
+        scores[str(sequence_id)] = float(np.median(
+            row_severity[sequence_ids == sequence_id]
+        ))
+    return scores
 
 
 def _ood_threshold(quantile, reference_distances):
@@ -693,6 +718,41 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
         ),
     )
 
+    # Label-free shift selector. Its distance scale and capture threshold
+    # are calibrated exclusively from source partitions. Traffic labels are
+    # deliberately not consulted: the selector only decides whether a whole
+    # capture uses the mild-shift CB policy or the severe-shift DG policy.
+    shift_reference_probability = (
+        0.5 * selection_meta_probability["class_balanced"]
+        + 0.5 * selection_meta_probability["level_class_balanced"]
+    )
+    shift_distance_scale = _ood_threshold(.95, expert_min_distance)
+    source_shift_severity = _shift_severity(
+        minimum_distance,
+        shift_reference_probability,
+        shift_distance_scale,
+    )
+    source_capture_shift_scores = _capture_shift_scores(
+        selection_raw, source_shift_severity
+    )
+    shift_capture_threshold = float(np.quantile(
+        np.asarray(list(source_capture_shift_scores.values()), dtype=float),
+        config.shift_capture_quantile,
+    ))
+    selected_shift_adaptive_policy = {
+        "mild_shift_policy": "class_balanced_ood_residual",
+        "severe_shift_policy": "domain_generalized_meta",
+        "distance_scale": float(shift_distance_scale),
+        "capture_score": "median_row_shift_severity",
+        "capture_threshold_quantile": float(
+            config.shift_capture_quantile
+        ),
+        "capture_threshold": shift_capture_threshold,
+        "source_capture_scores": source_capture_shift_scores,
+        "uses_traffic_labels": False,
+        "uses_congestion_labels": False,
+    }
+
     final = _refit_selected_experts(initial, source, config)
     final.update({
         "ood_residual_config": config,
@@ -710,6 +770,7 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
         "class_balanced_policy_trials": class_balanced_trials,
         "selected_domain_generalized_policy": selected_dg_policy,
         "domain_generalized_policy_trials": dg_trials,
+        "selected_shift_adaptive_policy": selected_shift_adaptive_policy,
         "expert_min_distance_quantiles": {
             str(value): _ood_threshold(value, expert_min_distance)
             for value in config.ood_quantile_candidates
@@ -754,6 +815,17 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
                 "maximum_capture_accuracy_loss": (
                     config.dg_capture_tolerance
                 ),
+                "extra_fitted_trees": 0,
+            },
+            "shift_adaptive_policy": {
+                "selection_unit": "capture",
+                "shift_evidence": [
+                    "KMeans minimum distance",
+                    "meta confidence",
+                    "meta probability margin"
+                ],
+                "threshold_partition": "source_selection_only",
+                "traffic_or_congestion_labels_used": False,
                 "extra_fitted_trees": 0,
             },
             "target_or_test_used_for_policy_selection": False,
@@ -832,6 +904,27 @@ def predict_all(model, frame):
         dg_policy["margin_threshold"],
         dg_policy["ood_distance_threshold"],
     )
+    shift_policy = model["selected_shift_adaptive_policy"]
+    shift_reference_probability = (
+        0.5 * class_probability + 0.5 * level_probability
+    )
+    shift_severity = _shift_severity(
+        distances.min(axis=1),
+        shift_reference_probability,
+        shift_policy["distance_scale"],
+    )
+    capture_shift_scores = _capture_shift_scores(raw, shift_severity)
+    sequence_ids = raw.sequence_id.astype(str).to_numpy()
+    severe_shift = np.asarray([
+        capture_shift_scores[str(sequence_id)]
+        > shift_policy["capture_threshold"]
+        for sequence_id in sequence_ids
+    ], dtype=bool)
+    shift_adaptive_prediction = np.where(
+        severe_shift,
+        domain_generalized_residual,
+        class_balanced_residual,
+    )
     truth = raw.traffic_label.to_numpy()
     oracle = _oracle_route(truth, probabilities, predictions)
     return {
@@ -844,6 +937,9 @@ def predict_all(model, frame):
         ),
         "CDR_MLC_domain_generalized_meta_stacker": (
             domain_generalized_residual
+        ),
+        "CDR_MLC_shift_adaptive_meta_stacker": (
+            shift_adaptive_prediction
         ),
         "CDR_MLC_oracle_router": predictions[row, oracle],
         "routes": pd.DataFrame({
@@ -867,6 +963,15 @@ def predict_all(model, frame):
             "corrected_by_domain_generalized_meta": dg_corrected,
             "domain_generalized_probability_max": (
                 dg_final_probability.max(axis=1)
+            ),
+            "shift_severity": shift_severity,
+            "capture_shift_score": np.asarray([
+                capture_shift_scores[str(sequence_id)]
+                for sequence_id in sequence_ids
+            ]),
+            "severe_shift_capture": severe_shift,
+            "shift_adaptive_selected_policy": np.where(
+                severe_shift, "DG-Meta", "CB-Meta"
             ),
         }, index=raw.index),
     }
