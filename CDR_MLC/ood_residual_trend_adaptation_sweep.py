@@ -335,6 +335,12 @@ def main():
                     ],
                     index=residual_result["observed"].index,
                 ),
+                "SA-Meta": pd.Series(
+                    residual_result[
+                        "CDR_MLC_shift_adaptive_meta_stacker"
+                    ],
+                    index=residual_result["observed"].index,
+                ),
             }
             common = sorted(set.intersection(*(
                 set(series.index)
@@ -459,6 +465,9 @@ def main():
                 "domain_generalized_selected_policy": residual_model[
                     "selected_domain_generalized_policy"
                 ],
+                "shift_adaptive_selected_policy": residual_model[
+                    "selected_shift_adaptive_policy"
+                ],
                 "residual_distance_quantiles": residual_model[
                     "expert_min_distance_quantiles"
                 ],
@@ -546,6 +555,19 @@ def main():
             ),
             "extra_trees": 0,
             "target_labels_used": False,
+        },
+        "shift_adaptive_meta_policy": {
+            "output_method": "SA-Meta",
+            "mild_shift_policy": "CB-Meta",
+            "severe_shift_policy": "DG-Meta",
+            "selection_unit": "capture",
+            "shift_score": (
+                "normalized KMeans distance plus meta confidence "
+                "and margin uncertainty"
+            ),
+            "threshold_source": "source selection captures only",
+            "target_or_test_labels_used": False,
+            "extra_trees": 0,
         },
         "rf_clean_valid": {
             "trees": args.rf_trees,
