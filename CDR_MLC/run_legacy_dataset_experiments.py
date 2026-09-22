@@ -96,27 +96,21 @@ def main() -> None:
 
     scenario_args = ["--scenarios", *args.scenarios]
 
-    # Paper-aligned family: fixed CDR-MLC, RF references, Adaptive CDR-MLC,
-    # and Sensitive CDR-MLC. compare_clean_valid accepts one fraction per run.
-    for fraction in args.fractions:
-        tag = int(round(fraction * 100))
-        run([
-            py, str(root / "compare_clean_valid.py"),
-            "--data-dir", str(args.clean_dir),
-            "--output", str(args.output / f"paper_methods_cal_{tag:02d}"),
-            *scenario_args,
-            "--fixed-window", str(args.window),
-            "--windows", "3", "10", "20",
-            "--ranking-top-k", "5",
-            "--selection-seeds", str(args.seed),
-            "--gating", "soft",
-            "--rf-trees", str(args.rf_trees),
-            "--expert-trees", str(args.expert_trees),
-            "--min-cluster-fraction", str(args.min_cluster_fraction),
-            "--sensitive-min-cluster-fraction",
-            str(args.sensitive_min_cluster_fraction),
-            "--adaptation-fraction", str(fraction),
-        ])
+    # Original fixed CDR-MLC and RF references use the same immutable final
+    # target tail as both meta-stacker variants.
+    baseline_output = args.output / "fixed_test_paper_baselines"
+    run([
+        py, str(root / "legacy_fixed_test_baselines.py"),
+        "--data-dir", str(args.clean_dir),
+        "--output", str(baseline_output),
+        "--fractions", *[str(value) for value in args.fractions],
+        "--test-fraction", str(args.test_fraction),
+        *scenario_args,
+        "--window", str(args.window),
+        "--expert-trees", str(args.expert_trees),
+        "--rf-trees", str(args.rf_trees),
+        "--seed", str(args.seed),
+    ])
 
     shared_meta = [
         "--data-dir", str(args.clean_dir),
@@ -143,14 +137,12 @@ def main() -> None:
     ])
 
     summaries = []
-    for fraction in args.fractions:
-        tag = int(round(fraction * 100))
-        path = args.output / f"paper_methods_cal_{tag:02d}/comparison_summary.csv"
-        frame = pd.read_csv(path)
-        frame.insert(0, "experiment_family", "paper_methods")
-        frame.insert(1, "protocol", f"variable_target_tail_cal_{tag:02d}")
-        frame.insert(2, "adaptation_fraction", fraction)
-        summaries.append(frame)
+    baseline = pd.read_csv(
+        baseline_output / "legacy_fixed_test_baseline_summary.csv"
+    )
+    baseline.insert(0, "experiment_family", "paper_baselines")
+    baseline.insert(1, "protocol", "scenario_isolated_fixed_test")
+    summaries.append(baseline)
 
     for family, protocol, path in [
         (
@@ -176,13 +168,17 @@ def main() -> None:
         "fractions": args.fractions,
         "scenarios": args.scenarios,
         "test_fraction": args.test_fraction,
-        "legacy_small_sample_controls": {
-            "adaptive_min_cluster_fraction": args.min_cluster_fraction,
-            "sensitive_min_cluster_fraction": args.sensitive_min_cluster_fraction,
+        "legacy_extension_status": {
+            "adaptive_cdr_mlc": "not_applicable_on_current_legacy_SFTP_validation",
             "reason": (
-                "The legacy dataset is much smaller than the revised dataset; "
-                "the threshold is explicit and fixed before target evaluation."
+                "Every source-only adaptive configuration leaves at least one "
+                "validation cluster empty for SFTP. Lowering a positive cluster "
+                "fraction cannot repair an empty cluster."
             ),
+            "requested_thresholds_retained_for_audit_only": {
+                "adaptive": args.min_cluster_fraction,
+                "sensitive": args.sensitive_min_cluster_fraction,
+            },
         },
         "budget": {
             "experts": f"3 x {args.expert_trees}",
@@ -194,9 +190,8 @@ def main() -> None:
             "rf_baseline_trees": args.rf_trees,
         },
         "important_comparability_note": (
-            "Paper-method comparison uses compare_clean_valid's remaining target "
-            "tail, while both meta-stacker runs use the immutable final test tail. "
-            "Compare methods directly only within the same protocol."
+            "Fixed CDR-MLC, RF baselines, and both meta-stacker variants use "
+            "scenario-specific calibration and the same immutable final test tail."
         ),
     }
     (args.output / "legacy_experiment_manifest.json").write_text(
