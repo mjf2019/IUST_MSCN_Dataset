@@ -340,9 +340,10 @@ def main() -> None:
             ),
             "The supplied shuffled files contain no congestion-level column; "
             "this is not a Low/Medium/High scenario experiment.",
-            "The supplied files contain no reliable event timestamp. Sliding "
-            "windows follow stored shuffled-row order, so temporal trend claims "
-            "must not be made from this experiment.",
+            "The supplied files contain no reliable event timestamp. In "
+            "label_grouped mode, windows follow original within-label row order; "
+            "in file_order mode they follow shuffled file order. Neither mode "
+            "supports a genuine chronological-trend claim.",
             "Oracle-router outputs use test labels and are diagnostic only.",
         ],
     }
