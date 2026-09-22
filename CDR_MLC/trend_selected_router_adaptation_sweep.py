@@ -45,6 +45,23 @@ SCENARIOS = {
     "MH-L": (("Medium", "High"), "Low"),
 }
 
+METHOD_SHORT = {
+    "Legacy_CDR_MLC_actual_router": "L-Actual",
+    "Legacy_CDR_MLC_meta_stacker": "L-Meta",
+    "Legacy_CDR_MLC_oracle_router": "L-Oracle",
+    "Legacy_CDR_MLC_utility_router": "L-Utility",
+    "Safe_CDR_MLC_actual_router": "S-Actual",
+    "Safe_CDR_MLC_meta_stacker": "S-Meta",
+    "Safe_CDR_MLC_oracle_router": "S-Oracle",
+    "Safe_CDR_MLC_utility_router": "S-Utility",
+    "TrendSelected_CDR_MLC_actual_router": "T-Actual",
+    "TrendSelected_CDR_MLC_trend_selected_meta_stacker": "T-Meta",
+    "TrendSelected_CDR_MLC_oracle_router": "T-Oracle",
+    "TrendSelected_CDR_MLC_utility_router": "T-Utility",
+    "RF_Clean_Valid": "RF-CV",
+    "RF_Expert_Inputs": "RF-EI",
+}
+
 
 def frame_identity(frame):
     ordered = frame.sort_values(
@@ -441,7 +458,39 @@ def main():
         json.dumps(manifest, indent=2) + "\n",
         encoding="utf-8",
     )
-    print(summary.to_string(index=False))
+    # Compact ASCII-only console table. Prefix every physical line with
+    # LEFT-TO-RIGHT MARK so RTL terminals do not reverse column ordering.
+    display = summary[[
+        "adaptation_fraction", "fixed_test_fraction", "scenario",
+        "train_levels", "adaptation_scope", "adaptation_levels",
+        "test_level", "development_rows", "adaptation_rows", "n",
+        "method", "accuracy", "balanced_accuracy", "macro_f1",
+        "weighted_f1",
+    ]].copy()
+    display["method"] = display["method"].map(
+        METHOD_SHORT
+    ).fillna(display["method"])
+    display["adaptation_scope"] = display[
+        "adaptation_scope"
+    ].map({"target": "TGT", "all-missing": "ALL"})
+    display.columns = [
+        "AF", "TF", "Scn", "Src", "AS", "CalLv", "Tgt",
+        "DevN", "CalN", "N", "Method", "Acc", "BAcc", "MF1", "WF1",
+    ]
+    rendered = display.to_string(
+        index=False,
+        justify="left",
+        formatters={
+            "AF": lambda value: f"{value:.2f}",
+            "TF": lambda value: f"{value:.2f}",
+            "Acc": lambda value: f"{value:.4f}",
+            "BAcc": lambda value: f"{value:.4f}",
+            "MF1": lambda value: f"{value:.4f}",
+            "WF1": lambda value: f"{value:.4f}",
+        },
+    )
+    lrm = "\u200e"
+    print("\n".join(lrm + line for line in rendered.splitlines()))
 
 
 if __name__ == "__main__":
