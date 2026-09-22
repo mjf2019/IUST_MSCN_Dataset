@@ -313,6 +313,28 @@ def main():
             residual_result = predict_ood_residual(
                 residual_model, target
             )
+            shift_route_frame = residual_result["routes"].copy()
+            shift_route_frame["sequence_id"] = (
+                residual_result["observed"]
+                .loc[shift_route_frame.index, "sequence_id"]
+                .astype(str)
+            )
+            shift_capture_audit = []
+            for sequence_id, route_group in shift_route_frame.groupby(
+                "sequence_id", sort=False
+            ):
+                shift_capture_audit.append({
+                    "sequence_id": str(sequence_id),
+                    "shift_score": float(
+                        route_group["capture_shift_score"].iloc[0]
+                    ),
+                    "selected_policy": str(
+                        route_group[
+                            "shift_adaptive_selected_policy"
+                        ].iloc[0]
+                    ),
+                    "rows": int(len(route_group)),
+                })
             prediction_series = {
                 **as_series(legacy_result, "Legacy_"),
                 **as_series(safe_result, "Safe_"),
@@ -468,6 +490,9 @@ def main():
                 "shift_adaptive_selected_policy": residual_model[
                     "selected_shift_adaptive_policy"
                 ],
+                "shift_adaptive_test_capture_decisions": (
+                    shift_capture_audit
+                ),
                 "residual_distance_quantiles": residual_model[
                     "expert_min_distance_quantiles"
                 ],
