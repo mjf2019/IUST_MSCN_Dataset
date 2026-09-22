@@ -5,7 +5,8 @@ partition only.  It uses no traffic labels and no congestion-level labels.
 For each candidate, causal three-sample trends are measured independently
 inside each flow sequence.  Three non-redundant candidates are frozen and
 their current value, slope, acceleration, persistence and one-step-ahead
-forecast are supplied to the utility and meta layers.
+forecast are appended to the complete context-aware feature bank used by the
+utility and meta layers.
 
 This module coexists with the legacy and leakage-safe context-aware versions
 so their published results remain reproducible.
@@ -305,9 +306,12 @@ def fit_proactive_meta_stacker(source, config: ProactiveMetaStackConfig):
     proactive_scaler = RobustScaler(quantile_range=(10.0, 90.0)).fit(
         proactive_expert.to_numpy(dtype=float)
     )
+    # Preserve the complete context-aware descriptor bank.  The three
+    # label-free trend winners are appended as proactive signals; they do not
+    # replace the original context features.
     congestion_config = CongestionRouterConfig(
         window=config.congestion_window,
-        features=selected_features,
+        features=tuple(config.candidate_features),
         expert_trees=config.expert_trees,
         random_state=config.random_state,
     ).validate()
@@ -461,6 +465,8 @@ def fit_proactive_meta_stacker(source, config: ProactiveMetaStackConfig):
             "trend_feature_selection_partition": "expert_only",
             "trend_selection_uses_traffic_labels": False,
             "trend_selection_uses_congestion_labels": False,
+            "context_features_preserved": True,
+            "proactive_features_are_additive": True,
             "trend_window_is_causal": True,
             "forecast_horizon": "t_plus_1",
             "router_scaler_fit_partition": "expert_only",
