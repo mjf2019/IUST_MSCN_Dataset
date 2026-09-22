@@ -310,11 +310,11 @@ def main():
     manifest = {
         "methods": ["SA-Meta", "FA-SA-Meta", "FA-Oracle"],
         "fitted_architectures_per_run": 2,
-        "trees_per_architecture": (
-            3 * args.expert_trees
-            + 3 * args.utility_trees
-            + args.meta_trees
-        ),
+        "tree_parameters": {
+            "expert_trees_per_cluster": args.expert_trees,
+            "utility_trees_per_model": args.utility_trees,
+            "meta_trees_per_variant": args.meta_trees,
+        },
         "baseline_config": asdict(baseline_config),
         "augmented_config": asdict(augmented_config),
         "augmentation": {
