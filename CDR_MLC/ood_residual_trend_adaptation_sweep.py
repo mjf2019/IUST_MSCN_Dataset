@@ -329,6 +329,12 @@ def main():
                     ],
                     index=residual_result["observed"].index,
                 ),
+                "DG-Meta": pd.Series(
+                    residual_result[
+                        "CDR_MLC_domain_generalized_meta_stacker"
+                    ],
+                    index=residual_result["observed"].index,
+                ),
             }
             common = sorted(set.intersection(*(
                 set(series.index)
@@ -450,6 +456,9 @@ def main():
                 "class_balanced_selected_policy": residual_model[
                     "selected_class_balanced_policy"
                 ],
+                "domain_generalized_selected_policy": residual_model[
+                    "selected_domain_generalized_policy"
+                ],
                 "residual_distance_quantiles": residual_model[
                     "expert_min_distance_quantiles"
                 ],
@@ -521,6 +530,21 @@ def main():
                 "non-degrading versus T-Actual in every source temporal block",
                 "per-class recall degradation no worse than configured tolerance"
             ],
+            "target_labels_used": False,
+        },
+        "domain_generalized_ood_residual_policy": {
+            "output_method": "DG-Meta",
+            "fallback": "T-Actual through alpha=0",
+            "capture_group_validation": "source selection captures only",
+            "stress_environments": [
+                "meta probability temperature scaling",
+                "KMeans minimum-distance inflation"
+            ],
+            "objective": (
+                "maximize worst-environment macro-F1 subject to temporal, "
+                "per-class recall, and per-capture safeguards"
+            ),
+            "extra_trees": 0,
             "target_labels_used": False,
         },
         "rf_clean_valid": {
