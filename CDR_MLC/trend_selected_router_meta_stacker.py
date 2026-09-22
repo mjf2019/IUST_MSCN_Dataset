@@ -183,6 +183,13 @@ def fit_selected_cdr(source, router_features, config):
     expert_numeric = {}
     expert_categorical = {}
     expert_feature_rankings = {}
+    shared_preprocessor = None
+    shared_x = None
+    if config.expert_feature_count is None:
+        shared_preprocessor = make_preprocessor(numeric, categorical)
+        shared_x = shared_preprocessor.fit_transform(
+            raw[numeric + categorical]
+        )
     for cluster in range(3):
         mask = routes == cluster
         if not mask.any():
@@ -196,11 +203,17 @@ def fit_selected_cdr(source, router_features, config):
                 config.expert_feature_count,
             )
         )
-        preprocessor = make_preprocessor(
-            selected_numeric, selected_categorical
-        )
         columns = selected_numeric + selected_categorical
-        x_cluster = preprocessor.fit_transform(raw.loc[mask, columns])
+        if config.expert_feature_count is None:
+            preprocessor = shared_preprocessor
+            x_cluster = shared_x[mask]
+        else:
+            preprocessor = make_preprocessor(
+                selected_numeric, selected_categorical
+            )
+            x_cluster = preprocessor.fit_transform(
+                raw.loc[mask, columns]
+            )
         experts[cluster] = RandomForestClassifier(
             **rf_config(
                 config.random_state, config.expert_trees
@@ -227,7 +240,7 @@ def fit_selected_cdr(source, router_features, config):
         "trend_columns": trend_columns,
         "scaler": scaler,
         "router": router,
-        "preprocessor": None,
+        "preprocessor": shared_preprocessor,
         "numeric": numeric,
         "categorical": categorical,
         "experts": experts,
@@ -311,6 +324,15 @@ def _refit_selected_experts(initial, full_source, config):
     labels = raw.traffic_label.to_numpy()
     experts, counts = {}, []
     expert_preprocessors = {}
+    shared_preprocessor = None
+    shared_x = None
+    if config.expert_feature_count is None:
+        numeric = initial["numeric"]
+        categorical = initial["categorical"]
+        shared_preprocessor = make_preprocessor(numeric, categorical)
+        shared_x = shared_preprocessor.fit_transform(
+            raw[numeric + categorical]
+        )
     for cluster in range(3):
         mask = routes == cluster
         if not mask.any():
@@ -318,8 +340,14 @@ def _refit_selected_experts(initial, full_source, config):
         numeric = initial["expert_numeric"][cluster]
         categorical = initial["expert_categorical"][cluster]
         columns = numeric + categorical
-        preprocessor = make_preprocessor(numeric, categorical)
-        x_cluster = preprocessor.fit_transform(raw.loc[mask, columns])
+        if config.expert_feature_count is None:
+            preprocessor = shared_preprocessor
+            x_cluster = shared_x[mask]
+        else:
+            preprocessor = make_preprocessor(numeric, categorical)
+            x_cluster = preprocessor.fit_transform(
+                raw.loc[mask, columns]
+            )
         experts[cluster] = RandomForestClassifier(
             **rf_config(
                 config.random_state + cluster, config.expert_trees
@@ -334,7 +362,7 @@ def _refit_selected_experts(initial, full_source, config):
         })
     final = dict(initial)
     final.update({
-        "preprocessor": None,
+        "preprocessor": shared_preprocessor,
         "experts": experts,
         "expert_preprocessors": expert_preprocessors,
         "full_source_rows": len(raw),
