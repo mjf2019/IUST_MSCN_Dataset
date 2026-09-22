@@ -77,6 +77,12 @@ class OODResidualConfig(TrendSelectedRouterConfig):
             value < 1 for value in self.dg_distance_scales
         ):
             raise ValueError("DG distance scales must be at least 1")
+        if len(self.dg_probability_temperatures) != len(
+            self.dg_distance_scales
+        ):
+            raise ValueError(
+                "DG temperature and distance stress lists must align"
+            )
         if self.dg_capture_tolerance < 0:
             raise ValueError("DG capture tolerance must be nonnegative")
         return self
@@ -543,85 +549,83 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
                         config.meta_margin_candidates
                     ):
                         environments = []
-                        for temperature in (
-                            config.dg_probability_temperatures
+                        for temperature, distance_scale in zip(
+                            config.dg_probability_temperatures,
+                            config.dg_distance_scales,
                         ):
                             stressed_probability = _temperature_scale(
                                 original_probability, temperature
                             )
-                            for distance_scale in (
-                                config.dg_distance_scales
-                            ):
-                                prediction, _, _, _, eligible = (
-                                    _residual_prediction(
-                                        actual_probability,
-                                        stressed_probability,
-                                        minimum_distance * distance_scale,
-                                        alpha,
-                                        confidence_threshold,
-                                        margin_threshold,
-                                        distance_threshold,
-                                    )
+                            prediction, _, _, _, eligible = (
+                                _residual_prediction(
+                                    actual_probability,
+                                    stressed_probability,
+                                    minimum_distance * distance_scale,
+                                    alpha,
+                                    confidence_threshold,
+                                    margin_threshold,
+                                    distance_threshold,
                                 )
-                                block_scores = _block_scores(
-                                    truth, prediction, blocks
+                            )
+                            block_scores = _block_scores(
+                                truth, prediction, blocks
+                            )
+                            block_deltas = {
+                                block: (
+                                    block_scores[block]
+                                    - actual_block_scores[block]
                                 )
-                                block_deltas = {
-                                    block: (
-                                        block_scores[block]
-                                        - actual_block_scores[block]
-                                    )
-                                    for block in block_scores
-                                }
-                                capture_accuracy = _capture_accuracy(
-                                    truth, prediction, capture_ids
+                                for block in block_scores
+                            }
+                            capture_accuracy = _capture_accuracy(
+                                truth, prediction, capture_ids
+                            )
+                            capture_deltas = {
+                                capture: (
+                                    capture_accuracy[capture]
+                                    - actual_capture_accuracy[capture]
                                 )
-                                capture_deltas = {
-                                    capture: (
-                                        capture_accuracy[capture]
-                                        - actual_capture_accuracy[capture]
-                                    )
-                                    for capture in capture_accuracy
-                                }
-                                class_recalls = _class_recalls(
-                                    truth, prediction
+                                for capture in capture_accuracy
+                            }
+                            class_recalls = _class_recalls(
+                                truth, prediction
+                            )
+                            class_deltas = {
+                                label: (
+                                    class_recalls[label]
+                                    - actual_class_recalls[label]
                                 )
-                                class_deltas = {
-                                    label: (
-                                        class_recalls[label]
-                                        - actual_class_recalls[label]
+                                for label in APPLICATIONS
+                            }
+                            environments.append({
+                                "probability_temperature": float(
+                                    temperature
+                                ),
+                                "distance_scale": float(distance_scale),
+                                "macro_f1": float(f1_score(
+                                    truth, prediction,
+                                    labels=APPLICATIONS,
+                                    average="macro",
+                                    zero_division=0,
+                                )),
+                                "balanced_accuracy": float(
+                                    balanced_accuracy_score(
+                                        truth, prediction
                                     )
-                                    for label in APPLICATIONS
-                                }
-                                environments.append({
-                                    "probability_temperature": float(
-                                        temperature
-                                    ),
-                                    "distance_scale": float(distance_scale),
-                                    "macro_f1": float(f1_score(
-                                        truth, prediction,
-                                        labels=APPLICATIONS,
-                                        average="macro",
-                                        zero_division=0,
-                                    )),
-                                    "balanced_accuracy": float(
-                                        balanced_accuracy_score(
-                                            truth, prediction
-                                        )
-                                    ),
-                                    "corrected_fraction": float(
-                                        eligible.mean()
-                                    ),
-                                    "worst_capture_accuracy_delta": float(
-                                        min(capture_deltas.values())
-                                    ),
-                                    "worst_temporal_block_delta": float(
-                                        min(block_deltas.values())
-                                    ),
-                                    "worst_class_recall_delta": float(
-                                        min(class_deltas.values())
-                                    ),
-                                })
+                                ),
+                                "corrected_fraction": float(
+                                    eligible.mean()
+                                ),
+                                "worst_capture_accuracy_delta": float(
+                                    min(capture_deltas.values())
+                                ),
+                                "worst_temporal_block_delta": float(
+                                    min(block_deltas.values())
+                                ),
+                                "worst_class_recall_delta": float(
+                                    min(class_deltas.values())
+                                ),
+                            })
                         dg_trials.append({
                             "meta_mix_class_balanced": float(meta_mix),
                             "meta_mix_level_balanced": float(
@@ -662,7 +666,7 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
                                 item["corrected_fraction"]
                                 for item in environments
                             ])),
-                            "environment_scores": environments,
+                            "stress_environment_count": len(environments),
                         })
     dg_feasible = [
         trial for trial in dg_trials
