@@ -185,7 +185,7 @@ def fit_selected_cdr(source, router_features, config):
     expert_feature_rankings = {}
     shared_preprocessor = None
     shared_x = None
-    if config.expert_feature_count is None:
+    if getattr(config, "expert_feature_count", None) is None:
         shared_preprocessor = make_preprocessor(numeric, categorical)
         shared_x = shared_preprocessor.fit_transform(
             raw[numeric + categorical]
@@ -204,7 +204,7 @@ def fit_selected_cdr(source, router_features, config):
             )
         )
         columns = selected_numeric + selected_categorical
-        if config.expert_feature_count is None:
+        if getattr(config, "expert_feature_count", None) is None:
             preprocessor = shared_preprocessor
             x_cluster = shared_x[mask]
         else:
@@ -326,7 +326,7 @@ def _refit_selected_experts(initial, full_source, config):
     expert_preprocessors = {}
     shared_preprocessor = None
     shared_x = None
-    if config.expert_feature_count is None:
+    if getattr(config, "expert_feature_count", None) is None:
         numeric = initial["numeric"]
         categorical = initial["categorical"]
         shared_preprocessor = make_preprocessor(numeric, categorical)
@@ -340,7 +340,7 @@ def _refit_selected_experts(initial, full_source, config):
         numeric = initial["expert_numeric"][cluster]
         categorical = initial["expert_categorical"][cluster]
         columns = numeric + categorical
-        if config.expert_feature_count is None:
+        if getattr(config, "expert_feature_count", None) is None:
             preprocessor = shared_preprocessor
             x_cluster = shared_x[mask]
         else:
