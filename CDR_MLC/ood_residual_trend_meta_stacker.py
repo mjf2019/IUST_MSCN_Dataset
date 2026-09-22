@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import f1_score
+from sklearn.metrics import balanced_accuracy_score, f1_score, recall_score
 
 from adaptive_cdr_mlc import APPLICATIONS
 from congestion_feature_cdr_mlc import CongestionRouterConfig
@@ -38,6 +38,8 @@ class OODResidualConfig(TrendSelectedRouterConfig):
     meta_margin_candidates: tuple[float, ...] = (.00, .05, .10, .20)
     ood_quantile_candidates: tuple[float, ...] = (.90, .95, .99, 1.01)
     temporal_selection_blocks: int = 4
+    meta_mix_candidates: tuple[float, ...] = (.00, .25, .50, .75, 1.00)
+    class_recall_tolerance: float = .005
 
     def validate(self):
         super().validate()
@@ -56,6 +58,12 @@ class OODResidualConfig(TrendSelectedRouterConfig):
             raise ValueError("OOD quantiles must be positive")
         if self.temporal_selection_blocks < 2:
             raise ValueError("at least two temporal blocks are required")
+        if not self.meta_mix_candidates or any(
+            not 0 <= value <= 1 for value in self.meta_mix_candidates
+        ):
+            raise ValueError("meta mix candidates must be in [0,1]")
+        if self.class_recall_tolerance < 0:
+            raise ValueError("class recall tolerance must be nonnegative")
         return self
 
 
@@ -84,6 +92,17 @@ def _block_scores(truth, prediction, blocks):
             labels=APPLICATIONS, average="macro", zero_division=0,
         ))
     return scores
+
+
+def _class_recalls(truth, prediction):
+    values = recall_score(
+        truth, prediction, labels=APPLICATIONS,
+        average=None, zero_division=0,
+    )
+    return {
+        label: float(value)
+        for label, value in zip(APPLICATIONS, values)
+    }
 
 
 def _meta_margin(probability):
@@ -332,6 +351,135 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
         -trial["alpha"],
     ))
 
+    # Class-balanced policy: combine the two already-trained meta models,
+    # then require both temporal robustness and bounded per-class recall loss.
+    selection_meta_probability = {
+        variant: _aligned_meta_probabilities(model, selection_x)
+        for variant, model in meta_models.items()
+    }
+    actual_class_recalls = _class_recalls(
+        truth, actual_prediction
+    )
+    class_balanced_trials = []
+    for meta_mix in config.meta_mix_candidates:
+        mixed_probability = (
+            meta_mix
+            * selection_meta_probability["class_balanced"]
+            + (1.0 - meta_mix)
+            * selection_meta_probability["level_class_balanced"]
+        )
+        for quantile in config.ood_quantile_candidates:
+            distance_threshold = _ood_threshold(
+                quantile, expert_min_distance
+            )
+            for alpha in config.blend_candidates:
+                for confidence_threshold in (
+                    config.meta_confidence_candidates
+                ):
+                    for margin_threshold in (
+                        config.meta_margin_candidates
+                    ):
+                        prediction, _, confidence, margin, eligible = (
+                            _residual_prediction(
+                                actual_probability,
+                                mixed_probability,
+                                minimum_distance,
+                                alpha,
+                                confidence_threshold,
+                                margin_threshold,
+                                distance_threshold,
+                            )
+                        )
+                        block_scores = _block_scores(
+                            truth, prediction, blocks
+                        )
+                        block_deltas = {
+                            block: (
+                                block_scores[block]
+                                - actual_block_scores[block]
+                            )
+                            for block in block_scores
+                        }
+                        class_recalls = _class_recalls(
+                            truth, prediction
+                        )
+                        class_deltas = {
+                            label: (
+                                class_recalls[label]
+                                - actual_class_recalls[label]
+                            )
+                            for label in APPLICATIONS
+                        }
+                        class_balanced_trials.append({
+                            "meta_mix_class_balanced": float(meta_mix),
+                            "meta_mix_level_balanced": float(
+                                1.0 - meta_mix
+                            ),
+                            "alpha": float(alpha),
+                            "confidence_threshold": float(
+                                confidence_threshold
+                            ),
+                            "margin_threshold": float(margin_threshold),
+                            "ood_quantile": float(quantile),
+                            "ood_distance_threshold": float(
+                                distance_threshold
+                            ),
+                            "accuracy": float(np.mean(
+                                prediction == truth
+                            )),
+                            "balanced_accuracy": float(
+                                balanced_accuracy_score(
+                                    truth, prediction
+                                )
+                            ),
+                            "macro_f1": float(f1_score(
+                                truth, prediction,
+                                labels=APPLICATIONS,
+                                average="macro", zero_division=0,
+                            )),
+                            "corrected_rows": int(eligible.sum()),
+                            "corrected_fraction": float(eligible.mean()),
+                            "mean_meta_confidence": float(
+                                confidence.mean()
+                            ),
+                            "mean_meta_margin": float(margin.mean()),
+                            "temporal_block_macro_f1": block_scores,
+                            "temporal_block_delta_vs_actual": (
+                                block_deltas
+                            ),
+                            "worst_temporal_block_delta_vs_actual": (
+                                float(min(block_deltas.values()))
+                            ),
+                            "class_recall": class_recalls,
+                            "class_recall_delta_vs_actual": class_deltas,
+                            "worst_class_recall_delta_vs_actual": (
+                                float(min(class_deltas.values()))
+                            ),
+                        })
+    class_feasible = [
+        trial for trial in class_balanced_trials
+        if (
+            trial["worst_temporal_block_delta_vs_actual"] >= -1e-12
+            and trial["worst_class_recall_delta_vs_actual"]
+            >= -config.class_recall_tolerance
+        )
+    ]
+    if not class_feasible:
+        raise RuntimeError(
+            "alpha=0 class-balanced fallback was unexpectedly infeasible"
+        )
+    selected_class_policy = max(
+        class_feasible,
+        key=lambda trial: (
+            trial["macro_f1"],
+            trial["balanced_accuracy"],
+            trial["worst_class_recall_delta_vs_actual"],
+            trial["worst_temporal_block_delta_vs_actual"],
+            -trial["corrected_fraction"],
+            -trial["alpha"],
+        ),
+    )
+
     final = _refit_selected_experts(initial, source, config)
     final.update({
         "ood_residual_config": config,
@@ -345,6 +493,8 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
         "meta_models": meta_models,
         "selected_residual_policy": selected_trial,
         "residual_policy_trials": trials,
+        "selected_class_balanced_policy": selected_class_policy,
+        "class_balanced_policy_trials": class_balanced_trials,
         "expert_min_distance_quantiles": {
             str(value): _ood_threshold(value, expert_min_distance)
             for value in config.ood_quantile_candidates
@@ -368,6 +518,16 @@ def fit_ood_residual_meta_stacker(source, config: OODResidualConfig):
             "policy_constraint": (
                 "non_degrading_each_relative_time_block"
             ),
+            "class_balanced_policy_constraints": {
+                "non_degrading_each_relative_time_block": True,
+                "maximum_per_class_recall_loss": (
+                    config.class_recall_tolerance
+                ),
+                "selection_objectives": [
+                    "macro_f1", "balanced_accuracy",
+                    "worst_class_recall_delta"
+                ],
+            },
             "target_or_test_used_for_policy_selection": False,
         },
     })
@@ -404,6 +564,29 @@ def predict_all(model, frame):
             policy["ood_distance_threshold"],
         )
     )
+    class_policy = model["selected_class_balanced_policy"]
+    class_probability = _aligned_meta_probabilities(
+        model["meta_models"]["class_balanced"], meta_x
+    )
+    level_probability = _aligned_meta_probabilities(
+        model["meta_models"]["level_class_balanced"], meta_x
+    )
+    mixed_probability = (
+        class_policy["meta_mix_class_balanced"] * class_probability
+        + class_policy["meta_mix_level_balanced"] * level_probability
+    )
+    (
+        class_balanced_residual, class_final_probability,
+        class_confidence, class_margin, class_corrected,
+    ) = _residual_prediction(
+        actual_probability,
+        mixed_probability,
+        distances.min(axis=1),
+        class_policy["alpha"],
+        class_policy["confidence_threshold"],
+        class_policy["margin_threshold"],
+        class_policy["ood_distance_threshold"],
+    )
     truth = raw.traffic_label.to_numpy()
     oracle = _oracle_route(truth, probabilities, predictions)
     return {
@@ -411,6 +594,9 @@ def predict_all(model, frame):
         "CDR_MLC_actual_router": actual_prediction,
         "CDR_MLC_utility_router": utility_prediction,
         "CDR_MLC_ood_residual_meta_stacker": residual,
+        "CDR_MLC_class_balanced_ood_residual_meta_stacker": (
+            class_balanced_residual
+        ),
         "CDR_MLC_oracle_router": predictions[row, oracle],
         "routes": pd.DataFrame({
             "kmeans_route": route,
@@ -422,5 +608,11 @@ def predict_all(model, frame):
             "corrected_by_meta": corrected,
             "minimum_cluster_distance": distances.min(axis=1),
             "residual_probability_max": final_probability.max(axis=1),
+            "class_balanced_meta_confidence": class_confidence,
+            "class_balanced_meta_margin": class_margin,
+            "corrected_by_class_balanced_meta": class_corrected,
+            "class_balanced_probability_max": (
+                class_final_probability.max(axis=1)
+            ),
         }, index=raw.index),
     }
