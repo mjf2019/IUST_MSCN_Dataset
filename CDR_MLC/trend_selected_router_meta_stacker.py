@@ -50,6 +50,7 @@ class TrendSelectedRouterConfig:
     trend_window: int = 3
     redundancy_limit: float = .95
     expert_trees: int = 20
+    expert_feature_count: int | None = None
     utility_trees: int = 10
     meta_trees: int = 20
     utility_max_depth: int = 12
@@ -91,7 +92,56 @@ class TrendSelectedRouterConfig:
             raise ValueError("at least three context features are required")
         if not 0 <= self.redundancy_limit <= 1:
             raise ValueError("redundancy_limit must be in [0,1]")
+        if (
+            self.expert_feature_count is not None
+            and self.expert_feature_count < 1
+        ):
+            raise ValueError("expert_feature_count must be positive")
         return self
+
+
+def _expert_numeric_scores(raw, labels, columns):
+    """Supervised effect scores computed only inside an expert partition."""
+    records = []
+    labels = np.asarray(labels)
+    for column in columns:
+        values = pd.to_numeric(raw[column], errors="coerce").to_numpy(
+            dtype=float
+        )
+        finite = np.isfinite(values)
+        if finite.sum() < 3:
+            score = 0.0
+        else:
+            clean = values[finite]
+            clean_labels = labels[finite]
+            overall = float(np.mean(clean))
+            between = 0.0
+            within = 0.0
+            for label in np.unique(clean_labels):
+                group = clean[clean_labels == label]
+                if not len(group):
+                    continue
+                mean = float(np.mean(group))
+                between += len(group) * (mean - overall) ** 2
+                within += float(np.sum((group - mean) ** 2))
+            score = between / max(within, np.finfo(float).eps)
+        records.append({"feature": column, "score": float(score)})
+    return sorted(
+        records,
+        key=lambda item: (-item["score"], item["feature"]),
+    )
+
+
+def _expert_columns(raw, labels, numeric, categorical, count):
+    if count is None:
+        return list(numeric), list(categorical), []
+    ranking = _expert_numeric_scores(raw, labels, numeric)
+    selected = [
+        item["feature"] for item in ranking[:min(count, len(ranking))]
+    ]
+    if not selected:
+        raise ValueError("expert feature selection found no numeric feature")
+    return selected, [], ranking
 
 
 def fit_selected_cdr(source, router_features, config):
@@ -127,21 +177,45 @@ def fit_selected_cdr(source, router_features, config):
     numeric, categorical = select_classifier_columns(
         raw, list(router_features)
     )
-    preprocessor = make_preprocessor(numeric, categorical)
-    x = preprocessor.fit_transform(raw[numeric + categorical])
     labels = raw.traffic_label.to_numpy()
     experts, cluster_counts = {}, []
+    expert_preprocessors = {}
+    expert_numeric = {}
+    expert_categorical = {}
+    expert_feature_rankings = {}
     for cluster in range(3):
         mask = routes == cluster
         if not mask.any():
             raise ValueError(f"source cluster {cluster} is empty")
+        selected_numeric, selected_categorical, ranking = (
+            _expert_columns(
+                raw.loc[mask],
+                labels[mask],
+                numeric,
+                categorical,
+                config.expert_feature_count,
+            )
+        )
+        preprocessor = make_preprocessor(
+            selected_numeric, selected_categorical
+        )
+        columns = selected_numeric + selected_categorical
+        x_cluster = preprocessor.fit_transform(raw.loc[mask, columns])
         experts[cluster] = RandomForestClassifier(
-            **rf_config(config.random_state, config.expert_trees)
-        ).fit(x[mask], labels[mask])
+            **rf_config(
+                config.random_state + cluster, config.expert_trees
+            )
+        ).fit(x_cluster, labels[mask])
+        expert_preprocessors[cluster] = preprocessor
+        expert_numeric[cluster] = selected_numeric
+        expert_categorical[cluster] = selected_categorical
+        expert_feature_rankings[cluster] = ranking
         counts = pd.Series(labels[mask]).value_counts().to_dict()
         cluster_counts.append({
             "cluster": cluster,
             "rows": int(mask.sum()),
+            "selected_feature_count": len(columns),
+            "selected_features": columns,
             **{
                 f"class_{label}": int(counts.get(label, 0))
                 for label in APPLICATIONS
@@ -153,10 +227,15 @@ def fit_selected_cdr(source, router_features, config):
         "trend_columns": trend_columns,
         "scaler": scaler,
         "router": router,
-        "preprocessor": preprocessor,
+        "preprocessor": None,
         "numeric": numeric,
         "categorical": categorical,
         "experts": experts,
+        "expert_preprocessors": expert_preprocessors,
+        "expert_numeric": expert_numeric,
+        "expert_categorical": expert_categorical,
+        "expert_feature_rankings": expert_feature_rankings,
+        "expert_feature_count": config.expert_feature_count,
         "source_eligible_index": view.index.tolist(),
         "cluster_counts": cluster_counts,
     }
@@ -169,10 +248,14 @@ def _selected_expert_outputs(model, frame):
     z = model["scaler"].transform(view[model["trend_columns"]])
     distances = model["router"].transform(z)
     routes = model["router"].predict(z)
-    columns = model["numeric"] + model["categorical"]
-    x = model["preprocessor"].transform(raw[columns])
     probabilities, predictions = [], []
     for cluster in range(3):
+        numeric = model["expert_numeric"][cluster]
+        categorical = model["expert_categorical"][cluster]
+        columns = numeric + categorical
+        x = model["expert_preprocessors"][cluster].transform(
+            raw[columns]
+        )
         probability = aligned_probabilities(
             model["experts"][cluster], x, APPLICATIONS
         )
@@ -225,27 +308,35 @@ def _refit_selected_experts(initial, full_source, config):
     raw = full_source.loc[view.index]
     z = initial["scaler"].transform(view[initial["trend_columns"]])
     routes = initial["router"].predict(z)
-    numeric, categorical = select_classifier_columns(raw, features)
-    preprocessor = make_preprocessor(numeric, categorical)
-    x = preprocessor.fit_transform(raw[numeric + categorical])
     labels = raw.traffic_label.to_numpy()
     experts, counts = {}, []
+    expert_preprocessors = {}
     for cluster in range(3):
         mask = routes == cluster
         if not mask.any():
             raise ValueError(f"empty full-source cluster {cluster}")
+        numeric = initial["expert_numeric"][cluster]
+        categorical = initial["expert_categorical"][cluster]
+        columns = numeric + categorical
+        preprocessor = make_preprocessor(numeric, categorical)
+        x_cluster = preprocessor.fit_transform(raw.loc[mask, columns])
         experts[cluster] = RandomForestClassifier(
             **rf_config(
                 config.random_state + cluster, config.expert_trees
             )
-        ).fit(x[mask], labels[mask])
-        counts.append({"cluster": cluster, "rows": int(mask.sum())})
+        ).fit(x_cluster, labels[mask])
+        expert_preprocessors[cluster] = preprocessor
+        counts.append({
+            "cluster": cluster,
+            "rows": int(mask.sum()),
+            "selected_feature_count": len(columns),
+            "selected_features": columns,
+        })
     final = dict(initial)
     final.update({
-        "preprocessor": preprocessor,
-        "numeric": numeric,
-        "categorical": categorical,
+        "preprocessor": None,
         "experts": experts,
+        "expert_preprocessors": expert_preprocessors,
         "full_source_rows": len(raw),
         "source_eligible_index": view.index.tolist(),
         "full_source_cluster_counts": counts,
