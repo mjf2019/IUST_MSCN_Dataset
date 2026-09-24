@@ -1,0 +1,579 @@
+{
+  "operation": "in-place cross-level prefix injection",
+  "fraction_from_each_other_level": 0.2,
+  "applications": [
+    "HTTP",
+    "SFTP",
+    "SMTP",
+    "SSH",
+    "Video"
+  ],
+  "levels": [
+    "Low",
+    "Medium",
+    "High"
+  ],
+  "selection": "first floor(fraction * donor_rows) rows from pristine donor",
+  "recursive_injection": false,
+  "destination_filename_and_runner_commands_unchanged": true,
+  "nominal_level_policy": "existing runners assign the destination level from the filename; InjectionOriginLevel preserves donor provenance and is forbidden as a feature",
+  "files": [
+    {
+      "file": "HTTP_Low.flow",
+      "application": "HTTP",
+      "nominal_level": "Low",
+      "primary_rows": 16914,
+      "injected_rows": 4512,
+      "total_rows": 21426,
+      "pre_sha256": "8be618bc5154464293de71d6ec7a22c4930f6be784cdbd6467a0769e4abda226",
+      "post_sha256": "d1574b4204b7fa7db737f87d6304911c9260180e7d594a3ce69b6e05c8c760c6"
+    },
+    {
+      "file": "HTTP_Medium.flow",
+      "application": "HTTP",
+      "nominal_level": "Medium",
+      "primary_rows": 12479,
+      "injected_rows": 5399,
+      "total_rows": 17878,
+      "pre_sha256": "f382b7e883ed9644b8fadadbff4f7d65bfbe1533c0652b81bc419829ab6265a1",
+      "post_sha256": "7a47e513ed301bdb11f896ad5ff51bec08b11828fb50a6816d6ea4ab53945c7c"
+    },
+    {
+      "file": "HTTP_High.flow",
+      "application": "HTTP",
+      "nominal_level": "High",
+      "primary_rows": 10087,
+      "injected_rows": 5877,
+      "total_rows": 15964,
+      "pre_sha256": "0ce774232e75a302af0c98956f0097c0bc3a4d4fe272896828375d23513c197b",
+      "post_sha256": "6e20acc49ff333d6bdb00ce49531a1fd1ec3616cebedf665aae7f09039188a58"
+    },
+    {
+      "file": "SFTP_Low.flow",
+      "application": "SFTP",
+      "nominal_level": "Low",
+      "primary_rows": 7765,
+      "injected_rows": 2428,
+      "total_rows": 10193,
+      "pre_sha256": "084c7fae65acf1d456a4a93a0e415f6b5fbf4331dd5c3f9695f5b7d5a730f8ab",
+      "post_sha256": "b3d2964163a85c2b8ffd9d34b48309620d2d85294f24322d1c0ba561c13239b4"
+    },
+    {
+      "file": "SFTP_Medium.flow",
+      "application": "SFTP",
+      "nominal_level": "Medium",
+      "primary_rows": 5898,
+      "injected_rows": 2802,
+      "total_rows": 8700,
+      "pre_sha256": "5c181be7688f1a2bba727c8318b3850b184ccfa44aaab953b669963f2781b2c8",
+      "post_sha256": "cb2eed65f299e0e84368b6a01da7747ff53b8f1649f06d6e381a818937eda186"
+    },
+    {
+      "file": "SFTP_High.flow",
+      "application": "SFTP",
+      "nominal_level": "High",
+      "primary_rows": 6248,
+      "injected_rows": 2732,
+      "total_rows": 8980,
+      "pre_sha256": "c28f6f96ca6802d25b292b1abb8d1dbd4c6a325d98c9f8ea86c683986ee5255c",
+      "post_sha256": "437e77e33b8a04365d8f37e971607b6294c1cf7fcbf30003cc9c6e3e07675586"
+    },
+    {
+      "file": "SMTP_Low.flow",
+      "application": "SMTP",
+      "nominal_level": "Low",
+      "primary_rows": 5344,
+      "injected_rows": 1538,
+      "total_rows": 6882,
+      "pre_sha256": "14765f62f1e7c08c3c94221fc919f48b672ede8edbbb03ceccea5982fbdd5a5b",
+      "post_sha256": "8ec306e064423b222d4febbdcf2eb6655beafadcd8ef3320305cf81d981980af"
+    },
+    {
+      "file": "SMTP_Medium.flow",
+      "application": "SMTP",
+      "nominal_level": "Medium",
+      "primary_rows": 2346,
+      "injected_rows": 2137,
+      "total_rows": 4483,
+      "pre_sha256": "e23ca023bf9912df6bf109cc81181148547ad31edfd80422bdc666a9714a8333",
+      "post_sha256": "fe56e36da5f5eb25465b98ec4a26556331cf13ea18c289755e1370395524efdb"
+    },
+    {
+      "file": "SMTP_High.flow",
+      "application": "SMTP",
+      "nominal_level": "High",
+      "primary_rows": 5347,
+      "injected_rows": 1537,
+      "total_rows": 6884,
+      "pre_sha256": "627e6a4319ce51cf551656e73c3c7cb953e8c47b32298771a20c8db951074d1a",
+      "post_sha256": "22a1d09f619f2a158681dcd466379bf3ae96ff88534f541d6045b4fee8e31f19"
+    },
+    {
+      "file": "SSH_Low.flow",
+      "application": "SSH",
+      "nominal_level": "Low",
+      "primary_rows": 6688,
+      "injected_rows": 1549,
+      "total_rows": 8237,
+      "pre_sha256": "2aae45013d14fc0ed91ecbfaa1351c04167ea34e1d74b26694d8cb84b7fbd47e",
+      "post_sha256": "99e0958ad35b3c2372211d6a309c893fc2bc6713668794da2c24e8e80176a2d5"
+    },
+    {
+      "file": "SSH_Medium.flow",
+      "application": "SSH",
+      "nominal_level": "Medium",
+      "primary_rows": 2968,
+      "injected_rows": 2293,
+      "total_rows": 5261,
+      "pre_sha256": "f9743bfdb9e81580d69568f76fcfe57faf5eecee03e786ab964252e114effedf",
+      "post_sha256": "e71880faea6c49071af96fac2b9d57347eaff1396355bd973e2294acbcd77971"
+    },
+    {
+      "file": "SSH_High.flow",
+      "application": "SSH",
+      "nominal_level": "High",
+      "primary_rows": 4783,
+      "injected_rows": 1930,
+      "total_rows": 6713,
+      "pre_sha256": "fd8d79ffc502778d1dc3a50019bf748dbe87eef08b60bb975321a41cb8a22e21",
+      "post_sha256": "183378b39595a39ed716d290c09d77faceefb523aa749f50ec60bdf4df33a4b4"
+    },
+    {
+      "file": "Video_Low.flow",
+      "application": "Video",
+      "nominal_level": "Low",
+      "primary_rows": 8787,
+      "injected_rows": 2171,
+      "total_rows": 10958,
+      "pre_sha256": "b649291dadb90ebc4eda794636ef393a8b17af4f3c23331a048fc47aeae65dd3",
+      "post_sha256": "c0548fdb0a5161e340ef3fe78a60f45fb2375735d42a33e76cd0e19467e436a8"
+    },
+    {
+      "file": "Video_Medium.flow",
+      "application": "Video",
+      "nominal_level": "Medium",
+      "primary_rows": 5327,
+      "injected_rows": 2863,
+      "total_rows": 8190,
+      "pre_sha256": "b8d04ab60a89d461e5e52a7eb06a19da4f44bdd5cc2d769162cc9017e3b17a84",
+      "post_sha256": "bdd8237f329c7200580f060b9e5b92fff15b3672e12868484ce046e45fc082ae"
+    },
+    {
+      "file": "Video_High.flow",
+      "application": "Video",
+      "nominal_level": "High",
+      "primary_rows": 5531,
+      "injected_rows": 2822,
+      "total_rows": 8353,
+      "pre_sha256": "0d6ad60edd554aa8dbec91f795351fab134275806d32661031295d357eb5957e",
+      "post_sha256": "01a7cb2d57a2fabc77817575e1e3c56427515146f725c054edc4116f0c96fd2f"
+    }
+  ],
+  "composition": [
+    {
+      "application": "HTTP",
+      "destination_level": "Low",
+      "origin_level": "Low",
+      "role": "primary",
+      "available_rows": 16914,
+      "selected_rows": 16914,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "HTTP",
+      "destination_level": "Low",
+      "origin_level": "Medium",
+      "role": "injected",
+      "available_rows": 12479,
+      "selected_rows": 2495,
+      "realized_fraction": 0.19993589229906242
+    },
+    {
+      "application": "HTTP",
+      "destination_level": "Low",
+      "origin_level": "High",
+      "role": "injected",
+      "available_rows": 10087,
+      "selected_rows": 2017,
+      "realized_fraction": 0.19996034499851295
+    },
+    {
+      "application": "HTTP",
+      "destination_level": "Medium",
+      "origin_level": "Medium",
+      "role": "primary",
+      "available_rows": 12479,
+      "selected_rows": 12479,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "HTTP",
+      "destination_level": "Medium",
+      "origin_level": "Low",
+      "role": "injected",
+      "available_rows": 16914,
+      "selected_rows": 3382,
+      "realized_fraction": 0.19995270190374836
+    },
+    {
+      "application": "HTTP",
+      "destination_level": "Medium",
+      "origin_level": "High",
+      "role": "injected",
+      "available_rows": 10087,
+      "selected_rows": 2017,
+      "realized_fraction": 0.19996034499851295
+    },
+    {
+      "application": "HTTP",
+      "destination_level": "High",
+      "origin_level": "High",
+      "role": "primary",
+      "available_rows": 10087,
+      "selected_rows": 10087,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "HTTP",
+      "destination_level": "High",
+      "origin_level": "Low",
+      "role": "injected",
+      "available_rows": 16914,
+      "selected_rows": 3382,
+      "realized_fraction": 0.19995270190374836
+    },
+    {
+      "application": "HTTP",
+      "destination_level": "High",
+      "origin_level": "Medium",
+      "role": "injected",
+      "available_rows": 12479,
+      "selected_rows": 2495,
+      "realized_fraction": 0.19993589229906242
+    },
+    {
+      "application": "SFTP",
+      "destination_level": "Low",
+      "origin_level": "Low",
+      "role": "primary",
+      "available_rows": 7765,
+      "selected_rows": 7765,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "SFTP",
+      "destination_level": "Low",
+      "origin_level": "Medium",
+      "role": "injected",
+      "available_rows": 5898,
+      "selected_rows": 1179,
+      "realized_fraction": 0.19989827060020346
+    },
+    {
+      "application": "SFTP",
+      "destination_level": "Low",
+      "origin_level": "High",
+      "role": "injected",
+      "available_rows": 6248,
+      "selected_rows": 1249,
+      "realized_fraction": 0.19990396927016646
+    },
+    {
+      "application": "SFTP",
+      "destination_level": "Medium",
+      "origin_level": "Medium",
+      "role": "primary",
+      "available_rows": 5898,
+      "selected_rows": 5898,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "SFTP",
+      "destination_level": "Medium",
+      "origin_level": "Low",
+      "role": "injected",
+      "available_rows": 7765,
+      "selected_rows": 1553,
+      "realized_fraction": 0.2
+    },
+    {
+      "application": "SFTP",
+      "destination_level": "Medium",
+      "origin_level": "High",
+      "role": "injected",
+      "available_rows": 6248,
+      "selected_rows": 1249,
+      "realized_fraction": 0.19990396927016646
+    },
+    {
+      "application": "SFTP",
+      "destination_level": "High",
+      "origin_level": "High",
+      "role": "primary",
+      "available_rows": 6248,
+      "selected_rows": 6248,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "SFTP",
+      "destination_level": "High",
+      "origin_level": "Low",
+      "role": "injected",
+      "available_rows": 7765,
+      "selected_rows": 1553,
+      "realized_fraction": 0.2
+    },
+    {
+      "application": "SFTP",
+      "destination_level": "High",
+      "origin_level": "Medium",
+      "role": "injected",
+      "available_rows": 5898,
+      "selected_rows": 1179,
+      "realized_fraction": 0.19989827060020346
+    },
+    {
+      "application": "SMTP",
+      "destination_level": "Low",
+      "origin_level": "Low",
+      "role": "primary",
+      "available_rows": 5344,
+      "selected_rows": 5344,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "SMTP",
+      "destination_level": "Low",
+      "origin_level": "Medium",
+      "role": "injected",
+      "available_rows": 2346,
+      "selected_rows": 469,
+      "realized_fraction": 0.1999147485080989
+    },
+    {
+      "application": "SMTP",
+      "destination_level": "Low",
+      "origin_level": "High",
+      "role": "injected",
+      "available_rows": 5347,
+      "selected_rows": 1069,
+      "realized_fraction": 0.1999251916962783
+    },
+    {
+      "application": "SMTP",
+      "destination_level": "Medium",
+      "origin_level": "Medium",
+      "role": "primary",
+      "available_rows": 2346,
+      "selected_rows": 2346,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "SMTP",
+      "destination_level": "Medium",
+      "origin_level": "Low",
+      "role": "injected",
+      "available_rows": 5344,
+      "selected_rows": 1068,
+      "realized_fraction": 0.1998502994011976
+    },
+    {
+      "application": "SMTP",
+      "destination_level": "Medium",
+      "origin_level": "High",
+      "role": "injected",
+      "available_rows": 5347,
+      "selected_rows": 1069,
+      "realized_fraction": 0.1999251916962783
+    },
+    {
+      "application": "SMTP",
+      "destination_level": "High",
+      "origin_level": "High",
+      "role": "primary",
+      "available_rows": 5347,
+      "selected_rows": 5347,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "SMTP",
+      "destination_level": "High",
+      "origin_level": "Low",
+      "role": "injected",
+      "available_rows": 5344,
+      "selected_rows": 1068,
+      "realized_fraction": 0.1998502994011976
+    },
+    {
+      "application": "SMTP",
+      "destination_level": "High",
+      "origin_level": "Medium",
+      "role": "injected",
+      "available_rows": 2346,
+      "selected_rows": 469,
+      "realized_fraction": 0.1999147485080989
+    },
+    {
+      "application": "SSH",
+      "destination_level": "Low",
+      "origin_level": "Low",
+      "role": "primary",
+      "available_rows": 6688,
+      "selected_rows": 6688,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "SSH",
+      "destination_level": "Low",
+      "origin_level": "Medium",
+      "role": "injected",
+      "available_rows": 2968,
+      "selected_rows": 593,
+      "realized_fraction": 0.1997978436657682
+    },
+    {
+      "application": "SSH",
+      "destination_level": "Low",
+      "origin_level": "High",
+      "role": "injected",
+      "available_rows": 4783,
+      "selected_rows": 956,
+      "realized_fraction": 0.1998745557181685
+    },
+    {
+      "application": "SSH",
+      "destination_level": "Medium",
+      "origin_level": "Medium",
+      "role": "primary",
+      "available_rows": 2968,
+      "selected_rows": 2968,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "SSH",
+      "destination_level": "Medium",
+      "origin_level": "Low",
+      "role": "injected",
+      "available_rows": 6688,
+      "selected_rows": 1337,
+      "realized_fraction": 0.1999102870813397
+    },
+    {
+      "application": "SSH",
+      "destination_level": "Medium",
+      "origin_level": "High",
+      "role": "injected",
+      "available_rows": 4783,
+      "selected_rows": 956,
+      "realized_fraction": 0.1998745557181685
+    },
+    {
+      "application": "SSH",
+      "destination_level": "High",
+      "origin_level": "High",
+      "role": "primary",
+      "available_rows": 4783,
+      "selected_rows": 4783,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "SSH",
+      "destination_level": "High",
+      "origin_level": "Low",
+      "role": "injected",
+      "available_rows": 6688,
+      "selected_rows": 1337,
+      "realized_fraction": 0.1999102870813397
+    },
+    {
+      "application": "SSH",
+      "destination_level": "High",
+      "origin_level": "Medium",
+      "role": "injected",
+      "available_rows": 2968,
+      "selected_rows": 593,
+      "realized_fraction": 0.1997978436657682
+    },
+    {
+      "application": "Video",
+      "destination_level": "Low",
+      "origin_level": "Low",
+      "role": "primary",
+      "available_rows": 8787,
+      "selected_rows": 8787,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "Video",
+      "destination_level": "Low",
+      "origin_level": "Medium",
+      "role": "injected",
+      "available_rows": 5327,
+      "selected_rows": 1065,
+      "realized_fraction": 0.19992491083161254
+    },
+    {
+      "application": "Video",
+      "destination_level": "Low",
+      "origin_level": "High",
+      "role": "injected",
+      "available_rows": 5531,
+      "selected_rows": 1106,
+      "realized_fraction": 0.19996384017356716
+    },
+    {
+      "application": "Video",
+      "destination_level": "Medium",
+      "origin_level": "Medium",
+      "role": "primary",
+      "available_rows": 5327,
+      "selected_rows": 5327,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "Video",
+      "destination_level": "Medium",
+      "origin_level": "Low",
+      "role": "injected",
+      "available_rows": 8787,
+      "selected_rows": 1757,
+      "realized_fraction": 0.19995447820644133
+    },
+    {
+      "application": "Video",
+      "destination_level": "Medium",
+      "origin_level": "High",
+      "role": "injected",
+      "available_rows": 5531,
+      "selected_rows": 1106,
+      "realized_fraction": 0.19996384017356716
+    },
+    {
+      "application": "Video",
+      "destination_level": "High",
+      "origin_level": "High",
+      "role": "primary",
+      "available_rows": 5531,
+      "selected_rows": 5531,
+      "realized_fraction": 1.0
+    },
+    {
+      "application": "Video",
+      "destination_level": "High",
+      "origin_level": "Low",
+      "role": "injected",
+      "available_rows": 8787,
+      "selected_rows": 1757,
+      "realized_fraction": 0.19995447820644133
+    },
+    {
+      "application": "Video",
+      "destination_level": "High",
+      "origin_level": "Medium",
+      "role": "injected",
+      "available_rows": 5327,
+      "selected_rows": 1065,
+      "realized_fraction": 0.19992491083161254
+    }
+  ]
+}
