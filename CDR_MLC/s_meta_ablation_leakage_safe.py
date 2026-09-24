@@ -19,7 +19,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import f1_score
 
 from adaptive_cdr_mlc import APPLICATIONS, load_dataset
-from compare_clean_valid import TIMING, fit_fixed_cdr, metrics
+from compare_clean_valid import SCENARIOS, TIMING, fit_fixed_cdr, metrics
 from congestion_feature_cdr_mlc import DEFAULT_CONGESTION_FEATURES
 from congestion_selective_router_cdr_mlc import _enhanced_outputs
 from learned_router_cdr_mlc import LearnedRouterConfig, _refit_experts_with_frozen_router
@@ -38,6 +38,9 @@ from mixed_level_protocols_leakage_safe import (
     build_protocol,
     composition,
     frame_identity,
+)
+from meta_stacked_fixed_test_sweep_leakage_safe import (
+    build_scenario_fixed_test_protocol,
 )
 from utility_router_cdr_mlc import (
     _balanced_weights,
@@ -274,10 +277,10 @@ def predict_ablation(model, frame):
     return raw, prediction, confidence, use_meta
 
 
-def evaluate_protocol(data, protocol_name, train_fraction, config):
-    development, test, protocol = build_protocol(
-        data, protocol_name, train_fraction
-    )
+def evaluate_split(
+    development, test, evaluation_name, evaluation_type, protocol, config,
+    scenario="", source="", target="",
+):
     full_model = fit_meta_stacker(development, config)
     full_result = predict_full(full_model, test)
     observed = full_result["observed"]
@@ -308,7 +311,7 @@ def evaluate_protocol(data, protocol_name, train_fraction, config):
             model, test
         )
         if frame_identity(ablation_observed) != frame_identity(observed):
-            raise RuntimeError(f"{protocol_name}/{name}: evaluated rows differ")
+            raise RuntimeError(f"{evaluation_name}/{name}: evaluated rows differ")
         predictions[name] = prediction
         route_columns[f"{name}_used_meta"] = pd.Series(
             use_meta, index=observed.index
@@ -332,7 +335,11 @@ def evaluate_protocol(data, protocol_name, train_fraction, config):
     for method in METHOD_ORDER:
         score = scores[method]
         rows.append({
-            "protocol": protocol_name,
+            "protocol": evaluation_name,
+            "evaluation_type": evaluation_type,
+            "scenario": scenario,
+            "source": source,
+            "target": target,
             "method": method,
             **{key: score[key] for key in (
                 "n", "accuracy", "balanced_accuracy", "macro_f1", "weighted_f1"
@@ -352,6 +359,11 @@ def evaluate_protocol(data, protocol_name, train_fraction, config):
         prediction_frame[f"prediction_{method}"] = predictions[method]
     prediction_frame = prediction_frame.join(route_columns)
     audit = {
+        "evaluation_name": evaluation_name,
+        "evaluation_type": evaluation_type,
+        "scenario": scenario,
+        "source": source,
+        "target": target,
         "protocol": protocol,
         "development_rows_raw": len(development),
         "test_rows_raw": len(test),
@@ -364,6 +376,45 @@ def evaluate_protocol(data, protocol_name, train_fraction, config):
         "models": prediction_details,
     }
     return rows, prediction_frame, scores, audit
+
+
+def evaluate_mixed_protocol(data, protocol_name, train_fraction, config):
+    development, test, protocol = build_protocol(
+        data, protocol_name, train_fraction
+    )
+    specification = PROTOCOLS[protocol_name]
+    if protocol_name == "ALL-80-20":
+        source, target = "Low+Medium+High", "Low+Medium+High"
+    else:
+        source = "+".join(specification["train_levels"])
+        target = specification["test_level"]
+    return evaluate_split(
+        development, test, protocol_name, "mixed_level", protocol, config,
+        source=source, target=target,
+    )
+
+
+def evaluate_fixed_scenario(data, scenario, test_fraction, config):
+    source, target = SCENARIOS[scenario]
+    development, test, capture_audit = build_scenario_fixed_test_protocol(
+        data,
+        source_level=source,
+        target_level=target,
+        adaptation_fraction=0.0,
+        test_fraction=test_fraction,
+    )
+    evaluation_name = f"Scenario-{scenario}-{source}-to-{target}"
+    protocol = {
+        "kind": "source_level_to_fixed_target_tail",
+        "adaptation_fraction": 0.0,
+        "fixed_test_fraction": test_fraction,
+        "target_level_used_in_training_or_selection": False,
+        "captures": capture_audit,
+    }
+    return evaluate_split(
+        development, test, evaluation_name, "fixed_test_scenario",
+        protocol, config, scenario=scenario, source=source, target=target,
+    )
 
 
 def main():
@@ -381,7 +432,12 @@ def main():
         "--protocols", nargs="+", choices=list(PROTOCOLS),
         default=list(PROTOCOLS),
     )
+    parser.add_argument(
+        "--scenarios", nargs="+", choices=["1", "2", "3"],
+        default=["1", "2", "3"],
+    )
     parser.add_argument("--train-fraction", type=float, default=.80)
+    parser.add_argument("--test-fraction", type=float, default=.20)
     parser.add_argument("--window", type=int, default=3)
     parser.add_argument("--congestion-window", type=int, default=50)
     parser.add_argument(
@@ -395,6 +451,8 @@ def main():
     args = parser.parse_args()
     if not 0 < args.train_fraction < 1:
         raise ValueError("train-fraction must be in (0,1)")
+    if not 0 < args.test_fraction < 1:
+        raise ValueError("test-fraction must be in (0,1)")
 
     config = MetaStackConfig(
         window=args.window,
@@ -414,7 +472,12 @@ def main():
     manifest = {
         "config": asdict(config),
         "protocols": args.protocols,
+        "fixed_test_scenarios": {
+            scenario: SCENARIOS[scenario] for scenario in args.scenarios
+        },
         "all_level_train_fraction": args.train_fraction,
+        "fixed_test_fraction": args.test_fraction,
+        "fixed_test_adaptation_fraction": 0.0,
         "method_order": METHOD_ORDER,
         "learned_ablation_specs": {
             name: asdict(spec) for name, spec in LEARNED_ABLATIONS.items()
@@ -424,7 +487,7 @@ def main():
         "protocol_audits": {},
     }
     for protocol_name in args.protocols:
-        rows, predictions, scores, audit = evaluate_protocol(
+        rows, predictions, scores, audit = evaluate_mixed_protocol(
             data, protocol_name, args.train_fraction, config
         )
         all_rows.extend(rows)
@@ -439,11 +502,33 @@ def main():
         )
         manifest["protocol_audits"][protocol_name] = audit
 
+    for scenario in args.scenarios:
+        source, target = SCENARIOS[scenario]
+        evaluation_name = f"Scenario-{scenario}-{source}-to-{target}"
+        rows, predictions, scores, audit = evaluate_fixed_scenario(
+            data, scenario, args.test_fraction, config
+        )
+        all_rows.extend(rows)
+        scenario_dir = args.output / (
+            f"scenario_{scenario}_{source.lower()}_to_{target.lower()}"
+        )
+        scenario_dir.mkdir(parents=True, exist_ok=True)
+        predictions.to_csv(
+            scenario_dir / "ablation_predictions.csv", index=False
+        )
+        (scenario_dir / "ablation_metrics.json").write_text(
+            json.dumps(scores, indent=2) + "\n", encoding="utf-8"
+        )
+        (scenario_dir / "ablation_audit.json").write_text(
+            json.dumps(audit, indent=2) + "\n", encoding="utf-8"
+        )
+        manifest["protocol_audits"][evaluation_name] = audit
+
     summary = pd.DataFrame(all_rows)
     summary["method"] = pd.Categorical(
         summary.method, categories=METHOD_ORDER, ordered=True
     )
-    summary = summary.sort_values(["protocol", "method"])
+    summary = summary.sort_values(["evaluation_type", "protocol", "method"])
     summary.to_csv(args.output / "s_meta_ablation_summary.csv", index=False)
     (args.output / "s_meta_ablation_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
