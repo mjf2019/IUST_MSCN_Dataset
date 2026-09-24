@@ -19,7 +19,6 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.cluster import MiniBatchKMeans
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     accuracy_score,
@@ -44,6 +43,7 @@ from adaptive_cdr_mlc_scenarios import split_source, select_source_configuration
 from sensitive_cdr_mlc import (
     SensitiveConfig, predict as predict_sensitive, select_and_fit as fit_sensitive,
 )
+from minibatch_clustering import make_minibatch_kmeans, minibatch_kmeans_audit
 
 
 TIMING = ["TcpRtt", "SynAck", "AckDat"]
@@ -156,7 +156,7 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
         raise ValueError("fixed CDR-MLC has fewer than three complete source windows")
     scaler = StandardScaler().fit(view[trend_columns])
     z = scaler.transform(view[trend_columns])
-    router = MiniBatchKMeans(
+    router = make_minibatch_kmeans(
         n_clusters=3, batch_size=1024, n_init=10, max_iter=100,
         random_state=seed,
     ).fit(z)
@@ -189,6 +189,8 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
         "trend_columns": trend_columns,
         "scaler": scaler,
         "router": router,
+        "router_algorithm": "MiniBatchKMeans",
+        "router_audit": minibatch_kmeans_audit(router),
         "preprocessor": preprocessor,
         "numeric": numeric,
         "categorical": categorical,

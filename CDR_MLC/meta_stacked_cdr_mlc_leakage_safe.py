@@ -1,7 +1,7 @@
 """Strict temporal, leakage-safe meta-stacking for fixed CDR-MLC.
 
 This module intentionally coexists with ``meta_stacked_cdr_mlc.py`` so legacy
-results remain reproducible.  The scaler and KMeans router are fitted only on
+results remain reproducible. The scaler and MiniBatchKMeans router are fitted only on
 the earliest expert partition and then frozen.  Later partitions train the
 utility and meta models without any feature-distribution look-ahead.
 """
@@ -120,7 +120,7 @@ def fit_meta_stacker(source, config: MetaStackConfig):
     congestion_config = _congestion_config(config)
 
     # Strict chronology: fit every preliminary preprocessing component,
-    # including StandardScaler and KMeans, on the earliest partition only.
+    # including StandardScaler and MiniBatchKMeans, on the earliest partition only.
     # The router/scaler are frozen for all later partitions and final inference.
     initial = fit_fixed_cdr(
         split["expert"], config.window, config.random_state, config.expert_trees
@@ -220,7 +220,7 @@ def fit_meta_stacker(source, config: MetaStackConfig):
         trial["meta_confidence_threshold"], -trial["meta_rows"],
     ))
     # Refit only the expert classifiers/preprocessor on all permitted
-    # development rows.  The scaler and KMeans fitted on the expert partition
+    # development rows. The scaler and MiniBatchKMeans fitted on the expert partition
     # remain frozen, so the meta feature geometry does not see future rows.
     final = _refit_experts_with_frozen_router(initial, source, helper)
     final.update({
@@ -241,6 +241,8 @@ def fit_meta_stacker(source, config: MetaStackConfig):
             "selection": len(selection_raw),
         },
         "leakage_control": {
+            "router_algorithm": initial["router_algorithm"],
+            "router_parameters": initial["router_audit"],
             "router_scaler_fit_partition": "expert_only",
             "router_scaler_frozen_after_fit": True,
             "utility_meta_selection_are_strictly_later": True,
@@ -276,7 +278,7 @@ def predict_all(model, frame):
         "CDR_MLC_meta_stacker": stacked,
         "CDR_MLC_oracle_router": predictions[row, oracle],
         "routes": pd.DataFrame({
-            "kmeans_route": kroute, "utility_route": utility_route,
+            "minibatch_kmeans_route": kroute, "utility_route": utility_route,
             "oracle_route": oracle, "utility_gain": utility_gain,
             "meta_prediction": meta_prediction, "meta_confidence": confidence,
             "used_meta_prediction": use_meta,

@@ -21,11 +21,12 @@ import pandas as pd
 import scipy
 from scipy.optimize import linear_sum_assignment
 import sklearn
-from sklearn.cluster import MiniBatchKMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (adjusted_rand_score, adjusted_mutual_info_score,
                              balanced_accuracy_score, silhouette_score)
 from threadpoolctl import threadpool_limits
+
+from minibatch_clustering import make_minibatch_kmeans
 
 TIMING = ['TcpRtt', 'SynAck', 'AckDat']
 STATS = ['mean', 'max', 'median', 'min', 'std']
@@ -199,9 +200,10 @@ def run(data_dir, out, windows=DEFAULT_WINDOWS, seeds=DEFAULT_SEEDS, sample_size
                                           'p95_span_seconds': float(seconds.quantile(.95))})
                 for seed in seeds:
                     # Label/level is absent from model inputs and fit; no rebalancing/reassignment.
-                    mbk = MiniBatchKMeans(n_clusters=3, init='k-means++', batch_size=1024,
-                                          n_init=10, max_iter=100, reassignment_ratio=.01,
-                                          random_state=seed).fit(z['train'])
+                    mbk = make_minibatch_kmeans(
+                        n_clusters=3, batch_size=1024, n_init=10, max_iter=100,
+                        random_state=seed,
+                    ).fit(z['train'])
                     train_cluster = mbk.predict(z['train'])
                     if len(np.unique(train_cluster)) != 3:
                         raise ValueError(f'{app}/W{window}/seed{seed}: collapsed training clusters')

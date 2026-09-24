@@ -255,7 +255,8 @@ def main():
         "leakage_control": (
             "Each scenario uses only its own target calibration prefix. "
             "The final target tail is immutable and excluded from all fitting and selection. "
-            "Scaler and KMeans are fitted only on the earliest expert partition and frozen."
+            "Scaler and MiniBatchKMeans are fitted only on the earliest expert "
+            "partition and frozen."
         ),
     }
     (args.output / "meta_stacked_fixed_test_manifest.json").write_text(

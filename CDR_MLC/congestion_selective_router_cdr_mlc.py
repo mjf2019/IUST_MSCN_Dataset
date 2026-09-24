@@ -1,6 +1,6 @@
 """Selective CDR-MLC router enriched with causal congestion descriptors.
 
-The original three-feature KMeans and its expert bank are left unchanged.
+The original three-feature MiniBatchKMeans and its expert bank are left unchanged.
 Congestion descriptors are used only by the conservative correction layer.
 """
 from __future__ import annotations
@@ -189,13 +189,13 @@ def predict_all(model, frame):
         "CDR_MLC_congestion_selective_router": predictions[row, route],
         "CDR_MLC_oracle_router": predictions[row, oracle],
         "routes": pd.DataFrame({
-            "kmeans_route": kroute,
+            "minibatch_kmeans_route": kroute,
             "alternative_route": alternative,
             "selective_route": route,
             "oracle_route": oracle,
-            "kmeans_error_probability": error_probability,
+            "minibatch_kmeans_error_probability": error_probability,
             "route_overridden": override,
             "selective_matches_oracle": route == oracle,
-            "kmeans_matches_oracle": kroute == oracle,
+            "minibatch_kmeans_matches_oracle": kroute == oracle,
         }, index=raw.index),
     }

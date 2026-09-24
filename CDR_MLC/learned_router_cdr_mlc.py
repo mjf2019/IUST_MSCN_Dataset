@@ -1,6 +1,6 @@
 """Minimal learned-router extension for fixed CDR-MLC.
 
-KMeans, trend features, and the three RF experts are preserved. A small RF
+MiniBatchKMeans, trend features, and the three RF experts are preserved. A small RF
 gate learns the oracle expert choice from a chronological source holdout. Gate
 targets are produced by experts that did not train on those holdout records.
 """
@@ -57,7 +57,7 @@ def _expert_outputs(model, frame):
     raw = frame.loc[view.index]
     z = model["scaler"].transform(view[model["trend_columns"]])
     distances = model["router"].transform(z)
-    kmeans_route = model["router"].predict(z)
+    minibatch_route = model["router"].predict(z)
     columns = model["numeric"] + model["categorical"]
     x = model["preprocessor"].transform(raw[columns])
     probabilities, predictions = [], []
@@ -69,15 +69,15 @@ def _expert_outputs(model, frame):
         predictions.append(np.asarray(APPLICATIONS)[probability.argmax(axis=1)])
     probabilities = np.stack(probabilities, axis=1)
     predictions = np.stack(predictions, axis=1)
-    return raw, z, distances, kmeans_route, probabilities, predictions
+    return raw, z, distances, minibatch_route, probabilities, predictions
 
 
-def _gate_features(distances, kmeans_route, probabilities):
+def _gate_features(distances, minibatch_route, probabilities):
     maximum = probabilities.max(axis=2)
     ordered = np.sort(probabilities, axis=2)
     margin = ordered[:, :, -1] - ordered[:, :, -2]
     entropy = -(probabilities * np.log(np.clip(probabilities, 1e-12, 1))).sum(axis=2)
-    one_hot = np.eye(3)[kmeans_route]
+    one_hot = np.eye(3)[minibatch_route]
     return np.column_stack([
         distances,
         probabilities.reshape(len(probabilities), -1),
@@ -139,12 +139,12 @@ def fit_learned_router(source: pd.DataFrame, config: LearnedRouterConfig):
     initial = fit_fixed_cdr(
         expert_train, config.window, config.random_state, config.expert_trees
     )
-    raw, _, distances, kmeans_route, probabilities, predictions = _expert_outputs(
+    raw, _, distances, minibatch_route, probabilities, predictions = _expert_outputs(
         initial, gate_holdout
     )
     truth = raw.traffic_label.to_numpy()
     oracle_route = _oracle_route(truth, probabilities, predictions)
-    features = _gate_features(distances, kmeans_route, probabilities)
+    features = _gate_features(distances, minibatch_route, probabilities)
     unique = np.unique(oracle_route)
     if len(unique) == 1:
         gate = None
@@ -168,16 +168,18 @@ def fit_learned_router(source: pd.DataFrame, config: LearnedRouterConfig):
         "gate_target_counts": {
             str(cluster): int((oracle_route == cluster).sum()) for cluster in range(3)
         },
-        "gate_kmeans_agreement": float(np.mean(oracle_route == kmeans_route)),
+        "gate_minibatch_kmeans_agreement": float(
+            np.mean(oracle_route == minibatch_route)
+        ),
     })
     return final
 
 
 def predict_all(model, frame):
-    raw, _, distances, kmeans_route, probabilities, predictions = _expert_outputs(
+    raw, _, distances, minibatch_route, probabilities, predictions = _expert_outputs(
         model, frame
     )
-    gate_features = _gate_features(distances, kmeans_route, probabilities)
+    gate_features = _gate_features(distances, minibatch_route, probabilities)
     gate = model["learned_gate"]
     if gate is None:
         learned_route = np.full(len(raw), model["constant_gate_route"], dtype=int)
@@ -186,22 +188,22 @@ def predict_all(model, frame):
         learned_route = gate.predict(gate_features).astype(int)
         learned_confidence = gate.predict_proba(gate_features).max(axis=1)
     fallback = learned_confidence < model["learned_router_config"].gate_min_confidence
-    learned_route[fallback] = kmeans_route[fallback]
+    learned_route[fallback] = minibatch_route[fallback]
     truth = raw.traffic_label.to_numpy()
     oracle_route = _oracle_route(truth, probabilities, predictions)
     row = np.arange(len(raw))
     report = pd.DataFrame({
-        "kmeans_route": kmeans_route,
+        "minibatch_kmeans_route": minibatch_route,
         "learned_route": learned_route,
         "oracle_route": oracle_route,
         "learned_confidence": learned_confidence,
-        "used_kmeans_fallback": fallback,
+        "used_minibatch_kmeans_fallback": fallback,
         "learned_matches_oracle": learned_route == oracle_route,
-        "kmeans_matches_oracle": kmeans_route == oracle_route,
+        "minibatch_kmeans_matches_oracle": minibatch_route == oracle_route,
     }, index=raw.index)
     return {
         "observed": raw,
-        "CDR_MLC_actual_router": predictions[row, kmeans_route],
+        "CDR_MLC_actual_router": predictions[row, minibatch_route],
         "CDR_MLC_learned_router": predictions[row, learned_route],
         "CDR_MLC_oracle_router": predictions[row, oracle_route],
         "routes": report,

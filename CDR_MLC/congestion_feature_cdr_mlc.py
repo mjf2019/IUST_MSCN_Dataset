@@ -1,7 +1,7 @@
 """CDR-MLC with a congestion-oriented, label-free router feature space.
 
-The three experts and hard KMeans routing of fixed CDR-MLC are preserved.
-Only the observations supplied to KMeans are changed.  Every engineered
+The three experts and hard MiniBatchKMeans routing of fixed CDR-MLC are preserved.
+Only the observations supplied to MiniBatchKMeans are changed. Every engineered
 quantity is computed from a causal trailing window and is available at test
 time without reading traffic_label or congestion_level.
 """
@@ -11,12 +11,12 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from sklearn.cluster import MiniBatchKMeans
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import RobustScaler
 
 from adaptive_cdr_mlc import APPLICATIONS, aligned_probabilities, make_preprocessor, select_classifier_columns
 from compare_clean_valid import TIMING, rf_config
+from minibatch_clustering import make_minibatch_kmeans, minibatch_kmeans_audit
 
 
 DEFAULT_CONGESTION_FEATURES = (
@@ -119,7 +119,7 @@ def fit_congestion_cdr(source: pd.DataFrame, config: CongestionRouterConfig):
         raise ValueError("fewer than three complete router windows")
     scaler = RobustScaler(quantile_range=(10.0, 90.0)).fit(view[router_columns])
     z = scaler.transform(view[router_columns])
-    router = MiniBatchKMeans(
+    router = make_minibatch_kmeans(
         n_clusters=config.n_clusters, batch_size=config.batch_size,
         n_init=config.n_init, max_iter=config.max_iter,
         random_state=config.random_state,
@@ -152,6 +152,7 @@ def fit_congestion_cdr(source: pd.DataFrame, config: CongestionRouterConfig):
     return {
         "config": config, "window": config.window, "route_features": available,
         "router_columns": router_columns, "scaler": scaler, "router": router,
+        "router_audit": minibatch_kmeans_audit(router),
         "preprocessor": preprocessor, "numeric": numeric, "categorical": categorical,
         "experts": experts, "source_eligible_index": view.index.tolist(),
         "cluster_counts": cluster_counts,

@@ -11,7 +11,13 @@
 
 Use Python with numpy, pandas, scipy, scikit-learn, matplotlib and Jupyter installed. Open `CDR-MLC.ipynb` and Run All. The notebook locates the dataset relative to the repository or notebook directory and writes reports under `outputs/paper_implementation/`. Git stores the notebook without cell outputs; its initial validation note records the executed results and versions.
 
-The core uses 15 trailing-window timing statistics, training-only scaling and MiniBatchKMeans with three clusters, and three 20-tree Random Forest experts on original non-timing features. Two 100-tree pooled RF references are evaluated on the same test records. Raw datasets are not modified.
+The core uses 15 trailing-window timing statistics, training-only scaling and
+MiniBatchKMeans with three clusters, and three 20-tree Random Forest experts on
+original non-timing features. All clustering-first implementations use the
+shared `minibatch_clustering.py` factory (`k-means++`, batch size 1024,
+`n_init=10`, `max_iter=100`, `reassignment_ratio=0.01`); full-batch `KMeans`
+is not used. Two 100-tree pooled RF references are evaluated on the same test
+records. Raw datasets are not modified.
 
 ## Fidelity and limitations
 
@@ -77,14 +83,14 @@ python CDR_MLC/oracle_cdr_mlc_sweep.py --fractions 0 0.20 --output CDR_MLC/outpu
 ```
 ## Learned CDR-MLC router
 
-[LEARNED_ROUTER.md](LEARNED_ROUTER.md) documents a minimal learned gate that preserves the fixed CDR-MLC KMeans and three RF experts. Gate targets come from a chronological holdout scored by experts that did not train on those records. The sweep compares actual, learned, oracle, and RF routing at 0% and 20% calibration.
+[LEARNED_ROUTER.md](LEARNED_ROUTER.md) documents a minimal learned gate that preserves the fixed CDR-MLC MiniBatchKMeans router and three RF experts. Gate targets come from a chronological holdout scored by experts that did not train on those records. The sweep compares actual, learned, oracle, and RF routing at 0% and 20% calibration.
 
 ```bash
 python CDR_MLC/learned_router_sweep.py --fractions 0 0.20 --scenarios 1 2 3 --window 3 --output CDR_MLC/outputs/learned_router_sweep
 ```
 ## Selective correction router
 
-[SELECTIVE_ROUTER.md](SELECTIVE_ROUTER.md) documents the conservative follow-up to the learned gate. KMeans remains the default route; a source-only error detector can override it only when the learned error probability and alternative-expert confidence satisfy validation-selected controls.
+[SELECTIVE_ROUTER.md](SELECTIVE_ROUTER.md) documents the conservative follow-up to the learned gate. MiniBatchKMeans remains the default route; a source-only error detector can override it only when the learned error probability and alternative-expert confidence satisfy validation-selected controls.
 
 ```bash
 python CDR_MLC/selective_router_sweep.py --fractions 0 0.20 --scenarios 1 2 3 --window 3 --output CDR_MLC/outputs/selective_router_sweep

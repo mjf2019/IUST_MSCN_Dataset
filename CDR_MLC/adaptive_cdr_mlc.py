@@ -18,7 +18,6 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import linear_sum_assignment
 from scipy.stats import kruskal
-from sklearn.cluster import MiniBatchKMeans
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
@@ -31,6 +30,8 @@ from sklearn.metrics import (
 )
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+from minibatch_clustering import make_minibatch_kmeans, minibatch_kmeans_audit
 
 
 APPLICATIONS = ["HTTP", "SFTP", "SMTP", "SSH", "Video"]
@@ -219,7 +220,7 @@ def fit_router(matrix: pd.DataFrame, config: Config, seed: int):
     x = matrix[columns].to_numpy(dtype=float)
     scaler = StandardScaler().fit(x)
     z = scaler.transform(x)
-    router = MiniBatchKMeans(
+    router = make_minibatch_kmeans(
         n_clusters=config.n_clusters, batch_size=config.batch_size, n_init=config.n_init,
         max_iter=config.max_iter, random_state=seed,
     ).fit(z)
@@ -348,7 +349,7 @@ def fit_final(parts, selections, config: Config):
         own_label = development.traffic_label.eq(application).to_numpy()
         scaler = StandardScaler().fit(view.loc[own_label, feature_columns])
         own_z = scaler.transform(view.loc[own_label, feature_columns])
-        router = MiniBatchKMeans(
+        router = make_minibatch_kmeans(
             n_clusters=config.n_clusters, batch_size=config.batch_size, n_init=config.n_init,
             max_iter=config.max_iter, random_state=config.random_state,
         ).fit(own_z)
@@ -369,7 +370,9 @@ def fit_final(parts, selections, config: Config):
             "features": selections[application]["features"],
             "window": selections[application]["window"],
             "columns": feature_columns,
-            "scaler": scaler, "router": router, "experts": experts,
+            "scaler": scaler, "router": router,
+            "router_audit": minibatch_kmeans_audit(router),
+            "experts": experts,
         }
     return {
         "config": asdict(config), "selections": selections, "preprocessor": preprocessor,

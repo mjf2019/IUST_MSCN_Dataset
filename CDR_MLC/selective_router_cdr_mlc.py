@@ -86,18 +86,18 @@ def _model_prediction(model, constant, x):
     return model.predict(x).astype(int)
 
 
-def _select_routes(kmeans_route, alternative, error_probability, probabilities,
+def _select_routes(minibatch_route, alternative, error_probability, probabilities,
                    threshold, min_gain):
-    row = np.arange(len(kmeans_route))
+    row = np.arange(len(minibatch_route))
     expert_confidence = probabilities.max(axis=2)
-    current = expert_confidence[row, kmeans_route]
+    current = expert_confidence[row, minibatch_route]
     proposed = expert_confidence[row, alternative]
     override = (
         (error_probability >= threshold)
-        & (alternative != kmeans_route)
+        & (alternative != minibatch_route)
         & ((proposed - current) >= min_gain)
     )
-    route = kmeans_route.copy()
+    route = minibatch_route.copy()
     route[override] = alternative[override]
     return route, override
 
@@ -108,7 +108,7 @@ def fit_selective_router(source, config: SelectiveRouterConfig):
         source, config.expert_train_fraction, config.correction_train_fraction
     )
     # Fit the final unsupervised geometry on all source records. No application
-    # labels are used by StandardScaler or KMeans.
+    # labels are used by StandardScaler or MiniBatchKMeans.
     full_model = fit_fixed_cdr(
         source, config.window, config.random_state, config.expert_trees
     )
@@ -208,14 +208,14 @@ def predict_all(model, frame):
     oracle = _oracle_route(truth, probabilities, predictions)
     row = np.arange(len(raw))
     report = pd.DataFrame({
-        "kmeans_route": kroute,
+        "minibatch_kmeans_route": kroute,
         "alternative_route": alternative,
         "selective_route": selective_route,
         "oracle_route": oracle,
-        "kmeans_error_probability": error_probability,
+        "minibatch_kmeans_error_probability": error_probability,
         "route_overridden": override,
         "selective_matches_oracle": selective_route == oracle,
-        "kmeans_matches_oracle": kroute == oracle,
+        "minibatch_kmeans_matches_oracle": kroute == oracle,
     }, index=raw.index)
     return {
         "observed": raw,

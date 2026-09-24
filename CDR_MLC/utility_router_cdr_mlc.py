@@ -303,11 +303,11 @@ def predict_all(model, frame):
         "CDR_MLC_soft_utility_router": soft_prediction,
         "CDR_MLC_oracle_router": predictions[row, oracle],
         "routes": pd.DataFrame({
-            "kmeans_route": kroute, "utility_alternative": alternative,
+            "minibatch_kmeans_route": kroute, "utility_alternative": alternative,
             "utility_route": route, "oracle_route": oracle,
             "utility_gain": gain, "route_overridden": override,
             "utility_matches_oracle": route == oracle,
-            "kmeans_matches_oracle": kroute == oracle,
+            "minibatch_kmeans_matches_oracle": kroute == oracle,
             **{f"expert_{expert}_utility": utility[:, expert] for expert in range(3)},
             **{f"expert_{expert}_soft_weight": soft_weights[:, expert] for expert in range(3)},
         }, index=raw.index),

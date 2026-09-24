@@ -20,7 +20,6 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.cluster import MiniBatchKMeans
 from sklearn.metrics import (
     accuracy_score,
     adjusted_mutual_info_score,
@@ -42,6 +41,7 @@ from adaptive_cdr_mlc import (
     predict,
     trend_frame,
 )
+from minibatch_clustering import make_minibatch_kmeans
 
 
 SCENARIOS = {
@@ -92,7 +92,7 @@ def source_candidate_ranking(
         x = windows[columns].to_numpy(dtype=float)
         scaler = StandardScaler().fit(x)
         z = scaler.transform(x)
-        model = MiniBatchKMeans(
+        model = make_minibatch_kmeans(
             n_clusters=config.n_clusters,
             batch_size=config.batch_size,
             n_init=config.n_init,
@@ -153,7 +153,7 @@ def evaluate_configuration(
     validation_z = scaler.transform(validation[columns])
     labels_by_seed, silhouettes, balance = [], [], []
     for seed in config.selection_seeds:
-        router = MiniBatchKMeans(
+        router = make_minibatch_kmeans(
             n_clusters=config.n_clusters,
             batch_size=config.batch_size,
             n_init=config.n_init,

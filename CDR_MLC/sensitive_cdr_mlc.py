@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from sklearn.cluster import MiniBatchKMeans
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import f1_score
 from sklearn.preprocessing import StandardScaler
@@ -21,6 +20,7 @@ from adaptive_cdr_mlc import (
     APPLICATIONS, aligned_probabilities, make_preprocessor,
     select_classifier_columns, trend_frame,
 )
+from minibatch_clustering import make_minibatch_kmeans, minibatch_kmeans_audit
 
 
 @dataclass(frozen=True)
@@ -134,7 +134,7 @@ def fit_model(train: pd.DataFrame, features, window: int, config: SensitiveConfi
         raise ValueError("insufficient complete trend windows")
     scaler = StandardScaler().fit(view[columns])
     z = scaler.transform(view[columns])
-    router = MiniBatchKMeans(
+    router = make_minibatch_kmeans(
         n_clusters=config.n_clusters, batch_size=config.batch_size,
         n_init=config.n_init, max_iter=config.max_iter,
         random_state=config.random_state,
@@ -163,7 +163,9 @@ def fit_model(train: pd.DataFrame, features, window: int, config: SensitiveConfi
         )
     return {
         "features": list(features), "window": int(window), "columns": columns,
-        "scaler": scaler, "router": router, "preprocessor": preprocessor,
+        "scaler": scaler, "router": router,
+        "router_audit": minibatch_kmeans_audit(router),
+        "preprocessor": preprocessor,
         "numeric": numeric, "categorical": categorical, "global": global_model,
         "experts": experts, "classes": APPLICATIONS,
         "cluster_fractions": fractions.tolist(), "train_rows": len(raw),
