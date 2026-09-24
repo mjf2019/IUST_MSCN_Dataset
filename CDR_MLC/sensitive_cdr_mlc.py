@@ -59,7 +59,7 @@ class SensitiveConfig:
 
 def chronological_split(source: pd.DataFrame, fraction: float = .75):
     train, validation = [], []
-    for _, group in source.groupby("sequence_id", sort=False):
+    for _, group in source.groupby("capture_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable")
         cut = int(len(group) * fraction)
         if not 0 < cut < len(group):

@@ -54,7 +54,7 @@ DEFAULT_CANDIDATES = [
 ]
 FORBIDDEN = {
     "StartTime", "SrcAddr", "DstAddr", "Proto", "Sport", "Dport", "Label", "Cause",
-    "Dir", "traffic_label", "congestion_level", "sequence_id", "source_file", "source_row",
+    "Dir", "traffic_label", "congestion_level", "capture_id", "sequence_id", "source_file", "source_row",
     "timestamp", "partition", "level_id", "route_cluster", "IdleTime",
 }
 CATEGORICAL = ["Flgs", "State", "TcpOpt"]
@@ -101,7 +101,7 @@ class Config:
 def load_dataset(data_dir: Path, candidates: tuple[str, ...]):
     """Load 15 captures, filter service direction, and retain capture chronology."""
     frames, audit = [], []
-    for path in sorted(data_dir.glob("*.flow")):
+    for capture_number, path in enumerate(sorted(data_dir.glob("*.flow")), start=1):
         match = re.fullmatch(r"(HTTP|SFTP|SMTP|SSH|Video)_(Low|Medium|High)", path.stem)
         if not match:
             raise ValueError(f"unexpected capture filename: {path.name}")
@@ -125,7 +125,7 @@ def load_dataset(data_dir: Path, candidates: tuple[str, ...]):
         reverse = tcp & frame.SrcAddr.eq(server) & frame.DstAddr.eq(CLIENT) & sport.eq(port)
         if reverse.any():
             raise ValueError(f"{path.name}: reverse rows require canonicalization")
-        audit.append({"file": path.name, "raw": len(frame), "retained": int(forward.sum())})
+        raw_rows = len(frame)
         frame = frame.loc[forward].copy()
         frame["timestamp"] = pd.to_datetime(
             frame.StartTime, format="%Y/%m/%d %H:%M:%S.%f", errors="raise"
@@ -134,10 +134,50 @@ def load_dataset(data_dir: Path, candidates: tuple[str, ...]):
             frame[column] = pd.to_numeric(frame[column], errors="coerce").replace(
                 [np.inf, -np.inf], np.nan
             )
+
+        # Capture boundaries and flow boundaries have different roles.
+        # Temporal partitions are created per capture_id, while rolling
+        # statistics are computed independently inside each standard 5-tuple.
+        # Neither identifier contains or is derived from the traffic label.
+        frame["capture_id"] = f"capture_{capture_number:02d}"
+        tuple_columns = ["SrcAddr", "DstAddr", "Sport", "Dport", "Proto"]
+        tuple_view = frame[tuple_columns].copy()
+        tuple_view["SrcAddr"] = tuple_view["SrcAddr"].astype("string").str.strip()
+        tuple_view["DstAddr"] = tuple_view["DstAddr"].astype("string").str.strip()
+        tuple_view["Proto"] = tuple_view["Proto"].astype("string").str.lower().str.strip()
+        tuple_view["Sport"] = pd.to_numeric(
+            tuple_view["Sport"], errors="coerce"
+        ).astype("Int64").astype("string")
+        tuple_view["Dport"] = pd.to_numeric(
+            tuple_view["Dport"], errors="coerce"
+        ).astype("Int64").astype("string")
+        invalid_tuple = tuple_view.isna().any(axis=1)
+        if invalid_tuple.any():
+            raise ValueError(
+                f"{path.name}: {int(invalid_tuple.sum())} retained rows have an incomplete 5-tuple"
+            )
+        frame["sequence_id"] = (
+            frame["capture_id"].astype("string") + "|"
+            + tuple_view["SrcAddr"] + "|" + tuple_view["DstAddr"] + "|"
+            + tuple_view["Sport"] + "|" + tuple_view["Dport"] + "|"
+            + tuple_view["Proto"]
+        )
         frame["traffic_label"] = application
         frame["congestion_level"] = level
-        frame["sequence_id"] = path.stem
         frame["source_file"] = path.name
+
+        sequence_sizes = frame.groupby("sequence_id", sort=False).size()
+        audit.append({
+            "capture_id": frame["capture_id"].iat[0],
+            "file": path.name,
+            "raw": raw_rows,
+            "retained": len(frame),
+            "five_tuple_sequences": int(sequence_sizes.size),
+            "sequence_rows_min": int(sequence_sizes.min()),
+            "sequence_rows_median": float(sequence_sizes.median()),
+            "sequence_rows_max": int(sequence_sizes.max()),
+            "sequences_shorter_than_window_3": int((sequence_sizes < 3).sum()),
+        })
         frames.append(frame.sort_values(["timestamp", "source_row"], kind="stable"))
     if len(frames) != 15:
         raise ValueError(f"expected 15 captures, found {len(frames)}")
@@ -145,14 +185,14 @@ def load_dataset(data_dir: Path, candidates: tuple[str, ...]):
 
 
 def temporal_split(data: pd.DataFrame, config: Config):
-    """Split every capture chronologically; never build a window across a partition."""
+    """Split each capture chronologically; 5-tuple windows reset in every partition."""
     parts = {"train": [], "validation": [], "test": []}
-    for _, group in data.groupby("sequence_id", sort=False):
+    for _, group in data.groupby("capture_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable")
         first = int(config.train_fraction * len(group))
         second = int((config.train_fraction + config.validation_fraction) * len(group))
         if not 0 < first < second < len(group):
-            raise ValueError(f"capture too short: {group.sequence_id.iloc[0]}")
+            raise ValueError(f"capture too short: {group.capture_id.iloc[0]}")
         parts["train"].append(group.iloc[:first].copy())
         parts["validation"].append(group.iloc[first:second].copy())
         parts["test"].append(group.iloc[second:].copy())

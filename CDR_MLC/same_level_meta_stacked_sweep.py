@@ -16,20 +16,20 @@ import pandas as pd
 from adaptive_cdr_mlc import APPLICATIONS, LEVELS, load_dataset
 from compare_clean_valid import TIMING, fit_rf, metrics, predict_rf
 from congestion_feature_cdr_mlc import DEFAULT_CONGESTION_FEATURES
-from meta_stacked_cdr_mlc import MetaStackConfig, fit_meta_stacker, predict_all
+from meta_stacked_cdr_mlc_leakage_safe import MetaStackConfig, fit_meta_stacker, predict_all
 
 
 def chronological_same_level_split(level_data: pd.DataFrame, train_fraction: float):
     development, test, captures = [], [], []
-    for sequence_id, group in level_data.groupby("sequence_id", sort=False):
+    for capture_id, group in level_data.groupby("capture_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable")
         cut = int(len(group) * train_fraction)
         if not 0 < cut < len(group):
-            raise ValueError(f"{sequence_id}: invalid chronological split")
+            raise ValueError(f"{capture_id}: invalid chronological split")
         development.append(group.iloc[:cut].copy())
         test.append(group.iloc[cut:].copy())
         captures.append({
-            "sequence_id": sequence_id,
+            "capture_id": capture_id,
             "total_rows": len(group),
             "development_rows": cut,
             "test_rows": len(group) - cut,

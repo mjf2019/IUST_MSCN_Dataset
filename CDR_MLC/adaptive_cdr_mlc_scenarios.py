@@ -54,7 +54,7 @@ SCENARIOS = {
 def split_source(source: pd.DataFrame, train_fraction: float = 0.75):
     """Chronological selection split inside each source-level capture."""
     train, validation = [], []
-    for _, group in source.groupby("sequence_id", sort=False):
+    for _, group in source.groupby("capture_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable")
         cut = int(train_fraction * len(group))
         if not 0 < cut < len(group):

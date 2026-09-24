@@ -1,7 +1,6 @@
 """Strict temporal, leakage-safe meta-stacking for fixed CDR-MLC.
 
-This module intentionally coexists with ``meta_stacked_cdr_mlc.py`` so legacy
-results remain reproducible.  The scaler and KMeans router are fitted only on
+The scaler and KMeans router are fitted only on
 the earliest expert partition and then frozen.  Later partitions train the
 utility and meta models without any feature-distribution look-ahead.
 """
@@ -57,7 +56,7 @@ class MetaStackConfig:
 
 def four_way_split(frame, config):
     parts = {"expert": [], "utility": [], "meta": [], "selection": []}
-    for _, group in frame.groupby("sequence_id", sort=False):
+    for _, group in frame.groupby("capture_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable")
         a = int(len(group) * config.expert_fraction)
         b = int(len(group) * (config.expert_fraction + config.utility_fraction))

@@ -21,7 +21,7 @@ LEVELS = ("Low", "Medium", "High")
 
 def split_prefix(frame: pd.DataFrame, fraction: float):
     prefix, tail = [], []
-    for _, group in frame.groupby("sequence_id", sort=False):
+    for _, group in frame.groupby("capture_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable")
         cut = int(len(group) * fraction)
         if fraction > 0 and not 0 < cut < len(group):
