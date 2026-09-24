@@ -158,7 +158,12 @@ def main():
 
             model = fit_meta_stacker(development, config)
             eligible = development.loc[model["source_eligible_index"]]
-            rf = fit_rf(eligible, TIMING, args.seed, args.rf_trees)
+            rf_clean_valid = fit_rf(
+                eligible, (), args.seed, args.rf_trees
+            )
+            rf_expert_inputs = fit_rf(
+                eligible, TIMING, args.seed, args.rf_trees
+            )
             audit = {
                 "adaptation_fraction": fraction,
                 "fixed_test_fraction": args.test_fraction,
@@ -200,7 +205,12 @@ def main():
                 key: value for key, value in result.items()
                 if key.startswith("CDR_")
             }
-            predictions["RF_expert_inputs"] = predict_rf(rf, observed)
+            predictions["RF_Clean_Valid"] = predict_rf(
+                rf_clean_valid, observed
+            )
+            predictions["RF_Expert_Inputs"] = predict_rf(
+                rf_expert_inputs, observed
+            )
             detail = {}
             for method, prediction in predictions.items():
                 score = metrics(truth, prediction, APPLICATIONS)
