@@ -1,9 +1,11 @@
-"""Leakage-safe component ablation for S-Meta on mixed-level protocols.
+"""Leakage-safe component ablation for S-Meta evaluation protocols.
 
 Each learned ablation preserves the same strict four-way temporal partitions,
 frozen expert-only congestion geometry, test set, seed, and tree budgets.  The
 only change is the component named by the ablation.  The full reference calls
 the production ``fit_meta_stacker`` and ``predict_all`` functions directly.
+Scenarios 1--3 train on the complete source level and evaluate on the complete,
+untouched target level; no target record is used during model development.
 """
 from __future__ import annotations
 
@@ -38,9 +40,6 @@ from mixed_level_protocols_leakage_safe import (
     build_protocol,
     composition,
     frame_identity,
-)
-from meta_stacked_fixed_test_sweep_leakage_safe import (
-    build_scenario_fixed_test_protocol,
 )
 from utility_router_cdr_mlc import (
     _balanced_weights,
@@ -394,25 +393,29 @@ def evaluate_mixed_protocol(data, protocol_name, train_fraction, config):
     )
 
 
-def evaluate_fixed_scenario(data, scenario, test_fraction, config):
+def evaluate_full_target_scenario(data, scenario, config):
     source, target = SCENARIOS[scenario]
-    development, test, capture_audit = build_scenario_fixed_test_protocol(
-        data,
-        source_level=source,
-        target_level=target,
-        adaptation_fraction=0.0,
-        test_fraction=test_fraction,
-    )
+    development = data[data.congestion_level.eq(source)].copy().reset_index(drop=True)
+    test = data[data.congestion_level.eq(target)].copy().reset_index(drop=True)
+    if development.empty or test.empty:
+        raise ValueError(f"scenario {scenario}: empty source or target level")
+    development_ids = set(zip(development.source_file, development.source_row))
+    test_ids = set(zip(test.source_file, test.source_row))
+    overlap = development_ids & test_ids
+    if overlap:
+        raise RuntimeError(
+            f"scenario {scenario}: {len(overlap)} development/test overlaps"
+        )
     evaluation_name = f"Scenario-{scenario}-{source}-to-{target}"
     protocol = {
-        "kind": "source_level_to_fixed_target_tail",
+        "kind": "complete_source_level_to_complete_target_level",
         "adaptation_fraction": 0.0,
-        "fixed_test_fraction": test_fraction,
+        "target_test_fraction": 1.0,
+        "all_target_rows_are_test_rows": True,
         "target_level_used_in_training_or_selection": False,
-        "captures": capture_audit,
     }
     return evaluate_split(
-        development, test, evaluation_name, "fixed_test_scenario",
+        development, test, evaluation_name, "full_target_scenario",
         protocol, config, scenario=scenario, source=source, target=target,
     )
 
@@ -437,7 +440,6 @@ def main():
         default=["1", "2", "3"],
     )
     parser.add_argument("--train-fraction", type=float, default=.80)
-    parser.add_argument("--test-fraction", type=float, default=.20)
     parser.add_argument("--window", type=int, default=3)
     parser.add_argument("--congestion-window", type=int, default=50)
     parser.add_argument(
@@ -451,8 +453,6 @@ def main():
     args = parser.parse_args()
     if not 0 < args.train_fraction < 1:
         raise ValueError("train-fraction must be in (0,1)")
-    if not 0 < args.test_fraction < 1:
-        raise ValueError("test-fraction must be in (0,1)")
 
     config = MetaStackConfig(
         window=args.window,
@@ -472,12 +472,13 @@ def main():
     manifest = {
         "config": asdict(config),
         "protocols": args.protocols,
-        "fixed_test_scenarios": {
+        "scenario_definitions": {
             scenario: SCENARIOS[scenario] for scenario in args.scenarios
         },
         "all_level_train_fraction": args.train_fraction,
-        "fixed_test_fraction": args.test_fraction,
-        "fixed_test_adaptation_fraction": 0.0,
+        "scenario_target_test_fraction": 1.0,
+        "scenario_uses_complete_target_level": True,
+        "scenario_adaptation_fraction": 0.0,
         "method_order": METHOD_ORDER,
         "learned_ablation_specs": {
             name: asdict(spec) for name, spec in LEARNED_ABLATIONS.items()
@@ -505,8 +506,8 @@ def main():
     for scenario in args.scenarios:
         source, target = SCENARIOS[scenario]
         evaluation_name = f"Scenario-{scenario}-{source}-to-{target}"
-        rows, predictions, scores, audit = evaluate_fixed_scenario(
-            data, scenario, args.test_fraction, config
+        rows, predictions, scores, audit = evaluate_full_target_scenario(
+            data, scenario, config
         )
         all_rows.extend(rows)
         scenario_dir = args.output / (
