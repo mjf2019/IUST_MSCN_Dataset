@@ -57,13 +57,11 @@ FORBIDDEN = {
     "StartTime", "SrcAddr", "DstAddr", "Proto", "Sport", "Dport", "Label", "Cause",
     "Dir", "traffic_label", "congestion_level", "sequence_id", "source_file", "source_row",
     "timestamp", "partition", "level_id", "route_cluster", "IdleTime",
-    "InjectionOriginLevel", "InjectionRole",
 }
 CATEGORICAL = ["Flgs", "State", "TcpOpt"]
 TEXT_COLUMNS = {
     "StartTime", "SrcAddr", "DstAddr", "Proto", "Flgs", "State", "TcpOpt",
     "Label", "Cause", "Dir",
-    "InjectionOriginLevel", "InjectionRole",
 }
 
 

@@ -19,14 +19,6 @@ shared `minibatch_clustering.py` factory (`k-means++`, batch size 1024,
 is not used. Two 100-tree pooled RF references are evaluated on the same test
 records. Raw datasets are not modified.
 
-## Symmetric multilevel calibration
-
-The leakage-safe fixed-test runner keeps all 15 Clean-Valid captures pristine.
-For each source level, its development set contains the complete source plus the
-requested chronological `fraction` prefix from both other congestion levels.
-The final target tail remains fixed, pure, and excluded from every fitting and
-selection step. Existing runner commands and `--data-dir` values are unchanged.
-
 ## Fidelity and limitations
 
 - Scenarios 1–3: Low → Medium, Low → High, Medium → High.
