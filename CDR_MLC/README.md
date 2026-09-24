@@ -19,13 +19,13 @@ shared `minibatch_clustering.py` factory (`k-means++`, batch size 1024,
 is not used. Two 100-tree pooled RF references are evaluated on the same test
 records. Raw datasets are not modified.
 
-## Integrated cross-level injection
+## Symmetric multilevel calibration
 
-[CROSS_LEVEL_INJECTION.md](CROSS_LEVEL_INJECTION.md) documents the in-place
-dataset revision. Each existing application-level file keeps its original path
-and contains all of its primary rows plus 20% prefixes from both other levels.
-Consequently, commands and `--data-dir` values of all runners remain unchanged.
-Donor provenance is retained in non-model metadata fields.
+The leakage-safe fixed-test runner keeps all 15 Clean-Valid captures pristine.
+For each source level, its development set contains the complete source plus the
+requested chronological `fraction` prefix from both other congestion levels.
+The final target tail remains fixed, pure, and excluded from every fitting and
+selection step. Existing runner commands and `--data-dir` values are unchanged.
 
 ## Fidelity and limitations
 

@@ -1,9 +1,11 @@
-"""Evaluate the strict temporal meta stacker on scenario-specific fixed tails.
+"""Leakage-safe S-Meta evaluation with symmetric multilevel calibration.
 
-For every target capture, the final ``test_fraction`` is always reserved as
-test.  Adaptation takes a prefix of the same capture; any rows between the
-adaptation prefix and fixed test tail are deliberately unused.  Consequently,
-all adaptation fractions are evaluated on identical target records.
+For each source level, development contains the complete source level plus the
+chronological adaptation-fraction prefix of both other congestion levels.
+The final test-fraction tail of every non-source level is immutable and is
+never used for fitting or model selection. Thus Scenarios 1 and 2 share one
+Low-source model calibrated simultaneously with Medium and High, while a
+Medium-source model is calibrated simultaneously with Low and High.
 """
 from __future__ import annotations
 
@@ -15,7 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from adaptive_cdr_mlc import APPLICATIONS, load_dataset
+from adaptive_cdr_mlc import APPLICATIONS, LEVELS, load_dataset
 from compare_clean_valid import SCENARIOS, TIMING, fit_rf, metrics, predict_rf
 from congestion_feature_cdr_mlc import DEFAULT_CONGESTION_FEATURES
 from meta_stacked_cdr_mlc_leakage_safe import MetaStackConfig, fit_meta_stacker, predict_all
@@ -67,40 +69,36 @@ def frame_identity(frame: pd.DataFrame) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def build_scenario_fixed_test_protocol(
-    data, source_level, target_level, adaptation_fraction, test_fraction
+def build_multilevel_fixed_test_protocol(
+    data, source_level, adaptation_fraction, test_fraction
 ):
-    """Build one independent source-to-target protocol.
-
-    Only the requested target's chronological prefix may be added to
-    development.  No calibration rows from another scenario/level are used.
-    """
-    if source_level == target_level:
-        raise ValueError("source and target levels must differ")
+    """Mix both non-source calibration prefixes into one development set."""
     source = data[data.congestion_level.eq(source_level)].copy()
-    target = data[data.congestion_level.eq(target_level)].copy()
-    calibration, fixed_test, capture_audit = fixed_tail_calibration(
-        target, adaptation_fraction, test_fraction
-    )
     development_parts = [source]
-    if adaptation_fraction > 0:
-        development_parts.append(calibration)
-    audit = [
-        {
-            "level": source_level,
-            "role": "full_source_level",
-            "development_rows": len(source),
-        },
-        {
-            "level": target_level,
-            "role": "scenario_target_fixed_test",
+    fixed_tests, audit = {}, [{
+        "level": source_level,
+        "role": "full_source_level",
+        "development_rows": len(source),
+    }]
+    for level in LEVELS:
+        if level == source_level:
+            continue
+        level_data = data[data.congestion_level.eq(level)].copy()
+        calibration, fixed_test, capture_audit = fixed_tail_calibration(
+            level_data, adaptation_fraction, test_fraction
+        )
+        if adaptation_fraction > 0:
+            development_parts.append(calibration)
+        fixed_tests[level] = fixed_test
+        audit.append({
+            "level": level,
+            "role": "multilevel_calibration_and_fixed_test",
             "calibration_rows": len(calibration),
             "fixed_test_rows": len(fixed_test),
+            "test_identity_sha256": frame_identity(fixed_test),
             "captures": capture_audit,
-        },
-    ]
-    return pd.concat(development_parts, ignore_index=True), fixed_test, audit
-
+        })
+    return pd.concat(development_parts, ignore_index=True), fixed_tests, audit
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -138,38 +136,34 @@ def main():
     rows, audits, expected_test_identity = [], {}, {}
     expected_evaluated_identity = {}
     for fraction in args.fractions:
+        grouped = {}
+        for scenario in args.scenarios:
+            source, target = SCENARIOS[scenario]
+            grouped.setdefault(source, []).append((scenario, target))
         fraction_root = args.output / f"cal_{int(round(fraction * 100)):02d}"
         fraction_root.mkdir(parents=True, exist_ok=True)
-        for scenario in args.scenarios:
-            source_level, target_level = SCENARIOS[scenario]
-            development, fixed_test, protocol_audit = (
-                build_scenario_fixed_test_protocol(
-                    data, source_level, target_level, fraction,
-                    args.test_fraction,
-                )
+        for source_level, targets in grouped.items():
+            development, fixed_tests, protocol_audit = build_multilevel_fixed_test_protocol(
+                data, source_level, fraction, args.test_fraction
             )
-            identity = frame_identity(fixed_test)
-            previous = expected_test_identity.setdefault(target_level, identity)
-            if identity != previous:
-                raise RuntimeError(
-                    f"fixed test identity changed for {target_level}: "
-                    f"{previous} != {identity}"
-                )
+            for _, target_level in targets:
+                identity = frame_identity(fixed_tests[target_level])
+                previous = expected_test_identity.setdefault(target_level, identity)
+                if identity != previous:
+                    raise RuntimeError(
+                        f"fixed test identity changed for {target_level}: "
+                        f"{previous} != {identity}"
+                    )
 
             model = fit_meta_stacker(development, config)
             eligible = development.loc[model["source_eligible_index"]]
-            rf_clean_valid = fit_rf(
-                eligible, (), args.seed, args.rf_trees
-            )
+            rf_clean_valid = fit_rf(eligible, (), args.seed, args.rf_trees)
             rf_expert_inputs = fit_rf(
                 eligible, TIMING, args.seed, args.rf_trees
             )
             audit = {
                 "adaptation_fraction": fraction,
                 "fixed_test_fraction": args.test_fraction,
-                "scenario": scenario,
-                "source_level": source_level,
-                "target_level": target_level,
                 "development_rows_raw": len(development),
                 "partition_rows": model["partition_rows"],
                 "model_leakage_control": model["leakage_control"],
@@ -179,64 +173,67 @@ def main():
                 "meta_selection_trials": model["meta_selection_trials"],
                 "protocol": protocol_audit,
             }
-            audits[f"{fraction}:{scenario}"] = audit
-            scenario_dir = fraction_root / (
-                f"scenario_{scenario}_{source_level.lower()}_to_"
-                f"{target_level.lower()}"
-            )
-            scenario_dir.mkdir(parents=True, exist_ok=True)
-            (scenario_dir / "leakage_safe_meta_audit.json").write_text(
+            audits[f"{fraction}:{source_level}"] = audit
+            source_dir = fraction_root / f"source_{source_level.lower()}"
+            source_dir.mkdir(parents=True, exist_ok=True)
+            (source_dir / "leakage_safe_meta_audit.json").write_text(
                 json.dumps(audit, indent=2) + "\n", encoding="utf-8"
             )
 
-            result = predict_all(model, fixed_test)
-            observed = result["observed"]
-            evaluated_identity = frame_identity(observed)
-            previous_evaluated = expected_evaluated_identity.setdefault(
-                target_level, evaluated_identity
-            )
-            if evaluated_identity != previous_evaluated:
-                raise RuntimeError(
-                    f"evaluated test identity changed for {target_level}: "
-                    f"{previous_evaluated} != {evaluated_identity}"
+            for scenario, target_level in targets:
+                target = fixed_tests[target_level]
+                result = predict_all(model, target)
+                observed = result["observed"]
+                evaluated_identity = frame_identity(observed)
+                previous_evaluated = expected_evaluated_identity.setdefault(
+                    target_level, evaluated_identity
                 )
-            truth = observed.traffic_label.to_numpy()
-            predictions = {
-                key: value for key, value in result.items()
-                if key.startswith("CDR_")
-            }
-            predictions["RF_Clean_Valid"] = predict_rf(
-                rf_clean_valid, observed
-            )
-            predictions["RF_Expert_Inputs"] = predict_rf(
-                rf_expert_inputs, observed
-            )
-            detail = {}
-            for method, prediction in predictions.items():
-                score = metrics(truth, prediction, APPLICATIONS)
-                detail[method] = score
-                rows.append({
-                    "adaptation_fraction": fraction,
-                    "fixed_test_fraction": args.test_fraction,
-                    "scenario": scenario, "source": source_level,
-                    "target": target_level, "method": method,
-                    **{key: score[key] for key in (
-                        "n", "accuracy", "balanced_accuracy",
-                        "macro_f1", "weighted_f1",
-                    )},
-                })
-            # Test identifiers are deliberately excluded from exported output.
-            frame = observed[[
-                "timestamp", "traffic_label", "congestion_level",
-            ]].copy()
-            for method, prediction in predictions.items():
-                frame[f"prediction_{method}"] = prediction
-            frame.join(result["routes"]).to_csv(
-                scenario_dir / "predictions.csv", index=False
-            )
-            (scenario_dir / "metrics.json").write_text(
-                json.dumps(detail, indent=2) + "\n", encoding="utf-8"
-            )
+                if evaluated_identity != previous_evaluated:
+                    raise RuntimeError(
+                        f"evaluated test identity changed for {target_level}: "
+                        f"{previous_evaluated} != {evaluated_identity}"
+                    )
+                truth = observed.traffic_label.to_numpy()
+                predictions = {
+                    key: value for key, value in result.items()
+                    if key.startswith("CDR_")
+                }
+                predictions["RF_Clean_Valid"] = predict_rf(
+                    rf_clean_valid, observed
+                )
+                predictions["RF_Expert_Inputs"] = predict_rf(
+                    rf_expert_inputs, observed
+                )
+                scenario_dir = fraction_root / (
+                    f"scenario_{scenario}_{source_level.lower()}_to_{target_level.lower()}"
+                )
+                scenario_dir.mkdir(parents=True, exist_ok=True)
+                detail = {}
+                for method, prediction in predictions.items():
+                    score = metrics(truth, prediction, APPLICATIONS)
+                    detail[method] = score
+                    rows.append({
+                        "adaptation_fraction": fraction,
+                        "fixed_test_fraction": args.test_fraction,
+                        "scenario": scenario, "source": source_level,
+                        "target": target_level, "method": method,
+                        **{key: score[key] for key in (
+                            "n", "accuracy", "balanced_accuracy",
+                            "macro_f1", "weighted_f1",
+                        )},
+                    })
+                # Test identifiers are deliberately excluded from exported output.
+                frame = observed[[
+                    "timestamp", "traffic_label", "congestion_level",
+                ]].copy()
+                for method, prediction in predictions.items():
+                    frame[f"prediction_{method}"] = prediction
+                frame.join(result["routes"]).to_csv(
+                    scenario_dir / "predictions.csv", index=False
+                )
+                (scenario_dir / "metrics.json").write_text(
+                    json.dumps(detail, indent=2) + "\n", encoding="utf-8"
+                )
 
     summary = pd.DataFrame(rows).sort_values(
         ["adaptation_fraction", "scenario", "method"]
@@ -253,10 +250,9 @@ def main():
         "scenarios": {key: SCENARIOS[key] for key in args.scenarios},
         "audits": audits,
         "leakage_control": (
-            "Each scenario uses only its own target calibration prefix. "
-            "The final target tail is immutable and excluded from all fitting and selection. "
-            "Scaler and MiniBatchKMeans are fitted only on the earliest expert "
-            "partition and frozen."
+            "For each source, prefixes from both other levels are mixed only into "
+            "development. Every final target tail is immutable across fractions and "
+            "excluded from fitting, scaling, clustering, routing and model selection."
         ),
     }
     (args.output / "meta_stacked_fixed_test_manifest.json").write_text(
