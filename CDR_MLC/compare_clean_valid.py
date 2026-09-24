@@ -63,7 +63,7 @@ CLEAN_ROUTER_CANDIDATES = (
 def chronological_level_calibration(data: pd.DataFrame, fraction: float):
     """Return first-fraction calibration and disjoint remaining tails per capture."""
     calibration, held_out = [], []
-    for _, group in data.groupby("capture_id", sort=False):
+    for _, group in data.groupby("sequence_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable")
         cut = int(len(group) * fraction)
         if fraction > 0 and not 0 < cut < len(group):

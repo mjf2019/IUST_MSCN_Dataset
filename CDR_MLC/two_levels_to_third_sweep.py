@@ -24,8 +24,13 @@ from compare_clean_valid import (
     TIMING, fit_fixed_cdr, fit_rf, metrics, predict_fixed_cdr, predict_rf,
 )
 from congestion_feature_cdr_mlc import DEFAULT_CONGESTION_FEATURES
+from meta_stacked_cdr_mlc import (
+    MetaStackConfig, fit_meta_stacker as fit_legacy_meta,
+    predict_all as predict_legacy_meta,
+)
 from meta_stacked_cdr_mlc_leakage_safe import (
-    MetaStackConfig, fit_meta_stacker, predict_all,
+    fit_meta_stacker as fit_safe_meta,
+    predict_all as predict_safe_meta,
 )
 
 
@@ -38,8 +43,8 @@ SCENARIOS = {
 
 def frame_identity(frame: pd.DataFrame) -> str:
     ordered = frame.sort_values(
-        ["capture_id", "sequence_id", "timestamp", "source_row"], kind="stable"
-    )[["capture_id", "sequence_id", "source_file", "source_row"]]
+        ["sequence_id", "timestamp", "source_row"], kind="stable"
+    )[["sequence_id", "source_file", "source_row"]]
     return hashlib.sha256(
         ordered.to_csv(index=False, lineterminator="\n").encode("utf-8")
     ).hexdigest()
@@ -117,12 +122,15 @@ def main() -> None:
             eligible_source, TIMING, args.seed, args.rf_trees
         )
 
-        smeta_model = fit_meta_stacker(source, config)
-        smeta_result = predict_all(smeta_model, target)
+        legacy_model = fit_legacy_meta(source, config)
+        safe_model = fit_safe_meta(source, config)
+        legacy_result = predict_legacy_meta(legacy_model, target)
+        safe_result = predict_safe_meta(safe_model, target)
 
         prediction_series = {
             "CDR_MLC": fixed_prediction,
-            **as_series(smeta_result, "S_Meta_"),
+            **as_series(legacy_result, "Legacy_"),
+            **as_series(safe_result, "Safe_"),
         }
         common = sorted(set.intersection(*(
             set(series.index) for series in prediction_series.values()
@@ -180,12 +188,19 @@ def main() -> None:
             "raw_test_identity": frame_identity(target),
             "evaluated_test_identity": frame_identity(observed),
             "fixed_cluster_counts": fixed["cluster_counts"],
-            "smeta_partition_rows": smeta_model["partition_rows"],
-            "smeta_selected_meta_variant": (
-                smeta_model["selected_meta_variant"]
+            "legacy_partition_rows": legacy_model["partition_rows"],
+            "safe_partition_rows": safe_model["partition_rows"],
+            "legacy_selected_meta_variant": (
+                legacy_model["selected_meta_variant"]
             ),
-            "smeta_selected_meta_confidence": (
-                smeta_model["selected_meta_confidence"]
+            "legacy_selected_meta_confidence": (
+                legacy_model["selected_meta_confidence"]
+            ),
+            "safe_selected_meta_variant": (
+                safe_model["selected_meta_variant"]
+            ),
+            "safe_selected_meta_confidence": (
+                safe_model["selected_meta_confidence"]
             ),
         }
 

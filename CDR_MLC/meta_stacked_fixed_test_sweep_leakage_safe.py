@@ -25,20 +25,20 @@ def fixed_tail_calibration(frame: pd.DataFrame, adaptation_fraction: float,
                            test_fraction: float):
     """Return a chronological prefix and an immutable chronological tail."""
     calibration, test, audit = [], [], []
-    for capture_id, group in frame.groupby("capture_id", sort=False):
+    for sequence_id, group in frame.groupby("sequence_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable")
         calibration_end = int(len(group) * adaptation_fraction)
         test_start = int(len(group) * (1.0 - test_fraction))
         if calibration_end > test_start:
             raise ValueError(
-                f"{capture_id}: adaptation prefix overlaps fixed test tail"
+                f"{sequence_id}: adaptation prefix overlaps fixed test tail"
             )
         if adaptation_fraction > 0 and calibration_end == 0:
-            raise ValueError(f"{capture_id}: empty nonzero calibration prefix")
+            raise ValueError(f"{sequence_id}: empty nonzero calibration prefix")
         calibration.append(group.iloc[:calibration_end].copy())
         test.append(group.iloc[test_start:].copy())
         audit.append({
-            "capture_id": capture_id,
+            "sequence_id": sequence_id,
             "total_rows": len(group),
             "calibration_rows": calibration_end,
             "unused_rows": test_start - calibration_end,
@@ -61,8 +61,8 @@ def fixed_tail_calibration(frame: pd.DataFrame, adaptation_fraction: float,
 def frame_identity(frame: pd.DataFrame) -> str:
     """Stable identity of ordered test records, independent of model output."""
     ordered = frame.sort_values(
-        ["capture_id", "sequence_id", "timestamp", "source_row"], kind="stable"
-    )[["capture_id", "sequence_id", "source_file", "source_row"]]
+        ["sequence_id", "timestamp", "source_row"], kind="stable"
+    )[["sequence_id", "source_file", "source_row"]]
     payload = ordered.to_csv(index=False, lineterminator="\n").encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 

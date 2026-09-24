@@ -43,7 +43,7 @@ class SelectiveRouterConfig:
 
 def three_way_split(frame, expert_fraction, correction_fraction):
     parts = {"expert": [], "correction": [], "threshold": []}
-    for _, group in frame.groupby("capture_id", sort=False):
+    for _, group in frame.groupby("sequence_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable")
         first = int(len(group) * expert_fraction)
         second = int(len(group) * (expert_fraction + correction_fraction))

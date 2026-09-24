@@ -42,7 +42,7 @@ class LearnedRouterConfig:
 
 def chronological_split(frame: pd.DataFrame, fraction: float):
     train, gate = [], []
-    for _, group in frame.groupby("capture_id", sort=False):
+    for _, group in frame.groupby("sequence_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable")
         cut = int(len(group) * fraction)
         if not 0 < cut < len(group):
