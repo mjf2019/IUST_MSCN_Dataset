@@ -36,6 +36,7 @@ from adaptive_cdr_mlc import (  # noqa: E402
     select_classifier_columns,
 )
 from compare_clean_valid import SCENARIOS  # noqa: E402
+from benchmarks.console_output import print_compact_results  # noqa: E402
 from af_single_source import (  # noqa: E402
     AFConfig,
     embeddings,
@@ -114,13 +115,16 @@ def run(args):
             split_audits[audit_key] = audit
             if fraction == 0:
                 rows.append({
-                    "adaptation_fraction": fraction, "scenario": scenario,
+                    "adaptation_fraction": fraction,
+                    "fixed_test_fraction": args.test_fraction,
+                    "scenario": scenario,
                     "source": source_level, "target": target_level,
                     "method": "AF-MLP-adapted", "n": len(test),
                     "target_labeled_rows": 0, "target_rows_per_class_min": 0,
                     "status": "N/A: AF target k-NN requires labeled target samples",
                     "accuracy": np.nan, "balanced_accuracy": np.nan,
                     "macro_f1": np.nan, "weighted_f1": np.nan,
+                    "fit_and_inference_seconds": np.nan,
                 })
                 continue
 
@@ -200,7 +204,10 @@ def run(args):
     (args.output / "run_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
-    print(result.to_string(index=False, justify="left"))
+    print_compact_results(
+        result, method="AF", calibration_column="target_labeled_rows",
+        seconds_column="fit_and_inference_seconds",
+    )
 
 
 def parse_args():

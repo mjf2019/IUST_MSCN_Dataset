@@ -11,3 +11,7 @@ uses the same immutable target-test protocol where applicable.
 
 Method-specific assumptions, paper deviations, commands and output schemas are
 documented in the corresponding README files.
+
+All runners print a compact left-to-right console table using the headings
+`AF`, `TF`, `Scn`, `Src`, `Tgt`, `CalN`, `N`, `Method`, `Acc`, `BAcc`, `MF1`,
+`WF1` and `Sec`. CSV files retain the complete descriptive column names.

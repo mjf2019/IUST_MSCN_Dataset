@@ -41,6 +41,7 @@ if str(MODULE_ROOT) not in sys.path:
 
 from adaptive_cdr_mlc import DEFAULT_CANDIDATES, FORBIDDEN, load_dataset, select_classifier_columns  # noqa: E402
 from compare_clean_valid import APPLICATIONS, SCENARIOS  # noqa: E402
+from benchmarks.console_output import print_compact_results  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -451,7 +452,10 @@ def run(args):
         ],
     }
     (args.output / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(result.to_string(index=False, justify="left"))
+    print_compact_results(
+        result, method="DFE", calibration_column="adaptation_pool_rows",
+        seconds_column="inference_seconds",
+    )
 
 
 def parse_args():

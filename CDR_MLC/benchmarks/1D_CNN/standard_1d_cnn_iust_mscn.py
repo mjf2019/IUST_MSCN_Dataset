@@ -39,6 +39,7 @@ from adaptive_cdr_mlc import (  # noqa: E402
     select_classifier_columns,
 )
 from compare_clean_valid import SCENARIOS  # noqa: E402
+from benchmarks.console_output import print_compact_results  # noqa: E402
 
 LEGACY_EXCLUDED = {"IdleTime", "DstWin"}
 
@@ -336,7 +337,11 @@ def run(args):
     (args.output / "run_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
-    print(summary.to_string(index=False, justify="left"))
+    print_compact_results(
+        summary, method="1D-CNN", calibration_column="target_labeled_n",
+        seconds_column="fit_and_inference_seconds",
+        extra_columns={"Ep": "epochs_completed"},
+    )
 
 
 def parse_args():
