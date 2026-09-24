@@ -19,17 +19,13 @@ shared `minibatch_clustering.py` factory (`k-means++`, batch size 1024,
 is not used. Two 100-tree pooled RF references are evaluated on the same test
 records. Raw datasets are not modified.
 
-## Cross-level injection pools
+## Integrated cross-level injection
 
-[CROSS_LEVEL_INJECTION.md](CROSS_LEVEL_INJECTION.md) documents the leakage-safe
-pool builder. With its default settings, each level receives chronological 20%
-prefixes from both other levels while the final 20% of every capture remains a
-separate immutable test set. Physical congestion labels are retained and the
-destination is stored separately in `pool_level`.
-
-```powershell
-python CDR_MLC/build_cross_level_injection_pools.py --injection-fraction 0.20 --test-fraction 0.20 --output CDR_MLC/DATASETS/CDR-MLC/Cross_Level_Injection_20
-```
+[CROSS_LEVEL_INJECTION.md](CROSS_LEVEL_INJECTION.md) documents the in-place
+dataset revision. Each existing application-level file keeps its original path
+and contains all of its primary rows plus 20% prefixes from both other levels.
+Consequently, commands and `--data-dir` values of all runners remain unchanged.
+Donor provenance is retained in non-model metadata fields.
 
 ## Fidelity and limitations
 
