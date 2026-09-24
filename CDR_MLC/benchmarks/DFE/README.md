@@ -27,7 +27,7 @@ ordered deterministically and zero-padded to 81.
 ## Run
 
 ```powershell
-python DFE/dfe_iust_mscn.py --fractions 0 0.01 0.05 0.10 0.20 --test-fraction 0.20 --scenarios 1 2 3 --epochs 200 --seed 42 --device cuda --output DFE/outputs/iust_mscn
+python CDR_MLC/benchmarks/DFE/dfe_iust_mscn.py --fractions 0 0.01 0.05 0.10 0.20 --test-fraction 0.20 --scenarios 1 2 3 --epochs 200 --seed 42 --device cuda --output CDR_MLC/benchmarks/DFE/outputs/iust_mscn
 ```
 
 The Low backbone is reused by scenarios 1 and 2. For nonzero budgets, at most

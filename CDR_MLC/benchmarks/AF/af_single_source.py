@@ -316,7 +316,10 @@ def parse_args():
     parser.add_argument("--input-mode", choices=("direction", "tabular"), default="direction")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", choices=("cpu", "cuda"))
-    parser.add_argument("--output", type=Path, default=Path("AF/outputs/af_single_source"))
+    parser.add_argument(
+        "--output", type=Path,
+        default=Path("CDR_MLC/benchmarks/AF/outputs/af_single_source"),
+    )
     return parser.parse_args()
 
 

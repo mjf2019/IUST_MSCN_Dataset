@@ -23,9 +23,9 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 HERE = Path(__file__).resolve().parent
-PROJECT = HERE.parent
-CDR_MLC = PROJECT / "CDR_MLC"
-MODULE_ROOT = CDR_MLC if CDR_MLC.is_dir() else PROJECT
+BENCHMARKS = HERE.parent
+CDR_MLC = BENCHMARKS.parent
+MODULE_ROOT = CDR_MLC
 if str(MODULE_ROOT) not in sys.path:
     sys.path.insert(0, str(MODULE_ROOT))
 
@@ -36,7 +36,7 @@ from adaptive_cdr_mlc import (  # noqa: E402
     select_classifier_columns,
 )
 from compare_clean_valid import SCENARIOS  # noqa: E402
-from AF.af_single_source import (  # noqa: E402
+from af_single_source import (  # noqa: E402
     AFConfig,
     embeddings,
     fit_domain_network,

@@ -22,7 +22,7 @@ This directory contains a clean implementation of **AF-SingleSource** from
 the packet sequence and must contain `-1`, `+1`, or zero padding.
 
 ```powershell
-python AF/af_single_source.py --source SOURCE.csv --target TARGET.csv --label-column label --input-mode direction --output AF/outputs/exact
+python CDR_MLC/benchmarks/AF/af_single_source.py --source SOURCE.csv --target TARGET.csv --label-column label --input-mode direction --output CDR_MLC/benchmarks/AF/outputs/exact
 ```
 
 `tabular` applies the AF training protocol to IUST_MSCN flow features. It uses
@@ -30,7 +30,7 @@ an MLP because the dataset does not contain the Tor packet-direction vectors
 required by the DF CNN. Its output is therefore named `AF-MLP-adapted`.
 
 ```powershell
-python AF/af_single_source.py --source LOW.csv --target MEDIUM.csv --label-column label --input-mode tabular --output AF/outputs/low_to_medium
+python CDR_MLC/benchmarks/AF/af_single_source.py --source LOW.csv --target MEDIUM.csv --label-column label --input-mode tabular --output CDR_MLC/benchmarks/AF/outputs/low_to_medium
 ```
 
 Input files must have identical numeric feature columns and one label column.
@@ -47,7 +47,7 @@ DANN/GRL and target k-NN mechanism, but uses an MLP over Clean-Valid flow
 features, chronological percentage budgets, and the immutable 20% test tail.
 
 ```powershell
-python AF/benchmark_iust_mscn.py --fractions 0 0.01 0.05 0.10 0.20 --test-fraction 0.20 --scenarios 1 2 3 --epochs 30 --seed 42 --output AF/outputs/iust_mscn
+python CDR_MLC/benchmarks/AF/benchmark_iust_mscn.py --fractions 0 0.01 0.05 0.10 0.20 --test-fraction 0.20 --scenarios 1 2 3 --epochs 30 --seed 42 --output CDR_MLC/benchmarks/AF/outputs/iust_mscn
 ```
 
 The zero-budget AF rows are emitted as `N/A`; no synthetic zero-shot AF method

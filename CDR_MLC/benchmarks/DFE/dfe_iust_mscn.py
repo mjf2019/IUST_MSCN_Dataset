@@ -33,9 +33,9 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 HERE = Path(__file__).resolve().parent
-PROJECT = HERE.parent
-CDR_MLC = PROJECT / "CDR_MLC"
-MODULE_ROOT = CDR_MLC if CDR_MLC.is_dir() else PROJECT
+BENCHMARKS = HERE.parent
+CDR_MLC = BENCHMARKS.parent
+MODULE_ROOT = CDR_MLC
 if str(MODULE_ROOT) not in sys.path:
     sys.path.insert(0, str(MODULE_ROOT))
 
