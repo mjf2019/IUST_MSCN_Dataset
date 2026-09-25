@@ -331,7 +331,7 @@ def run(args) -> None:
     manifest = {"config": asdict(config), "input_mode": args.input_mode, "device": str(device),
                 "source": str(args.source), "target": str(args.target), "label_column": args.label_column}
     (output / "run_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print_compact_results(results, method="AF")
+    print_compact_results(results, method="AF", extra_columns={"CalN": "N"})
 
 
 def parse_args():
