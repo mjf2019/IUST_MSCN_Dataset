@@ -201,30 +201,74 @@ def load_sdncampus(path: Path) -> tuple[pd.DataFrame, dict]:
     ).reset_index(drop=True), metadata
 
 
-def split_80_20(frame: pd.DataFrame, train_fraction: float):
+def _split_seed(base_seed: int, sequence_id: str) -> int:
+    payload = f"{base_seed}:{sequence_id}".encode("utf-8")
+    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "little") % (2**32)
+
+
+def split_80_20(
+    frame: pd.DataFrame,
+    train_fraction: float,
+    split_mode: str = "auto",
+    split_seed: int = 42,
+):
+    """Create one fixed class-stratified or ordered holdout.
+
+    ISCX tables do not release trustworthy timestamps, so auto mode uses a
+    deterministic stratified record split for them. SDNCampus retains its
+    previously published ordered per-capture protocol. Each sequence is split
+    independently, which preserves every class in both partitions.
+    """
+    if split_mode not in {"auto", "stratified", "ordered"}:
+        raise ValueError("split_mode must be auto, stratified, or ordered")
+    dataset_name = (
+        str(frame["benchmark_dataset"].iloc[0])
+        if "benchmark_dataset" in frame.columns
+        else str(frame["sequence_id"].iloc[0]).split("::", 1)[0]
+    )
+    resolved_mode = (
+        "stratified"
+        if split_mode == "auto" and dataset_name in {"ISCX-Tor", "ISCX-VPN"}
+        else "ordered" if split_mode == "auto" else split_mode
+    )
+
     train, test, audit = [], [], []
     for sequence_id, group in frame.groupby("sequence_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable")
         cut = int(len(group) * train_fraction)
         if not 4 <= cut < len(group):
             raise ValueError(f"{sequence_id}: too short for an 80/20 split")
-        train.append(group.iloc[:cut].copy())
-        test.append(group.iloc[cut:].copy())
+
+        if resolved_mode == "stratified":
+            rng = np.random.default_rng(_split_seed(split_seed, str(sequence_id)))
+            permutation = rng.permutation(len(group))
+            train_positions = np.sort(permutation[:cut])
+            test_positions = np.sort(permutation[cut:])
+            train_group = group.iloc[train_positions].copy()
+            test_group = group.iloc[test_positions].copy()
+        else:
+            train_group = group.iloc[:cut].copy()
+            test_group = group.iloc[cut:].copy()
+
+        train.append(train_group)
+        test.append(test_group)
         audit.append({
             "sequence_id": sequence_id,
             "label": str(group.traffic_label.iloc[0]),
             "total": int(len(group)),
-            "train": int(cut),
-            "test": int(len(group) - cut),
-            "train_last_time": group.iloc[cut - 1].timestamp.isoformat(),
-            "test_first_time": group.iloc[cut].timestamp.isoformat(),
+            "train": int(len(train_group)),
+            "test": int(len(test_group)),
+            "split_mode": resolved_mode,
+            "split_seed": int(split_seed) if resolved_mode == "stratified" else None,
+            "partition_overlap": int(
+                len(set(train_group.index) & set(test_group.index))
+            ),
         })
     return (
         pd.concat(train).sort_index(kind="stable"),
         pd.concat(test).sort_index(kind="stable"),
         audit,
     )
-
 
 def _set_application_ontology(labels: list[str]) -> None:
     """Make the existing generic pipeline use this dataset's fixed ontology."""
@@ -251,7 +295,7 @@ def _timed(function, *args, **kwargs):
     return value, perf_counter() - start
 
 
-def evaluate(train, test, config, rf_trees, labels, dataset_name):
+def evaluate(train, test, config, rf_trees, labels, protocol_name):
     mf_model, mf_fit = _timed(fit_meta_stacker, train, config)
     mf_result, mf_predict = _timed(predict_all, mf_model, test)
     observed = mf_result["observed"]
@@ -280,7 +324,7 @@ def evaluate(train, test, config, rf_trees, labels, dataset_name):
         result = metrics(truth, predictions[method], labels)
         fit_seconds, predict_seconds = timing[method]
         rows.append({
-            "protocol": f"{dataset_name}-80-20",
+            "protocol": protocol_name,
             "seed": config.random_state,
             "method": method,
             **{key: result[key] for key in (
@@ -318,6 +362,11 @@ def main() -> None:
     parser.add_argument("--meta-trees", type=int, default=20)
     parser.add_argument("--rf-trees", type=int, default=110)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--split-mode", choices=("auto", "stratified", "ordered"),
+        default="auto",
+    )
+    parser.add_argument("--split-seed", type=int, default=42)
     args = parser.parse_args()
     if not np.isclose(args.train_fraction, .80):
         parser.error("this confirmatory runner requires --train-fraction 0.80")
@@ -329,7 +378,9 @@ def main() -> None:
         raise ValueError(f"{input_audit['dataset']} must contain at least two classes")
     _set_application_ontology(labels)
 
-    train, test, split_audit = split_80_20(data, args.train_fraction)
+    train, test, split_audit = split_80_20(
+        data, args.train_fraction, args.split_mode, args.split_seed
+    )
 
     config = MetaStackConfig(
         window=args.window,
@@ -341,8 +392,14 @@ def main() -> None:
         random_state=args.seed,
     ).validate()
     dataset_name = input_audit["dataset"]
+    resolved_split_mode = split_audit[0]["split_mode"]
+    protocol_name = (
+        f"{dataset_name}-Stratified-80-20"
+        if resolved_split_mode == "stratified"
+        else f"{dataset_name}-Ordered-80-20"
+    )
     results, detailed, model_audit = evaluate(
-        train, test, config, args.rf_trees, labels, dataset_name
+        train, test, config, args.rf_trees, labels, protocol_name
     )
     artifact_prefix = _key(dataset_name)
     results.to_csv(args.output / f"{artifact_prefix}_results.csv", index=False)
@@ -351,7 +408,11 @@ def main() -> None:
     )
     manifest = {
         "dataset": dataset_name,
-        "protocol": "per-capture chronological 80% train / 20% test",
+        "protocol": protocol_name,
+        "split_mode": resolved_split_mode,
+        "split_seed": (
+            args.split_seed if resolved_split_mode == "stratified" else None
+        ),
         "input_audit": input_audit,
         "split_audit": split_audit,
         "train_identity": _identity(train),
