@@ -36,7 +36,9 @@ from adaptive_cdr_mlc import (  # noqa: E402
     select_classifier_columns,
 )
 from compare_clean_valid import SCENARIOS  # noqa: E402
-from benchmarks.console_output import print_compact_results  # noqa: E402
+from benchmarks.console_output import (  # noqa: E402
+    ResourceMonitor, print_compact_results, resource_values,
+)
 from af_single_source import (  # noqa: E402
     AFConfig,
     embeddings,
@@ -119,11 +121,16 @@ def run(args):
                     "fixed_test_fraction": args.test_fraction,
                     "scenario": scenario,
                     "source": source_level, "target": target_level,
-                    "method": "AF-MLP-adapted", "n": len(test),
+                    "method": "AF-MLP-adapted", "seed": args.seed, "n": len(test),
                     "target_labeled_rows": 0, "target_rows_per_class_min": 0,
                     "status": "N/A: AF target k-NN requires labeled target samples",
                     "accuracy": np.nan, "balanced_accuracy": np.nan,
                     "macro_f1": np.nan, "weighted_f1": np.nan,
+                    "seed": args.seed,
+                    "fit_seconds": np.nan, "predict_seconds": np.nan,
+                    "inference_us_per_row": np.nan,
+                    "throughput_rows_per_second": np.nan,
+                    "peak_ram_mb": np.nan, "peak_gpu_mb": np.nan,
                     "fit_and_inference_seconds": np.nan,
                 })
                 continue
@@ -149,16 +156,21 @@ def run(args):
             # AF uses k=N, where N is target training traces per class.  With
             # unequal IUST capture sizes we use the minimum class budget.
             k = int(per_class.min())
-            started = time.perf_counter()
-            extractor = fit_domain_network(
-                x_source[source_idx], y_source[source_idx], x_calibration,
-                "tabular", base_config, device,
-            )
-            calibration_z = embeddings(extractor, x_calibration, device)
-            test_z = embeddings(extractor, x_test, device)
-            classifier = KNeighborsClassifier(n_neighbors=k, metric="euclidean")
-            classifier.fit(calibration_z, y_calibration)
-            predicted = classifier.predict(test_z)
+            with ResourceMonitor(device) as fit_mem:
+                started = time.perf_counter()
+                extractor = fit_domain_network(
+                    x_source[source_idx], y_source[source_idx], x_calibration,
+                    "tabular", base_config, device,
+                )
+                calibration_z = embeddings(extractor, x_calibration, device)
+                classifier = KNeighborsClassifier(n_neighbors=k, metric="euclidean")
+                classifier.fit(calibration_z, y_calibration)
+                fit_seconds = time.perf_counter() - started
+            with ResourceMonitor(device) as infer_mem:
+                started = time.perf_counter()
+                test_z = embeddings(extractor, x_test, device)
+                predicted = classifier.predict(test_z)
+                predict_seconds = time.perf_counter() - started
             score = metric_row(y_test, predicted)
             rows.append({
                 "adaptation_fraction": fraction, "fixed_test_fraction": args.test_fraction,
@@ -167,7 +179,11 @@ def run(args):
                 "target_labeled_rows": len(calibration),
                 "target_rows_per_class_min": k, "M": 25, "k": k,
                 "status": "ok", **score,
-                "fit_and_inference_seconds": time.perf_counter() - started,
+                "fit_seconds": fit_seconds, "predict_seconds": predict_seconds,
+                "fit_and_inference_seconds": fit_seconds + predict_seconds,
+                "inference_us_per_row": 1e6 * predict_seconds / len(test),
+                "throughput_rows_per_second": len(test) / predict_seconds,
+                **resource_values(fit_mem, infer_mem),
             })
             split_audits[audit_key + ":model"] = {
                 "feature_count": len(feature_names), "features": feature_names,
@@ -206,7 +222,7 @@ def run(args):
     )
     print_compact_results(
         result, method="AF", calibration_column="target_labeled_rows",
-        seconds_column="fit_and_inference_seconds",
+        seconds_column=None,
     )
 
 
