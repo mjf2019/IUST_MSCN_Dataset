@@ -39,7 +39,9 @@ from adaptive_cdr_mlc import (  # noqa: E402
     select_classifier_columns,
 )
 from compare_clean_valid import SCENARIOS  # noqa: E402
-from benchmarks.console_output import print_compact_results  # noqa: E402
+from benchmarks.console_output import (  # noqa: E402
+    ResourceMonitor, print_compact_results, resource_values,
+)
 
 LEGACY_EXCLUDED = {"IdleTime", "DstWin"}
 
@@ -277,12 +279,18 @@ def run(args):
             train_y = encoded_labels(train)
             validation_y = encoded_labels(source_validation)
             test_y = encoded_labels(test)
-            started = time.perf_counter()
-            model, epochs_completed, best_validation_loss = fit_model(
-                train_x, train_y, validation_x, validation_y, args, device
-            )
-            prediction = predict(model, test_x, args.batch_size, device, args.seed)
-            elapsed = time.perf_counter() - started
+            with ResourceMonitor(device) as fit_mem:
+                started = time.perf_counter()
+                model, epochs_completed, best_validation_loss = fit_model(
+                    train_x, train_y, validation_x, validation_y, args, device
+                )
+                fit_seconds = time.perf_counter() - started
+            with ResourceMonitor(device) as infer_mem:
+                started = time.perf_counter()
+                prediction = predict(
+                    model, test_x, args.batch_size, device, args.seed
+                )
+                predict_seconds = time.perf_counter() - started
             results.append({
                 "adaptation_fraction": fraction,
                 "fixed_test_fraction": args.test_fraction,
@@ -290,6 +298,7 @@ def run(args):
                 "source": source_level,
                 "target": target_level,
                 "method": "Standard_1D_CNN",
+                "seed": args.seed,
                 "train_n": int(len(train)),
                 "validation_n": int(len(source_validation)),
                 "target_labeled_n": int(len(calibration)),
@@ -297,7 +306,12 @@ def run(args):
                 "epochs_completed": epochs_completed,
                 "best_validation_loss": best_validation_loss,
                 **metric_values(test_y, prediction),
-                "fit_and_inference_seconds": elapsed,
+                "fit_seconds": fit_seconds,
+                "predict_seconds": predict_seconds,
+                "fit_and_inference_seconds": fit_seconds + predict_seconds,
+                "inference_us_per_row": 1e6 * predict_seconds / len(test),
+                "throughput_rows_per_second": len(test) / predict_seconds,
+                **resource_values(fit_mem, infer_mem),
             })
             key = f"scenario={scenario}:fraction={fraction:.4f}"
             split_audits[key] = {
@@ -339,7 +353,7 @@ def run(args):
     )
     print_compact_results(
         summary, method="1D-CNN", calibration_column="target_labeled_n",
-        seconds_column="fit_and_inference_seconds",
+        seconds_column=None,
         extra_columns={"Ep": "epochs_completed"},
     )
 
