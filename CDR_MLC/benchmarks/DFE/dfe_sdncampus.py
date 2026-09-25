@@ -1,4 +1,4 @@
-"""DFE-adapted on the fixed SDNCampus ordered 80/20 protocol."""
+"""DFE-adapted on a fixed external-dataset ordered 80/20 protocol."""
 from __future__ import annotations
 
 import argparse
@@ -30,6 +30,7 @@ def run(args):
     seed_all(config.seed)
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     data, input_audit = load_clean_valid(args.data)
+    dataset_name = str(input_audit.iloc[0]["dataset"])
     args.output.mkdir(parents=True, exist_ok=True)
     input_audit.to_csv(args.output / "input_audit.csv", index=False)
     rows, audits = [], {}
@@ -76,8 +77,8 @@ def run(args):
             "development_test_overlap": len(record_ids(development) & record_ids(test)),
         }
     return save_run(args.output, "DFE", rows, audits, {
-        "dataset": "SDNCampus", "config": asdict(config),
-        "split": "ordered 80/20 per application capture",
+        "dataset": dataset_name, "config": asdict(config),
+        "split": "ordered 80/20 per application sequence",
         "test_context_eligibility_window": 20,
         "adaptation_budget": 0, "seed": args.seed, "device": str(device),
     })
