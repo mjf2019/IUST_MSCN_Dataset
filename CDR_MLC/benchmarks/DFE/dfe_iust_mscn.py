@@ -41,7 +41,9 @@ if str(MODULE_ROOT) not in sys.path:
 
 from adaptive_cdr_mlc import DEFAULT_CANDIDATES, FORBIDDEN, load_dataset, select_classifier_columns  # noqa: E402
 from compare_clean_valid import APPLICATIONS, SCENARIOS  # noqa: E402
-from benchmarks.console_output import print_compact_results  # noqa: E402
+from benchmarks.console_output import (  # noqa: E402
+    ResourceMonitor, print_compact_results,
+)
 
 
 @dataclass(frozen=True)
@@ -371,20 +373,24 @@ def run(args):
             x_train, x_validation = transform.transform(source_train), transform.transform(source_validation)
             y_train = encoder.transform(source_train.traffic_label)
             y_validation = encoder.transform(source_validation.traffic_label)
-            started = time.perf_counter()
-            model, training_audit = train_backbone(
-                x_train, y_train, x_validation, y_validation, config, device
-            )
-            template_x, template_y = select_templates(
-                x_train, y_train, config.templates_per_class, config.seed
-            )
-            k, k_trials = choose_k(
-                model, template_x, template_y, x_validation, y_validation, device
-            )
+            with ResourceMonitor(device) as fit_mem:
+                started = time.perf_counter()
+                model, training_audit = train_backbone(
+                    x_train, y_train, x_validation, y_validation, config, device
+                )
+                template_x, template_y = select_templates(
+                    x_train, y_train, config.templates_per_class, config.seed
+                )
+                k, k_trials = choose_k(
+                    model, template_x, template_y, x_validation, y_validation, device
+                )
+                fit_seconds = time.perf_counter() - started
             trained[source_level] = {
                 "model": model, "transform": transform,
                 "source_templates_x": template_x, "source_templates_y": template_y,
-                "k": k, "fit_seconds": time.perf_counter() - started,
+                "k": k, "fit_seconds": fit_seconds,
+                "fit_peak_ram_mb": fit_mem.peak_ram_mb,
+                "fit_peak_gpu_mb": fit_mem.peak_gpu_mb,
             }
             audits[f"source:{source_level}"] = {
                 **training_audit, "selected_k": k, "k_trials": k_trials,
@@ -411,20 +417,28 @@ def run(args):
                     config.seed + int(round(fraction * 10_000)),
                 )
                 adaptation_templates = len(library_y)
-            started = time.perf_counter()
-            prediction = template_predict(
-                fitted["model"], library_x, library_y, test_x,
-                fitted["k"], device,
-            )
+            with ResourceMonitor(device) as infer_mem:
+                started = time.perf_counter()
+                prediction = template_predict(
+                    fitted["model"], library_x, library_y, test_x,
+                    fitted["k"], device,
+                )
+                predict_seconds = time.perf_counter() - started
             rows.append({
                 "adaptation_fraction": fraction, "fixed_test_fraction": args.test_fraction,
                 "scenario": scenario, "source": source_level, "target": target_level,
-                "method": "DFE-adapted", "n": len(test),
+                "method": "DFE-adapted", "seed": args.seed, "n": len(test),
                 "adaptation_pool_rows": len(calibration),
                 "adaptation_template_rows": adaptation_templates,
                 "templates_total": len(library_y), "k": fitted["k"],
                 **metrics(truth, prediction),
-                "inference_seconds": time.perf_counter() - started,
+                "fit_seconds": fitted["fit_seconds"],
+                "predict_seconds": predict_seconds,
+                "inference_seconds": predict_seconds,
+                "inference_us_per_row": 1e6 * predict_seconds / len(test),
+                "throughput_rows_per_second": len(test) / predict_seconds,
+                "peak_ram_mb": max(fitted["fit_peak_ram_mb"], infer_mem.peak_ram_mb),
+                "peak_gpu_mb": max(fitted["fit_peak_gpu_mb"], infer_mem.peak_gpu_mb),
             })
             audits[f"scenario:{scenario}:fraction:{fraction}"] = {
                 "split": split_audit,
@@ -454,7 +468,7 @@ def run(args):
     (args.output / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print_compact_results(
         result, method="DFE", calibration_column="adaptation_pool_rows",
-        seconds_column="inference_seconds",
+        seconds_column=None,
     )
 
 
