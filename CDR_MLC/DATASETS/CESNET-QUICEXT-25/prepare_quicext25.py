@@ -365,42 +365,56 @@ def process_month(
                 for member_index, member in enumerate(members, start=1):
                     local = temp_dir / f"member-{member_index:03d}.parquet"
                     safe_copy_member(archive, member, local)
-                    parquet = pq.ParquetFile(local)
-                    available = set(parquet.schema_arrow.names)
-                    missing = sorted(set(REQUIRED_COLUMNS) - available)
-                    if missing:
-                        raise ValueError(f"{member.filename}: missing columns {missing}")
-                    columns = list(REQUIRED_COLUMNS) + [
-                        name for name in OPTIONAL_SCALARS if name in available
-                    ]
                     member_input = member_output = member_dropped = source_offset = 0
-                    for batch in parquet.iter_batches(
-                        batch_size=batch_size, columns=columns, use_threads=True
-                    ):
-                        raw = batch.to_pandas()
-                        transformed, dropped = transform_batch(
-                            raw, month, member.filename, source_offset,
-                            extractor, label_cache,
-                        )
-                        source_offset += len(raw)
-                        member_input += len(raw)
-                        member_dropped += dropped
-                        if transformed.empty:
-                            continue
-                        table = pa.Table.from_pandas(
-                            transformed, preserve_index=False,
-                            schema=arrow_schema,
-                        )
-                        if writer is None:
-                            arrow_schema = table.schema
-                            writer = pq.ParquetWriter(
-                                temporary_output, table.schema,
-                                compression=compression,
-                                use_dictionary=["source_file", "sequence_id", "period", "traffic_label"],
+                    parquet = None
+                    batch = raw = transformed = table = None
+                    try:
+                        # memory_map=False plus an explicit close is required on
+                        # Windows; otherwise the extracted daily file remains
+                        # locked when it is removed below.
+                        parquet = pq.ParquetFile(local, memory_map=False)
+                        available = set(parquet.schema_arrow.names)
+                        missing = sorted(set(REQUIRED_COLUMNS) - available)
+                        if missing:
+                            raise ValueError(f"{member.filename}: missing columns {missing}")
+                        columns = list(REQUIRED_COLUMNS) + [
+                            name for name in OPTIONAL_SCALARS if name in available
+                        ]
+                        for batch in parquet.iter_batches(
+                            batch_size=batch_size, columns=columns, use_threads=True
+                        ):
+                            raw = batch.to_pandas()
+                            transformed, dropped = transform_batch(
+                                raw, month, member.filename, source_offset,
+                                extractor, label_cache,
                             )
-                        writer.write_table(table)
-                        label_counts.update(transformed["traffic_label"].astype(str))
-                        member_output += len(transformed)
+                            source_offset += len(raw)
+                            member_input += len(raw)
+                            member_dropped += dropped
+                            if transformed.empty:
+                                continue
+                            table = pa.Table.from_pandas(
+                                transformed, preserve_index=False,
+                                schema=arrow_schema,
+                            )
+                            if writer is None:
+                                arrow_schema = table.schema
+                                writer = pq.ParquetWriter(
+                                    temporary_output, table.schema,
+                                    compression=compression,
+                                    use_dictionary=[
+                                        "source_file", "sequence_id", "period",
+                                        "traffic_label",
+                                    ],
+                                )
+                            writer.write_table(table)
+                            label_counts.update(transformed["traffic_label"].astype(str))
+                            member_output += len(transformed)
+                    finally:
+                        if parquet is not None:
+                            parquet.close(force=True)
+                        # Release Arrow/Pandas references before unlinking on Windows.
+                        batch = raw = transformed = table = parquet = None
                     input_rows += member_input
                     rows_written += member_output
                     dropped_rows += member_dropped
