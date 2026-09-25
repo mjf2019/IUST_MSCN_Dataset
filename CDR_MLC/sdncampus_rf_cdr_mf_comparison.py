@@ -47,7 +47,7 @@ CONTEXT_ALIASES = {
     "SynAck": ("synack", "fwdiatmean", "forwardiatmean"),
     "AckDat": ("ackdat", "bwdiatmean", "backwardiatmean"),
 }
-LABEL_ALIASES = ("label", "class", "application", "app")
+LABEL_ALIASES = ("trafficlabel", "label", "class", "application", "app")
 TIME_ALIASES = ("timestamp", "flowstarttime", "starttime")
 IDENTIFIER_KEYS = {
     "flowid", "srcip", "sourceip", "dstip", "destinationip",
