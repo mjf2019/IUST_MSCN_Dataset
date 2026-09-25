@@ -80,3 +80,16 @@ def test_three_month_preparation_and_scenarios(tmp_path):
     assert set(manifest["scenarios"]) == {f"S{i}" for i in range(1, 8)}
     assert manifest["scenarios"]["S1"]["development_months"] == ["2024-06"]
     assert manifest["scenarios"]["S7"]["outer_split"]["test_fraction"] == .20
+
+
+def test_daily_sampling_is_capped_unique_and_repeatable():
+    first = MODULE.select_source_rows(10_000, 500, 42, "2024-06", "20240601.parquet")
+    second = MODULE.select_source_rows(10_000, 500, 42, "2024-06", "20240601.parquet")
+    other_day = MODULE.select_source_rows(10_000, 500, 42, "2024-06", "20240602.parquet")
+    assert len(first) == 500
+    assert len(set(first)) == 500
+    assert (first == second).all()
+    assert not (first == other_day).all()
+    assert MODULE.select_source_rows(
+        400, 500, 42, "2024-06", "small.parquet"
+    ) is None
