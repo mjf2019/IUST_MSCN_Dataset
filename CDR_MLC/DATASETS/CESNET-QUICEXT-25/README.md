@@ -88,3 +88,27 @@ The candidate QUIC context features for CDR-MLC routing are `ppi_duration`,
 `ppi_ipt_mean`, and `ppi_roundtrips`. Their rolling trend features are fitted
 causally by the method runner; they are not computed across partition or month
 boundaries during this preparation step.
+
+## Fixed-class RF/CDR confirmation
+
+`quicext25_classes.json` fixes one lexical 20-class ontology for every method
+and every scenario. Each selected class has at least 1,000 prepared samples in
+each of the three months. No scenario-specific class selection is permitted.
+
+Start with S1 as a confirmation run from the repository root:
+
+```powershell
+python CDR_MLC/quicext25_rf_mf_cdr_mlc.py `
+  --scenarios 1 `
+  --window 3 `
+  --congestion-window 50 `
+  --expert-trees 20 `
+  --utility-trees 10 `
+  --meta-trees 20 `
+  --rf-trees 110 `
+  --seed 42 `
+  --output CDR_MLC/outputs/quicext25_rf_mf_confirm
+```
+
+After the S1 split/model audit and results are inspected, run all protocols by
+changing `--scenarios 1` to `--scenarios 1 2 3 4 5 6 7`.
