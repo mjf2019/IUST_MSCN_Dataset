@@ -35,6 +35,7 @@ from meta_stacked_cdr_mlc_leakage_safe import (
     four_way_split,
     predict_all as predict_full,
 )
+from benchmarks.console_output import print_compact_results
 from mixed_level_protocols_leakage_safe import (
     PROTOCOLS,
     build_protocol,
@@ -534,7 +535,7 @@ def main():
     (args.output / "s_meta_ablation_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
-    print(summary.to_string(index=False))
+    print_compact_results(summary)
 
 
 if __name__ == "__main__":
