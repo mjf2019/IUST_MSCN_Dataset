@@ -35,6 +35,7 @@ from meta_stacked_cdr_mlc_leakage_safe import (
     fit_meta_stacker,
     predict_all,
 )
+from benchmarks.console_output import print_compact_results
 
 
 PROTOCOLS = {
@@ -323,7 +324,7 @@ def main() -> None:
     (args.output / "mixed_level_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
-    print(summary.to_string(index=False))
+    print_compact_results(summary)
 
 
 if __name__ == "__main__":
