@@ -24,10 +24,18 @@ directory. Shared code in `deep_common.py` is limited to data loading,
 chronological partitions, training-only preprocessing, metrics and output
 formatting so that all three methods receive identical inputs.
 
-Console output intentionally uses short headings:
+Every runner prints two tables. The first is a two-column legend that expands
+the abbreviations used by that run. The second contains one physical row per
+result using only short headings. The common performance and deployment fields
+are:
 
-`Scn`, `Sd`, `N`, `Acc`, `BAcc`, `MF1`, `WF1`, `FitS`,
-`PredS`, and `us/R`.
+- `Acc`, `BAcc`, `MF1`, and `WF1`;
+- `FitS` and `InfS` for training and inference seconds;
+- `us/R` and `R/s` for microseconds per input record and records per second;
+- `RAM` and `GPU` for peak process and allocated GPU memory in MiB;
+- `TTus` for causal TTFEF microseconds per input record where applicable.
 
-CSV and JSON artifacts retain descriptive field names, feature lists,
-configuration details and partition-overlap audits.
+The models operate on flow records, so `us/R` is the scientifically correct
+counterpart of the reviewer's requested time-per-packet measure. CSV and JSON
+artifacts retain descriptive field names, feature lists, configuration details
+and partition-overlap audits.
