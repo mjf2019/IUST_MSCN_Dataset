@@ -24,6 +24,7 @@ ABBREVIATIONS = OrderedDict([
     ("BAcc", "Balanced accuracy"),
     ("MF1", "Macro F1-score"),
     ("WF1", "Weighted F1-score"),
+    ("dF1", "Macro F1 difference from the full model"),
     ("FitS", "Training time in seconds"),
     ("InfS", "Inference time in seconds"),
     ("us/R", "Inference microseconds per input row"),
@@ -151,6 +152,8 @@ def print_compact_results(
     for short, full in metric_map:
         if full in frame:
             display[short] = frame[full].map(_metric)
+    if "macro_f1_delta" in frame:
+        display["dF1"] = frame["macro_f1_delta"].map(_metric)
 
     if "fit_seconds" in frame:
         display["FitS"] = frame["fit_seconds"].map(_seconds)
