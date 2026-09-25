@@ -85,6 +85,53 @@ def evaluations(data: pd.DataFrame, ids, train_fraction: float = .80):
             definition["test_identity"] = quic_record_identity(test)
             result.append((development, test, definition))
         return result
+    is_sdncampus = (
+        "benchmark_dataset" in data.columns
+        and data["benchmark_dataset"].astype(str).eq("SDNCampus").all()
+    )
+    if is_sdncampus:
+        from sdncampus_rf_cdr_mf_comparison import split_80_20
+
+        development, raw_test, split_audit = split_80_20(
+            data, train_fraction
+        )
+        # Match the MF-CDR-MLC comparison's common eligibility for its
+        # congestion window of 20: the first 19 rows of every independent
+        # test capture are causal cold-start rows.
+        test_parts = []
+        for _, group in raw_test.groupby("sequence_id", sort=False):
+            ordered = group.sort_values(
+                ["timestamp", "source_row"], kind="stable"
+            )
+            test_parts.append(ordered.iloc[19:].copy())
+        test = pd.concat(test_parts, ignore_index=True)
+        if test.empty:
+            raise ValueError("SDNCampus: no context-eligible test rows")
+        overlap = record_ids(development) & record_ids(test)
+        if overlap:
+            raise RuntimeError(
+                f"SDNCampus: {len(overlap)} development/test overlaps"
+            )
+        identity_payload = development[[
+            "source_file", "source_row"
+        ]].to_csv(index=False).encode("utf-8")
+        import hashlib
+        development_identity = hashlib.sha256(identity_payload).hexdigest()
+        return [(
+            development.reset_index(drop=True),
+            test.reset_index(drop=True),
+            {
+                "protocol": "SDNCampus-80-20",
+                "source": "first-80-percent",
+                "target": "last-20-percent",
+                "kind": "within-capture ordered holdout",
+                "development_identity": development_identity,
+                "test_rows_before_context_filter": len(raw_test),
+                "test_rows": len(test),
+                "context_eligibility_window": 20,
+                "split_audit": split_audit,
+            },
+        )]
     for protocol_id in ids:
         if protocol_id in SCENARIOS:
             source, target = SCENARIOS[protocol_id]
@@ -215,6 +262,24 @@ def save_run(output: Path, method: str, rows: list[dict], audits: dict, manifest
 
 
 def load_clean_valid(data_dir: Path):
+    if data_dir.is_file() and data_dir.suffix.lower() == ".csv":
+        from sdncampus_rf_cdr_mf_comparison import load_sdncampus
+
+        data, raw_audit = load_sdncampus(data_dir)
+        classes = sorted(data.traffic_label.astype(str).unique().tolist())
+        # Mutate the shared ontology list so every already-imported benchmark
+        # module observes the exact SDNCampus class set.
+        APPLICATIONS[:] = classes
+        data["benchmark_dataset"] = "SDNCampus"
+        audit = pd.DataFrame([{
+            "dataset": "SDNCampus",
+            "input": str(data_dir),
+            "rows": len(data),
+            "classes": "|".join(classes),
+            "ordering_basis": raw_audit["ordering_basis"],
+            "congestion_labels_available": False,
+        }])
+        return data, audit
     if all((data_dir / f"{month}.parquet").is_file() for month in QUIC_MONTHS):
         spec = load_quic_class_spec(data_dir.parent / "quicext25_classes.json")
         # Mutate the shared list object so benchmark modules that imported
