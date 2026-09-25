@@ -34,7 +34,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import rankdata, t, wilcoxon
 
-from adaptive_cdr_mlc import APPLICATIONS, load_dataset
+from adaptive_cdr_mlc import APPLICATIONS, load_dataset, trend_frame
 from compare_clean_valid import (
     SCENARIOS,
     TIMING,
@@ -61,6 +61,9 @@ from mixed_level_protocols_leakage_safe import (
     composition,
     frame_identity,
 )
+from benchmarks.console_output import (
+    ResourceMonitor, print_compact_results, resource_values,
+)
 
 
 METHODS = ("RF_Clean_Valid", "Original_CDR_MLC", "MF_CDR_MLC")
@@ -71,6 +74,9 @@ SUMMARY_VALUES = (
     "predict_seconds",
     "throughput_input_rows_per_second",
     "inference_microseconds_per_input_row",
+    "peak_ram_mb",
+    "peak_gpu_mb",
+    "ttfef_us_per_row",
 )
 PAIRWISE = (
     ("MF_CDR_MLC", "RF_Clean_Valid"),
@@ -79,11 +85,13 @@ PAIRWISE = (
 )
 
 
-def _timed(function, *args, **kwargs):
+def _timed(function, *args, device="cpu", **kwargs):
     gc.collect()
-    start = perf_counter()
-    value = function(*args, **kwargs)
-    return value, perf_counter() - start
+    with ResourceMonitor(device) as monitor:
+        start = perf_counter()
+        value = function(*args, **kwargs)
+        seconds = perf_counter() - start
+    return value, seconds, monitor
 
 
 def _record_ids(frame: pd.DataFrame) -> set[tuple[str, int]]:
@@ -177,15 +185,15 @@ def evaluate_once(
     config: MetaStackConfig,
     rf_trees: int,
 ):
-    mf_model, mf_fit_seconds = _timed(fit_meta_stacker, development, config)
-    mf_result, mf_predict_seconds = _timed(predict_all, mf_model, test)
+    mf_model, mf_fit_seconds, mf_fit_mem = _timed(fit_meta_stacker, development, config)
+    mf_result, mf_predict_seconds, mf_predict_mem = _timed(predict_all, mf_model, test)
     observed = mf_result["observed"]
     truth = observed.traffic_label.to_numpy()
 
-    original_model, original_fit_seconds = _timed(
+    original_model, original_fit_seconds, original_fit_mem = _timed(
         fit_original_cdr, development, config
     )
-    original_all, original_predict_seconds = _timed(
+    original_all, original_predict_seconds, original_predict_mem = _timed(
         predict_fixed_cdr, original_model, test
     )
     _assert_common_rows(observed, original_all)
@@ -205,10 +213,10 @@ def evaluate_once(
             f"{definition['name']}: RF eligibility differs across model fits"
         )
     eligible = development.loc[mf_model["source_eligible_index"]]
-    rf_model, rf_fit_seconds = _timed(
+    rf_model, rf_fit_seconds, rf_fit_mem = _timed(
         fit_rf, eligible, (), config.random_state, rf_trees
     )
-    rf_all, rf_predict_seconds = _timed(predict_rf, rf_model, test)
+    rf_all, rf_predict_seconds, rf_predict_mem = _timed(predict_rf, rf_model, test)
     rf_prediction = pd.Series(rf_all, index=test.index).loc[
         observed.index
     ].to_numpy()
@@ -225,6 +233,18 @@ def evaluate_once(
         ),
         "MF_CDR_MLC": (mf_fit_seconds, mf_predict_seconds),
     }
+    _, ttfef_seconds, _ = _timed(
+        trend_frame, test, TIMING, config.window
+    )
+    ttfef_us = 1e6 * ttfef_seconds / max(len(test), 1)
+    memory = {
+        "RF_Clean_Valid": resource_values(rf_fit_mem, rf_predict_mem),
+        "Original_CDR_MLC": resource_values(
+            original_fit_mem, original_predict_mem
+        ),
+        "MF_CDR_MLC": resource_values(mf_fit_mem, mf_predict_mem),
+    }
+
     rows = []
     for method in METHODS:
         score = metrics(truth, predictions[method], APPLICATIONS)
@@ -247,6 +267,11 @@ def evaluate_once(
             ),
             "inference_microseconds_per_input_row": (
                 1e6 * predict_seconds / input_rows
+            ),
+            "peak_ram_mb": memory[method]["peak_ram_mb"],
+            "peak_gpu_mb": memory[method]["peak_gpu_mb"],
+            "ttfef_us_per_row": (
+                np.nan if method == "RF_Clean_Valid" else ttfef_us
             ),
         })
     audit = {
@@ -502,6 +527,9 @@ def main() -> None:
         "predict_seconds",
         "throughput_input_rows_per_second",
         "inference_microseconds_per_input_row",
+        "peak_ram_mb",
+        "peak_gpu_mb",
+        "ttfef_us_per_row",
     ]].to_csv(args.output / "confirmatory_runtime.csv", index=False)
 
     summary = summarize_runs(runs)
@@ -547,10 +575,44 @@ def main() -> None:
     (args.output / "confirmatory_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
-    print("\nConfirmatory summary\n", flush=True)
-    print(summary.to_string(index=False), flush=True)
-    print("\nPaired tests\n", flush=True)
-    print(tests.to_string(index=False), flush=True)
+    short_protocol = {
+        "LM-H": "S4", "LH-M": "S5", "MH-L": "S6", "ALL-80-20": "S7"
+    }
+    console = summary.copy()
+    console["protocol"] = console["protocol"].map(
+        lambda value: (
+            "S" + value.split("-")[1]
+            if str(value).startswith("Scenario-")
+            else short_protocol.get(str(value), str(value))
+        )
+    )
+    console["method"] = console["method"].map({
+        "RF_Clean_Valid": "RF",
+        "Original_CDR_MLC": "O-CDR",
+        "MF_CDR_MLC": "MF",
+    })
+    console = console.rename(columns={
+        "n_test": "n",
+        "accuracy_mean": "accuracy",
+        "balanced_accuracy_mean": "balanced_accuracy",
+        "macro_f1_mean": "macro_f1",
+        "weighted_f1_mean": "weighted_f1",
+        "fit_seconds_mean": "fit_seconds",
+        "predict_seconds_mean": "predict_seconds",
+        "inference_microseconds_per_input_row_mean":
+            "inference_microseconds_per_input_row",
+        "throughput_input_rows_per_second_mean":
+            "throughput_input_rows_per_second",
+        "peak_ram_mb_mean": "peak_ram_mb",
+        "peak_gpu_mb_mean": "peak_gpu_mb",
+        "ttfef_us_per_row_mean": "ttfef_us_per_row",
+    })
+    print_compact_results(console)
+    print(
+        "\nPaired significance tests are saved in "
+        "confirmatory_pairwise_tests.csv",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
