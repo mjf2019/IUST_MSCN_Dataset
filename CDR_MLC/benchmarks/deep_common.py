@@ -96,7 +96,13 @@ def evaluations(data: pd.DataFrame, ids, train_fraction: float = .80):
         from sdncampus_rf_cdr_mf_comparison import split_80_20
 
         development, raw_test, split_audit = split_80_20(
-            data, train_fraction
+            data, train_fraction, split_mode="auto", split_seed=42
+        )
+        split_mode = split_audit[0]["split_mode"]
+        protocol_name = (
+            f"{external_dataset}-Stratified-80-20"
+            if split_mode == "stratified"
+            else f"{external_dataset}-Ordered-80-20"
         )
         # Match the MF-CDR-MLC comparison's common eligibility for its
         # congestion window of 20: the first 19 rows of every independent
@@ -126,10 +132,22 @@ def evaluations(data: pd.DataFrame, ids, train_fraction: float = .80):
             development.reset_index(drop=True),
             test.reset_index(drop=True),
             {
-                "protocol": f"{external_dataset}-80-20",
-                "source": "first-80-percent",
-                "target": "last-20-percent",
-                "kind": "within-capture ordered holdout",
+                "protocol": protocol_name,
+                "source": (
+                    "stratified-80-percent"
+                    if split_mode == "stratified" else "first-80-percent"
+                ),
+                "target": (
+                    "stratified-20-percent"
+                    if split_mode == "stratified" else "last-20-percent"
+                ),
+                "kind": (
+                    "fixed within-class stratified holdout"
+                    if split_mode == "stratified"
+                    else "within-capture ordered holdout"
+                ),
+                "split_mode": split_mode,
+                "split_seed": 42 if split_mode == "stratified" else None,
                 "development_identity": development_identity,
                 "test_rows_before_context_filter": len(raw_test),
                 "test_rows": len(test),
