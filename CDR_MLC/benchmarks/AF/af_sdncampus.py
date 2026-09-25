@@ -105,7 +105,7 @@ def run(args):
             "development_test_overlap": len(record_ids(development) & record_ids(test)),
         }
     return save_run(args.output, "AF", rows, audits, {
-        "dataset": dataset_name, "split": "ordered 80/20 per application sequence",
+        "dataset": dataset_name, "split": "fixed 80/20: ISCX stratified; SDNCampus ordered",
         "target_label_fraction_of_full_dataset": args.target_label_fraction,
         "budget_source": "disjoint latest prefix inside the 80% training partition",
         "fixed_test_used_for_adaptation": False,
