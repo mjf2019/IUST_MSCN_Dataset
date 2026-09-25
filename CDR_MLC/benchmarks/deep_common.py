@@ -16,11 +16,22 @@ from sklearn.preprocessing import StandardScaler
 
 from adaptive_cdr_mlc import (
     APPLICATIONS, DEFAULT_CANDIDATES, FORBIDDEN, load_dataset,
-    select_classifier_columns,
+    select_classifier_columns, trend_frame,
 )
-from compare_clean_valid import SCENARIOS
+from compare_clean_valid import SCENARIOS, TIMING
+from congestion_feature_cdr_mlc import (
+    CongestionRouterConfig, congestion_feature_frame,
+)
 from mixed_level_protocols_leakage_safe import PROTOCOLS, build_protocol
 from benchmarks.console_output import print_compact_results
+from quicext25_common import (
+    MONTHS as QUIC_MONTHS,
+    build_protocol as build_quic_protocol,
+    load_class_spec as load_quic_class_spec,
+    load_months as load_quic_months,
+    numeric_model_features as quic_numeric_features,
+    record_identity as quic_record_identity,
+)
 
 LEGACY_EXCLUDED = {"IdleTime", "DstWin"}
 MIXED = {"4": "LM-H", "5": "LH-M", "6": "MH-L", "7": "ALL-80-20"}
@@ -43,6 +54,37 @@ def record_ids(frame: pd.DataFrame) -> set[tuple[str, int]]:
 
 def evaluations(data: pd.DataFrame, ids, train_fraction: float = .80):
     result = []
+    is_quic = {"record_id", "period"}.issubset(data.columns)
+    if is_quic:
+        months = {
+            month: data.loc[data.period.astype(str).eq(month)].copy()
+            for month in QUIC_MONTHS
+        }
+        classes = tuple(APPLICATIONS)
+        for protocol_id in ids:
+            development, test, definition = build_quic_protocol(
+                months, protocol_id, classes, train_fraction
+            )
+            # Score every zero-shot method on the exact rows that are causally
+            # eligible for the published MF-CDR-MLC windows (3 and 50).
+            base = trend_frame(test, TIMING, 3)
+            context, _ = congestion_feature_frame(
+                test,
+                CongestionRouterConfig(
+                    window=50, features=tuple(TIMING), expert_trees=1
+                ).validate(),
+            )
+            eligible = base.index[base.index.isin(context.index)]
+            definition["test_rows_before_context_filter"] = len(test)
+            definition["test_rows"] = len(eligible)
+            definition["context_eligibility_window"] = 50
+            definition["test_identity_before_context_filter"] = definition["test_identity"]
+            test = test.loc[eligible].copy()
+            if test.empty:
+                raise ValueError(f"S{protocol_id}: no context-eligible test rows")
+            definition["test_identity"] = quic_record_identity(test)
+            result.append((development, test, definition))
+        return result
     for protocol_id in ids:
         if protocol_id in SCENARIOS:
             source, target = SCENARIOS[protocol_id]
@@ -97,11 +139,14 @@ def chronological_validation(frame: pd.DataFrame, fraction: float):
 
 
 def matrices(train: pd.DataFrame, frames: list[pd.DataFrame]):
-    numeric, _ = select_classifier_columns(train, route_features=[])
-    features = [
-        name for name in numeric
-        if name not in FORBIDDEN and name not in LEGACY_EXCLUDED
-    ]
+    if {"record_id", "period"}.issubset(train.columns):
+        features = quic_numeric_features(train)
+    else:
+        numeric, _ = select_classifier_columns(train, route_features=[])
+        features = [
+            name for name in numeric
+            if name not in FORBIDDEN and name not in LEGACY_EXCLUDED
+        ]
     if not features:
         raise ValueError("no usable Clean-Valid features")
     imputer = SimpleImputer(strategy="median")
@@ -170,4 +215,15 @@ def save_run(output: Path, method: str, rows: list[dict], audits: dict, manifest
 
 
 def load_clean_valid(data_dir: Path):
+    if all((data_dir / f"{month}.parquet").is_file() for month in QUIC_MONTHS):
+        spec = load_quic_class_spec(data_dir.parent / "quicext25_classes.json")
+        # Mutate the shared list object so benchmark modules that imported
+        # APPLICATIONS by value observe the same immutable 20-class ontology.
+        APPLICATIONS[:] = spec["classes"]
+        months, audit = load_quic_months(data_dir)
+        data = pd.concat(
+            [months[month] for month in QUIC_MONTHS], ignore_index=True
+        )
+        audit["dataset"] = "CESNET-QUICEXT-25"
+        return data, audit
     return load_dataset(data_dir, tuple(DEFAULT_CANDIDATES))

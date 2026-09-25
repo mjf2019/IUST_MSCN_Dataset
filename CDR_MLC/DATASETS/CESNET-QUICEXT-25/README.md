@@ -141,3 +141,9 @@ python CDR_MLC/quicext25_rf_mf_cdr_mlc.py `
   --seed 42 `
   --output CDR_MLC/outputs/quicext25_selected_proxy_confirm
 ```
+
+All final QUICEXT benchmark runners use the same fixed 20 classes and S1--S7
+partitions. Zero-shot methods are additionally restricted to the same causal
+window-eligible target record IDs as the fixed-proxy MF-CDR-MLC run. See
+`CDR_MLC/benchmarks/README.md` for the benchmark policy. AF is the only
+target-supervised result and records its one-percent label budget explicitly.
