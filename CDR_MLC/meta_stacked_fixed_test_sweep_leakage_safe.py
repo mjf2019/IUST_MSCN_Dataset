@@ -19,6 +19,7 @@ from adaptive_cdr_mlc import APPLICATIONS, load_dataset
 from compare_clean_valid import SCENARIOS, TIMING, fit_rf, metrics, predict_rf
 from congestion_feature_cdr_mlc import DEFAULT_CONGESTION_FEATURES
 from meta_stacked_cdr_mlc_leakage_safe import MetaStackConfig, fit_meta_stacker, predict_all
+from benchmarks.console_output import print_compact_results
 
 
 def fixed_tail_calibration(frame: pd.DataFrame, adaptation_fraction: float,
@@ -262,7 +263,7 @@ def main():
     (args.output / "meta_stacked_fixed_test_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
-    print(summary.to_string(index=False))
+    print_compact_results(summary)
 
 
 if __name__ == "__main__":
