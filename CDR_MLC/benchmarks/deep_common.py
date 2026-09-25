@@ -85,11 +85,14 @@ def evaluations(data: pd.DataFrame, ids, train_fraction: float = .80):
             definition["test_identity"] = quic_record_identity(test)
             result.append((development, test, definition))
         return result
-    is_sdncampus = (
-        "benchmark_dataset" in data.columns
-        and data["benchmark_dataset"].astype(str).eq("SDNCampus").all()
-    )
-    if is_sdncampus:
+    external_dataset = None
+    if "benchmark_dataset" in data.columns:
+        names = data["benchmark_dataset"].astype(str).unique().tolist()
+        if len(names) == 1 and names[0] in {
+            "SDNCampus", "ISCX-Tor", "ISCX-VPN"
+        }:
+            external_dataset = names[0]
+    if external_dataset is not None:
         from sdncampus_rf_cdr_mf_comparison import split_80_20
 
         development, raw_test, split_audit = split_80_20(
@@ -106,11 +109,13 @@ def evaluations(data: pd.DataFrame, ids, train_fraction: float = .80):
             test_parts.append(ordered.iloc[19:].copy())
         test = pd.concat(test_parts, ignore_index=True)
         if test.empty:
-            raise ValueError("SDNCampus: no context-eligible test rows")
+            raise ValueError(
+                f"{external_dataset}: no context-eligible test rows"
+            )
         overlap = record_ids(development) & record_ids(test)
         if overlap:
             raise RuntimeError(
-                f"SDNCampus: {len(overlap)} development/test overlaps"
+                f"{external_dataset}: {len(overlap)} development/test overlaps"
             )
         identity_payload = development[[
             "source_file", "source_row"
@@ -121,7 +126,7 @@ def evaluations(data: pd.DataFrame, ids, train_fraction: float = .80):
             development.reset_index(drop=True),
             test.reset_index(drop=True),
             {
-                "protocol": "SDNCampus-80-20",
+                "protocol": f"{external_dataset}-80-20",
                 "source": "first-80-percent",
                 "target": "last-20-percent",
                 "kind": "within-capture ordered holdout",
@@ -268,11 +273,12 @@ def load_clean_valid(data_dir: Path):
         data, raw_audit = load_sdncampus(data_dir)
         classes = sorted(data.traffic_label.astype(str).unique().tolist())
         # Mutate the shared ontology list so every already-imported benchmark
-        # module observes the exact SDNCampus class set.
+        # module observes the exact external-dataset class set.
         APPLICATIONS[:] = classes
-        data["benchmark_dataset"] = "SDNCampus"
+        dataset_name = raw_audit.get("dataset", "External")
+        data["benchmark_dataset"] = dataset_name
         audit = pd.DataFrame([{
-            "dataset": "SDNCampus",
+            "dataset": dataset_name,
             "input": str(data_dir),
             "rows": len(data),
             "classes": "|".join(classes),
