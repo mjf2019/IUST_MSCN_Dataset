@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.stats import wasserstein_distance
+from sklearn.feature_selection import mutual_info_classif
 
 
 MONTHS = ("2024-06", "2024-07", "2024-08")
@@ -24,6 +26,13 @@ CONTEXT_ALIASES = {
     "TcpRtt": "ppi_duration",
     "SynAck": "ppi_ipt_mean",
     "AckDat": "ppi_roundtrips",
+}
+CONTEXT_NAMES = tuple(CONTEXT_ALIASES)
+SHORTCUT_TOKENS = {
+    "id", "record_id", "source_row", "timestamp", "time_first", "time_last",
+    "period", "month", "day", "label", "class", "sni", "hostname",
+    "domain", "user_agent", "src_ip", "dst_ip", "src_port", "dst_port",
+    "sport", "dport", "quic_version", "tls_version", "protocol",
 }
 METADATA_COLUMNS = {
     "record_id", "source_file", "source_row", "sequence_id", "period",
@@ -185,6 +194,203 @@ def numeric_model_features(frame: pd.DataFrame) -> list[str]:
     if not features:
         raise ValueError("no usable numeric model features")
     return features
+
+
+def apply_context_aliases(
+    frame: pd.DataFrame, mapping: dict[str, str]
+) -> pd.DataFrame:
+    """Expose three selected QUIC measurements through the TCP-era API names."""
+    if tuple(mapping) != CONTEXT_NAMES or len(set(mapping.values())) != 3:
+        raise ValueError("context mapping must assign three distinct source features")
+    missing = sorted(set(mapping.values()) - set(frame.columns))
+    if missing:
+        raise ValueError(f"context mapping refers to missing columns: {missing}")
+    result = frame.copy()
+    for alias, source in mapping.items():
+        result[alias] = pd.to_numeric(result[source], errors="coerce")
+    return result
+
+
+def _is_shortcut_feature(name: str) -> bool:
+    lowered = name.strip().lower()
+    return lowered in SHORTCUT_TOKENS or lowered.endswith("_id")
+
+
+def _rank01(values: pd.Series) -> pd.Series:
+    if len(values) == 1:
+        return pd.Series(1.0, index=values.index)
+    return values.rank(method="average", pct=True)
+
+
+def select_transport_context_features(
+    development: pd.DataFrame,
+    *,
+    n_features: int = 3,
+    temporal_blocks: int = 4,
+    max_rows: int = 50_000,
+    min_valid_fraction: float = .95,
+    random_state: int = 42,
+) -> tuple[dict[str, str], pd.DataFrame, dict]:
+    """Select source-only temporal proxies without observing the target period.
+
+    Temporal sensitivity is the class-conditional Wasserstein distance between
+    adjacent chronological blocks, normalized by the feature IQR.  It is
+    combined with development-label mutual information.  Greedy selection then
+    penalizes Spearman redundancy with features already selected.
+    """
+    if n_features != len(CONTEXT_NAMES):
+        raise ValueError(f"exactly {len(CONTEXT_NAMES)} context features are required")
+    if temporal_blocks < 3:
+        raise ValueError("temporal_blocks must be at least 3")
+    if max_rows < 100:
+        raise ValueError("max_rows must be at least 100")
+    required = {"timestamp", "traffic_label"}
+    missing = sorted(required - set(development.columns))
+    if missing:
+        raise ValueError(f"development data missing selection columns: {missing}")
+
+    ordered = _ordered(development)
+    candidates = [
+        name for name in numeric_model_features(ordered)
+        if not _is_shortcut_feature(name)
+    ]
+    audit_rows, usable = [], []
+    numeric_cache = {}
+    for name in candidates:
+        values = pd.to_numeric(ordered[name], errors="coerce").replace(
+            [np.inf, -np.inf], np.nan
+        )
+        numeric_cache[name] = values
+        valid_fraction = float(values.notna().mean())
+        negative_fraction = float((values.dropna() < 0).mean()) if values.notna().any() else 1.0
+        unique = int(values.nunique(dropna=True))
+        eligible = (
+            valid_fraction >= min_valid_fraction
+            and negative_fraction == 0.0
+            and unique > 1
+        )
+        audit_rows.append({
+            "feature": name,
+            "eligible": bool(eligible),
+            "exclusion_reason": "" if eligible else (
+                "low_valid_fraction" if valid_fraction < min_valid_fraction else
+                "negative_values" if negative_fraction > 0 else "constant"
+            ),
+            "valid_fraction": valid_fraction,
+            "negative_fraction": negative_fraction,
+            "unique_values": unique,
+        })
+        if eligible:
+            usable.append(name)
+    if len(usable) < n_features:
+        raise ValueError(f"only {len(usable)} eligible temporal proxy features")
+
+    # Deterministic cap for MI and correlation cost.  Chronology is retained in
+    # the full frame used by the temporal sensitivity calculation below.
+    if len(ordered) > max_rows:
+        sample = ordered.sample(n=max_rows, random_state=random_state).sort_index()
+    else:
+        sample = ordered
+    x = pd.DataFrame({
+        name: pd.to_numeric(sample[name], errors="coerce") for name in usable
+    }).replace([np.inf, -np.inf], np.nan)
+    x = x.fillna(x.median(numeric_only=True)).fillna(0.0)
+    y = sample.traffic_label.astype("category").cat.codes.to_numpy()
+    mi = mutual_info_classif(
+        x.to_numpy(dtype=float), y, discrete_features=False,
+        random_state=random_state,
+    )
+
+    # Global chronological blocks, followed by within-class comparisons, avoid
+    # confusing changes in application prevalence with feature drift.
+    block = np.minimum(
+        np.floor(np.arange(len(ordered)) * temporal_blocks / max(len(ordered), 1)),
+        temporal_blocks - 1,
+    ).astype(int)
+    labels = ordered.traffic_label.astype(str).to_numpy()
+    sensitivity = {}
+    for name in usable:
+        values = numeric_cache[name].to_numpy(dtype=float)
+        finite = np.isfinite(values)
+        q25, q75 = np.nanquantile(values, [.25, .75])
+        scale = max(float(q75 - q25), 1e-12)
+        distances, weights = [], []
+        for label in np.unique(labels):
+            label_mask = labels == label
+            for left in range(temporal_blocks - 1):
+                a = values[finite & label_mask & (block == left)]
+                b = values[finite & label_mask & (block == left + 1)]
+                if len(a) < 5 or len(b) < 5:
+                    continue
+                weight = min(len(a), len(b))
+                distances.append(wasserstein_distance(a, b) / scale)
+                weights.append(weight)
+        sensitivity[name] = float(np.average(distances, weights=weights)) if weights else 0.0
+
+    ranking = pd.DataFrame(audit_rows).set_index("feature")
+    ranking["temporal_sensitivity"] = pd.Series(sensitivity)
+    ranking["mutual_information"] = pd.Series(dict(zip(usable, mi)))
+    eligible_index = ranking.index[ranking.eligible]
+    ranking.loc[eligible_index, "temporal_rank"] = _rank01(
+        ranking.loc[eligible_index, "temporal_sensitivity"]
+    )
+    ranking.loc[eligible_index, "mi_rank"] = _rank01(
+        ranking.loc[eligible_index, "mutual_information"]
+    )
+    ranking["base_score"] = ranking.temporal_rank * ranking.mi_rank
+
+    correlations = x[usable].corr(method="spearman").abs().fillna(0.0)
+    selected = []
+    remaining = set(usable)
+    selection_details = {}
+    while len(selected) < n_features:
+        best_name, best_key, best_detail = None, None, None
+        for name in sorted(remaining):
+            redundancy = (
+                float(correlations.loc[name, selected].max()) if selected else 0.0
+            )
+            adjusted = float(ranking.loc[name, "base_score"]) * (1.0 - redundancy)
+            key = (adjusted, float(ranking.loc[name, "base_score"]), name)
+            if best_key is None or key > best_key:
+                best_name, best_key = name, key
+                best_detail = (redundancy, adjusted)
+        selected.append(best_name)
+        remaining.remove(best_name)
+        selection_details[best_name] = {
+            "selection_order": len(selected),
+            "max_abs_spearman_to_previous": best_detail[0],
+            "adjusted_score": best_detail[1],
+        }
+
+    ranking["selected"] = ranking.index.isin(selected)
+    ranking["selection_order"] = pd.Series({
+        name: detail["selection_order"] for name, detail in selection_details.items()
+    })
+    ranking["max_abs_spearman_to_previous"] = pd.Series({
+        name: detail["max_abs_spearman_to_previous"]
+        for name, detail in selection_details.items()
+    })
+    ranking["adjusted_score"] = pd.Series({
+        name: detail["adjusted_score"] for name, detail in selection_details.items()
+    })
+    ranking = ranking.reset_index().sort_values(
+        ["selected", "selection_order", "base_score"],
+        ascending=[False, True, False], kind="stable",
+    )
+    mapping = dict(zip(CONTEXT_NAMES, selected))
+    audit = {
+        "selection_scope": "development_only",
+        "target_rows_observed": 0,
+        "objective": "temporal_rank * mutual_information_rank * redundancy_penalty",
+        "temporal_measure": "class-conditional adjacent-block normalized Wasserstein distance",
+        "temporal_blocks": temporal_blocks,
+        "mi_rows": len(sample),
+        "min_valid_fraction": min_valid_fraction,
+        "random_state": random_state,
+        "selected_features": selected,
+        "context_mapping": mapping,
+    }
+    return mapping, ranking, audit
 
 
 def encode_labels(frame: pd.DataFrame, classes: tuple[str, ...]) -> np.ndarray:

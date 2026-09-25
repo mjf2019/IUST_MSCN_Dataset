@@ -36,13 +36,13 @@ from benchmarks.console_output import (
     resource_values,
 )
 from quicext25_common import (
-    CONTEXT_ALIASES,
+    CONTEXT_ALIASES, apply_context_aliases,
     PROTOCOL_IDS,
     build_protocol,
     load_class_spec,
     load_months,
     numeric_model_features,
-    record_identity,
+    record_identity, select_transport_context_features,
 )
 
 
@@ -60,6 +60,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--utility-trees", type=int, default=10)
     parser.add_argument("--meta-trees", type=int, default=20)
     parser.add_argument("--rf-trees", type=int, default=110)
+    parser.add_argument(
+        "--context-mode", choices=("fixed", "selected"), default="fixed",
+        help="fixed published proxies or development-only selected proxies",
+    )
+    parser.add_argument("--selection-blocks", type=int, default=4)
+    parser.add_argument("--selection-max-rows", type=int, default=50_000)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -114,6 +120,7 @@ def add_result(
         "protocol": definition["protocol"],
         "source": definition["source"],
         "target": definition["target"],
+        "context_mode": definition.get("context_mode", "fixed"),
         "method": method,
         "class_count": len(classes),
         "test_coverage": definition["test_coverage"],
@@ -156,6 +163,36 @@ def run_scenario(
         meta_trees=args.meta_trees,
         random_state=args.seed,
     ).validate()
+
+    if args.context_mode == "selected":
+        # Keep feature selection earlier than utility/meta/threshold selection.
+        # Only the same earliest expert partition that fits the preliminary
+        # router is authorized to rank transport-dynamics proxies.
+        selection_source = meta_stack.four_way_split(development, config)["expert"]
+        context_mapping, feature_ranking, selection_audit = (
+            select_transport_context_features(
+                selection_source,
+                temporal_blocks=args.selection_blocks,
+                max_rows=args.selection_max_rows,
+                random_state=args.seed,
+            )
+        )
+        selection_audit["selection_scope"] = "earliest_expert_partition_only"
+        selection_audit["selection_input_rows"] = len(selection_source)
+        feature_ranking.to_csv(
+            scenario_dir / "context_feature_ranking.csv", index=False
+        )
+    else:
+        context_mapping = dict(CONTEXT_ALIASES)
+        selection_audit = {
+            "selection_scope": "predefined_fixed_mapping",
+            "target_rows_observed": 0,
+            "selected_features": list(context_mapping.values()),
+            "context_mapping": context_mapping,
+        }
+    development = apply_context_aliases(development, context_mapping)
+    test = apply_context_aliases(test, context_mapping)
+    definition = {**definition, "context_mode": args.context_mode}
 
     with ResourceMonitor() as mf_fit_resource:
         started = time.perf_counter()
@@ -278,6 +315,9 @@ def run_scenario(
             label: int((observed.traffic_label == label).sum()) for label in classes
         },
         "mf_config": asdict(config),
+        "context_mode": args.context_mode,
+        "transport_context_mapping": context_mapping,
+        "context_selection_audit": selection_audit,
         "mf_partition_rows": mf_model["partition_rows"],
         "mf_selected_meta_variant": mf_model["selected_meta_variant"],
         "mf_selected_meta_confidence": mf_model["selected_meta_confidence"],
@@ -317,7 +357,10 @@ def main() -> None:
         "scenarios": args.scenarios,
         "fixed_classes": list(classes),
         "class_order": "lexical and immutable",
-        "transport_context_mapping": CONTEXT_ALIASES,
+        "fixed_transport_context_mapping": CONTEXT_ALIASES,
+        "context_mode": args.context_mode,
+        "selection_blocks": args.selection_blocks,
+        "selection_max_rows": args.selection_max_rows,
         "context_interpretation": (
             "Protocol-aware QUIC timing/interaction proxies; not identical TCP measurements"
         ),

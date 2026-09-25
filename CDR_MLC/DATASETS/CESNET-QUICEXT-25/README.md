@@ -89,6 +89,16 @@ The candidate QUIC context features for CDR-MLC routing are `ppi_duration`,
 causally by the method runner; they are not computed across partition or month
 boundaries during this preparation step.
 
+The runner also provides `--context-mode selected`. In that mode, three QUIC
+transport-dynamics proxies are selected independently for each scenario using
+only the earliest expert-training partition. Candidate ranking combines class-conditional temporal
+sensitivity (normalized adjacent-block Wasserstein distance), development-label
+mutual information, and a greedy Spearman-redundancy penalty. Identifiers,
+timestamps, labels, protocol metadata, negative-valued fields, and insufficiently
+complete fields cannot be selected. The target partition is not inspected.
+`context_feature_ranking.csv` and `split_model_audit.json` record the complete
+ranking and the selected mapping for reproducibility.
+
 ## Fixed-class RF/CDR confirmation
 
 `quicext25_classes.json` fixes one lexical 20-class ontology for every method
@@ -112,3 +122,22 @@ python CDR_MLC/quicext25_rf_mf_cdr_mlc.py `
 
 After the S1 split/model audit and results are inspected, run all protocols by
 changing `--scenarios 1` to `--scenarios 1 2 3 4 5 6 7`.
+
+To compare the selected proxies against the fixed-proxy results, first run only
+the representative S2, S5, and S7 protocols into a separate output directory:
+
+```powershell
+python CDR_MLC/quicext25_rf_mf_cdr_mlc.py `
+  --scenarios 2 5 7 `
+  --context-mode selected `
+  --selection-blocks 4 `
+  --selection-max-rows 50000 `
+  --window 3 `
+  --congestion-window 50 `
+  --expert-trees 20 `
+  --utility-trees 10 `
+  --meta-trees 20 `
+  --rf-trees 110 `
+  --seed 42 `
+  --output CDR_MLC/outputs/quicext25_selected_proxy_confirm
+```
