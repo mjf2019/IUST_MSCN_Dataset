@@ -81,6 +81,8 @@ def _resolve(mapping: dict[str, str], aliases, purpose: str) -> str:
 
 def default_data_path(root: Path) -> Path:
     candidates = (
+        root / "DATASETS/SDNCAMPUS/SDNCampus_encrypted_balanced.csv",
+        root / "DATASETS/SDNCAMPUS/SDNCampus_original.csv",
         root / "DATASETS/SDNCampus/SDNCampus_original.csv",
         root.parent / "AMCAL/SDNCampus_TEST/Dataset/SDNCampus_original.csv",
     )
