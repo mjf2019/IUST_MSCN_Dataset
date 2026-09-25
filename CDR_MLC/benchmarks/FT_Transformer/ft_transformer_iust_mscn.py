@@ -20,6 +20,7 @@ if str(CDR_MLC) not in sys.path:
     sys.path.insert(0, str(CDR_MLC))
 
 from adaptive_cdr_mlc import APPLICATIONS
+from benchmarks.console_output import ResourceMonitor, resource_values
 from benchmarks.deep_common import (
     PROTOCOL_IDS, chronological_validation, class_weights, evaluations,
     labels, load_clean_valid, matrices, predict_batches, record_ids,
@@ -135,14 +136,16 @@ def run(args):
         train_x, valid_x, test_x = arrays
         train_y, valid_y, test_y = labels(train), labels(valid), labels(test)
 
-        started = time.perf_counter()
-        model, epochs, best_loss = fit(
-            train_x, train_y, valid_x, valid_y, args, device
-        )
-        fit_seconds = time.perf_counter() - started
-        prediction, predict_seconds = predict_batches(
-            model, test_x, args.batch_size, device
-        )
+        with ResourceMonitor(device) as fit_mem:
+            started = time.perf_counter()
+            model, epochs, best_loss = fit(
+                train_x, train_y, valid_x, valid_y, args, device
+            )
+            fit_seconds = time.perf_counter() - started
+        with ResourceMonitor(device) as infer_mem:
+            prediction, predict_seconds = predict_batches(
+                model, test_x, args.batch_size, device
+            )
         rows.append({
             **definition, "seed": args.seed, "method": "FT-Transformer",
             "train_n": len(train), "validation_n": len(valid), "n": len(test),
@@ -153,6 +156,7 @@ def run(args):
             "inference_us_per_row": 1e6 * predict_seconds / len(test),
             "throughput_rows_per_second": len(test) / predict_seconds,
             "parameters": sum(p.numel() for p in model.parameters()),
+            **resource_values(fit_mem, infer_mem),
         })
         audits[definition["protocol"]] = {
             "development_n": len(development), "train_n": len(train),
