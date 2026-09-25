@@ -1,8 +1,9 @@
-"""Build capped, leakage-audited ISCX-Tor or ISCX-VPN CSV data.
+"""Build leakage-audited ISCX-Tor or ISCX-VPN CSV data.
 
-The class is derived from each released per-application .flow filename. Classes
-larger than --max-per-class are deterministically downsampled to that cap;
-smaller classes are kept in full. No oversampling or synthetic rows are used.
+The class is derived from each released per-application .flow filename. By
+default every valid row is retained. An optional positive --max-per-class can
+be used for controlled capped-sampling experiments. No oversampling or
+synthetic rows are used.
 """
 from __future__ import annotations
 
@@ -114,8 +115,8 @@ def clean_file(path: Path) -> tuple[pd.DataFrame, dict]:
 
 def build(source: Path, output: Path, audit_path: Path, dataset_name: str,
           max_per_class: int) -> None:
-    if max_per_class < 1:
-        raise ValueError("--max-per-class must be positive")
+    if max_per_class < 0:
+        raise ValueError("--max-per-class must be zero (disabled) or positive")
     files = sorted(source.glob("*.flow"))
     if not files:
         raise FileNotFoundError(f"no .flow files found under {source}")
@@ -131,13 +132,13 @@ def build(source: Path, output: Path, audit_path: Path, dataset_name: str,
     for label, group in combined.groupby("traffic_label", sort=True):
         group = group.sort_values(["source_file", "source_row"], kind="stable")
         raw_count = int(len(group))
-        keep = min(raw_count, max_per_class)
+        keep = raw_count if max_per_class == 0 else min(raw_count, max_per_class)
         selected = group.iloc[evenly_spaced_indices(raw_count, keep)].copy()
         sampled.append(selected)
         sampling_audit[str(label)] = {
             "raw": raw_count,
             "retained": keep,
-            "capped": bool(raw_count > max_per_class),
+            "capped": bool(max_per_class > 0 and raw_count > max_per_class),
         }
 
     result = pd.concat(sampled, ignore_index=True)
@@ -153,6 +154,8 @@ def build(source: Path, output: Path, audit_path: Path, dataset_name: str,
         "source": str(source),
         "output": str(output),
         "sampling_policy": (
+            "retain every valid row; no class cap, oversampling, or synthetic samples"
+            if max_per_class == 0 else
             f"retain every row for classes with <= {max_per_class} rows; "
             f"deterministically cap larger classes at {max_per_class}; "
             "no oversampling and no synthetic samples"
@@ -192,7 +195,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--dataset-name", required=True)
     parser.add_argument("--audit", type=Path)
-    parser.add_argument("--max-per-class", type=int, default=1000)
+    parser.add_argument(
+        "--max-per-class", type=int, default=0,
+        help="optional per-class cap; 0 (default) retains every valid row",
+    )
     args = parser.parse_args()
     if args.audit is None:
         args.audit = args.output.with_name(args.output.stem + "_audit.json")
