@@ -1,9 +1,8 @@
-"""Leakage-safe 80/20 SDNCampus comparison of RF, CDR-MLC, and MF-CDR-MLC.
+"""Leakage-safe external-dataset 80/20 comparison of RF, CDR-MLC, and MF-CDR-MLC.
 
-SDNCampus is a CICFlowMeter dataset and does not expose the Argus fields
-TcpRtt/SynAck/AckDat used by IUST-MSCN.  This adapter therefore uses three
-*predeclared* CICFlow timing measurements as router-only proxies.  It neither
-requires nor constructs Low/Medium/High congestion labels.
+For Argus ISCX tables, the native TcpRtt/SynAck/AckDat measurements are used.
+For CICFlowMeter SDNCampus, three predeclared timing measurements are used as
+router-only proxies. No method requires or constructs congestion-level labels.
 
 Every application was captured separately in the source study.  Because the
 released table has no five-tuple/capture identifier, its application label is
@@ -44,9 +43,9 @@ from meta_stacked_cdr_mlc_leakage_safe import (
 METHODS = ("RF_Clean_Valid", "Original_CDR_MLC", "MF_CDR_MLC")
 PAPER_TIMING = ("TcpRtt", "SynAck", "AckDat")
 CONTEXT_ALIASES = {
-    "TcpRtt": ("flowiatmean",),
-    "SynAck": ("fwdiatmean", "forwardiatmean"),
-    "AckDat": ("bwdiatmean", "backwardiatmean"),
+    "TcpRtt": ("tcprtt", "flowiatmean"),
+    "SynAck": ("synack", "fwdiatmean", "forwardiatmean"),
+    "AckDat": ("ackdat", "bwdiatmean", "backwardiatmean"),
 }
 LABEL_ALIASES = ("label", "class", "application", "app")
 TIME_ALIASES = ("timestamp", "flowstarttime", "starttime")
@@ -75,7 +74,7 @@ def _resolve(mapping: dict[str, str], aliases, purpose: str) -> str:
         if alias in mapping:
             return mapping[alias]
     raise ValueError(
-        f"SDNCampus is missing {purpose}; accepted normalized names: {aliases}"
+        f"external dataset is missing {purpose}; accepted normalized names: {aliases}"
     )
 
 
@@ -92,6 +91,15 @@ def default_data_path(root: Path) -> Path:
     return candidates[1]
 
 
+def infer_dataset_name(path: Path) -> str:
+    normalized = _key(str(path))
+    if "iscxtor" in normalized:
+        return "ISCX-Tor"
+    if "iscxvpn" in normalized:
+        return "ISCX-VPN"
+    return "SDNCampus"
+
+
 def _parse_time(series: pd.Series) -> pd.Series:
     try:
         parsed = pd.to_datetime(series, format="mixed", dayfirst=True, errors="coerce")
@@ -101,6 +109,7 @@ def _parse_time(series: pd.Series) -> pd.Series:
 
 
 def load_sdncampus(path: Path) -> tuple[pd.DataFrame, dict]:
+    dataset_name = infer_dataset_name(path)
     raw = pd.read_csv(path, low_memory=False, on_bad_lines="error")
     raw.columns = raw.columns.astype(str).str.strip()
     mapping = _column_map(raw)
@@ -120,7 +129,7 @@ def load_sdncampus(path: Path) -> tuple[pd.DataFrame, dict]:
         )
     )
     if frame.traffic_label.isna().any() or frame.traffic_label.eq("").any():
-        raise ValueError("empty SDNCampus application labels")
+        raise ValueError(f"empty {dataset_name} application labels")
     frame["source_row"] = np.arange(len(frame), dtype=np.int64) + 2
     if time_column is None:
         # Metadata-only order key; forbidden from all model inputs.
@@ -133,11 +142,11 @@ def load_sdncampus(path: Path) -> tuple[pd.DataFrame, dict]:
         parsed = _parse_time(frame[time_column])
         if parsed.notna().sum() != len(frame):
             bad = int(parsed.isna().sum())
-            raise ValueError(f"{bad} SDNCampus timestamps could not be parsed")
+            raise ValueError(f"{bad} {dataset_name} timestamps could not be parsed")
         frame["timestamp"] = parsed
         ordering_basis = f"parsed_timestamp:{time_column}"
     frame["source_file"] = path.name
-    frame["sequence_id"] = "SDNCampus::" + frame.traffic_label.astype(str)
+    frame["sequence_id"] = dataset_name + "::" + frame.traffic_label.astype(str)
 
     for target, source in proxy_sources.items():
         frame[target] = pd.to_numeric(frame[source], errors="coerce").replace(
@@ -173,6 +182,7 @@ def load_sdncampus(path: Path) -> tuple[pd.DataFrame, dict]:
     frame["congestion_level"] = "Unlabeled"
 
     metadata = {
+        "dataset": dataset_name,
         "input": str(path),
         "raw_rows": int(len(raw)),
         "retained_rows": int(len(frame)),
@@ -241,7 +251,7 @@ def _timed(function, *args, **kwargs):
     return value, perf_counter() - start
 
 
-def evaluate(train, test, config, rf_trees, labels):
+def evaluate(train, test, config, rf_trees, labels, dataset_name):
     mf_model, mf_fit = _timed(fit_meta_stacker, train, config)
     mf_result, mf_predict = _timed(predict_all, mf_model, test)
     observed = mf_result["observed"]
@@ -270,7 +280,7 @@ def evaluate(train, test, config, rf_trees, labels):
         result = metrics(truth, predictions[method], labels)
         fit_seconds, predict_seconds = timing[method]
         rows.append({
-            "protocol": "SDNCampus-80-20",
+            "protocol": f"{dataset_name}-80-20",
             "seed": config.random_state,
             "method": method,
             **{key: result[key] for key in (
@@ -316,7 +326,7 @@ def main() -> None:
     data, input_audit = load_sdncampus(args.data)
     labels = sorted(data.traffic_label.unique().tolist())
     if len(labels) < 2:
-        raise ValueError("SDNCampus must contain at least two application classes")
+        raise ValueError(f"{input_audit['dataset']} must contain at least two classes")
     _set_application_ontology(labels)
 
     train, test, split_audit = split_80_20(data, args.train_fraction)
@@ -330,15 +340,17 @@ def main() -> None:
         meta_trees=args.meta_trees,
         random_state=args.seed,
     ).validate()
+    dataset_name = input_audit["dataset"]
     results, detailed, model_audit = evaluate(
-        train, test, config, args.rf_trees, labels
+        train, test, config, args.rf_trees, labels, dataset_name
     )
-    results.to_csv(args.output / "sdncampus_results.csv", index=False)
-    (args.output / "sdncampus_detailed_metrics.json").write_text(
+    artifact_prefix = _key(dataset_name)
+    results.to_csv(args.output / f"{artifact_prefix}_results.csv", index=False)
+    (args.output / f"{artifact_prefix}_detailed_metrics.json").write_text(
         json.dumps(detailed, indent=2) + "\n", encoding="utf-8"
     )
     manifest = {
-        "dataset": "SDNCampus",
+        "dataset": dataset_name,
         "protocol": "per-capture chronological 80% train / 20% test",
         "input_audit": input_audit,
         "split_audit": split_audit,
@@ -354,7 +366,7 @@ def main() -> None:
         "rf_trees": args.rf_trees,
         "model_audit": model_audit,
     }
-    (args.output / "sdncampus_manifest.json").write_text(
+    (args.output / f"{artifact_prefix}_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
     print_compact_results(results)
