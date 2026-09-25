@@ -23,7 +23,9 @@ From the repository root:
 ```powershell
 python -m pip install -r CDR_MLC/DATASETS/CESNET-QUICEXT-25/requirements-preprocess.txt
 
-python CDR_MLC/DATASETS/CESNET-QUICEXT-25/prepare_quicext25.py
+python CDR_MLC/DATASETS/CESNET-QUICEXT-25/prepare_quicext25.py `
+  --max-rows-per-day 5000 `
+  --sampling-seed 42
 ```
 
 The official archive checksums are verified before processing. To replace an
@@ -45,7 +47,11 @@ processed/label_counts_audit.csv
 
 The ZIP archives are read one daily Parquet member at a time. The default
 50,000-row batch bounds memory use, and only one extracted daily file exists in
-the temporary directory at a time.
+the temporary directory at a time. The recommended command applies a
+deterministic, label-independent uniform sample of at most 5,000 source rows
+per day. It preserves coverage of every available day while preventing
+high-volume days from dominating the benchmark. Set `--max-rows-per-day 0`
+only when a full-flow extraction is explicitly required.
 
 `QUIC_SNI` is used only to derive the eTLD+1 class label. SNI, user agent,
 network identifiers, connection IDs, timestamps, and protocol identifiers are
