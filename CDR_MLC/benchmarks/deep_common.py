@@ -20,6 +20,7 @@ from adaptive_cdr_mlc import (
 )
 from compare_clean_valid import SCENARIOS
 from mixed_level_protocols_leakage_safe import PROTOCOLS, build_protocol
+from benchmarks.console_output import print_compact_results
 
 LEGACY_EXCLUDED = {"IdleTime", "DstWin"}
 MIXED = {"4": "LM-H", "5": "LH-M", "6": "MH-L", "7": "ALL-80-20"}
@@ -153,23 +154,6 @@ def predict_batches(model, values, batch_size, device, forward=None):
     return np.concatenate(predictions), seconds
 
 
-def compact_table(frame: pd.DataFrame, method: str) -> None:
-    shown = pd.DataFrame({
-        "Scn": frame["protocol"],
-        "Sd": frame["seed"].astype(int),
-        "N": frame["n"].astype(int),
-        "Acc": frame["accuracy"].map(lambda x: f"{x:.4f}"),
-        "BAcc": frame["balanced_accuracy"].map(lambda x: f"{x:.4f}"),
-        "MF1": frame["macro_f1"].map(lambda x: f"{x:.4f}"),
-        "WF1": frame["weighted_f1"].map(lambda x: f"{x:.4f}"),
-        "FitS": frame["fit_seconds"].map(lambda x: f"{x:.1f}"),
-        "PredS": frame["predict_seconds"].map(lambda x: f"{x:.3f}"),
-        "us/R": frame["inference_us_per_row"].map(lambda x: f"{x:.2f}"),
-    })
-    print(f"\n{method}")
-    print(shown.to_string(index=False))
-
-
 def save_run(output: Path, method: str, rows: list[dict], audits: dict, manifest: dict):
     output.mkdir(parents=True, exist_ok=True)
     frame = pd.DataFrame(rows).sort_values(["protocol", "seed"])
@@ -181,7 +165,7 @@ def save_run(output: Path, method: str, rows: list[dict], audits: dict, manifest
         json.dumps({"method": method, **manifest}, indent=2) + "\n",
         encoding="utf-8",
     )
-    compact_table(frame, method)
+    print_compact_results(frame, method=method)
     return frame
 
 
