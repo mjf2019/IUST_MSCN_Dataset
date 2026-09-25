@@ -7,9 +7,10 @@ requires nor constructs Low/Medium/High congestion labels.
 
 Every application was captured separately in the source study.  Because the
 released table has no five-tuple/capture identifier, its application label is
-used only to reconstruct those six capture sequences and to create an 80/20
-within-capture chronological split.  Labels, sequence IDs, timestamps, IPs,
-ports, and identifiers are never classifier features.
+used only to reconstruct those six capture sequences and to create an ordered
+80/20 within-capture split. When a timestamp is not released, original CSV row
+order is preserved. Labels, sequence IDs, timestamps, IPs, ports, and
+identifiers are never classifier features.
 
 The script intentionally does not tune features or hyperparameters on test.
 """
@@ -102,7 +103,9 @@ def load_sdncampus(path: Path) -> tuple[pd.DataFrame, dict]:
     raw.columns = raw.columns.astype(str).str.strip()
     mapping = _column_map(raw)
     label_column = _resolve(mapping, LABEL_ALIASES, "application label")
-    time_column = _resolve(mapping, TIME_ALIASES, "timestamp")
+    time_column = next(
+        (mapping[alias] for alias in TIME_ALIASES if alias in mapping), None
+    )
     proxy_sources = {
         target: _resolve(mapping, aliases, f"context proxy for {target}")
         for target, aliases in CONTEXT_ALIASES.items()
@@ -117,11 +120,20 @@ def load_sdncampus(path: Path) -> tuple[pd.DataFrame, dict]:
     if frame.traffic_label.isna().any() or frame.traffic_label.eq("").any():
         raise ValueError("empty SDNCampus application labels")
     frame["source_row"] = np.arange(len(frame), dtype=np.int64) + 2
-    parsed = _parse_time(frame[time_column])
-    if parsed.notna().sum() != len(frame):
-        bad = int(parsed.isna().sum())
-        raise ValueError(f"{bad} SDNCampus timestamps could not be parsed")
-    frame["timestamp"] = parsed
+    if time_column is None:
+        # Metadata-only order key; forbidden from all model inputs.
+        frame["timestamp"] = (
+            pd.Timestamp("1970-01-01")
+            + pd.to_timedelta(frame["source_row"], unit="us")
+        )
+        ordering_basis = "original_csv_row_order"
+    else:
+        parsed = _parse_time(frame[time_column])
+        if parsed.notna().sum() != len(frame):
+            bad = int(parsed.isna().sum())
+            raise ValueError(f"{bad} SDNCampus timestamps could not be parsed")
+        frame["timestamp"] = parsed
+        ordering_basis = f"parsed_timestamp:{time_column}"
     frame["source_file"] = path.name
     frame["sequence_id"] = "SDNCampus::" + frame.traffic_label.astype(str)
 
@@ -165,6 +177,7 @@ def load_sdncampus(path: Path) -> tuple[pd.DataFrame, dict]:
         "classes": sorted(frame.traffic_label.unique().tolist()),
         "label_column": label_column,
         "timestamp_column": time_column,
+        "ordering_basis": ordering_basis,
         "context_proxy_mapping": proxy_sources,
         "dropped_identifier_or_duplicate_columns": sorted(drop),
         "congestion_labels_available": False,
