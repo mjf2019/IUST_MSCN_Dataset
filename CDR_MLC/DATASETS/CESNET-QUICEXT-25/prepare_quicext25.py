@@ -123,6 +123,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--compression", default="zstd")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
+        "--max-rows-per-day", type=int, default=0,
+        help="Deterministic uniform sample cap per daily Parquet member; 0 keeps all rows.",
+    )
+    parser.add_argument(
+        "--sampling-seed", type=int, default=42,
+        help="Base seed for deterministic per-day sampling.",
+    )
+    parser.add_argument(
         "--skip-checksum", action="store_true",
         help="Skip verification of the official MD5 checksums.",
     )
@@ -145,6 +153,26 @@ def locate_archives(raw_dir: Path) -> dict[str, Path]:
             raise FileNotFoundError(f"missing input archive: {path}")
         archives[month] = path
     return archives
+
+
+def select_source_rows(
+    total_rows: int,
+    maximum_rows: int,
+    sampling_seed: int,
+    month: str,
+    member_name: str,
+) -> np.ndarray | None:
+    """Return sorted deterministic row indices, or None when no cap is needed."""
+    if maximum_rows <= 0 or total_rows <= maximum_rows:
+        return None
+    material = f"{sampling_seed}:{month}:{member_name}".encode("utf-8")
+    derived_seed = int.from_bytes(
+        hashlib.blake2b(material, digest_size=8).digest(), "little"
+    )
+    generator = np.random.default_rng(derived_seed)
+    return np.sort(
+        generator.choice(total_rows, size=maximum_rows, replace=False)
+    ).astype(np.int64, copy=False)
 
 
 def verify_archives(archives: dict[str, Path], skip: bool) -> dict[str, dict]:
@@ -272,7 +300,14 @@ def transform_batch(
     extractor,
     label_cache: dict[str, str | None],
 ) -> tuple[pd.DataFrame, int]:
-    source_rows = np.arange(source_offset, source_offset + len(raw), dtype=np.int64)
+    if "_source_row" in raw:
+        source_rows = pd.to_numeric(
+            raw.pop("_source_row"), errors="raise"
+        ).to_numpy(dtype=np.int64)
+    else:
+        source_rows = np.arange(
+            source_offset, source_offset + len(raw), dtype=np.int64
+        )
     labels = raw["QUIC_SNI"].map(
         lambda value: canonical_label(value, extractor, label_cache)
     )
@@ -335,6 +370,8 @@ def process_month(
     batch_size: int,
     compression: str,
     overwrite: bool,
+    max_rows_per_day: int = 0,
+    sampling_seed: int = 42,
 ) -> dict:
     if output_path.exists() and not overwrite:
         raise FileExistsError(
@@ -347,7 +384,7 @@ def process_month(
     extractor = tldextract.TLDExtract(suffix_list_urls=())
     label_cache: dict[str, str | None] = {}
     label_counts: Counter = Counter()
-    rows_written = dropped_rows = input_rows = 0
+    rows_written = dropped_rows = input_rows = sampled_rows = 0
     members_audit = []
     writer = None
     arrow_schema = None
@@ -366,6 +403,7 @@ def process_month(
                     local = temp_dir / f"member-{member_index:03d}.parquet"
                     safe_copy_member(archive, member, local)
                     member_input = member_output = member_dropped = source_offset = 0
+                    member_sampled = 0
                     parquet = None
                     batch = raw = transformed = table = None
                     try:
@@ -373,6 +411,11 @@ def process_month(
                         # Windows; otherwise the extracted daily file remains
                         # locked when it is removed below.
                         parquet = pq.ParquetFile(local, memory_map=False)
+                        member_input = parquet.metadata.num_rows
+                        selected_rows = select_source_rows(
+                            member_input, max_rows_per_day, sampling_seed,
+                            month, member.filename,
+                        )
                         available = set(parquet.schema_arrow.names)
                         missing = sorted(set(REQUIRED_COLUMNS) - available)
                         if missing:
@@ -383,13 +426,28 @@ def process_month(
                         for batch in parquet.iter_batches(
                             batch_size=batch_size, columns=columns, use_threads=True
                         ):
+                            batch_start = source_offset
+                            batch_end = batch_start + len(batch)
+                            source_offset = batch_end
+                            if selected_rows is None:
+                                batch_source_rows = np.arange(
+                                    batch_start, batch_end, dtype=np.int64
+                                )
+                            else:
+                                left = np.searchsorted(selected_rows, batch_start, side="left")
+                                right = np.searchsorted(selected_rows, batch_end, side="left")
+                                if left == right:
+                                    continue
+                                batch_source_rows = selected_rows[left:right]
+                                positions = pa.array(batch_source_rows - batch_start)
+                                batch = batch.take(positions)
                             raw = batch.to_pandas()
+                            raw["_source_row"] = batch_source_rows
+                            member_sampled += len(raw)
                             transformed, dropped = transform_batch(
-                                raw, month, member.filename, source_offset,
+                                raw, month, member.filename, batch_start,
                                 extractor, label_cache,
                             )
-                            source_offset += len(raw)
-                            member_input += len(raw)
                             member_dropped += dropped
                             if transformed.empty:
                                 continue
@@ -416,18 +474,21 @@ def process_month(
                         # Release Arrow/Pandas references before unlinking on Windows.
                         batch = raw = transformed = table = parquet = None
                     input_rows += member_input
+                    sampled_rows += member_sampled
                     rows_written += member_output
                     dropped_rows += member_dropped
                     members_audit.append({
                         "member": member.filename,
                         "input_rows": member_input,
+                        "sampled_rows": member_sampled,
                         "output_rows": member_output,
                         "dropped_rows": member_dropped,
                     })
                     local.unlink(missing_ok=True)
                     print(
                         f"[{month}] {member_index}/{len(members)} {member.filename}: "
-                        f"{member_output:,} rows",
+                        f"{member_output:,} valid rows "
+                        f"({member_sampled:,}/{member_input:,} sampled)",
                         flush=True,
                     )
         if writer is None:
@@ -446,6 +507,7 @@ def process_month(
         "archive": str(archive_path.resolve()),
         "output": str(output_path.resolve()),
         "input_rows": input_rows,
+        "sampled_rows": sampled_rows,
         "output_rows": rows_written,
         "dropped_rows": dropped_rows,
         "class_count": len(label_counts),
@@ -489,7 +551,13 @@ def feature_schema(columns: list[str]) -> dict:
     }
 
 
-def write_manifests(output_dir: Path, archive_audit: dict, months: list[dict]):
+def write_manifests(
+    output_dir: Path,
+    archive_audit: dict,
+    months: list[dict],
+    max_rows_per_day: int = 0,
+    sampling_seed: int = 42,
+):
     first = pq.ParquetFile(months[0]["output"])
     columns = first.schema_arrow.names
     schema = feature_schema(columns)
@@ -532,6 +600,12 @@ def write_manifests(output_dir: Path, archive_audit: dict, months: list[dict]):
         "scenario_manifest": "scenarios.json",
         "label_counts_are_audit_only": True,
         "model_selection_must_not_use_target_label_counts": True,
+        "sampling": {
+            "method": "deterministic uniform sampling without replacement within each day",
+            "max_rows_per_day": max_rows_per_day,
+            "sampling_seed": sampling_seed,
+            "sampling_uses_labels": False,
+        },
     }
     (output_dir / "dataset_manifest.json").write_text(
         json.dumps(dataset, indent=2) + "\n", encoding="utf-8"
@@ -542,6 +616,8 @@ def main() -> int:
     args = parse_args()
     if args.batch_size < 1:
         raise ValueError("--batch-size must be positive")
+    if args.max_rows_per_day < 0:
+        raise ValueError("--max-rows-per-day cannot be negative")
     raw_dir = args.raw_dir.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -556,8 +632,14 @@ def main() -> int:
             batch_size=args.batch_size,
             compression=args.compression,
             overwrite=args.overwrite,
+            max_rows_per_day=args.max_rows_per_day,
+            sampling_seed=args.sampling_seed,
         ))
-    write_manifests(output_dir, archive_audit, month_audits)
+    write_manifests(
+        output_dir, archive_audit, month_audits,
+        max_rows_per_day=args.max_rows_per_day,
+        sampling_seed=args.sampling_seed,
+    )
     print(f"Prepared data and seven-scenario manifest: {output_dir}")
     return 0
 
