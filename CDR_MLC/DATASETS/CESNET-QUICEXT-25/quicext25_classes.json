@@ -1,0 +1,43 @@
+{
+  "dataset": "CESNET-QUICEXT-25",
+  "label_source": "eTLD+1 derived from QUIC_SNI during preprocessing",
+  "protocol": "closed-set common-class evaluation",
+  "selection_rule": {
+    "required_months": ["2024-06", "2024-07", "2024-08"],
+    "minimum_rows_in_each_month": 1000,
+    "maximum_classes": 20,
+    "ranking": "descending minimum monthly count, with lexical tie break"
+  },
+  "classes": [
+    "apple.com",
+    "doubleclick.net",
+    "facebook.com",
+    "fbcdn.net",
+    "google-analytics.com",
+    "google.com",
+    "googleadservices.com",
+    "googleapis.com",
+    "googlesyndication.com",
+    "googleusercontent.com",
+    "googlevideo.com",
+    "gstatic.com",
+    "gvt2.com",
+    "instagram.com",
+    "office365.com",
+    "snapchat.com",
+    "spotify.com",
+    "tiktokv.com",
+    "youtube.com",
+    "ytimg.com"
+  ],
+  "transport_context_mapping": {
+    "TcpRtt": "ppi_duration",
+    "SynAck": "ppi_ipt_mean",
+    "AckDat": "ppi_roundtrips"
+  },
+  "notes": [
+    "The class list and integer order are fixed for every method and scenario.",
+    "The TCP-style names are internal compatibility aliases for the QUIC context mapping; they are not claimed to be identical TCP measurements.",
+    "No class is selected or removed separately for an individual scenario."
+  ]
+}
