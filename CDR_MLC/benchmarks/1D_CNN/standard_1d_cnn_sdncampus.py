@@ -1,4 +1,4 @@
-"""Standard 1D-CNN on the fixed SDNCampus ordered 80/20 protocol."""
+"""Standard 1D-CNN on a fixed external-dataset ordered 80/20 protocol."""
 from __future__ import annotations
 
 import argparse
@@ -25,6 +25,7 @@ from benchmarks.deep_common import (  # noqa: E402
 def run(args):
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     data, input_audit = load_clean_valid(args.data)
+    dataset_name = str(input_audit.iloc[0]["dataset"])
     args.output.mkdir(parents=True, exist_ok=True)
     input_audit.to_csv(args.output / "input_audit.csv", index=False)
     rows, audits = [], {}
@@ -61,7 +62,7 @@ def run(args):
             "development_test_overlap": len(record_ids(development) & record_ids(test)),
         }
     return save_run(args.output, "1D-CNN", rows, audits, {
-        "dataset": "SDNCampus", "split": "ordered 80/20 per application capture",
+        "dataset": dataset_name, "split": "ordered 80/20 per application sequence",
         "validation_fraction_of_training": args.validation_fraction,
         "test_context_eligibility_window": 20,
         "seed": args.seed, "device": str(device),
