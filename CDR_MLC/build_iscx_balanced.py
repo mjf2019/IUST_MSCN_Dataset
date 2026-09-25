@@ -113,10 +113,20 @@ def clean_file(path: Path) -> tuple[pd.DataFrame, dict]:
     return frame, audit
 
 
-def build(source: Path, output: Path, audit_path: Path, dataset_name: str,
-          max_per_class: int) -> None:
+def build(
+    source: Path,
+    output: Path,
+    audit_path: Path,
+    dataset_name: str,
+    max_per_class: int,
+    balance_to_smallest: bool,
+) -> None:
     if max_per_class < 0:
         raise ValueError("--max-per-class must be zero (disabled) or positive")
+    if balance_to_smallest and max_per_class > 0:
+        raise ValueError(
+            "--balance-to-smallest and a positive --max-per-class are mutually exclusive"
+        )
     files = sorted(source.glob("*.flow"))
     if not files:
         raise FileNotFoundError(f"no .flow files found under {source}")
@@ -128,17 +138,24 @@ def build(source: Path, output: Path, audit_path: Path, dataset_name: str,
         file_audits.append(file_audit)
 
     combined = pd.concat(cleaned, ignore_index=True)
+    raw_counts = combined.traffic_label.value_counts()
+    smallest_class_size = int(raw_counts.min())
     sampled, sampling_audit = [], {}
     for label, group in combined.groupby("traffic_label", sort=True):
         group = group.sort_values(["source_file", "source_row"], kind="stable")
         raw_count = int(len(group))
-        keep = raw_count if max_per_class == 0 else min(raw_count, max_per_class)
+        keep = (
+            smallest_class_size
+            if balance_to_smallest
+            else raw_count if max_per_class == 0
+            else min(raw_count, max_per_class)
+        )
         selected = group.iloc[evenly_spaced_indices(raw_count, keep)].copy()
         sampled.append(selected)
         sampling_audit[str(label)] = {
             "raw": raw_count,
             "retained": keep,
-            "capped": bool(max_per_class > 0 and raw_count > max_per_class),
+            "downsampled": bool(keep < raw_count),
         }
 
     result = pd.concat(sampled, ignore_index=True)
@@ -154,12 +171,17 @@ def build(source: Path, output: Path, audit_path: Path, dataset_name: str,
         "source": str(source),
         "output": str(output),
         "sampling_policy": (
+            f"deterministically downsample every class to the smallest class "
+            f"size ({smallest_class_size}); no oversampling or synthetic samples"
+            if balance_to_smallest else
             "retain every valid row; no class cap, oversampling, or synthetic samples"
             if max_per_class == 0 else
             f"retain every row for classes with <= {max_per_class} rows; "
             f"deterministically cap larger classes at {max_per_class}; "
             "no oversampling and no synthetic samples"
         ),
+        "balance_to_smallest": balance_to_smallest,
+        "smallest_class_size": smallest_class_size,
         "max_per_class": max_per_class,
         "raw_rows": int(len(combined)),
         "retained_rows": int(len(result)),
@@ -199,6 +221,10 @@ def parse_args() -> argparse.Namespace:
         "--max-per-class", type=int, default=0,
         help="optional per-class cap; 0 (default) retains every valid row",
     )
+    parser.add_argument(
+        "--balance-to-smallest", action="store_true",
+        help="downsample every class to the raw size of the smallest class",
+    )
     args = parser.parse_args()
     if args.audit is None:
         args.audit = args.output.with_name(args.output.stem + "_audit.json")
@@ -209,7 +235,7 @@ def main() -> None:
     args = parse_args()
     build(
         args.source, args.output, args.audit,
-        args.dataset_name, args.max_per_class,
+        args.dataset_name, args.max_per_class, args.balance_to_smallest,
     )
 
 
