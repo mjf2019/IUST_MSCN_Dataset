@@ -62,7 +62,7 @@ def run(args):
             "development_test_overlap": len(record_ids(development) & record_ids(test)),
         }
     return save_run(args.output, "1D-CNN", rows, audits, {
-        "dataset": dataset_name, "split": "ordered 80/20 per application sequence",
+        "dataset": dataset_name, "split": "fixed 80/20: ISCX stratified; SDNCampus ordered",
         "validation_fraction_of_training": args.validation_fraction,
         "test_context_eligibility_window": 20,
         "seed": args.seed, "device": str(device),
