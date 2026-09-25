@@ -34,7 +34,9 @@ from adaptive_cdr_mlc import (  # noqa: E402
     select_classifier_columns,
 )
 from compare_clean_valid import SCENARIOS  # noqa: E402
-from benchmarks.console_output import print_compact_results  # noqa: E402
+from benchmarks.console_output import (  # noqa: E402
+    ResourceMonitor, print_compact_results, resource_values,
+)
 
 LEGACY_EXCLUDED = {"IdleTime", "DstWin"}
 
@@ -117,22 +119,28 @@ def run(args):
                 target, fraction, args.test_fraction
             )
             development = pd.concat([source, calibration], ignore_index=True)
-            started = time.perf_counter()
-            features, imputer, scaler, train_x = fit_transformer(development)
-            model = RandomForestClassifier(
-                n_estimators=args.trees,
-                criterion="gini",
-                max_depth=None,
-                min_samples_leaf=1,
-                max_features="sqrt",
-                bootstrap=True,
-                class_weight="balanced",
-                n_jobs=args.jobs,
-                random_state=args.seed,
-            )
-            model.fit(train_x, development.traffic_label.astype(str).to_numpy())
-            prediction = model.predict(transform(test, features, imputer, scaler))
-            elapsed = time.perf_counter() - started
+            with ResourceMonitor("cpu") as fit_mem:
+                started = time.perf_counter()
+                features, imputer, scaler, train_x = fit_transformer(development)
+                model = RandomForestClassifier(
+                    n_estimators=args.trees,
+                    criterion="gini",
+                    max_depth=None,
+                    min_samples_leaf=1,
+                    max_features="sqrt",
+                    bootstrap=True,
+                    class_weight="balanced",
+                    n_jobs=args.jobs,
+                    random_state=args.seed,
+                )
+                model.fit(train_x, development.traffic_label.astype(str).to_numpy())
+                fit_seconds = time.perf_counter() - started
+            with ResourceMonitor("cpu") as infer_mem:
+                started = time.perf_counter()
+                prediction = model.predict(
+                    transform(test, features, imputer, scaler)
+                )
+                predict_seconds = time.perf_counter() - started
             results.append({
                 "adaptation_fraction": fraction,
                 "fixed_test_fraction": args.test_fraction,
@@ -140,11 +148,17 @@ def run(args):
                 "source": source_level,
                 "target": target_level,
                 "method": "Standard_RF",
+                "seed": args.seed,
                 "development_n": int(len(development)),
                 "target_labeled_n": int(len(calibration)),
                 "n": int(len(test)),
                 **metric_values(test.traffic_label.astype(str), prediction),
-                "fit_and_inference_seconds": elapsed,
+                "fit_seconds": fit_seconds,
+                "predict_seconds": predict_seconds,
+                "fit_and_inference_seconds": fit_seconds + predict_seconds,
+                "inference_us_per_row": 1e6 * predict_seconds / len(test),
+                "throughput_rows_per_second": len(test) / predict_seconds,
+                **resource_values(fit_mem, infer_mem),
             })
             key = f"scenario={scenario}:fraction={fraction:.4f}"
             split_audits[key] = {
@@ -185,7 +199,7 @@ def run(args):
     )
     print_compact_results(
         summary, method="RF", calibration_column="target_labeled_n",
-        seconds_column="fit_and_inference_seconds",
+        seconds_column=None,
     )
 
 
