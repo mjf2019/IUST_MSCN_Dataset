@@ -126,7 +126,6 @@ def run(args):
                     "status": "N/A: AF target k-NN requires labeled target samples",
                     "accuracy": np.nan, "balanced_accuracy": np.nan,
                     "macro_f1": np.nan, "weighted_f1": np.nan,
-                    "seed": args.seed,
                     "fit_seconds": np.nan, "predict_seconds": np.nan,
                     "inference_us_per_row": np.nan,
                     "throughput_rows_per_second": np.nan,
