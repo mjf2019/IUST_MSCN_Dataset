@@ -1,4 +1,4 @@
-"""AF-MLP on SDNCampus with a labeled budget drawn from train only."""
+"""AF-MLP on an external dataset with a labeled budget drawn from train only."""
 from __future__ import annotations
 
 import argparse
@@ -54,6 +54,7 @@ def run(args):
         pretrain_epochs=args.epochs, batch_size=args.batch_size,
     )
     data, input_audit = load_clean_valid(args.data)
+    dataset_name = str(input_audit.iloc[0]["dataset"])
     args.output.mkdir(parents=True, exist_ok=True)
     input_audit.to_csv(args.output / "input_audit.csv", index=False)
     rows, audits = [], {}
@@ -104,7 +105,7 @@ def run(args):
             "development_test_overlap": len(record_ids(development) & record_ids(test)),
         }
     return save_run(args.output, "AF", rows, audits, {
-        "dataset": "SDNCampus", "split": "ordered 80/20 per application capture",
+        "dataset": dataset_name, "split": "ordered 80/20 per application sequence",
         "target_label_fraction_of_full_dataset": args.target_label_fraction,
         "budget_source": "disjoint latest prefix inside the 80% training partition",
         "fixed_test_used_for_adaptation": False,
