@@ -11,7 +11,7 @@ import pandas as pd
 import psutil
 
 ABBREVIATIONS = OrderedDict([
-    ("AF", "Target adaptation fraction"),
+    ("AdF", "Target adaptation fraction"),
     ("TF", "Fixed test fraction"),
     ("Scn", "Scenario or evaluation protocol"),
     ("Src", "Development congestion level(s)"),
@@ -176,7 +176,7 @@ def print_compact_results(
     # fraction remain available in the persisted CSV/JSON artifacts; Scn is
     # their compact console representation.
     candidates = [
-        ("AF", "adaptation_fraction", lambda x: f"{float(x):.2f}"),
+        ("AdF", "adaptation_fraction", lambda x: f"{float(x):.2f}"),
         ("Scn", "protocol", str),
         ("Scn", "scenario", str),
         ("Sd", "seed", _integer),
