@@ -78,7 +78,7 @@ def run(args):
         }
     return save_run(args.output, "DFE", rows, audits, {
         "dataset": dataset_name, "config": asdict(config),
-        "split": "ordered 80/20 per application sequence",
+        "split": "fixed 80/20: ISCX stratified; SDNCampus ordered",
         "test_context_eligibility_window": 20,
         "adaptation_budget": 0, "seed": args.seed, "device": str(device),
     })
