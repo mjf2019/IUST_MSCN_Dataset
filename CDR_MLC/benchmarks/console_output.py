@@ -119,13 +119,13 @@ def print_compact_results(
 ) -> None:
     """Print a two-column legend followed by one compact physical row per run."""
     display = pd.DataFrame(index=frame.index)
+    # Keep the terminal table narrow. Source/target names and the fixed test
+    # fraction remain available in the persisted CSV/JSON artifacts; Scn is
+    # their compact console representation.
     candidates = [
         ("AF", "adaptation_fraction", lambda x: f"{float(x):.2f}"),
-        ("TF", "fixed_test_fraction", _metric),
         ("Scn", "protocol", str),
         ("Scn", "scenario", str),
-        ("Src", "source", str),
-        ("Tgt", "target", str),
         ("Sd", "seed", _integer),
     ]
     used = set()
@@ -170,6 +170,11 @@ def print_compact_results(
     ]
     for short, full, formatter in efficiency:
         if short not in display and full in frame:
+            values = pd.to_numeric(frame[full], errors="coerce")
+            # A CPU-only run has an all-zero GPU column. Omitting it keeps the
+            # physical result row compact without discarding persisted data.
+            if short == "GPU" and (values.fillna(0.0) <= 0.0).all():
+                continue
             display[short] = frame[full].map(formatter)
 
     for short, full in (extra_columns or {}).items():
