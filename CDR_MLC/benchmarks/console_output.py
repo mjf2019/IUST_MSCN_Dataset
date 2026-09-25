@@ -36,6 +36,55 @@ ABBREVIATIONS = OrderedDict([
     ("St", "Execution status"),
 ])
 
+METHOD_NAMES = OrderedDict([
+    ("RF", "Standard Random Forest"),
+    ("RF-E", "Random Forest using expert inputs"),
+    ("1D-CNN", "One-dimensional convolutional neural network"),
+    ("AF", "Adaptive Fingerprinting"),
+    ("DFE", "Deep Flow Embedding"),
+    ("FT-T", "FT-Transformer"),
+    ("SCARF", "Self-supervised Contrastive Learning using Random Feature Corruption"),
+    ("G-SAGE", "GraphSAGE"),
+    ("O-CDR", "Original CDR-MLC"),
+    ("MF", "MF-CDR-MLC (full meta-fusion model)"),
+    ("A-R", "Actual congestion-context router"),
+    ("U-R", "Utility router"),
+    ("OR", "Oracle router diagnostic"),
+    ("-CC", "Ablation without congestion context"),
+    ("-UM", "Ablation without utility/meta features"),
+    ("-LB", "Ablation without level balancing"),
+    ("M-NH", "Always-meta ablation without hybrid routing"),
+])
+
+METHOD_ALIASES = {
+    "Standard_RF": "RF",
+    "Standard_1D_CNN": "1D-CNN",
+    "AF-MLP-adapted": "AF",
+    "DFE-adapted": "DFE",
+    "FT-Transformer": "FT-T",
+    "GraphSAGE": "G-SAGE",
+    "RF_Clean_Valid": "RF",
+    "RF_Expert_Inputs": "RF-E",
+    "Original_CDR_MLC": "O-CDR",
+    "MF_CDR_MLC": "MF",
+    "CDR_MLC_actual_router": "A-R",
+    "CDR_MLC_meta_stacker": "MF",
+    "CDR_MLC_oracle_router": "OR",
+    "CDR_MLC_utility_router": "U-R",
+    "S_Meta_Full": "MF",
+    "No_Congestion_Context": "-CC",
+    "No_Utility_Meta_Features": "-UM",
+    "No_Level_Balancing": "-LB",
+    "Always_Meta_No_Hybrid": "M-NH",
+    "Utility_Router_Only": "U-R",
+    "Actual_Router_Only": "A-R",
+}
+
+
+def _method_code(value) -> str:
+    text = str(value)
+    return METHOD_ALIASES.get(text, text)
+
 
 def _metric(value) -> str:
     return "-" if pd.isna(value) else f"{float(value):.4f}"
@@ -53,11 +102,14 @@ def _integer(value) -> str:
     return "-" if pd.isna(value) else str(int(value))
 
 
-def print_abbreviation_table(keys) -> None:
-    unique = list(dict.fromkeys(keys))
+def print_abbreviation_table(keys, method_keys=()) -> None:
+    unique = list(dict.fromkeys([*keys, *method_keys]))
     legend = pd.DataFrame({
         "Key": unique,
-        "Meaning": [ABBREVIATIONS.get(key, key) for key in unique],
+        "Meaning": [
+            ABBREVIATIONS.get(key, METHOD_NAMES.get(key, key))
+            for key in unique
+        ],
     })
     print("\nColumn abbreviations")
     print(legend.to_string(index=False))
@@ -136,9 +188,9 @@ def print_compact_results(
             used.add(short)
 
     if method is not None:
-        display["M"] = method
+        display["M"] = _method_code(method)
     elif "method" in frame:
-        display["M"] = frame["method"].astype(str)
+        display["M"] = frame["method"].map(_method_code)
 
     if calibration_column and calibration_column in frame:
         display["CalN"] = frame[calibration_column].map(_integer)
@@ -188,7 +240,11 @@ def print_compact_results(
             lambda value: "OK" if str(value).lower() == "ok" else "N/A"
         )
 
-    print_abbreviation_table(display.columns)
+    method_keys = (
+        display["M"].dropna().astype(str).drop_duplicates().tolist()
+        if "M" in display else []
+    )
+    print_abbreviation_table(display.columns, method_keys)
     with pd.option_context(
         "display.width", 240,
         "display.max_columns", None,
