@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -23,6 +24,15 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler, normalize
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
+
+HERE = Path(__file__).resolve().parent
+CDR_MLC = HERE.parents[1]
+if str(CDR_MLC) not in sys.path:
+    sys.path.insert(0, str(CDR_MLC))
+
+from benchmarks.console_output import (
+    ResourceMonitor, print_compact_results, resource_values,
+)
 
 
 @dataclass(frozen=True)
@@ -275,19 +285,35 @@ def run(args) -> None:
 
         for n in config.n_shots:
             train_idx = n_shot_subset(train_pool, y_target, n)
-            started = time.perf_counter()
-            extractor = fit_domain_network(
-                x_source[source_idx], y_source[source_idx], x_target[train_idx],
-                args.input_mode, config, device,
-            )
-            train_z = embeddings(extractor, x_target[train_idx], device)
-            test_z = embeddings(extractor, x_target[test_idx], device)
-            knn = KNeighborsClassifier(n_neighbors=n, metric="euclidean")
-            knn.fit(train_z, y_target[train_idx])
-            predicted = knn.predict(test_z)
-            row = {"method": method, "fold": fold, "seed": fold_seed, "M": 25, "N": n, "T": 70}
+            with ResourceMonitor(device) as fit_mem:
+                started = time.perf_counter()
+                extractor = fit_domain_network(
+                    x_source[source_idx], y_source[source_idx], x_target[train_idx],
+                    args.input_mode, config, device,
+                )
+                train_z = embeddings(extractor, x_target[train_idx], device)
+                knn = KNeighborsClassifier(n_neighbors=n, metric="euclidean")
+                knn.fit(train_z, y_target[train_idx])
+                fit_seconds = time.perf_counter() - started
+            with ResourceMonitor(device) as infer_mem:
+                started = time.perf_counter()
+                test_z = embeddings(extractor, x_target[test_idx], device)
+                predicted = knn.predict(test_z)
+                predict_seconds = time.perf_counter() - started
+            row = {
+                "method": method, "protocol": f"F{fold + 1}",
+                "fold": fold, "seed": fold_seed, "M": 25, "N": n, "T": 70,
+                "n": len(test_idx),
+            }
             row.update(metric_row(y_target[test_idx], predicted))
-            row["fit_and_inference_seconds"] = time.perf_counter() - started
+            row.update({
+                "fit_seconds": fit_seconds,
+                "predict_seconds": predict_seconds,
+                "fit_and_inference_seconds": fit_seconds + predict_seconds,
+                "inference_us_per_row": 1e6 * predict_seconds / len(test_idx),
+                "throughput_rows_per_second": len(test_idx) / predict_seconds,
+                **resource_values(fit_mem, infer_mem),
+            })
             rows.append(row)
             audit.append(
                 {"fold": fold, "N": n, "source_rows": source_idx.tolist(),
@@ -305,7 +331,7 @@ def run(args) -> None:
     manifest = {"config": asdict(config), "input_mode": args.input_mode, "device": str(device),
                 "source": str(args.source), "target": str(args.target), "label_column": args.label_column}
     (output / "run_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print(summary.to_string())
+    print_compact_results(results, method="AF")
 
 
 def parse_args():
