@@ -34,6 +34,7 @@ from adaptive_cdr_mlc import (  # noqa: E402
     select_classifier_columns,
 )
 from compare_clean_valid import SCENARIOS  # noqa: E402
+from benchmarks.deep_common import mf_context_eligible_test  # noqa: E402
 from benchmarks.console_output import (  # noqa: E402
     ResourceMonitor, print_compact_results, resource_values,
 )
@@ -118,6 +119,7 @@ def run(args):
             calibration, test, audit = fixed_target_tail(
                 target, fraction, args.test_fraction
             )
+            test = mf_context_eligible_test(test)
             development = pd.concat([source, calibration], ignore_index=True)
             with ResourceMonitor("cpu") as fit_mem:
                 started = time.perf_counter()
