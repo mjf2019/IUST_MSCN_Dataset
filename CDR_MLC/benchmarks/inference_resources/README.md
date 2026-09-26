@@ -16,6 +16,10 @@ The directory `artifacts/` contains models and the prepared sample. Both
   sequence; future rows are never used.
 - Model loading is measured separately and excluded from inference latency.
 - Every method receives the same CPU-thread budget.
+- In streaming mode each individual sklearn forest uses one thread because
+  per-request joblib fan-out is counterproductive at batch size one.
+  `MF-Parallel` uses the common thread budget only across its independent,
+  persistent expert and utility branches.
 - CUDA is disabled in each measured child process.
 - Streaming is the default deployment protocol: records arrive in capture
   order, batch size is exactly one, and one prediction is completed before the

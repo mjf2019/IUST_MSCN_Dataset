@@ -390,8 +390,15 @@ def main():
     for method_name, variant in variants:
         # The parallel MF bank uses one thread per branch.  All other methods
         # may use the same total CPU-thread budget internally.
+        # For one-row streaming requests, sklearn's per-forest joblib
+        # parallelism costs much more than it saves.  Keep every individual
+        # forest single-threaded; MF-Parallel alone uses the shared CPU budget
+        # by executing independent expert/utility branches in its persistent
+        # ThreadPool.  Batch mode retains internal estimator parallelism.
         estimator_jobs = (
-            1 if variant in {"parallel", "pipelined"} else args.cpu_threads
+            1 if args.mode == "streaming"
+            or variant in {"parallel", "pipelined"}
+            else args.cpu_threads
         )
         set_estimator_jobs(artifact, estimator_jobs)
         with cpu_thread_limit(args.cpu_threads):
