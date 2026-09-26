@@ -38,6 +38,7 @@ from adaptive_cdr_mlc import (  # noqa: E402
     select_classifier_columns,
 )
 from compare_clean_valid import SCENARIOS  # noqa: E402
+from benchmarks.deep_common import mf_context_eligible_test  # noqa: E402
 from benchmarks.console_output import (  # noqa: E402
     ResourceMonitor, print_compact_results, resource_values,
 )
@@ -120,6 +121,7 @@ def run(args):
 
         for fraction in args.fractions:
             calibration, test, audit = fixed_tail(target_all, fraction, args.test_fraction)
+            test = mf_context_eligible_test(test)
             audit_key = f"scenario={scenario}:fraction={fraction:.4f}"
             split_audits[audit_key] = audit
             if fraction == 0:
