@@ -8,6 +8,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from adaptive_cdr_mlc import STATS, trend_frame, trend_values
 from congestion_feature_cdr_mlc import (
     DEFAULT_CONGESTION_FEATURES,
     CongestionRouterConfig,
@@ -62,6 +63,32 @@ class CongestionContextEngineTests(unittest.TestCase):
         config = CongestionRouterConfig(window=5)
         view, _ = congestion_feature_frame(frame, config)
         index, columns, values = congestion_feature_values(frame, config)
+        self.assertTrue(index.equals(view.index))
+        np.testing.assert_array_equal(values, view[columns].to_numpy())
+
+
+class TrendEngineTests(unittest.TestCase):
+    def test_vectorized_ttfef_matches_reference_pandas_engine(self):
+        frame = fixture()
+        features = ("TcpRtt", "AckDat", "SynAck")
+        vectorized = trend_frame(frame, features, 5)
+        reference = trend_frame(frame, features, 5, engine="pandas")
+        columns = [
+            f"{feature}_{stat}" for feature in features for stat in STATS
+        ]
+        self.assertTrue(vectorized.index.equals(reference.index))
+        np.testing.assert_allclose(
+            vectorized[columns].to_numpy(),
+            reference[columns].to_numpy(),
+            rtol=1e-11,
+            atol=1e-12,
+        )
+
+    def test_ttfef_inference_api_returns_same_matrix(self):
+        frame = fixture()
+        features = ("TcpRtt", "AckDat", "SynAck")
+        view = trend_frame(frame, features, 5)
+        index, columns, values = trend_values(frame, features, 5)
         self.assertTrue(index.equals(view.index))
         np.testing.assert_array_equal(values, view[columns].to_numpy())
 

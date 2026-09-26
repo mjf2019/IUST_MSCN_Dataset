@@ -160,9 +160,88 @@ def temporal_split(data: pd.DataFrame, config: Config):
     return {name: pd.concat(groups, ignore_index=True) for name, groups in parts.items()}
 
 
-def trend_frame(frame: pd.DataFrame, features, window: int):
-    """Causal, complete trailing windows; invalid values break the window."""
+def _trend_schema(features):
     columns = [f"{feature}_{stat}" for feature in features for stat in STATS]
+    return list(features), columns
+
+
+def _trend_window_descriptors(values, window: int, block_rows: int):
+    """Yield the five TTFEF statistics for all features simultaneously."""
+    count = len(values) - window + 1
+    if count <= 0:
+        return
+    windows = np.lib.stride_tricks.sliding_window_view(
+        np.ascontiguousarray(values, dtype=np.float64),
+        window_shape=window,
+        axis=0,
+    )
+    median_position = .5 * (window - 1)
+    lower = int(np.floor(median_position))
+    upper = int(np.ceil(median_position))
+    weight = median_position - lower
+    kth = np.unique(np.asarray([lower, upper], dtype=np.intp))
+
+    for start in range(0, count, block_rows):
+        stop = min(start + block_rows, count)
+        block = windows[start:stop]
+        partitioned = np.partition(block, kth=kth, axis=-1)
+        median = partitioned[..., lower] + (
+            partitioned[..., upper] - partitioned[..., lower]
+        ) * weight
+        output = np.empty(
+            (len(block), values.shape[1], len(STATS)), dtype=np.float64
+        )
+        output[..., 0] = block.mean(axis=-1)
+        output[..., 1] = block.max(axis=-1)
+        output[..., 2] = median
+        output[..., 3] = block.min(axis=-1)
+        output[..., 4] = block.std(axis=-1, ddof=0)
+        yield start, stop, output.reshape(len(block), -1)
+
+
+def _trend_values_vectorized(frame, features, window: int, block_rows: int):
+    """Return source-order endpoint indices and a TTFEF NumPy matrix."""
+    selected = frame[features]
+    if all(pd.api.types.is_numeric_dtype(dtype) for dtype in selected.dtypes):
+        numeric = selected
+    else:
+        numeric = selected.apply(pd.to_numeric, errors="coerce")
+    index_chunks, value_chunks = [], []
+    for _, group in frame.groupby("sequence_id", sort=False):
+        group = group.sort_values(["timestamp", "source_row"], kind="stable")
+        values = numeric.loc[group.index].to_numpy(dtype=np.float64, copy=False)
+        valid = np.isfinite(values).all(axis=1) & (values >= 0).all(axis=1)
+        edges = np.flatnonzero(np.diff(np.r_[False, valid, False]))
+        for run_start, run_stop in edges.reshape(-1, 2):
+            if run_stop - run_start < window:
+                continue
+            segment = values[run_start:run_stop]
+            first_output = run_start + window - 1
+            for start, stop, descriptors in _trend_window_descriptors(
+                segment, window, block_rows
+            ):
+                finite = np.isfinite(descriptors).all(axis=1)
+                if not finite.any():
+                    continue
+                rows = group.iloc[
+                    first_output + start:first_output + stop
+                ].index[finite]
+                index_chunks.append(rows.to_numpy(copy=True))
+                value_chunks.append(descriptors[finite])
+    if not index_chunks:
+        return frame.index[:0], np.empty(
+            (0, len(features) * len(STATS)), dtype=np.float64
+        )
+    matrix = pd.DataFrame(
+        np.concatenate(value_chunks, axis=0),
+        index=pd.Index(np.concatenate(index_chunks)),
+    ).sort_index(kind="stable")
+    return matrix.index, matrix.to_numpy(dtype=np.float64, copy=False)
+
+
+def _trend_frame_pandas(frame: pd.DataFrame, features, window: int):
+    """Original TTFEF implementation retained as an equivalence reference."""
+    features, columns = _trend_schema(features)
     chunks = []
     for _, group in frame.groupby("sequence_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable").copy()
@@ -186,6 +265,54 @@ def trend_frame(frame: pd.DataFrame, features, window: int):
     if not chunks:
         return frame.iloc[:0].assign(**{c: pd.Series(dtype=float) for c in columns})
     return pd.concat(chunks).sort_index(kind="stable")
+
+
+def trend_values(
+    frame: pd.DataFrame,
+    features,
+    window: int,
+    engine: str = "vectorized",
+    block_rows: int = 16384,
+):
+    """Return TTFEF endpoint indices, ordered columns and numeric values.
+
+    This latency-sensitive interface avoids copying every raw input column into
+    an intermediate DataFrame.  Both engines use causal complete trailing
+    windows and split history at invalid observations.
+    """
+    features, columns = _trend_schema(features)
+    if engine == "pandas":
+        view = _trend_frame_pandas(frame, features, window)
+        return view.index, columns, view[columns].to_numpy(dtype=float)
+    if engine != "vectorized":
+        raise ValueError("trend engine must be 'vectorized' or 'pandas'")
+    if window < 1 or block_rows < 1:
+        raise ValueError("window and block_rows must be positive")
+    index, values = _trend_values_vectorized(
+        frame, features, window, block_rows
+    )
+    return index, columns, values
+
+
+def trend_frame(
+    frame: pd.DataFrame,
+    features,
+    window: int,
+    engine: str = "vectorized",
+):
+    """Causal complete TTFEF windows using the selected compute engine."""
+    features, columns = _trend_schema(features)
+    if engine == "pandas":
+        return _trend_frame_pandas(frame, features, window)
+    index, _, values = trend_values(
+        frame, features, window, engine=engine
+    )
+    if len(index) == 0:
+        return frame.iloc[:0].assign(**{
+            column: pd.Series(dtype=float) for column in columns
+        })
+    trends = pd.DataFrame(values, index=index, columns=columns)
+    return pd.concat([frame.loc[index].copy(), trends], axis=1)
 
 
 def rank_candidates(training: pd.DataFrame, application: str, candidates):

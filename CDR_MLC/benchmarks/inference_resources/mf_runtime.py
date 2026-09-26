@@ -16,7 +16,7 @@ from time import perf_counter
 import numpy as np
 import pandas as pd
 
-from adaptive_cdr_mlc import APPLICATIONS, aligned_probabilities, trend_frame
+from adaptive_cdr_mlc import APPLICATIONS, aligned_probabilities, trend_values
 from compare_clean_valid import TIMING
 from congestion_feature_cdr_mlc import congestion_feature_values
 from learned_router_cdr_mlc import _gate_features
@@ -84,12 +84,17 @@ def _base_state(model, frame, workers: int):
     stages = {}
 
     started = perf_counter()
-    trend = trend_frame(frame, TIMING, model["window"])
+    trend_index, trend_columns, trend_matrix = trend_values(
+        frame, TIMING, model["window"]
+    )
     stages["ttfef_seconds"] = _elapsed(started)
 
     started = perf_counter()
-    raw = frame.loc[trend.index]
-    scaled = model["scaler"].transform(trend[model["trend_columns"]])
+    raw = frame.loc[trend_index]
+    if trend_columns != list(model["trend_columns"]):
+        positions = [trend_columns.index(column) for column in model["trend_columns"]]
+        trend_matrix = trend_matrix[:, positions]
+    scaled = model["scaler"].transform(trend_matrix)
     distances = model["router"].transform(scaled)
     route = model["router"].predict(scaled)
     columns = model["numeric"] + model["categorical"]
@@ -107,11 +112,16 @@ def predict_original_profile(model, frame):
     started_total = perf_counter()
     stages = {}
     started = perf_counter()
-    trend = trend_frame(frame, TIMING, model["window"])
+    trend_index, trend_columns, trend_matrix = trend_values(
+        frame, TIMING, model["window"]
+    )
     stages["ttfef_seconds"] = _elapsed(started)
     started = perf_counter()
-    raw = frame.loc[trend.index]
-    scaled = model["scaler"].transform(trend[model["trend_columns"]])
+    raw = frame.loc[trend_index]
+    if trend_columns != list(model["trend_columns"]):
+        positions = [trend_columns.index(column) for column in model["trend_columns"]]
+        trend_matrix = trend_matrix[:, positions]
+    scaled = model["scaler"].transform(trend_matrix)
     route = model["router"].predict(scaled)
     columns = model["numeric"] + model["categorical"]
     values = model["preprocessor"].transform(raw[columns])
@@ -210,14 +220,20 @@ def predict_mf_pipelined(model, frame):
             for position, group in groups:
                 timings = {}
                 started = perf_counter()
-                trend = trend_frame(group, TIMING, model["window"])
+                trend_index, trend_columns, trend_matrix = trend_values(
+                    group, TIMING, model["window"]
+                )
                 timings["ttfef_seconds"] = _elapsed(started)
 
                 started = perf_counter()
-                raw = group.loc[trend.index]
-                scaled = model["scaler"].transform(
-                    trend[model["trend_columns"]]
-                )
+                raw = group.loc[trend_index]
+                if trend_columns != list(model["trend_columns"]):
+                    positions = [
+                        trend_columns.index(column)
+                        for column in model["trend_columns"]
+                    ]
+                    trend_matrix = trend_matrix[:, positions]
+                scaled = model["scaler"].transform(trend_matrix)
                 distances = model["router"].transform(scaled)
                 route = model["router"].predict(scaled)
                 columns = model["numeric"] + model["categorical"]
