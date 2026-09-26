@@ -89,7 +89,7 @@ def evaluations(data: pd.DataFrame, ids, train_fraction: float = .80):
     if "benchmark_dataset" in data.columns:
         names = data["benchmark_dataset"].astype(str).unique().tolist()
         if len(names) == 1 and names[0] in {
-            "SDNCampus", "ISCX-Tor", "ISCX-VPN"
+            "SDNCampus", "ISCX-Tor", "ISCX-VPN", "UNSW-IoT"
         }:
             external_dataset = names[0]
     if external_dataset is not None:
