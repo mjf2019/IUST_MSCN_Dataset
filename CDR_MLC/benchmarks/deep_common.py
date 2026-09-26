@@ -52,7 +52,45 @@ def record_ids(frame: pd.DataFrame) -> set[tuple[str, int]]:
     return set(zip(frame.source_file.astype(str), frame.source_row.astype(int)))
 
 
-def evaluations(data: pd.DataFrame, ids, train_fraction: float = .80):
+def mf_context_eligible_test(
+    frame: pd.DataFrame, window: int = 3, congestion_window: int = 50
+) -> pd.DataFrame:
+    """Return the exact causal test rows eligible for MF-CDR-MLC."""
+    base = trend_frame(frame, TIMING, window)
+    context, _ = congestion_feature_frame(
+        frame,
+        CongestionRouterConfig(
+            window=congestion_window,
+            features=tuple(TIMING),
+            expert_trees=1,
+        ).validate(),
+    )
+    eligible = base.index[base.index.isin(context.index)]
+    result = frame.loc[eligible].copy()
+    if result.empty:
+        raise ValueError("no MF-CDR-MLC context-eligible test rows")
+    return result
+
+
+def _ordered_target_tail(frame: pd.DataFrame, test_fraction: float) -> pd.DataFrame:
+    if not 0 < test_fraction <= 1:
+        raise ValueError("target_test_fraction must be in (0,1]")
+    if np.isclose(test_fraction, 1.0):
+        return frame.copy().reset_index(drop=True)
+    parts = []
+    for sequence_id, group in frame.groupby("sequence_id", sort=False):
+        group = group.sort_values(["timestamp", "source_row"], kind="stable")
+        start = int(len(group) * (1.0 - test_fraction))
+        if not 0 < start < len(group):
+            raise ValueError(f"{sequence_id}: insufficient ordered target tail")
+        parts.append(group.iloc[start:].copy())
+    return pd.concat(parts, ignore_index=True)
+
+
+def evaluations(
+    data: pd.DataFrame, ids, train_fraction: float = .80,
+    target_test_fraction: float = .20,
+):
     result = []
     is_quic = {"record_id", "period"}.issubset(data.columns)
     if is_quic:
@@ -159,10 +197,13 @@ def evaluations(data: pd.DataFrame, ids, train_fraction: float = .80):
         if protocol_id in SCENARIOS:
             source, target = SCENARIOS[protocol_id]
             development = data[data.congestion_level.eq(source)].copy().reset_index(drop=True)
-            test = data[data.congestion_level.eq(target)].copy().reset_index(drop=True)
+            target_all = data[data.congestion_level.eq(target)].copy().reset_index(drop=True)
+            test = _ordered_target_tail(target_all, target_test_fraction)
             definition = {
                 "protocol": f"S{protocol_id}", "source": source, "target": target,
-                "kind": "complete-level transfer",
+                "kind": "ordered target-tail transfer",
+                "target_test_fraction": target_test_fraction,
+                "target_rows_before_tail": len(target_all),
             }
         else:
             name = MIXED[protocol_id]
@@ -187,6 +228,10 @@ def evaluations(data: pd.DataFrame, ids, train_fraction: float = .80):
             raise RuntimeError(
                 f"{definition['protocol']}: {len(overlap)} development/test overlaps"
             )
+        definition["test_rows_before_context_filter"] = len(test)
+        test = mf_context_eligible_test(test)
+        definition["test_rows"] = len(test)
+        definition["context_eligibility_window"] = 50
         result.append((development, test, definition))
     return result
 
