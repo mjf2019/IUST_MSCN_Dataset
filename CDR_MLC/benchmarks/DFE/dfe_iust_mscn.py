@@ -41,6 +41,7 @@ if str(MODULE_ROOT) not in sys.path:
 
 from adaptive_cdr_mlc import DEFAULT_CANDIDATES, FORBIDDEN, load_dataset, select_classifier_columns  # noqa: E402
 from compare_clean_valid import APPLICATIONS, SCENARIOS  # noqa: E402
+from benchmarks.deep_common import mf_context_eligible_test  # noqa: E402
 from benchmarks.console_output import (  # noqa: E402
     ResourceMonitor, print_compact_results,
 )
@@ -402,6 +403,7 @@ def run(args):
         target = data[data.congestion_level.eq(target_level)].copy()
         for fraction in args.fractions:
             calibration, test, split_audit = fixed_tail(target, fraction, args.test_fraction)
+            test = mf_context_eligible_test(test)
             test_x = fitted["transform"].transform(test)
             truth = encoder.transform(test.traffic_label)
             if fraction == 0:
