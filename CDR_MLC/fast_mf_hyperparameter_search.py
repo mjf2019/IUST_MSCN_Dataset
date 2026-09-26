@@ -119,19 +119,23 @@ def ranking_key(row: dict):
 
 def compact(frame: pd.DataFrame, limit: int = 20) -> None:
     columns = [
-        "stage", "window", "congestion_window",
+        "stage", "status", "window", "congestion_window",
         "expert_trees", "utility_trees", "meta_trees",
         "validation_n", "accuracy", "balanced_accuracy",
         "macro_f1", "weighted_f1", "fit_predict_seconds",
     ]
     shown = frame.loc[:, columns].head(limit).copy()
     shown.columns = [
-        "Stg", "W", "CW", "ET", "UT", "MT",
+        "Stg", "Status", "W", "CW", "ET", "UT", "MT",
         "N", "Acc", "BAcc", "MF1", "WF1", "Sec",
     ]
     for name in ("Acc", "BAcc", "MF1", "WF1"):
-        shown[name] = shown[name].map(lambda value: f"{value:.4f}")
-    shown["Sec"] = shown["Sec"].map(lambda value: f"{value:.2f}")
+        shown[name] = shown[name].map(
+            lambda value: "-" if pd.isna(value) else f"{value:.4f}"
+        )
+    shown["Sec"] = shown["Sec"].map(
+        lambda value: "-" if pd.isna(value) else f"{value:.2f}"
+    )
     print(shown.to_string(index=False))
 
 
@@ -200,10 +204,29 @@ def main() -> None:
     def evaluate(stage, window, congestion_window, trees):
         key = (window, congestion_window, *trees)
         if key not in cache:
-            cache[key] = score_trial(
-                search_train, search_validation, scoring_index, labels,
-                window, congestion_window, trees, args.seed,
-            )
+            try:
+                values = score_trial(
+                    search_train, search_validation, scoring_index, labels,
+                    window, congestion_window, trees, args.seed,
+                )
+                cache[key] = {"status": "ok", "error": "", **values}
+            except (ValueError, RuntimeError) as error:
+                expert_trees, utility_trees, meta_trees = trees
+                cache[key] = {
+                    "status": "invalid",
+                    "error": str(error),
+                    "window": window,
+                    "congestion_window": congestion_window,
+                    "expert_trees": expert_trees,
+                    "utility_trees": utility_trees,
+                    "meta_trees": meta_trees,
+                    "validation_n": 0,
+                    "accuracy": np.nan,
+                    "balanced_accuracy": np.nan,
+                    "macro_f1": np.nan,
+                    "weighted_f1": np.nan,
+                    "fit_predict_seconds": np.nan,
+                }
         row = {"stage": stage, **cache[key]}
         rows.append(row)
         return row
@@ -214,9 +237,15 @@ def main() -> None:
             stage1.append(evaluate(
                 "window", window, congestion_window, args.stage1_trees
             ))
-    stage1.sort(key=ranking_key, reverse=True)
+    valid_stage1 = [row for row in stage1 if row["status"] == "ok"]
+    if not valid_stage1:
+        invalid = sorted({row["error"] for row in stage1})
+        raise RuntimeError(
+            "no valid stage-1 configuration; errors: " + " | ".join(invalid)
+        )
+    valid_stage1.sort(key=ranking_key, reverse=True)
     selected_pairs = []
-    for row in stage1:
+    for row in valid_stage1:
         pair = (row["window"], row["congestion_window"])
         if pair not in selected_pairs:
             selected_pairs.append(pair)
@@ -229,12 +258,13 @@ def main() -> None:
             stage2.append(evaluate(
                 "trees", window, congestion_window, trees
             ))
-    candidates = stage2 if stage2 else stage1
+    valid_stage2 = [row for row in stage2 if row["status"] == "ok"]
+    candidates = valid_stage2 if valid_stage2 else valid_stage1
     best = max(candidates, key=ranking_key)
 
     results = pd.DataFrame(rows).sort_values(
-        ["macro_f1", "balanced_accuracy", "accuracy"],
-        ascending=False,
+        ["status", "macro_f1", "balanced_accuracy", "accuracy"],
+        ascending=[False, False, False, False],
     ).reset_index(drop=True)
     results.to_csv(args.output / "search_results.csv", index=False)
 
@@ -248,7 +278,9 @@ def main() -> None:
         "validation_split_seed": args.validation_seed,
         "common_validation_rows": len(scoring_index),
         "stage1_trials": len(stage1),
+        "stage1_valid_trials": len(valid_stage1),
         "stage2_trials": len(stage2),
+        "stage2_valid_trials": len(valid_stage2),
         "selected_window_pairs": selected_pairs,
         "best": best,
         "input_audit": input_audit,
