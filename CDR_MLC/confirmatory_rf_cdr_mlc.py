@@ -98,12 +98,27 @@ def _record_ids(frame: pd.DataFrame) -> set[tuple[str, int]]:
     return set(zip(frame.source_file.astype(str), frame.source_row.astype(int)))
 
 
-def _full_target_protocol(data: pd.DataFrame, scenario: str):
+def _full_target_protocol(
+    data: pd.DataFrame, scenario: str, target_test_fraction: float
+):
     source, target = SCENARIOS[scenario]
     development = (
         data[data.congestion_level.eq(source)].copy().reset_index(drop=True)
     )
-    test = data[data.congestion_level.eq(target)].copy().reset_index(drop=True)
+    target_all = data[data.congestion_level.eq(target)].copy().reset_index(drop=True)
+    if not 0 < target_test_fraction <= 1:
+        raise ValueError("target_test_fraction must be in (0,1]")
+    if np.isclose(target_test_fraction, 1.0):
+        test = target_all
+    else:
+        parts = []
+        for sequence_id, group in target_all.groupby("sequence_id", sort=False):
+            group = group.sort_values(["timestamp", "source_row"], kind="stable")
+            start = int(len(group) * (1.0 - target_test_fraction))
+            if not 0 < start < len(group):
+                raise ValueError(f"{sequence_id}: insufficient ordered target tail")
+            parts.append(group.iloc[start:].copy())
+        test = pd.concat(parts, ignore_index=True)
     if development.empty or test.empty:
         raise ValueError(f"scenario {scenario}: empty development or test set")
     overlap = _record_ids(development) & _record_ids(test)
@@ -117,9 +132,10 @@ def _full_target_protocol(data: pd.DataFrame, scenario: str):
         "scenario": scenario,
         "source": source,
         "target": target,
-        "kind": "complete_source_level_to_complete_target_level",
+        "kind": "complete_source_level_to_ordered_target_tail",
         "target_level_used_in_training_or_selection": False,
-        "target_test_fraction": 1.0,
+        "target_rows_before_tail": len(target_all),
+        "target_test_fraction": target_test_fraction,
     }
 
 
@@ -141,10 +157,15 @@ def _mixed_protocol(data: pd.DataFrame, name: str, train_fraction: float):
     }
 
 
-def build_evaluations(data: pd.DataFrame, scenarios, protocols, train_fraction):
+def build_evaluations(
+    data: pd.DataFrame, scenarios, protocols, train_fraction,
+    target_test_fraction,
+):
     evaluations = []
     for scenario in scenarios:
-        evaluations.append(_full_target_protocol(data, scenario))
+        evaluations.append(
+            _full_target_protocol(data, scenario, target_test_fraction)
+        )
     for protocol in protocols:
         evaluations.append(_mixed_protocol(data, protocol, train_fraction))
     names = [definition["name"] for _, _, definition in evaluations]
@@ -444,6 +465,10 @@ def main() -> None:
         default=list(PROTOCOLS),
     )
     parser.add_argument("--train-fraction", type=float, default=0.80)
+    parser.add_argument(
+        "--target-test-fraction", type=float, default=0.20,
+        help="ordered tail of each target sequence used in Scenarios 1--3",
+    )
     parser.add_argument("--window", type=int, default=3)
     parser.add_argument("--congestion-window", type=int, default=50)
     parser.add_argument(
@@ -461,6 +486,8 @@ def main() -> None:
         parser.error("--seeds must contain distinct integers")
     if not 0 < args.train_fraction < 1:
         parser.error("--train-fraction must be in (0,1)")
+    if not 0 < args.target_test_fraction <= 1:
+        parser.error("--target-test-fraction must be in (0,1]")
     if not args.scenarios and not args.protocols:
         parser.error("at least one scenario or protocol is required")
 
@@ -469,7 +496,8 @@ def main() -> None:
     data, input_audit = load_dataset(args.data_dir, candidates)
     input_audit.to_csv(args.output / "input_audit.csv", index=False)
     evaluations = build_evaluations(
-        data, args.scenarios, args.protocols, args.train_fraction
+        data, args.scenarios, args.protocols, args.train_fraction,
+        args.target_test_fraction,
     )
 
     run_rows = []
@@ -542,6 +570,7 @@ def main() -> None:
         "scenarios": args.scenarios,
         "protocols": args.protocols,
         "train_fraction": args.train_fraction,
+        "target_test_fraction": args.target_test_fraction,
         "window": args.window,
         "congestion_window": args.congestion_window,
         "congestion_features": args.congestion_features,
