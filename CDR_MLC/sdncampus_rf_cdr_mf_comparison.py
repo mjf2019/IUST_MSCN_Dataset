@@ -43,9 +43,13 @@ from meta_stacked_cdr_mlc_leakage_safe import (
 METHODS = ("RF_Clean_Valid", "Original_CDR_MLC", "MF_CDR_MLC")
 PAPER_TIMING = ("TcpRtt", "SynAck", "AckDat")
 CONTEXT_ALIASES = {
-    "TcpRtt": ("tcprtt", "flowiatmean"),
-    "SynAck": ("synack", "fwdiatmean", "forwardiatmean"),
-    "AckDat": ("ackdat", "bwdiatmean", "backwardiatmean"),
+    "TcpRtt": ("tcprtt", "flowiatmean", "avginterarrivaltime"),
+    "SynAck": (
+        "synack", "fwdiatmean", "forwardiatmean", "srcavginterarrivaltime",
+    ),
+    "AckDat": (
+        "ackdat", "bwdiatmean", "backwardiatmean", "dstavginterarrivaltime",
+    ),
 }
 LABEL_ALIASES = ("trafficlabel", "label", "class", "application", "app")
 TIME_ALIASES = ("timestamp", "flowstarttime", "starttime")
@@ -53,6 +57,7 @@ IDENTIFIER_KEYS = {
     "flowid", "srcip", "sourceip", "dstip", "destinationip",
     "srcport", "sourceport", "dstport", "destinationport",
     "timestamp", "flowstarttime", "starttime", "simillarhttp",
+    "flowseqnum", "idletime", "dstwin",
 }
 
 
@@ -97,6 +102,8 @@ def infer_dataset_name(path: Path) -> str:
         return "ISCX-Tor"
     if "iscxvpn" in normalized:
         return "ISCX-VPN"
+    if "unswiot" in normalized:
+        return "UNSW-IoT"
     return "SDNCampus"
 
 
@@ -228,7 +235,9 @@ def split_80_20(
     )
     resolved_mode = (
         "stratified"
-        if split_mode == "auto" and dataset_name in {"ISCX-Tor", "ISCX-VPN"}
+        if split_mode == "auto" and dataset_name in {
+            "ISCX-Tor", "ISCX-VPN", "UNSW-IoT"
+        }
         else "ordered" if split_mode == "auto" else split_mode
     )
 
