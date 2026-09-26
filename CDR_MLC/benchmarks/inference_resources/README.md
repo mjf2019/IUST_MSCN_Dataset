@@ -17,20 +17,25 @@ The directory `artifacts/` contains models and the prepared sample. Both
 - Model loading is measured separately and excluded from inference latency.
 - Every method receives the same CPU-thread budget.
 - CUDA is disabled in each measured child process.
-- Three warm-up runs precede 30 measured repetitions by default.
-- p50/p95/p99 are distributions of repeated full-sample latency. The reported
-  per-row values are explicitly named *amortized latency* and are not presented
-  as isolated request/response latency.
+- Streaming is the default deployment protocol: records arrive in capture
+  order, batch size is exactly one, and one prediction is completed before the
+  next scored record is submitted.
+- Causal state is retained independently per sequence. Context-only warm-up
+  rows initialize moving windows and are excluded from scored latency.
+- One complete warm-up run precedes five measured repetitions by default.
+- Streaming p50/p95/p99 are computed from individual end-to-end record
+  latencies, not by dividing batch latency by the number of records.
 - Accuracy is computed on the marked 2,000 rows. Throughput is reported both
   for all processed input rows and for scored rows.
 - Original CDR-MLC does not compute oracle routes at inference.
-- MF-CDR-MLC is reported in three execution modes using the same saved model:
+- In streaming mode MF-CDR-MLC is reported in two execution modes using the
+  same saved model:
   - `MF-Sequential`: expert and utility banks are evaluated serially.
   - `MF-Parallel`: three experts run concurrently, followed by three concurrent
     utility estimators. Dependency order and predictions are unchanged.
-  - `MF-Pipelined`: three bounded workers overlap causal preprocessing,
-    expert-bank inference, and utility/meta fusion across independent capture
-    sequences. Ordering inside every sequence is preserved.
+  Persistent worker threads are reused across arrivals. `MF-Pipelined` remains
+  available only in the optional offline batch-throughput protocol because a
+  full-batch pipeline does not represent single-arrival response latency.
 
 AF intrinsically needs labeled target adaptation. Its default 1% Medium
 calibration prefix is disjoint from the fixed Medium tail used for timing. The
@@ -58,7 +63,13 @@ can be retrained by passing only their method name to `--methods`.
 The following command starts a fresh process for each saved model:
 
 ```powershell
-python CDR_MLC/benchmarks/inference_resources/run_all.py --cpu-threads 3 --warmup-runs 3 --repeats 30
+python CDR_MLC/benchmarks/inference_resources/run_all.py --mode streaming --cpu-threads 3 --warmup-runs 1 --repeats 5
+```
+
+The former offline batch-throughput protocol is still available explicitly:
+
+```powershell
+python CDR_MLC/benchmarks/inference_resources/run_all.py --mode batch --cpu-threads 3 --warmup-runs 3 --repeats 30
 ```
 
 The combined result is written to:

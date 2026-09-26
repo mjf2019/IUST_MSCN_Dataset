@@ -23,9 +23,10 @@ def main():
     )
     parser.add_argument("--output", type=Path, default=HERE / "results")
     parser.add_argument("--methods", nargs="*", default=None)
+    parser.add_argument("--mode", choices=("streaming", "batch"), default="streaming")
     parser.add_argument("--cpu-threads", type=int, default=3)
-    parser.add_argument("--warmup-runs", type=int, default=3)
-    parser.add_argument("--repeats", type=int, default=30)
+    parser.add_argument("--warmup-runs", type=int, default=1)
+    parser.add_argument("--repeats", type=int, default=5)
     args = parser.parse_args()
     index = json.loads((args.models / "index.json").read_text(encoding="utf-8"))
     entries = index["methods"]
@@ -54,6 +55,7 @@ def main():
             "--model", entry["artifact"],
             "--sample", str(args.sample),
             "--output", str(destination),
+            "--mode", args.mode,
             "--cpu-threads", str(args.cpu_threads),
             "--warmup-runs", str(args.warmup_runs),
             "--repeats", str(args.repeats),
@@ -64,12 +66,21 @@ def main():
     combined = pd.concat(frames, ignore_index=True)
     combined.to_csv(args.output / "inference_resource_summary.csv", index=False)
     print("\nCombined CPU-only inference results")
-    columns = [
-        "method", "evaluated_rows", "accuracy", "macro_f1",
-        "latency_batch_p50_seconds", "latency_batch_p95_seconds",
-        "mean_us_per_evaluated_row", "throughput_evaluated_rows_per_second",
-        "peak_rss_delta_mb", "model_bytes",
-    ]
+    columns = (
+        [
+            "method", "evaluated_rows", "accuracy", "macro_f1",
+            "latency_record_p50_us", "latency_record_p95_us",
+            "latency_record_p99_us",
+            "throughput_evaluated_rows_per_second",
+            "peak_rss_delta_mb", "model_bytes",
+        ] if args.mode == "streaming" else [
+            "method", "evaluated_rows", "accuracy", "macro_f1",
+            "latency_batch_p50_seconds", "latency_batch_p95_seconds",
+            "mean_us_per_evaluated_row",
+            "throughput_evaluated_rows_per_second",
+            "peak_rss_delta_mb", "model_bytes",
+        ]
+    )
     print(combined[columns].to_string(index=False))
 
 
