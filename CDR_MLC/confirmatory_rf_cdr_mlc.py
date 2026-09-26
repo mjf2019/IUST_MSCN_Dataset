@@ -460,9 +460,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--protocols",
-        nargs="+",
+        nargs="*",
         choices=list(PROTOCOLS),
         default=list(PROTOCOLS),
+        help="mixed-level protocols; pass --protocols with no values to skip them",
     )
     parser.add_argument("--train-fraction", type=float, default=0.80)
     parser.add_argument(
