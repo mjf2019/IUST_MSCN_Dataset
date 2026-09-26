@@ -1,9 +1,11 @@
 """Leakage-safe AF-SingleSource adaptation for IUST_MSCN Clean-Valid.
 
 This runner preserves the AF learning mechanism while replacing the Tor/DF
-input representation with an MLP over Clean-Valid flow features.  It uses the
-same fixed-tail percentage protocol as the S-Meta experiments so results are
-directly comparable.  Output method name: AF-MLP-adapted.
+input representation with an MLP over Clean-Valid flow features. It uses the
+same fixed-tail percentage protocol as the MF-CDR-MLC experiments. For the
+reviewer-requested equal source-supervision comparison, all labeled source
+development rows are used by default; the paper's M=25-per-class source budget
+remains available through --source-budget paper25.
 """
 
 from __future__ import annotations
@@ -105,6 +107,11 @@ def run(args):
         pretrain_epochs=args.epochs, batch_size=args.batch_size,
     )
     rows, split_audits = [], {}
+    method_name = (
+        "AF-MLP-FullSource"
+        if args.source_budget == "all"
+        else "AF-MLP-Paper25"
+    )
 
     for scenario in args.scenarios:
         source_level, target_level = SCENARIOS[scenario]
@@ -121,7 +128,9 @@ def run(args):
                     "fixed_test_fraction": args.test_fraction,
                     "scenario": scenario,
                     "source": source_level, "target": target_level,
-                    "method": "AF-MLP-adapted", "seed": args.seed, "n": len(test),
+                    "method": method_name, "seed": args.seed, "n": len(test),
+                    "source_budget": args.source_budget,
+                    "source_labeled_rows": len(source),
                     "target_labeled_rows": 0, "target_rows_per_class_min": 0,
                     "status": "N/A: AF target k-NN requires labeled target samples",
                     "accuracy": np.nan, "balanced_accuracy": np.nan,
@@ -146,9 +155,12 @@ def run(args):
 
             seed_everything(args.seed)
             rng = np.random.default_rng(args.seed)
-            source_idx = select_per_class(
-                y_source, base_config.source_per_class, rng
-            )
+            if args.source_budget == "all":
+                source_idx = np.arange(len(y_source), dtype=int)
+            else:
+                source_idx = select_per_class(
+                    y_source, base_config.source_per_class, rng
+                )
             per_class = pd.Series(y_calibration).value_counts()
             if per_class.empty or per_class.min() < 1:
                 raise ValueError(f"{audit_key}: missing calibration class")
@@ -174,9 +186,12 @@ def run(args):
             rows.append({
                 "adaptation_fraction": fraction, "fixed_test_fraction": args.test_fraction,
                 "scenario": scenario, "source": source_level, "target": target_level,
-                "method": "AF-MLP-adapted", "n": len(test),
+                "method": method_name, "n": len(test),
+                "source_budget": args.source_budget,
+                "source_labeled_rows": len(source_idx),
                 "target_labeled_rows": len(calibration),
-                "target_rows_per_class_min": k, "M": 25, "k": k,
+                "target_rows_per_class_min": k,
+                "M": ("all" if args.source_budget == "all" else 25), "k": k,
                 "status": "ok", **score,
                 "fit_seconds": fit_seconds, "predict_seconds": predict_seconds,
                 "fit_and_inference_seconds": fit_seconds + predict_seconds,
@@ -200,19 +215,26 @@ def run(args):
         json.dumps(split_audits, indent=2) + "\n", encoding="utf-8"
     )
     manifest = {
-        "method": "AF-MLP-adapted",
+        "method": method_name,
+        "source_supervision": (
+            "all labeled source rows"
+            if args.source_budget == "all"
+            else "M=25 labeled source rows per class"
+        ),
         "paper_faithful": [
-            "DANN with GRL", "M=25 source rows per class", "30 epochs by default",
+            "DANN with GRL", "30 epochs by default",
             "lambda=1", "learning rate=1e-5", "512-dimensional embedding",
             "the identical target calibration samples serve as unlabeled DANN input and labeled k-NN input",
             "k equals the minimum target samples per class",
         ],
         "dataset_adaptations": [
+            "all source rows are used by default for equal source-supervision fairness; paper25 remains reproducible",
             "MLP replaces the DF packet-direction CNN",
             "fractional chronological calibration replaces N={1,5,10,15,20}",
             "a fixed 20% chronological target tail replaces T=70 per class",
         ],
         "data_dir": str(args.data_dir), "fractions": args.fractions,
+        "source_budget": args.source_budget,
         "test_fraction": args.test_fraction, "scenarios": args.scenarios,
         "seed": args.seed, "device": str(device),
     }
@@ -233,6 +255,10 @@ def parse_args():
     )
     parser.add_argument("--output", type=Path, default=HERE / "outputs/iust_mscn")
     parser.add_argument("--fractions", nargs="+", type=float, default=[0, .01, .05, .10, .20])
+    parser.add_argument(
+        "--source-budget", choices=("all", "paper25"), default="all",
+        help="all labeled source rows (fairness default) or AF paper M=25 per class",
+    )
     parser.add_argument("--test-fraction", type=float, default=.20)
     parser.add_argument("--scenarios", nargs="+", choices=tuple(SCENARIOS), default=list(SCENARIOS))
     parser.add_argument("--epochs", type=int, default=30)
