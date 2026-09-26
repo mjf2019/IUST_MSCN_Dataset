@@ -18,7 +18,7 @@ import pandas as pd
 
 from adaptive_cdr_mlc import APPLICATIONS, aligned_probabilities, trend_frame
 from compare_clean_valid import TIMING
-from congestion_feature_cdr_mlc import congestion_feature_frame
+from congestion_feature_cdr_mlc import congestion_feature_values
 from learned_router_cdr_mlc import _gate_features
 from meta_stacked_cdr_mlc_leakage_safe import (
     _aligned_meta_probabilities,
@@ -141,10 +141,10 @@ def predict_mf_profile(model, frame, branch_workers: int = 1):
     )
 
     started = perf_counter()
-    congestion, _ = congestion_feature_frame(
+    congestion_index, _, congestion_matrix = congestion_feature_values(
         frame, model["congestion_config"]
     )
-    common = raw.index[raw.index.isin(congestion.index)]
+    common = raw.index[raw.index.isin(congestion_index)]
     if len(common) == 0:
         raise ValueError("no common base/congestion windows")
     positions = raw.index.get_indexer(common)
@@ -153,12 +153,8 @@ def predict_mf_profile(model, frame, branch_workers: int = 1):
     route = route[positions]
     probability = probability[positions]
     prediction = prediction[positions]
-    congestion_columns = [
-        column for column in congestion if column.startswith("router_")
-    ]
-    congestion_values = congestion.loc[
-        common, congestion_columns
-    ].to_numpy(dtype=float)
+    congestion_positions = congestion_index.get_indexer(common)
+    congestion_values = congestion_matrix[congestion_positions]
     base = np.column_stack([
         _gate_features(distances, route, probability), congestion_values
     ])
@@ -229,20 +225,15 @@ def predict_mf_pipelined(model, frame):
                 timings["router_preprocess_seconds"] = _elapsed(started)
 
                 started = perf_counter()
-                congestion, _ = congestion_feature_frame(
+                congestion_index, _, congestion_matrix = congestion_feature_values(
                     group, model["congestion_config"]
                 )
-                common = raw.index[raw.index.isin(congestion.index)]
+                common = raw.index[raw.index.isin(congestion_index)]
                 if len(common) == 0:
                     raise ValueError("no common base/congestion windows")
                 offsets = raw.index.get_indexer(common)
-                congestion_columns = [
-                    column for column in congestion
-                    if column.startswith("router_")
-                ]
-                congestion_values = congestion.loc[
-                    common, congestion_columns
-                ].to_numpy(dtype=float)
+                congestion_positions = congestion_index.get_indexer(common)
+                congestion_values = congestion_matrix[congestion_positions]
                 timings["congestion_context_seconds"] = _elapsed(started)
                 prepared_queue.put((
                     position, raw.loc[common], distances[offsets],

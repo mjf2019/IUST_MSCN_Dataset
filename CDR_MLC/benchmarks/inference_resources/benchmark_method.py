@@ -257,6 +257,14 @@ def main():
             "model_load_peak_rss_delta_mb": load_monitor.values()[
                 "peak_rss_delta_mb"
             ],
+            "context_engine": (
+                getattr(
+                    artifact["model"].get("congestion_config"),
+                    "context_engine",
+                    "vectorized",
+                )
+                if artifact["kind"] == "mf-cdr" else "-"
+            ),
             "latency_batch_mean_seconds": seconds_mean,
             "latency_batch_p50_seconds": _percentile(end_to_end, 50),
             "latency_batch_p95_seconds": _percentile(end_to_end, 95),
