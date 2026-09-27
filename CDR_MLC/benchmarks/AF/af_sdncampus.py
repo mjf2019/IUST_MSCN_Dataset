@@ -58,7 +58,9 @@ def run(args):
     args.output.mkdir(parents=True, exist_ok=True)
     input_audit.to_csv(args.output / "input_audit.csv", index=False)
     rows, audits = [], {}
-    for development, test, definition in evaluations(data, ["7"], .80):
+    for development, test, definition in evaluations(
+        data, ["7"], .80, split_mode=args.split_mode
+    ):
         source, calibration, budget_audit = training_budget_split(
             development, args.target_label_fraction
         )
@@ -105,7 +107,7 @@ def run(args):
             "development_test_overlap": len(record_ids(development) & record_ids(test)),
         }
     return save_run(args.output, "AF", rows, audits, {
-        "dataset": dataset_name, "split": "fixed 80/20: ISCX stratified; SDNCampus ordered",
+        "dataset": dataset_name, "split": f"{args.split_mode} 80/20",
         "target_label_fraction_of_full_dataset": args.target_label_fraction,
         "budget_source": "disjoint latest prefix inside the 80% training partition",
         "fixed_test_used_for_adaptation": False,
@@ -118,6 +120,10 @@ def parse_args():
     dataset = CDR_MLC.parent / "AMCAL/SDNCampus_TEST/Dataset/SDNCampus_original.csv"
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--data", type=Path, default=dataset)
+    p.add_argument(
+        "--split-mode", choices=("auto", "ordered", "stratified"), default="auto",
+        help="external-dataset 80/20 split policy",
+    )
     p.add_argument("--output", type=Path, default=CDR_MLC / "outputs/sdncampus_af")
     p.add_argument("--target-label-fraction", type=float, default=.01)
     p.add_argument("--epochs", type=int, default=30)
