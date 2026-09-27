@@ -54,6 +54,7 @@ class DFEConfig:
     input_fields: int = 81
     embedding_dim: int = 256
     batch_size: int = 32
+    loader_workers: int = 4
     learning_rate: float = 0.001
     epochs: int = 200
     patience: int = 10
@@ -183,22 +184,43 @@ class OnlineTriplets(Dataset):
         self.class_indices = {label: np.flatnonzero(y == label) for label in np.unique(y)}
         if any(len(indices) < 2 for indices in self.class_indices.values()):
             raise ValueError("DFE needs at least two training samples per class")
+        self.other_labels = {
+            label: np.asarray([
+                candidate for candidate in self.class_indices if candidate != label
+            ])
+            for label in self.class_indices
+        }
+        self.positive_indices = np.empty(len(self.x), dtype=np.int64)
+        self.negative_indices = np.empty(len(self.x), dtype=np.int64)
+        self.set_epoch(0)
 
     def set_epoch(self, epoch: int):
         self.epoch = epoch
+        # Generate every triplet index in vectorized class blocks.  This keeps
+        # epoch-wise random resampling while removing RNG construction and
+        # class-list allocation from the per-sample DataLoader hot path.
+        rng = np.random.default_rng(self.seed + epoch * len(self.x))
+        positions = np.arange(len(self.x))
+        for label, indices in self.class_indices.items():
+            offsets = rng.integers(1, len(indices), size=len(indices))
+            self.positive_indices[indices] = indices[
+                (positions[:len(indices)] + offsets) % len(indices)
+            ]
+
+            negative_labels = rng.choice(self.other_labels[label], size=len(indices))
+            for negative_label in self.other_labels[label]:
+                mask = negative_labels == negative_label
+                if mask.any():
+                    self.negative_indices[indices[mask]] = rng.choice(
+                        self.class_indices[negative_label], size=int(mask.sum())
+                    )
 
     def __len__(self):
         return len(self.x)
 
     def __getitem__(self, index):
-        rng = np.random.default_rng(self.seed + self.epoch * len(self.x) + index)
-        label = self.y[index]
-        positive_pool = self.class_indices[label]
-        positive = index
-        while positive == index:
-            positive = int(rng.choice(positive_pool))
-        negative_label = rng.choice([item for item in self.class_indices if item != label])
-        negative = int(rng.choice(self.class_indices[negative_label]))
+        positive = self.positive_indices[index]
+        negative = self.negative_indices[index]
         return (
             torch.from_numpy(self.x[index]),
             torch.from_numpy(self.x[positive]),
@@ -265,7 +287,19 @@ class FlowImageTransform:
 
 def train_backbone(x_train, y_train, x_validation, y_validation, config, device):
     dataset = OnlineTriplets(x_train, y_train, config.seed)
-    loader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True, drop_last=True)
+    loader_options = {
+        "batch_size": config.batch_size,
+        "shuffle": True,
+        "drop_last": True,
+        "num_workers": config.loader_workers,
+        "pin_memory": device.type == "cuda",
+        # Workers are recreated after set_epoch so Windows spawn workers see
+        # the newly generated triplet-index arrays for the current epoch.
+        "persistent_workers": False,
+    }
+    if config.loader_workers > 0:
+        loader_options["prefetch_factor"] = 4
+    loader = DataLoader(dataset, **loader_options)
     model = DFEBackbone(config.embedding_dim).to(device)
     compressor = GaussianFeatureCompression(config.betas).to(device)
     triplet = ConstrainedTripletLoss(config.alpha1, config.alpha2, config.eta)
@@ -276,11 +310,13 @@ def train_backbone(x_train, y_train, x_validation, y_validation, config, device)
         dataset.set_epoch(epoch)
         model.train()
         for anchor, positive, negative in loader:
-            anchor, positive, negative = anchor.to(device), positive.to(device), negative.to(device)
+            anchor = anchor.to(device, non_blocking=True)
+            positive = positive.to(device, non_blocking=True)
+            negative = negative.to(device, non_blocking=True)
             anchor_z, features = model(anchor, return_features=True)
             positive_z, negative_z = model(positive), model(negative)
             loss = compressor(features) + config.lambda_ntc * triplet(anchor_z, positive_z, negative_z)
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
 
@@ -378,7 +414,10 @@ def _reserve_development_tail(frame, fraction, train_fraction=.80):
 
 
 def run(args):
-    config = DFEConfig(epochs=args.epochs, seed=args.seed)
+    config = DFEConfig(
+        epochs=args.epochs, seed=args.seed,
+        loader_workers=args.loader_workers,
+    )
     seed_all(config.seed)
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     data, input_audit = load_clean_valid(args.data_dir)
@@ -387,12 +426,24 @@ def run(args):
     encoder = LabelEncoder().fit(APPLICATIONS)
     rows, audits = [], {}
 
-    for development, common_test, definition in evaluations(
+    protocols = evaluations(
         data, args.scenarios, train_fraction=1.0 - args.test_fraction,
         target_test_fraction=args.target_test_fraction,
+    )
+    for scenario_position, (development, common_test, definition) in enumerate(
+        protocols, start=1
     ):
         protocol = definition["protocol"]
         scenario = protocol.removeprefix("S")
+        scenario_started = time.perf_counter()
+        scenario_summaries = []
+        print(
+            f"[DFE] START {protocol} "
+            f"({scenario_position}/{len(args.scenarios)}) | "
+            f"source={definition['source']} target={definition['target']} | "
+            f"device={device} workers={config.loader_workers}",
+            flush=True,
+        )
         evaluation_test_fraction = (
             args.test_fraction if protocol == "S7"
             else args.target_test_fraction
@@ -478,6 +529,10 @@ def run(args):
                 "peak_ram_mb": max(fit_mem.peak_ram_mb, infer_mem.peak_ram_mb),
                 "peak_gpu_mb": max(fit_mem.peak_gpu_mb, infer_mem.peak_gpu_mb),
             })
+            scenario_summaries.append(
+                f"fraction={fraction:g}, epochs={training_audit['epochs_completed']}, "
+                f"Acc={rows[-1]['accuracy']:.4f}, MF1={rows[-1]['macro_f1']:.4f}"
+            )
             audits[f"{protocol}:fraction={fraction:.4f}"] = {
                 "definition": definition, "split": split_audit,
                 **training_audit, "selected_k": k, "k_trials": k_trials,
@@ -485,6 +540,13 @@ def run(args):
                 "development_test_overlap": len(record_ids(development) & record_ids(test)),
                 "calibration_test_overlap": 0,
             }
+        print(
+            f"[DFE] DONE  {protocol} "
+            f"({scenario_position}/{len(args.scenarios)}) | "
+            f"elapsed={time.perf_counter() - scenario_started:.1f}s | "
+            + " ; ".join(scenario_summaries),
+            flush=True,
+        )
 
     result = pd.DataFrame(rows).sort_values(["adaptation_fraction", "scenario"])
     result.to_csv(args.output / "dfe_iust_mscn_summary.csv", index=False)
@@ -519,9 +581,15 @@ def parse_args():
     )
     parser.add_argument("--scenarios", nargs="+", choices=PROTOCOL_IDS, default=list(PROTOCOL_IDS))
     parser.add_argument("--epochs", type=int, default=200)
+    parser.add_argument(
+        "--loader-workers", type=int, default=4,
+        help="DataLoader worker processes; use 0 to disable multiprocessing",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", choices=("cpu", "cuda"))
     args = parser.parse_args()
+    if args.loader_workers < 0:
+        parser.error("--loader-workers must be non-negative")
     if not 0 < args.target_test_fraction <= 1:
         parser.error("--target-test-fraction must be in (0,1]")
     if any(f < 0 or f > 1 - args.test_fraction for f in args.fractions):
