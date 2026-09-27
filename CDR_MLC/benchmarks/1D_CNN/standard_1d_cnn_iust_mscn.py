@@ -272,10 +272,18 @@ def _reserve_development_tail(frame, fraction, train_fraction=.80):
 def run(args):
     if not 0 < args.test_fraction < 1:
         raise ValueError("--test-fraction must be in (0,1)")
+    if not 0 < args.target_test_fraction <= 1:
+        raise ValueError("--target-test-fraction must be in (0,1]")
     if not 0 < args.validation_fraction < 1:
         raise ValueError("--validation-fraction must be in (0,1)")
     if any(value < 0 or value > 1 - args.test_fraction for value in args.fractions):
-        raise ValueError("an adaptation fraction overlaps the fixed test tail")
+        raise ValueError("an adaptation fraction overlaps the S7 fixed test tail")
+    if any(
+        value > 1 - args.target_test_fraction for value in args.fractions
+    ) and any(protocol in {"1", "2", "3"} for protocol in args.scenarios):
+        raise ValueError(
+            "an adaptation fraction overlaps the S1--S3 target test partition"
+        )
 
     args.output.mkdir(parents=True, exist_ok=True)
     data, input_audit = load_clean_valid(args.data_dir)
@@ -285,10 +293,14 @@ def run(args):
 
     for development, common_test, definition in evaluations(
         data, args.scenarios, train_fraction=1.0 - args.test_fraction,
-        target_test_fraction=args.test_fraction,
+        target_test_fraction=args.target_test_fraction,
     ):
         protocol = definition["protocol"]
         scenario = protocol.removeprefix("S")
+        evaluation_test_fraction = (
+            args.test_fraction if protocol == "S7"
+            else args.target_test_fraction
+        )
         for fraction in args.fractions:
             if protocol == "S7":
                 source, calibration, audit = _reserve_development_tail(
@@ -300,7 +312,7 @@ def run(args):
                     data.congestion_level.astype(str).eq(str(definition["target"]))
                 ].copy()
                 calibration, _, audit = fixed_target_tail(
-                    target, fraction, args.test_fraction
+                    target, fraction, args.target_test_fraction
                 )
             calibration_ids = record_ids(calibration)
             keep = [
@@ -335,7 +347,7 @@ def run(args):
                 predict_seconds = time.perf_counter() - started
             results.append({
                 "adaptation_fraction": fraction,
-                "fixed_test_fraction": args.test_fraction,
+                "fixed_test_fraction": evaluation_test_fraction,
                 "protocol": protocol, "scenario": scenario,
                 "source": definition["source"], "target": definition["target"],
                 "method": "Standard_1D_CNN", "seed": args.seed,
@@ -365,6 +377,7 @@ def run(args):
     (args.output / "run_manifest.json").write_text(json.dumps({
         "method": "Standard_1D_CNN", "data_dir": str(args.data_dir),
         "fractions": args.fractions, "test_fraction": args.test_fraction,
+        "target_test_fraction": args.target_test_fraction,
         "validation_fraction": args.validation_fraction,
         "scenarios": args.scenarios, "seed": args.seed, "device": str(device),
         "protocol": "common leakage-safe S1-S7; causal validation and disjoint calibration/test",
@@ -383,7 +396,14 @@ def parse_args():
     )
     parser.add_argument("--output", type=Path, default=HERE / "outputs/iust_mscn")
     parser.add_argument("--fractions", nargs="+", type=float, default=[0])
-    parser.add_argument("--test-fraction", type=float, default=.20)
+    parser.add_argument(
+        "--test-fraction", type=float, default=.20,
+        help="fixed test fraction for S7 and mixed within-dataset protocols",
+    )
+    parser.add_argument(
+        "--target-test-fraction", type=float, default=.20,
+        help="ordered fraction of the unseen target level evaluated in S1--S3; use 1.0 for full-target evaluation",
+    )
     parser.add_argument("--validation-fraction", type=float, default=.10)
     parser.add_argument("--scenarios", nargs="+", choices=PROTOCOL_IDS, default=list(PROTOCOL_IDS))
     parser.add_argument("--epochs", type=int, default=100)
