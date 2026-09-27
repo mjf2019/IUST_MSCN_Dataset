@@ -1,0 +1,12 @@
+# Downloaded CESNET-QUIC22 data and generated local metadata
+raw/
+download_manifest.json
+
+# Future derived artifacts
+processed/
+exports/
+cache/
+
+# Python artifacts
+__pycache__/
+*.py[cod]

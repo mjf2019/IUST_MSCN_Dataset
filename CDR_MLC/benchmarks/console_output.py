@@ -192,6 +192,8 @@ def print_compact_results(
     elif "method" in frame:
         display["M"] = frame["method"].map(_method_code)
 
+    if calibration_column is None and "target_labeled_rows" in frame:
+        calibration_column = "target_labeled_rows"
     if calibration_column and calibration_column in frame:
         display["CalN"] = frame[calibration_column].map(_integer)
     if "n" in frame:

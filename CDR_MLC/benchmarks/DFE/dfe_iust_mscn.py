@@ -41,6 +41,9 @@ if str(MODULE_ROOT) not in sys.path:
 
 from adaptive_cdr_mlc import DEFAULT_CANDIDATES, FORBIDDEN, load_dataset, select_classifier_columns  # noqa: E402
 from compare_clean_valid import APPLICATIONS, SCENARIOS  # noqa: E402
+from benchmarks.deep_common import (  # noqa: E402
+    PROTOCOL_IDS, evaluations, load_clean_valid, record_ids,
+)
 from benchmarks.console_output import (  # noqa: E402
     ResourceMonitor, print_compact_results,
 )
@@ -51,6 +54,7 @@ class DFEConfig:
     input_fields: int = 81
     embedding_dim: int = 256
     batch_size: int = 32
+    loader_workers: int = 4
     learning_rate: float = 0.001
     epochs: int = 200
     patience: int = 10
@@ -173,33 +177,64 @@ class OnlineTriplets(Dataset):
     """One source-only triplet per training anchor; resampled each epoch."""
 
     def __init__(self, x: np.ndarray, y: np.ndarray, seed: int):
-        self.x = x
+        self.x = torch.from_numpy(np.ascontiguousarray(x))
         self.y = y
         self.seed = seed
         self.epoch = 0
         self.class_indices = {label: np.flatnonzero(y == label) for label in np.unique(y)}
         if any(len(indices) < 2 for indices in self.class_indices.values()):
             raise ValueError("DFE needs at least two training samples per class")
+        self.other_labels = {
+            label: np.asarray([
+                candidate for candidate in self.class_indices if candidate != label
+            ])
+            for label in self.class_indices
+        }
+        # Shared index tensors let persistent Windows workers observe the
+        # newly sampled triplets without being respawned every epoch.
+        self.positive_indices = torch.empty(
+            len(self.x), dtype=torch.long
+        ).share_memory_()
+        self.negative_indices = torch.empty(
+            len(self.x), dtype=torch.long
+        ).share_memory_()
+        self.set_epoch(0)
 
     def set_epoch(self, epoch: int):
         self.epoch = epoch
+        # Generate every triplet index in vectorized class blocks.  This keeps
+        # epoch-wise random resampling while removing RNG construction and
+        # class-list allocation from the per-sample DataLoader hot path.
+        rng = np.random.default_rng(self.seed + epoch * len(self.x))
+        positions = np.arange(len(self.x))
+        positive_indices = np.empty(len(self.x), dtype=np.int64)
+        negative_indices = np.empty(len(self.x), dtype=np.int64)
+        for label, indices in self.class_indices.items():
+            offsets = rng.integers(1, len(indices), size=len(indices))
+            positive_indices[indices] = indices[
+                (positions[:len(indices)] + offsets) % len(indices)
+            ]
+
+            negative_labels = rng.choice(self.other_labels[label], size=len(indices))
+            for negative_label in self.other_labels[label]:
+                mask = negative_labels == negative_label
+                if mask.any():
+                    negative_indices[indices[mask]] = rng.choice(
+                        self.class_indices[negative_label], size=int(mask.sum())
+                    )
+        self.positive_indices.copy_(torch.from_numpy(positive_indices))
+        self.negative_indices.copy_(torch.from_numpy(negative_indices))
 
     def __len__(self):
         return len(self.x)
 
     def __getitem__(self, index):
-        rng = np.random.default_rng(self.seed + self.epoch * len(self.x) + index)
-        label = self.y[index]
-        positive_pool = self.class_indices[label]
-        positive = index
-        while positive == index:
-            positive = int(rng.choice(positive_pool))
-        negative_label = rng.choice([item for item in self.class_indices if item != label])
-        negative = int(rng.choice(self.class_indices[negative_label]))
+        positive = int(self.positive_indices[index])
+        negative = int(self.negative_indices[index])
         return (
-            torch.from_numpy(self.x[index]),
-            torch.from_numpy(self.x[positive]),
-            torch.from_numpy(self.x[negative]),
+            self.x[index],
+            self.x[positive],
+            self.x[negative],
         )
 
 
@@ -262,7 +297,17 @@ class FlowImageTransform:
 
 def train_backbone(x_train, y_train, x_validation, y_validation, config, device):
     dataset = OnlineTriplets(x_train, y_train, config.seed)
-    loader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True, drop_last=True)
+    loader_options = {
+        "batch_size": config.batch_size,
+        "shuffle": True,
+        "drop_last": True,
+        "num_workers": config.loader_workers,
+        "pin_memory": device.type == "cuda",
+        "persistent_workers": config.loader_workers > 0,
+    }
+    if config.loader_workers > 0:
+        loader_options["prefetch_factor"] = 4
+    loader = DataLoader(dataset, **loader_options)
     model = DFEBackbone(config.embedding_dim).to(device)
     compressor = GaussianFeatureCompression(config.betas).to(device)
     triplet = ConstrainedTripletLoss(config.alpha1, config.alpha2, config.eta)
@@ -273,11 +318,13 @@ def train_backbone(x_train, y_train, x_validation, y_validation, config, device)
         dataset.set_epoch(epoch)
         model.train()
         for anchor, positive, negative in loader:
-            anchor, positive, negative = anchor.to(device), positive.to(device), negative.to(device)
+            anchor = anchor.to(device, non_blocking=True)
+            positive = positive.to(device, non_blocking=True)
+            negative = negative.to(device, non_blocking=True)
             anchor_z, features = model(anchor, return_features=True)
             positive_z, negative_z = model(positive), model(negative)
             loss = compressor(features) + config.lambda_ntc * triplet(anchor_z, positive_z, negative_z)
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
 
@@ -354,64 +401,114 @@ def metrics(truth, prediction):
     }
 
 
+def _reserve_development_tail(frame, fraction, train_fraction=.80):
+    if fraction == 0:
+        return frame.copy(), frame.iloc[:0].copy(), []
+    within = fraction / train_fraction
+    source_parts, calibration_parts, audit = [], [], []
+    for sequence_id, group in frame.groupby("sequence_id", sort=False):
+        group = group.sort_values(["timestamp", "source_row"], kind="stable")
+        count = int(np.floor(len(group) * within))
+        if count < 1 or count >= len(group):
+            raise ValueError(f"{sequence_id}: insufficient S7 calibration rows")
+        source_parts.append(group.iloc[:-count].copy())
+        calibration_parts.append(group.iloc[-count:].copy())
+        audit.append({"sequence_id": sequence_id, "calibration_rows": count})
+    return (
+        pd.concat(source_parts, ignore_index=True),
+        pd.concat(calibration_parts, ignore_index=True),
+        audit,
+    )
+
+
 def run(args):
-    config = DFEConfig(epochs=args.epochs, seed=args.seed)
+    config = DFEConfig(
+        epochs=args.epochs, seed=args.seed,
+        loader_workers=args.loader_workers,
+    )
     seed_all(config.seed)
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
-    data, input_audit = load_dataset(args.data_dir, tuple(DEFAULT_CANDIDATES))
+    data, input_audit = load_clean_valid(args.data_dir)
     args.output.mkdir(parents=True, exist_ok=True)
     input_audit.to_csv(args.output / "input_audit.csv", index=False)
     encoder = LabelEncoder().fit(APPLICATIONS)
-    rows, audits, trained = [], {}, {}
+    rows, audits = [], {}
 
-    for scenario in args.scenarios:
-        source_level, target_level = SCENARIOS[scenario]
-        if source_level not in trained:
-            source = data[data.congestion_level.eq(source_level)].copy()
+    protocols = evaluations(
+        data, args.scenarios, train_fraction=1.0 - args.test_fraction,
+        target_test_fraction=args.target_test_fraction,
+    )
+    for scenario_position, (development, common_test, definition) in enumerate(
+        protocols, start=1
+    ):
+        protocol = definition["protocol"]
+        scenario = protocol.removeprefix("S")
+        scenario_started = time.perf_counter()
+        scenario_summaries = []
+        print(
+            f"[DFE] START {protocol} "
+            f"({scenario_position}/{len(args.scenarios)}) | "
+            f"source={definition['source']} target={definition['target']} | "
+            f"device={device} workers={config.loader_workers}",
+            flush=True,
+        )
+        evaluation_test_fraction = (
+            args.test_fraction if protocol == "S7"
+            else args.target_test_fraction
+        )
+        for fraction in args.fractions:
+            if protocol == "S7":
+                source, calibration, split_audit = _reserve_development_tail(
+                    development, fraction, 1.0 - args.test_fraction
+                )
+            else:
+                source = development.copy()
+                target = data[
+                    data.congestion_level.astype(str).eq(str(definition["target"]))
+                ].copy()
+                calibration, _, split_audit = fixed_tail(
+                    target, fraction, args.target_test_fraction
+                )
+            calibration_ids = record_ids(calibration)
+            keep = [
+                identity not in calibration_ids
+                for identity in zip(
+                    common_test.source_file.astype(str),
+                    common_test.source_row.astype(int),
+                )
+            ]
+            test = common_test.loc[keep].copy().reset_index(drop=True)
+            if test.empty or record_ids(calibration) & record_ids(test):
+                raise RuntimeError(f"{protocol}: invalid calibration/test split")
+
             source_train, source_validation = chronological_source_split(source)
             transform = FlowImageTransform(config.input_fields).fit(source_train)
-            x_train, x_validation = transform.transform(source_train), transform.transform(source_validation)
-            y_train = encoder.transform(source_train.traffic_label)
-            y_validation = encoder.transform(source_validation.traffic_label)
+            x_train = transform.transform(source_train)
+            x_validation = transform.transform(source_validation)
+            test_x = transform.transform(test)
+            y_train = encoder.transform(source_train.traffic_label.astype(str))
+            y_validation = encoder.transform(source_validation.traffic_label.astype(str))
+            truth = encoder.transform(test.traffic_label.astype(str))
             with ResourceMonitor(device) as fit_mem:
                 started = time.perf_counter()
                 model, training_audit = train_backbone(
                     x_train, y_train, x_validation, y_validation, config, device
                 )
-                template_x, template_y = select_templates(
+                source_template_x, source_template_y = select_templates(
                     x_train, y_train, config.templates_per_class, config.seed
                 )
                 k, k_trials = choose_k(
-                    model, template_x, template_y, x_validation, y_validation, device
+                    model, source_template_x, source_template_y,
+                    x_validation, y_validation, device
                 )
                 fit_seconds = time.perf_counter() - started
-            trained[source_level] = {
-                "model": model, "transform": transform,
-                "source_templates_x": template_x, "source_templates_y": template_y,
-                "k": k, "fit_seconds": fit_seconds,
-                "fit_peak_ram_mb": fit_mem.peak_ram_mb,
-                "fit_peak_gpu_mb": fit_mem.peak_gpu_mb,
-            }
-            audits[f"source:{source_level}"] = {
-                **training_audit, "selected_k": k, "k_trials": k_trials,
-                "features": transform.columns, "training_rows": len(source_train),
-                "validation_rows": len(source_validation),
-            }
 
-        fitted = trained[source_level]
-        target = data[data.congestion_level.eq(target_level)].copy()
-        for fraction in args.fractions:
-            calibration, test, split_audit = fixed_tail(target, fraction, args.test_fraction)
-            test_x = fitted["transform"].transform(test)
-            truth = encoder.transform(test.traffic_label)
             if fraction == 0:
-                library_x = fitted["source_templates_x"]
-                library_y = fitted["source_templates_y"]
+                library_x, library_y = source_template_x, source_template_y
                 adaptation_templates = 0
             else:
-                calibration_x = fitted["transform"].transform(calibration)
-                calibration_y = encoder.transform(calibration.traffic_label)
-                # Updating the template library does not retrain the backbone.
+                calibration_x = transform.transform(calibration)
+                calibration_y = encoder.transform(calibration.traffic_label.astype(str))
                 library_x, library_y = select_templates(
                     calibration_x, calibration_y, config.templates_per_class,
                     config.seed + int(round(fraction * 10_000)),
@@ -420,52 +517,57 @@ def run(args):
             with ResourceMonitor(device) as infer_mem:
                 started = time.perf_counter()
                 prediction = template_predict(
-                    fitted["model"], library_x, library_y, test_x,
-                    fitted["k"], device,
+                    model, library_x, library_y, test_x, k, device
                 )
                 predict_seconds = time.perf_counter() - started
             rows.append({
-                "adaptation_fraction": fraction, "fixed_test_fraction": args.test_fraction,
-                "scenario": scenario, "source": source_level, "target": target_level,
+                "adaptation_fraction": fraction,
+                "fixed_test_fraction": evaluation_test_fraction,
+                "protocol": protocol, "scenario": scenario,
+                "source": definition["source"], "target": definition["target"],
                 "method": "DFE-adapted", "seed": args.seed, "n": len(test),
                 "adaptation_pool_rows": len(calibration),
                 "adaptation_template_rows": adaptation_templates,
-                "templates_total": len(library_y), "k": fitted["k"],
+                "templates_total": len(library_y), "k": k,
                 **metrics(truth, prediction),
-                "fit_seconds": fitted["fit_seconds"],
-                "predict_seconds": predict_seconds,
+                "fit_seconds": fit_seconds, "predict_seconds": predict_seconds,
                 "inference_seconds": predict_seconds,
                 "inference_us_per_row": 1e6 * predict_seconds / len(test),
                 "throughput_rows_per_second": len(test) / predict_seconds,
-                "peak_ram_mb": max(fitted["fit_peak_ram_mb"], infer_mem.peak_ram_mb),
-                "peak_gpu_mb": max(fitted["fit_peak_gpu_mb"], infer_mem.peak_gpu_mb),
+                "peak_ram_mb": max(fit_mem.peak_ram_mb, infer_mem.peak_ram_mb),
+                "peak_gpu_mb": max(fit_mem.peak_gpu_mb, infer_mem.peak_gpu_mb),
             })
-            audits[f"scenario:{scenario}:fraction:{fraction}"] = {
-                "split": split_audit,
-                "calibration_test_overlap": int(len(set(zip(calibration.source_file, calibration.source_row)) &
-                                                    set(zip(test.source_file, test.source_row)))),
+            scenario_summaries.append(
+                f"fraction={fraction:g}, epochs={training_audit['epochs_completed']}, "
+                f"Acc={rows[-1]['accuracy']:.4f}, MF1={rows[-1]['macro_f1']:.4f}"
+            )
+            audits[f"{protocol}:fraction={fraction:.4f}"] = {
+                "definition": definition, "split": split_audit,
+                **training_audit, "selected_k": k, "k_trials": k_trials,
+                "features": transform.columns,
+                "development_test_overlap": len(record_ids(development) & record_ids(test)),
+                "calibration_test_overlap": 0,
             }
+        print(
+            f"[DFE] DONE  {protocol} "
+            f"({scenario_position}/{len(args.scenarios)}) | "
+            f"elapsed={time.perf_counter() - scenario_started:.1f}s | "
+            + " ; ".join(scenario_summaries),
+            flush=True,
+        )
 
     result = pd.DataFrame(rows).sort_values(["adaptation_fraction", "scenario"])
     result.to_csv(args.output / "dfe_iust_mscn_summary.csv", index=False)
-    (args.output / "audit.json").write_text(json.dumps(audits, indent=2) + "\n", encoding="utf-8")
-    manifest = {
+    (args.output / "audit.json").write_text(
+        json.dumps(audits, indent=2) + "\n", encoding="utf-8"
+    )
+    (args.output / "run_manifest.json").write_text(json.dumps({
         "method": "DFE-adapted", "config": asdict(config), "device": str(device),
         "fractions": args.fractions, "test_fraction": args.test_fraction,
+        "target_test_fraction": args.target_test_fraction,
         "scenarios": args.scenarios,
-        "paper_deviations": [
-            "Clean-Valid numeric fields replace the paper-specific 81 flow fields",
-            "available fields are padded/limited to a deterministic 9x9 image",
-            "source chronology replaces the paper's random 80/20 split",
-            "k is selected only on source validation because the paper does not report k",
-        ],
-        "leakage_controls": [
-            "imputer and min-max scaler fit source-training only",
-            "early stopping and k selection use source-validation only",
-            "target fixed test is never used for training, selection, scaling, or templates",
-        ],
-    }
-    (args.output / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        "protocol": "common leakage-safe S1-S7; disjoint calibration/test",
+    }, indent=2) + "\n", encoding="utf-8")
     print_compact_results(
         result, method="DFE", calibration_column="adaptation_pool_rows",
         seconds_column=None,
@@ -476,15 +578,37 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=MODULE_ROOT / "DATASETS/CDR-MLC/Clean_Valid")
     parser.add_argument("--output", type=Path, default=HERE / "outputs/iust_mscn")
-    parser.add_argument("--fractions", nargs="+", type=float, default=[0, .01, .05, .10, .20])
-    parser.add_argument("--test-fraction", type=float, default=.20)
-    parser.add_argument("--scenarios", nargs="+", choices=tuple(SCENARIOS), default=list(SCENARIOS))
+    parser.add_argument("--fractions", nargs="+", type=float, default=[0])
+    parser.add_argument(
+        "--test-fraction", type=float, default=.20,
+        help="fixed test fraction for S7 and mixed within-dataset protocols",
+    )
+    parser.add_argument(
+        "--target-test-fraction", type=float, default=.20,
+        help="ordered fraction of the unseen target level evaluated in S1--S3; use 1.0 for full-target evaluation",
+    )
+    parser.add_argument("--scenarios", nargs="+", choices=PROTOCOL_IDS, default=list(PROTOCOL_IDS))
     parser.add_argument("--epochs", type=int, default=200)
+    parser.add_argument(
+        "--loader-workers", type=int, default=4,
+        help="DataLoader worker processes; use 0 to disable multiprocessing",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", choices=("cpu", "cuda"))
     args = parser.parse_args()
+    if args.loader_workers < 0:
+        parser.error("--loader-workers must be non-negative")
+    if not 0 < args.target_test_fraction <= 1:
+        parser.error("--target-test-fraction must be in (0,1]")
     if any(f < 0 or f > 1 - args.test_fraction for f in args.fractions):
-        parser.error("adaptation fractions must not overlap the fixed test tail")
+        parser.error("adaptation fractions must not overlap the S7 fixed test tail")
+    if any(
+        fraction > 1 - args.target_test_fraction
+        for fraction in args.fractions
+    ) and any(protocol in {"1", "2", "3"} for protocol in args.scenarios):
+        parser.error(
+            "adaptation fractions must not overlap the S1--S3 target test partition"
+        )
     return args
 
 

@@ -42,14 +42,19 @@ labeled target trace per class. Report the zero-budget cell as `N/A`.
 
 ## IUST_MSCN benchmark
 
-For direct comparison with S-Meta, use the adapted runner. It retains AF's
+For direct comparison with MF-CDR-MLC, use the adapted runner. It retains AF's
 DANN/GRL and target k-NN mechanism, but uses an MLP over Clean-Valid flow
 features, chronological percentage budgets, and the immutable 20% test tail.
+The reviewer-requested fairness mode is the default: every labeled source row
+is used for initial learning, while the declared fraction refers only to the
+disjoint labeled target calibration subset.
 
 ```powershell
-python CDR_MLC/benchmarks/AF/benchmark_iust_mscn.py --fractions 0 0.01 0.05 0.10 0.20 --test-fraction 0.20 --scenarios 1 2 3 --epochs 30 --seed 42 --output CDR_MLC/benchmarks/AF/outputs/iust_mscn
+python CDR_MLC/benchmarks/AF/benchmark_iust_mscn.py --fractions 0.01 --source-budget all --test-fraction 0.20 --scenarios 1 2 3 --epochs 30 --seed 42 --device cuda --output CDR_MLC/benchmarks/AF/outputs/iust_mscn_full_source
 ```
 
-The zero-budget AF rows are emitted as `N/A`; no synthetic zero-shot AF method
-is substituted. This runner should be used in the comparison table, under the
-name **AF-MLP-adapted**.
+To reproduce the original AF source budget instead, pass
+`--source-budget paper25`. The zero-target-budget AF row is emitted as
+`N/A`; no synthetic zero-shot AF method is substituted. Results are named
+**AF-MLP-FullSource** or **AF-MLP-Paper25** so the source-supervision protocol
+is explicit.

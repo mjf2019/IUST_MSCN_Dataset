@@ -38,6 +38,12 @@ class CongestionRouterConfig:
     n_init: int = 20
     max_iter: int = 200
     epsilon: float = 1e-9
+    # ``vectorized`` is numerically equivalent to the original pandas
+    # implementation, but evaluates every feature in a segment together and
+    # removes the Python callback used for each rolling slope.  ``pandas`` is
+    # retained as a reproducibility/reference engine.
+    context_engine: str = "vectorized"
+    context_block_rows: int = 16384
 
     def validate(self):
         if self.window < 3:
@@ -46,6 +52,10 @@ class CongestionRouterConfig:
             raise ValueError("at least three router features are required")
         if self.expert_trees < 1 or self.n_clusters != 3:
             raise ValueError("positive expert_trees and exactly three clusters are required")
+        if self.context_engine not in {"vectorized", "pandas"}:
+            raise ValueError("context_engine must be 'vectorized' or 'pandas'")
+        if self.context_block_rows < 1:
+            raise ValueError("context_block_rows must be positive")
         return self
 
 
@@ -58,19 +68,171 @@ def _rolling_slope(values: np.ndarray) -> float:
     return float(np.dot(x, y - y.mean()) / denominator) if denominator else 0.0
 
 
-def congestion_feature_frame(frame: pd.DataFrame, config: CongestionRouterConfig):
-    """Build causal absolute + relative congestion descriptors per capture.
-
-    ``log_median`` retains congestion magnitude.  The remaining fields describe
-    short-term dynamics while dividing by the local magnitude, which reduces
-    application/flow-scale bias without using the unknown application label.
-    Invalid observations break a window rather than being imputed across time.
-    """
+def _context_schema(frame: pd.DataFrame, config: CongestionRouterConfig):
     available = [feature for feature in config.features if feature in frame.columns]
     if len(available) < 3:
         raise ValueError(f"only {len(available)} requested congestion features exist")
     stats = ("log_median", "cv", "iqr_ratio", "range_ratio", "delta_ratio", "slope_ratio")
     columns = [f"router_{feature}_{stat}" for feature in available for stat in stats]
+    return available, columns
+
+
+def _linear_quartiles(windows: np.ndarray):
+    """Return q25, q50 and q75 using NumPy/pandas linear interpolation.
+
+    A single partial partition replaces three independent rolling quantile
+    operations.  Only the six order statistics needed for linear
+    interpolation are materialised.
+    """
+    width = windows.shape[-1]
+    positions = np.asarray((.25, .50, .75), dtype=float) * (width - 1)
+    lower = np.floor(positions).astype(np.intp)
+    upper = np.ceil(positions).astype(np.intp)
+    kth = np.unique(np.concatenate([lower, upper]))
+    partitioned = np.partition(windows, kth=kth, axis=-1)
+    fraction = positions - lower
+    quantiles = []
+    for lo, hi, weight in zip(lower, upper, fraction):
+        low_value = partitioned[..., lo]
+        high_value = partitioned[..., hi]
+        quantiles.append(low_value + (high_value - low_value) * weight)
+    return quantiles
+
+
+def _vectorized_window_descriptors(
+    values: np.ndarray,
+    window: int,
+    epsilon: float,
+    block_rows: int,
+):
+    """Yield feature-major congestion descriptors for one valid segment.
+
+    The sliding-window view itself is zero-copy.  Work is bounded to
+    ``block_rows`` output rows so the partial partition used for quartiles
+    cannot create an unbounded temporary array on long captures.
+    """
+    count = len(values) - window + 1
+    if count <= 0:
+        return
+    windows = np.lib.stride_tricks.sliding_window_view(
+        np.ascontiguousarray(values, dtype=np.float64),
+        window_shape=window,
+        axis=0,
+    )
+    # Shape is (output rows, features, window).  The fixed centred time axis
+    # makes least-squares slopes a single batched dot product.
+    x = np.arange(window, dtype=np.float64)
+    x -= x.mean()
+    slope_denominator = float(np.dot(x, x))
+
+    for start in range(0, count, block_rows):
+        stop = min(start + block_rows, count)
+        block = windows[start:stop]
+        q25, median, q75 = _linear_quartiles(block)
+        mean = block.mean(axis=-1)
+        std = block.std(axis=-1, ddof=0)
+        minimum = block.min(axis=-1)
+        maximum = block.max(axis=-1)
+        scale = np.abs(median) + epsilon
+        slope = np.einsum("bfw,w->bf", block, x, optimize=True)
+        slope /= slope_denominator
+
+        output = np.empty(
+            (len(block), values.shape[1], 6), dtype=np.float64
+        )
+        output[..., 0] = np.log1p(np.maximum(median, 0.0))
+        output[..., 1] = std / (np.abs(mean) + epsilon)
+        output[..., 2] = (q75 - q25) / scale
+        output[..., 3] = (maximum - minimum) / scale
+        output[..., 4] = (
+            block[..., -1] - block[..., 0]
+        ) / scale
+        output[..., 5] = slope / scale
+        yield start, stop, output.reshape(len(block), -1)
+
+
+def _vectorized_context_values(
+    frame: pd.DataFrame,
+    config: CongestionRouterConfig,
+    available: list[str],
+    columns: list[str],
+):
+    """Return sorted eligible indices and their context feature matrix."""
+    # Numeric conversion is performed once for the complete frame rather than
+    # once per sequence and again per valid segment.
+    selected = frame[available]
+    if all(pd.api.types.is_numeric_dtype(dtype) for dtype in selected.dtypes):
+        numeric = selected
+    else:
+        numeric = selected.apply(pd.to_numeric, errors="coerce")
+    index_chunks = []
+    value_chunks = []
+    block_rows = int(getattr(config, "context_block_rows", 16384))
+    for _, group in frame.groupby("sequence_id", sort=False):
+        group = group.sort_values(["timestamp", "source_row"], kind="stable")
+        group_numeric = numeric.loc[group.index]
+        values = group_numeric.to_numpy(dtype=np.float64, copy=False)
+        valid = np.isfinite(values).all(axis=1) & (values >= 0).all(axis=1)
+
+        # Locate maximal contiguous valid runs.  Invalid rows split windows,
+        # exactly matching the reference pandas implementation.
+        edges = np.flatnonzero(np.diff(np.r_[False, valid, False]))
+        for run_start, run_stop in edges.reshape(-1, 2):
+            if run_stop - run_start < config.window:
+                continue
+            segment_values = values[run_start:run_stop]
+            first_output = run_start + config.window - 1
+            for start, stop, descriptors in _vectorized_window_descriptors(
+                segment_values,
+                config.window,
+                config.epsilon,
+                block_rows,
+            ):
+                finite = np.isfinite(descriptors).all(axis=1)
+                if not finite.any():
+                    continue
+                row_start = first_output + start
+                row_stop = first_output + stop
+                selected_index = group.iloc[row_start:row_stop].index[finite]
+                index_chunks.append(selected_index.to_numpy(copy=True))
+                value_chunks.append(descriptors[finite])
+
+    if not index_chunks:
+        return frame.index[:0], np.empty((0, len(columns)), dtype=np.float64)
+    context = pd.DataFrame(
+        np.concatenate(value_chunks, axis=0),
+        index=pd.Index(np.concatenate(index_chunks)),
+        columns=columns,
+    ).sort_index(kind="stable")
+    return context.index, context.to_numpy(dtype=np.float64, copy=False)
+
+
+def _congestion_feature_frame_vectorized(
+    frame: pd.DataFrame,
+    config: CongestionRouterConfig,
+    available: list[str],
+    columns: list[str],
+):
+    """Vectorized, memory-bounded implementation of causal context features."""
+    index, values = _vectorized_context_values(
+        frame, config, available, columns
+    )
+    if len(index) == 0:
+        empty = frame.iloc[:0].copy()
+        return empty.assign(**{
+            column: pd.Series(dtype=float) for column in columns
+        }), available
+    context = pd.DataFrame(values, index=index, columns=columns)
+    return pd.concat([frame.loc[index].copy(), context], axis=1), available
+
+
+def _congestion_feature_frame_pandas(
+    frame: pd.DataFrame,
+    config: CongestionRouterConfig,
+    available: list[str],
+    columns: list[str],
+):
+    """Original implementation kept as an equivalence reference/fallback."""
     chunks = []
     for _, group in frame.groupby("sequence_id", sort=False):
         group = group.sort_values(["timestamp", "source_row"], kind="stable").copy()
@@ -109,6 +271,45 @@ def congestion_feature_frame(frame: pd.DataFrame, config: CongestionRouterConfig
         empty = frame.iloc[:0].copy()
         return empty.assign(**{column: pd.Series(dtype=float) for column in columns}), available
     return pd.concat(chunks).sort_index(kind="stable"), available
+
+
+def congestion_feature_frame(frame: pd.DataFrame, config: CongestionRouterConfig):
+    """Build causal absolute + relative congestion descriptors per capture.
+
+    ``log_median`` retains congestion magnitude.  The remaining fields describe
+    short-term dynamics while dividing by the local magnitude, which reduces
+    application/flow-scale bias without using the unknown application label.
+    Invalid observations break a window rather than being imputed across time.
+    """
+    available, columns = _context_schema(frame, config)
+    engine = getattr(config, "context_engine", "vectorized")
+    if engine == "pandas":
+        return _congestion_feature_frame_pandas(
+            frame, config, available, columns
+        )
+    return _congestion_feature_frame_vectorized(
+        frame, config, available, columns
+    )
+
+
+def congestion_feature_values(frame: pd.DataFrame, config: CongestionRouterConfig):
+    """Return only index/columns/values for latency-sensitive inference.
+
+    Unlike :func:`congestion_feature_frame`, this API does not copy all raw
+    input columns into an intermediate DataFrame.  The original pandas engine
+    remains supported for exact reference comparisons.
+    """
+    available, columns = _context_schema(frame, config)
+    engine = getattr(config, "context_engine", "vectorized")
+    if engine == "pandas":
+        view, _ = _congestion_feature_frame_pandas(
+            frame, config, available, columns
+        )
+        return view.index, columns, view[columns].to_numpy(dtype=float)
+    index, values = _vectorized_context_values(
+        frame, config, available, columns
+    )
+    return index, columns, values
 
 
 def fit_congestion_cdr(source: pd.DataFrame, config: CongestionRouterConfig):
