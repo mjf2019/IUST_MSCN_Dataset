@@ -129,7 +129,8 @@ def run(args):
     rows, audits = [], {}
 
     for development, test, definition in evaluations(
-        data, args.scenarios, args.train_fraction
+        data, args.scenarios, args.train_fraction,
+        target_test_fraction=args.target_test_fraction,
     ):
         train, valid = chronological_validation(development, args.validation_fraction)
         features, arrays = matrices(train, [valid, test])
@@ -171,6 +172,7 @@ def run(args):
     save_run(args.output, "FT-Transformer", rows, audits, {
         "data_dir": str(args.data_dir), "scenarios": args.scenarios,
         "train_fraction": args.train_fraction,
+        "target_test_fraction": args.target_test_fraction,
         "validation_fraction": args.validation_fraction,
         "seed": args.seed, "device": str(device),
         "architecture": {
@@ -190,7 +192,14 @@ def parse_args():
     p.add_argument("--output", type=Path, default=HERE / "outputs")
     p.add_argument("--scenarios", nargs="+", choices=PROTOCOL_IDS,
                    default=list(PROTOCOL_IDS))
-    p.add_argument("--train-fraction", type=float, default=.80)
+    p.add_argument(
+        "--train-fraction", type=float, default=.80,
+        help="development fraction for S7 and external within-dataset protocols",
+    )
+    p.add_argument(
+        "--target-test-fraction", type=float, default=.20,
+        help="ordered fraction of the unseen target level evaluated in S1--S3; use 1.0 for full-target evaluation",
+    )
     p.add_argument("--validation-fraction", type=float, default=.10)
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--batch-size", type=int, default=256)
