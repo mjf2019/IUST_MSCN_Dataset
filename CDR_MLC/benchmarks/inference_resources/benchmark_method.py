@@ -355,9 +355,18 @@ def main():
         help="streaming measures one arriving record at a time; batch is offline throughput",
     )
     parser.add_argument("--cpu-threads", type=int, default=3)
+    parser.add_argument(
+        "--mf-branch-workers", type=int, default=3,
+        help=(
+            "parallel MF branch workers; forest n_jobs is derived as "
+            "floor(cpu_threads / branch_workers) to prevent oversubscription"
+        ),
+    )
     parser.add_argument("--warmup-runs", type=int, default=1)
     parser.add_argument("--repeats", type=int, default=5)
     args = parser.parse_args()
+    if args.mf_branch_workers < 1:
+        raise ValueError("MF branch worker count must be positive")
     configure_cpu(args.cpu_threads)
     args.output.mkdir(parents=True, exist_ok=True)
 
@@ -388,25 +397,26 @@ def main():
     reference = {}
     mf_reference_prediction = None
     for method_name, variant in variants:
-        # The parallel MF bank uses one thread per branch.  All other methods
-        # may use the same total CPU-thread budget internally.
-        # For one-row streaming requests, sklearn's per-forest joblib
-        # parallelism costs much more than it saves.  Keep every individual
-        # forest single-threaded; MF-Parallel alone uses the shared CPU budget
-        # by executing independent expert/utility branches in its persistent
-        # ThreadPool.  Batch mode retains internal estimator parallelism.
+        # RF receives the complete CPU budget. MF-Parallel divides that same
+        # budget between persistent branch workers and each branch forest.
+        # This enables multithreaded forests without nested oversubscription.
+        branch_workers = (
+            min(args.mf_branch_workers, args.cpu_threads)
+            if artifact["kind"] == "mf-cdr" and variant == "parallel"
+            else 1
+        )
         estimator_jobs = (
-            1 if args.mode == "streaming"
-            or variant in {"parallel", "pipelined"}
+            max(1, args.cpu_threads // branch_workers)
+            if artifact["kind"] == "mf-cdr" and variant == "parallel"
             else args.cpu_threads
         )
         set_estimator_jobs(artifact, estimator_jobs)
         with cpu_thread_limit(args.cpu_threads):
             for _ in range(args.warmup_runs):
                 if args.mode == "streaming":
-                    _predict_stream(artifact, frame, variant, args.cpu_threads)
+                    _predict_stream(artifact, frame, variant, branch_workers)
                 else:
-                    _predict_batch(artifact, frame, variant, args.cpu_threads)
+                    _predict_batch(artifact, frame, variant, branch_workers)
 
             runs = []
             all_record_latencies = []
@@ -415,14 +425,14 @@ def main():
                     if args.mode == "streaming":
                         truth, scored_prediction, record_latencies, stages = (
                             _predict_stream(
-                                artifact, frame, variant, args.cpu_threads
+                                artifact, frame, variant, branch_workers
                             )
                         )
                         all_record_latencies.extend(record_latencies.tolist())
                         evaluated_rows = len(scored_prediction)
                     else:
                         observed, prediction, stages = _predict_batch(
-                            artifact, frame, variant, args.cpu_threads
+                            artifact, frame, variant, branch_workers
                         )
                         scored = observed.benchmark_scored.astype(bool).to_numpy()
                         truth = observed.loc[
@@ -481,6 +491,8 @@ def main():
             "artifact_kind": artifact["kind"],
             "mode": args.mode,
             "cpu_threads": args.cpu_threads,
+            "forest_threads": estimator_jobs,
+            "mf_branch_workers": branch_workers,
             "input_rows": len(frame),
             "evaluated_rows": evaluated_rows,
             **metrics,
@@ -570,6 +582,12 @@ def main():
         "model": str(args.model), "sample": str(args.sample),
         "sample_identity_sha256": frame_sha256(frame),
         "cpu_only": True, "cpu_threads": args.cpu_threads,
+        "mf_branch_workers_requested": args.mf_branch_workers,
+        "thread_budget_policy": (
+            "RF uses cpu_threads for its forest; MF-Parallel uses "
+            "min(mf_branch_workers, cpu_threads) concurrent branches and "
+            "floor(cpu_threads / branch_workers) threads per forest"
+        ),
         "inference_mode": args.mode,
         "warmup_runs": args.warmup_runs, "measured_repeats": args.repeats,
         "model_loading_excluded_from_inference": True,
@@ -590,7 +608,8 @@ def main():
         },
         "mf_parallel_policy": (
             "three expert branches, then three utility branches; dependency "
-            "order unchanged and each branch estimator uses one thread"
+            "order unchanged; the CPU budget is divided between concurrent "
+            "branches and internal forest threads"
         ),
         "mf_pipeline_policy": (
             "three bounded stages overlap causal preprocessing, expert-bank, "
