@@ -25,6 +25,10 @@ def main():
     parser.add_argument("--methods", nargs="*", default=None)
     parser.add_argument("--mode", choices=("streaming", "batch"), default="streaming")
     parser.add_argument("--cpu-threads", type=int, default=3)
+    parser.add_argument(
+        "--mf-branch-workers", type=int, default=3,
+        help="parallel MF branches sharing the total CPU-thread budget",
+    )
     parser.add_argument("--warmup-runs", type=int, default=1)
     parser.add_argument("--repeats", type=int, default=5)
     args = parser.parse_args()
@@ -57,6 +61,7 @@ def main():
             "--output", str(destination),
             "--mode", args.mode,
             "--cpu-threads", str(args.cpu_threads),
+            "--mf-branch-workers", str(args.mf_branch_workers),
             "--warmup-runs", str(args.warmup_runs),
             "--repeats", str(args.repeats),
         ]
