@@ -24,6 +24,15 @@ directory. Shared code in `deep_common.py` is limited to data loading,
 chronological partitions, training-only preprocessing, metrics and output
 formatting so that all three methods receive identical inputs.
 
+For IUST_MSCN, `--train-fraction` (or `--test-fraction` in the adapted
+1D-CNN, AF and DFE runners) controls the chronological 80/20 split used by S7
+and within-dataset protocols. The independent
+`--target-test-fraction` option controls only the unseen target level in
+S1--S3. Set it to `1.0` for zero-shot full-target evaluation. AF consumes a
+labeled target prefix, so a one-percent AF budget uses
+`--target-test-fraction 0.99 --fractions 0.01`, evaluating the disjoint
+remaining 99 percent of the target level.
+
 Every runner prints two tables. The first is a two-column legend that expands
 the abbreviations used by that run. The second contains one physical row per
 result using only short headings. The common performance and deployment fields
