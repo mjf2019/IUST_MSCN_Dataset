@@ -356,6 +356,10 @@ def main():
     )
     parser.add_argument("--cpu-threads", type=int, default=3)
     parser.add_argument(
+        "--forest-jobs", type=int, default=-1,
+        help="sklearn forest n_jobs; -1 uses all available logical CPUs",
+    )
+    parser.add_argument(
         "--mf-branch-workers", type=int, default=3,
         help=(
             "parallel MF branch workers; forest n_jobs is derived as "
@@ -367,6 +371,8 @@ def main():
     args = parser.parse_args()
     if args.mf_branch_workers < 1:
         raise ValueError("MF branch worker count must be positive")
+    if args.forest_jobs == 0 or args.forest_jobs < -1:
+        raise ValueError("forest jobs must be -1 or a positive integer")
     configure_cpu(args.cpu_threads)
     args.output.mkdir(parents=True, exist_ok=True)
 
@@ -397,19 +403,14 @@ def main():
     reference = {}
     mf_reference_prediction = None
     for method_name, variant in variants:
-        # RF receives the complete CPU budget. MF-Parallel divides that same
-        # budget between persistent branch workers and each branch forest.
-        # This enables multithreaded forests without nested oversubscription.
+        # Use the best available forest-level parallelism for every method.
+        # MF additionally exploits its architectural branch independence.
         branch_workers = (
             min(args.mf_branch_workers, args.cpu_threads)
             if artifact["kind"] == "mf-cdr" and variant == "parallel"
             else 1
         )
-        estimator_jobs = (
-            max(1, args.cpu_threads // branch_workers)
-            if artifact["kind"] == "mf-cdr" and variant == "parallel"
-            else args.cpu_threads
-        )
+        estimator_jobs = args.forest_jobs
         set_estimator_jobs(artifact, estimator_jobs)
         with cpu_thread_limit(args.cpu_threads):
             for _ in range(args.warmup_runs):
@@ -582,11 +583,11 @@ def main():
         "model": str(args.model), "sample": str(args.sample),
         "sample_identity_sha256": frame_sha256(frame),
         "cpu_only": True, "cpu_threads": args.cpu_threads,
+        "forest_jobs": args.forest_jobs,
         "mf_branch_workers_requested": args.mf_branch_workers,
         "thread_budget_policy": (
-            "RF uses cpu_threads for its forest; MF-Parallel uses "
-            "min(mf_branch_workers, cpu_threads) concurrent branches and "
-            "floor(cpu_threads / branch_workers) threads per forest"
+            "all sklearn forests use forest_jobs; MF-Parallel additionally "
+            "executes independent expert and utility branches concurrently"
         ),
         "inference_mode": args.mode,
         "warmup_runs": args.warmup_runs, "measured_repeats": args.repeats,
@@ -608,8 +609,7 @@ def main():
         },
         "mf_parallel_policy": (
             "three expert branches, then three utility branches; dependency "
-            "order unchanged; the CPU budget is divided between concurrent "
-            "branches and internal forest threads"
+            "order unchanged; each branch forest uses the configured n_jobs"
         ),
         "mf_pipeline_policy": (
             "three bounded stages overlap causal preprocessing, expert-bank, "
