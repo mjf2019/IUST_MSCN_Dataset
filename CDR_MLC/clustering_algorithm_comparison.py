@@ -428,6 +428,11 @@ def parse_args():
         nargs="+",
         default=[0.0, 0.01],
     )
+    parser.add_argument(
+        "--tune-mbk",
+        action="store_true",
+        help="Enable optional label-free MBK grid search; disabled by default",
+    )
     parser.add_argument("--silhouette-sample-size", type=int, default=5000)
     parser.add_argument(
         "--dbscan-eps-grid",
@@ -471,18 +476,37 @@ def main():
 
     results = []
 
-    selected_mbk, mbk_grid, mbk_search_seconds = select_mbk(
-        x=x,
-        batch_grid=args.mbk_batch_grid,
-        n_init_grid=args.mbk_n_init_grid,
-        max_iter_grid=args.mbk_max_iter_grid,
-        reassignment_grid=args.mbk_reassignment_grid,
-        silhouette_sample_size=min(
-            2000, args.silhouette_sample_size
-        ),
-        seed=args.seed,
-        threads=args.threads,
-    )
+    if args.tune_mbk:
+        selected_mbk, mbk_grid, mbk_search_seconds = select_mbk(
+            x=x,
+            batch_grid=args.mbk_batch_grid,
+            n_init_grid=args.mbk_n_init_grid,
+            max_iter_grid=args.mbk_max_iter_grid,
+            reassignment_grid=args.mbk_reassignment_grid,
+            silhouette_sample_size=min(
+                2000, args.silhouette_sample_size
+            ),
+            seed=args.seed,
+            threads=args.threads,
+        )
+        mbk_selection = (
+            "label-free silhouette, then Davies-Bouldin, "
+            "Calinski-Harabasz, and fit time"
+        )
+    else:
+        selected_mbk = {
+            "batch_size": 1024,
+            "n_init": 10,
+            "max_iter": 100,
+            "reassignment_ratio": 0.01,
+        }
+        mbk_grid = pd.DataFrame([{
+            **selected_mbk,
+            "selected": True,
+            "selection_mode": "paper_fixed",
+        }])
+        mbk_search_seconds = 0.0
+        mbk_selection = "paper-fixed configuration; no tuning"
     mbk = MiniBatchKMeans(
         n_clusters=3,
         init="k-means++",
@@ -494,10 +518,7 @@ def main():
         "MiniBatchKMeans", x, truth, labels, seconds, True,
         {
             **selected_mbk,
-            "selection": (
-                "label-free silhouette, then Davies-Bouldin, "
-                "Calinski-Harabasz, and fit time"
-            ),
+            "selection": mbk_selection,
         },
         args.silhouette_sample_size,
         args.seed,
@@ -610,6 +631,7 @@ def main():
         "labels_used_for_fitting": False,
         "labels_used_for_dbscan_selection": False,
         "labels_used_for_mbk_selection": False,
+        "mbk_tuning_enabled": bool(args.tune_mbk),
         "mbk_search_seconds": mbk_search_seconds,
         "mbk_selected_parameters": selected_mbk,
         "labels_used_only_for_external_evaluation": True,
