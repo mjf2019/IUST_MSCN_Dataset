@@ -116,8 +116,17 @@ def _reserve_development_tail(frame, fraction, train_fraction=.80):
 def run(args):
     if not 0 < args.test_fraction < 1:
         raise ValueError("--test-fraction must be in (0,1)")
+    if not 0 < args.target_test_fraction <= 1:
+        raise ValueError("--target-test-fraction must be in (0,1]")
     if any(f < 0 or f > 1 - args.test_fraction for f in args.fractions):
-        raise ValueError("adaptation fractions overlap the fixed test tail")
+        raise ValueError("adaptation fractions overlap the S7 fixed test tail")
+    if any(
+        fraction > 1 - args.target_test_fraction
+        for fraction in args.fractions
+    ) and any(protocol in {"1", "2", "3"} for protocol in args.scenarios):
+        raise ValueError(
+            "adaptation fractions overlap the S1--S3 target test partition"
+        )
 
     args.output.mkdir(parents=True, exist_ok=True)
     data, input_audit = load_clean_valid(args.data_dir)
@@ -135,10 +144,14 @@ def run(args):
 
     for development, common_test, definition in evaluations(
         data, args.scenarios, train_fraction=1.0 - args.test_fraction,
-        target_test_fraction=args.test_fraction,
+        target_test_fraction=args.target_test_fraction,
     ):
         protocol = definition["protocol"]
         scenario = protocol.removeprefix("S")
+        evaluation_test_fraction = (
+            args.test_fraction if protocol == "S7"
+            else args.target_test_fraction
+        )
         for fraction in args.fractions:
             if fraction == 0:
                 source, calibration, audit = (
@@ -154,7 +167,7 @@ def run(args):
                     data.congestion_level.astype(str).eq(str(definition["target"]))
                 ].copy()
                 calibration, _, audit = fixed_tail(
-                    target, fraction, args.test_fraction
+                    target, fraction, args.target_test_fraction
                 )
 
             calibration_ids = record_ids(calibration)
@@ -177,7 +190,7 @@ def run(args):
             if fraction == 0:
                 rows.append({
                     "adaptation_fraction": fraction,
-                    "fixed_test_fraction": args.test_fraction,
+                    "fixed_test_fraction": evaluation_test_fraction,
                     "protocol": protocol, "scenario": scenario,
                     "source": definition["source"], "target": definition["target"],
                     "method": method_name, "seed": args.seed, "n": len(test),
@@ -239,7 +252,7 @@ def run(args):
                 predict_seconds = time.perf_counter() - started
             rows.append({
                 "adaptation_fraction": fraction,
-                "fixed_test_fraction": args.test_fraction,
+                "fixed_test_fraction": evaluation_test_fraction,
                 "protocol": protocol, "scenario": scenario,
                 "source": definition["source"], "target": definition["target"],
                 "method": method_name, "seed": args.seed, "n": len(test),
@@ -269,6 +282,7 @@ def run(args):
     (args.output / "run_manifest.json").write_text(json.dumps({
         "method": method_name, "source_budget": args.source_budget,
         "fractions": args.fractions, "test_fraction": args.test_fraction,
+        "target_test_fraction": args.target_test_fraction,
         "scenarios": args.scenarios, "seed": args.seed, "device": str(device),
         "source_supervision": "all labeled development rows" if args.source_budget == "all"
                               else "M=25 labeled source rows per class",
@@ -292,7 +306,14 @@ def parse_args():
         "--source-budget", choices=("all", "paper25"), default="all",
         help="all labeled source rows (fairness default) or AF paper M=25 per class",
     )
-    parser.add_argument("--test-fraction", type=float, default=.20)
+    parser.add_argument(
+        "--test-fraction", type=float, default=.20,
+        help="fixed test fraction for S7 and mixed within-dataset protocols",
+    )
+    parser.add_argument(
+        "--target-test-fraction", type=float, default=.20,
+        help="ordered fraction of the target level evaluated in S1--S3; use 0.99 with a 0.01 AF calibration prefix",
+    )
     parser.add_argument("--scenarios", nargs="+", choices=PROTOCOL_IDS, default=list(PROTOCOL_IDS))
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=32)
