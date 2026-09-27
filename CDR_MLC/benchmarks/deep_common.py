@@ -90,6 +90,7 @@ def _ordered_target_tail(frame: pd.DataFrame, test_fraction: float) -> pd.DataFr
 def evaluations(
     data: pd.DataFrame, ids, train_fraction: float = .80,
     target_test_fraction: float = .20,
+    split_mode: str = "auto",
 ):
     result = []
     is_quic = {"record_id", "period"}.issubset(data.columns)
@@ -134,12 +135,12 @@ def evaluations(
         from sdncampus_rf_cdr_mf_comparison import split_80_20
 
         development, raw_test, split_audit = split_80_20(
-            data, train_fraction, split_mode="auto", split_seed=42
+            data, train_fraction, split_mode=split_mode, split_seed=42
         )
-        split_mode = split_audit[0]["split_mode"]
+        effective_split_mode = split_audit[0]["split_mode"]
         protocol_name = (
             f"{external_dataset}-Stratified-80-20"
-            if split_mode == "stratified"
+            if effective_split_mode == "stratified"
             else f"{external_dataset}-Ordered-80-20"
         )
         # Match the MF-CDR-MLC comparison's common eligibility for its
