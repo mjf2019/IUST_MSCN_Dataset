@@ -174,19 +174,19 @@ def evaluations(
                 "protocol": protocol_name,
                 "source": (
                     "stratified-80-percent"
-                    if split_mode == "stratified" else "first-80-percent"
+                    if effective_split_mode == "stratified" else "first-80-percent"
                 ),
                 "target": (
                     "stratified-20-percent"
-                    if split_mode == "stratified" else "last-20-percent"
+                    if effective_split_mode == "stratified" else "last-20-percent"
                 ),
                 "kind": (
                     "fixed within-class stratified holdout"
-                    if split_mode == "stratified"
+                    if effective_split_mode == "stratified"
                     else "within-capture ordered holdout"
                 ),
-                "split_mode": split_mode,
-                "split_seed": 42 if split_mode == "stratified" else None,
+                "split_mode": effective_split_mode,
+                "split_seed": 42 if effective_split_mode == "stratified" else None,
                 "development_identity": development_identity,
                 "test_rows_before_context_filter": len(raw_test),
                 "test_rows": len(test),
