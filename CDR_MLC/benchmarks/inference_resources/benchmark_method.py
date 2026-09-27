@@ -357,10 +357,7 @@ def main():
     parser.add_argument("--cpu-threads", type=int, default=3)
     parser.add_argument(
         "--mf-branch-workers", type=int, default=3,
-        help=(
-            "parallel MF expert/utility branch workers; independent from "
-            "--forest-jobs"
-        ),
+        help="persistent workers for parallel MF expert/utility branches",
     )
     parser.add_argument("--warmup-runs", type=int, default=1)
     parser.add_argument("--repeats", type=int, default=5)
