@@ -29,7 +29,9 @@ def run(args):
     args.output.mkdir(parents=True, exist_ok=True)
     input_audit.to_csv(args.output / "input_audit.csv", index=False)
     rows, audits = [], {}
-    for development, test, definition in evaluations(data, ["7"], .80):
+    for development, test, definition in evaluations(
+        data, ["7"], .80, split_mode=args.split_mode
+    ):
         train, valid = chronological_validation(development, args.validation_fraction)
         features, arrays = matrices(train, [valid, test])
         train_x, valid_x, test_x = arrays
@@ -62,7 +64,7 @@ def run(args):
             "development_test_overlap": len(record_ids(development) & record_ids(test)),
         }
     return save_run(args.output, "1D-CNN", rows, audits, {
-        "dataset": dataset_name, "split": "fixed 80/20: ISCX stratified; SDNCampus ordered",
+        "dataset": dataset_name, "split": f"{args.split_mode} 80/20",
         "validation_fraction_of_training": args.validation_fraction,
         "test_context_eligibility_window": 20,
         "seed": args.seed, "device": str(device),
@@ -73,6 +75,10 @@ def parse_args():
     dataset = CDR_MLC.parent / "AMCAL/SDNCampus_TEST/Dataset/SDNCampus_original.csv"
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--data", type=Path, default=dataset)
+    p.add_argument(
+        "--split-mode", choices=("auto", "ordered", "stratified"), default="auto",
+        help="external-dataset 80/20 split policy",
+    )
     p.add_argument("--output", type=Path, default=CDR_MLC / "outputs/sdncampus_1dcnn")
     p.add_argument("--validation-fraction", type=float, default=.10)
     p.add_argument("--epochs", type=int, default=100)
