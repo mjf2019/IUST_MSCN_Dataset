@@ -17,12 +17,12 @@ The directory `artifacts/` contains models and the prepared sample. Both
 - Model loading is measured separately and excluded from inference latency.
 - In streaming mode every sklearn forest uses `n_jobs=1`; per-record joblib
   fan-out is avoided because it adds more overhead than useful tree work.
-- `MF-Parallel` exploits concurrency at the architectural level: persistent
-  workers evaluate three independent Expert branches concurrently and then
-  three independent Utility branches. Internal forests remain single-threaded.
-- In offline batch mode, non-parallel variants may use `--cpu-threads` internal
-  estimator jobs. MF-Parallel continues to use branch-level concurrency to
-  avoid nested parallelism.
+- The streaming protocol reports only `MF-Sequential`: expert and utility
+  forests are evaluated in dependency order for true record-by-record latency.
+- The offline batch protocol reports only `MF-Parallel`: persistent workers
+  evaluate three Expert branches concurrently and then three Utility branches.
+  Its internal forests remain single-threaded to avoid nested parallelism.
+- Other batch methods may use `--cpu-threads` internal estimator jobs.
 - CUDA is disabled in each measured child process.
 - Streaming is the default deployment protocol: records arrive in capture
   order, batch size is exactly one, and one prediction is completed before the
@@ -35,14 +35,9 @@ The directory `artifacts/` contains models and the prepared sample. Both
 - Accuracy is computed on the marked 2,000 rows. Throughput is reported both
   for all processed input rows and for scored rows.
 - Original CDR-MLC does not compute oracle routes at inference.
-- In streaming mode MF-CDR-MLC is reported in two execution modes using the
-  same saved model:
-  - `MF-Sequential`: expert and utility banks are evaluated serially.
-  - `MF-Parallel`: three experts run concurrently, followed by three concurrent
-    utility estimators. Dependency order and predictions are unchanged.
-  Persistent worker threads are reused across arrivals. `MF-Pipelined` remains
-  available only in the optional offline batch-throughput protocol because a
-  full-batch pipeline does not represent single-arrival response latency.
+- MF-CDR-MLC uses the same saved model in both protocols. Streaming selects
+  `MF-Sequential`, while batch throughput selects `MF-Parallel`. The execution
+  schedule changes, but dependency order and predictions remain unchanged.
 
 AF intrinsically needs labeled target adaptation. Its default 1% Medium
 calibration prefix is disjoint from the fixed Medium tail used for timing. The
