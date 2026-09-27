@@ -177,7 +177,7 @@ class OnlineTriplets(Dataset):
     """One source-only triplet per training anchor; resampled each epoch."""
 
     def __init__(self, x: np.ndarray, y: np.ndarray, seed: int):
-        self.x = x
+        self.x = torch.from_numpy(np.ascontiguousarray(x))
         self.y = y
         self.seed = seed
         self.epoch = 0
@@ -190,8 +190,14 @@ class OnlineTriplets(Dataset):
             ])
             for label in self.class_indices
         }
-        self.positive_indices = np.empty(len(self.x), dtype=np.int64)
-        self.negative_indices = np.empty(len(self.x), dtype=np.int64)
+        # Shared index tensors let persistent Windows workers observe the
+        # newly sampled triplets without being respawned every epoch.
+        self.positive_indices = torch.empty(
+            len(self.x), dtype=torch.long
+        ).share_memory_()
+        self.negative_indices = torch.empty(
+            len(self.x), dtype=torch.long
+        ).share_memory_()
         self.set_epoch(0)
 
     def set_epoch(self, epoch: int):
@@ -201,9 +207,11 @@ class OnlineTriplets(Dataset):
         # class-list allocation from the per-sample DataLoader hot path.
         rng = np.random.default_rng(self.seed + epoch * len(self.x))
         positions = np.arange(len(self.x))
+        positive_indices = np.empty(len(self.x), dtype=np.int64)
+        negative_indices = np.empty(len(self.x), dtype=np.int64)
         for label, indices in self.class_indices.items():
             offsets = rng.integers(1, len(indices), size=len(indices))
-            self.positive_indices[indices] = indices[
+            positive_indices[indices] = indices[
                 (positions[:len(indices)] + offsets) % len(indices)
             ]
 
@@ -211,20 +219,22 @@ class OnlineTriplets(Dataset):
             for negative_label in self.other_labels[label]:
                 mask = negative_labels == negative_label
                 if mask.any():
-                    self.negative_indices[indices[mask]] = rng.choice(
+                    negative_indices[indices[mask]] = rng.choice(
                         self.class_indices[negative_label], size=int(mask.sum())
                     )
+        self.positive_indices.copy_(torch.from_numpy(positive_indices))
+        self.negative_indices.copy_(torch.from_numpy(negative_indices))
 
     def __len__(self):
         return len(self.x)
 
     def __getitem__(self, index):
-        positive = self.positive_indices[index]
-        negative = self.negative_indices[index]
+        positive = int(self.positive_indices[index])
+        negative = int(self.negative_indices[index])
         return (
-            torch.from_numpy(self.x[index]),
-            torch.from_numpy(self.x[positive]),
-            torch.from_numpy(self.x[negative]),
+            self.x[index],
+            self.x[positive],
+            self.x[negative],
         )
 
 
@@ -293,9 +303,7 @@ def train_backbone(x_train, y_train, x_validation, y_validation, config, device)
         "drop_last": True,
         "num_workers": config.loader_workers,
         "pin_memory": device.type == "cuda",
-        # Workers are recreated after set_epoch so Windows spawn workers see
-        # the newly generated triplet-index arrays for the current epoch.
-        "persistent_workers": False,
+        "persistent_workers": config.loader_workers > 0,
     }
     if config.loader_workers > 0:
         loader_options["prefetch_factor"] = 4
