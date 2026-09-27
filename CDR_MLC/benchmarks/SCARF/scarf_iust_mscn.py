@@ -188,6 +188,7 @@ def run(args):
     for development, test, definition in evaluations(
         data, args.scenarios, args.train_fraction,
         target_test_fraction=args.target_test_fraction,
+        split_mode=args.split_mode,
     ):
         train, valid = chronological_validation(development, args.validation_fraction)
         features, arrays = matrices(train, [valid, test])
@@ -232,6 +233,7 @@ def run(args):
         "data_dir": str(args.data_dir), "scenarios": args.scenarios,
         "train_fraction": args.train_fraction,
         "target_test_fraction": args.target_test_fraction,
+        "split_mode": args.split_mode,
         "validation_fraction": args.validation_fraction,
         "seed": args.seed, "device": str(device),
         "architecture": {
@@ -260,6 +262,10 @@ def parse_args():
     p.add_argument(
         "--target-test-fraction", type=float, default=.20,
         help="ordered fraction of the unseen target level evaluated in S1--S3; use 1.0 for full-target evaluation",
+    )
+    p.add_argument(
+        "--split-mode", choices=("auto", "ordered", "stratified"), default="auto",
+        help="external-dataset 80/20 split; ignored for IUST_MSCN scenarios",
     )
     p.add_argument("--validation-fraction", type=float, default=.10)
     p.add_argument("--pretrain-epochs", type=int, default=100)
