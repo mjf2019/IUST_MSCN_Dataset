@@ -380,9 +380,8 @@ def main():
 
     if artifact["kind"] == "mf-cdr":
         variants = (
-            (("MF-Sequential", "sequential"),)
-            if args.mode == "streaming"
-            else (("MF-Parallel", "parallel"),)
+            ("MF-Sequential", "sequential"),
+            ("MF-Parallel", "parallel"),
         )
     else:
         variants = ((artifact["kind"], "default"),)
