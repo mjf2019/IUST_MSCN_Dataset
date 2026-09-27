@@ -362,8 +362,8 @@ def main():
     parser.add_argument(
         "--mf-branch-workers", type=int, default=3,
         help=(
-            "parallel MF branch workers; forest n_jobs is derived as "
-            "floor(cpu_threads / branch_workers) to prevent oversubscription"
+            "parallel MF expert/utility branch workers; independent from "
+            "--forest-jobs"
         ),
     )
     parser.add_argument("--warmup-runs", type=int, default=1)
