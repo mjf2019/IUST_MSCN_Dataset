@@ -389,10 +389,14 @@ def run(args):
 
     for development, common_test, definition in evaluations(
         data, args.scenarios, train_fraction=1.0 - args.test_fraction,
-        target_test_fraction=args.test_fraction,
+        target_test_fraction=args.target_test_fraction,
     ):
         protocol = definition["protocol"]
         scenario = protocol.removeprefix("S")
+        evaluation_test_fraction = (
+            args.test_fraction if protocol == "S7"
+            else args.target_test_fraction
+        )
         for fraction in args.fractions:
             if protocol == "S7":
                 source, calibration, split_audit = _reserve_development_tail(
@@ -404,7 +408,7 @@ def run(args):
                     data.congestion_level.astype(str).eq(str(definition["target"]))
                 ].copy()
                 calibration, _, split_audit = fixed_tail(
-                    target, fraction, args.test_fraction
+                    target, fraction, args.target_test_fraction
                 )
             calibration_ids = record_ids(calibration)
             keep = [
@@ -459,7 +463,7 @@ def run(args):
                 predict_seconds = time.perf_counter() - started
             rows.append({
                 "adaptation_fraction": fraction,
-                "fixed_test_fraction": args.test_fraction,
+                "fixed_test_fraction": evaluation_test_fraction,
                 "protocol": protocol, "scenario": scenario,
                 "source": definition["source"], "target": definition["target"],
                 "method": "DFE-adapted", "seed": args.seed, "n": len(test),
@@ -490,6 +494,7 @@ def run(args):
     (args.output / "run_manifest.json").write_text(json.dumps({
         "method": "DFE-adapted", "config": asdict(config), "device": str(device),
         "fractions": args.fractions, "test_fraction": args.test_fraction,
+        "target_test_fraction": args.target_test_fraction,
         "scenarios": args.scenarios,
         "protocol": "common leakage-safe S1-S7; disjoint calibration/test",
     }, indent=2) + "\n", encoding="utf-8")
@@ -504,14 +509,30 @@ def parse_args():
     parser.add_argument("--data-dir", type=Path, default=MODULE_ROOT / "DATASETS/CDR-MLC/Clean_Valid")
     parser.add_argument("--output", type=Path, default=HERE / "outputs/iust_mscn")
     parser.add_argument("--fractions", nargs="+", type=float, default=[0])
-    parser.add_argument("--test-fraction", type=float, default=.20)
+    parser.add_argument(
+        "--test-fraction", type=float, default=.20,
+        help="fixed test fraction for S7 and mixed within-dataset protocols",
+    )
+    parser.add_argument(
+        "--target-test-fraction", type=float, default=.20,
+        help="ordered fraction of the unseen target level evaluated in S1--S3; use 1.0 for full-target evaluation",
+    )
     parser.add_argument("--scenarios", nargs="+", choices=PROTOCOL_IDS, default=list(PROTOCOL_IDS))
     parser.add_argument("--epochs", type=int, default=200)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", choices=("cpu", "cuda"))
     args = parser.parse_args()
+    if not 0 < args.target_test_fraction <= 1:
+        parser.error("--target-test-fraction must be in (0,1]")
     if any(f < 0 or f > 1 - args.test_fraction for f in args.fractions):
-        parser.error("adaptation fractions must not overlap the fixed test tail")
+        parser.error("adaptation fractions must not overlap the S7 fixed test tail")
+    if any(
+        fraction > 1 - args.target_test_fraction
+        for fraction in args.fractions
+    ) and any(protocol in {"1", "2", "3"} for protocol in args.scenarios):
+        parser.error(
+            "adaptation fractions must not overlap the S1--S3 target test partition"
+        )
     return args
 
 
