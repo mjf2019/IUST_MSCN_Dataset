@@ -119,7 +119,7 @@ def main():
     )
     parser.add_argument(
         "--mf-branch-workers", type=int, default=3,
-        help="parallel MF branches sharing the total CPU-thread budget",
+        help="concurrent MF expert/utility branch workers",
     )
     parser.add_argument("--warmup-runs", type=int, default=1)
     parser.add_argument("--repeats", type=int, default=5)
