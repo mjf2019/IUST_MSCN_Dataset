@@ -39,7 +39,6 @@ from threadpoolctl import threadpool_limits
 
 from adaptive_cdr_mlc import APPLICATIONS, LEVELS, STATS, load_dataset, trend_frame
 from compare_clean_valid import TIMING
-from minibatch_clustering import make_minibatch_kmeans
 
 
 METHOD_NAMES = {
