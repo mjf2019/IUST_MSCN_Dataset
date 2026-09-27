@@ -34,7 +34,9 @@ def run(args):
     args.output.mkdir(parents=True, exist_ok=True)
     input_audit.to_csv(args.output / "input_audit.csv", index=False)
     rows, audits = [], {}
-    for development, test, definition in evaluations(data, ["7"], .80):
+    for development, test, definition in evaluations(
+        data, ["7"], .80, split_mode=args.split_mode
+    ):
         train, valid = chronological_source_split(development)
         transform = FlowImageTransform(config.input_fields).fit(train)
         train_x, valid_x, test_x = (
@@ -78,7 +80,7 @@ def run(args):
         }
     return save_run(args.output, "DFE", rows, audits, {
         "dataset": dataset_name, "config": asdict(config),
-        "split": "fixed 80/20: ISCX stratified; SDNCampus ordered",
+        "split": f"{args.split_mode} 80/20",
         "test_context_eligibility_window": 20,
         "adaptation_budget": 0, "seed": args.seed, "device": str(device),
     })
@@ -88,6 +90,10 @@ def parse_args():
     dataset = CDR_MLC.parent / "AMCAL/SDNCampus_TEST/Dataset/SDNCampus_original.csv"
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--data", type=Path, default=dataset)
+    p.add_argument(
+        "--split-mode", choices=("auto", "ordered", "stratified"), default="auto",
+        help="external-dataset 80/20 split policy",
+    )
     p.add_argument("--output", type=Path, default=CDR_MLC / "outputs/sdncampus_dfe")
     p.add_argument("--epochs", type=int, default=200)
     p.add_argument("--seed", type=int, default=42)
