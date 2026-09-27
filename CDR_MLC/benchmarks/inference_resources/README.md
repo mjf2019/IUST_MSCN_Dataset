@@ -15,14 +15,14 @@ The directory `artifacts/` contains models and the prepared sample. Both
 - Moving-window state is initialized only from preceding rows of the same
   sequence; future rows are never used.
 - Model loading is measured separately and excluded from inference latency.
-- All sklearn forests use `n_jobs=-1` by default, including standard RF and
-  the Expert, Utility, and Meta forests of MF-CDR-MLC. Thus every forest can
-  use all logical CPUs made available by the host.
-- `MF-Parallel` additionally executes independent Expert branches concurrently,
-  followed by concurrent Utility branches. This is treated as a deployment
-  capability of its architecture rather than suppressed for budget matching.
-  The hardware, logical CPU count, `forest_jobs`, and branch-worker count are
-  recorded so the resulting resource comparison remains reproducible.
+- In streaming mode every sklearn forest uses `n_jobs=1`; per-record joblib
+  fan-out is avoided because it adds more overhead than useful tree work.
+- `MF-Parallel` exploits concurrency at the architectural level: persistent
+  workers evaluate three independent Expert branches concurrently and then
+  three independent Utility branches. Internal forests remain single-threaded.
+- In offline batch mode, non-parallel variants may use `--cpu-threads` internal
+  estimator jobs. MF-Parallel continues to use branch-level concurrency to
+  avoid nested parallelism.
 - CUDA is disabled in each measured child process.
 - Streaming is the default deployment protocol: records arrive in capture
   order, batch size is exactly one, and one prediction is completed before the
@@ -70,13 +70,13 @@ can be retrained by passing only their method name to `--methods`.
 The following command starts a fresh process for each saved model:
 
 ```powershell
-python CDR_MLC/benchmarks/inference_resources/run_all.py --mode streaming --cpu-threads 6 --forest-jobs -1 --mf-branch-workers 3 --warmup-runs 1 --repeats 30
+python CDR_MLC/benchmarks/inference_resources/run_all.py --mode streaming --cpu-threads 6 --mf-branch-workers 3 --warmup-runs 1 --repeats 30
 ```
 
 The former offline batch-throughput protocol is still available explicitly:
 
 ```powershell
-python CDR_MLC/benchmarks/inference_resources/run_all.py --mode batch --cpu-threads 6 --forest-jobs -1 --mf-branch-workers 3 --warmup-runs 3 --repeats 30
+python CDR_MLC/benchmarks/inference_resources/run_all.py --mode batch --cpu-threads 6 --mf-branch-workers 3 --warmup-runs 3 --repeats 30
 ```
 
 The combined result is written to:
