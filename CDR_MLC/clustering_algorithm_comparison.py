@@ -229,6 +229,83 @@ def timed_fit_predict(model, x: np.ndarray, threads: int):
     return np.asarray(labels, dtype=int), float(seconds)
 
 
+def select_mbk(
+    x: np.ndarray,
+    batch_grid: list[int],
+    n_init_grid: list[int],
+    max_iter_grid: list[int],
+    reassignment_grid: list[float],
+    silhouette_sample_size: int,
+    seed: int,
+    threads: int,
+) -> tuple[dict, pd.DataFrame, float]:
+    """Tune MBK using internal, label-free development metrics only."""
+    rows = []
+    search_start = perf_counter()
+    for batch_size in batch_grid:
+        for n_init in n_init_grid:
+            for max_iter in max_iter_grid:
+                for reassignment_ratio in reassignment_grid:
+                    model = MiniBatchKMeans(
+                        n_clusters=3,
+                        init="k-means++",
+                        batch_size=batch_size,
+                        n_init=n_init,
+                        max_iter=max_iter,
+                        reassignment_ratio=reassignment_ratio,
+                        random_state=seed,
+                    )
+                    labels, fit_seconds = timed_fit_predict(
+                        model, x, threads
+                    )
+                    metrics = internal_metrics(
+                        x, labels, silhouette_sample_size, seed
+                    )
+                    rows.append({
+                        "batch_size": int(batch_size),
+                        "n_init": int(n_init),
+                        "max_iter": int(max_iter),
+                        "reassignment_ratio": float(reassignment_ratio),
+                        "fit_seconds": fit_seconds,
+                        **metrics,
+                    })
+    search_seconds = perf_counter() - search_start
+    grid = pd.DataFrame(rows)
+    valid = grid[
+        grid.clusters.eq(3)
+        & grid.silhouette.notna()
+        & grid.davies_bouldin.notna()
+        & grid.calinski_harabasz.notna()
+    ].copy()
+    if valid.empty:
+        raise ValueError("MBK grid produced no valid three-cluster solution")
+    selected = valid.sort_values(
+        [
+            "silhouette", "davies_bouldin",
+            "calinski_harabasz", "fit_seconds",
+        ],
+        ascending=[False, True, False, True],
+        kind="stable",
+    ).iloc[0]
+    mask = (
+        grid.batch_size.eq(selected.batch_size)
+        & grid.n_init.eq(selected.n_init)
+        & grid.max_iter.eq(selected.max_iter)
+        & np.isclose(
+            grid.reassignment_ratio,
+            selected.reassignment_ratio,
+        )
+    )
+    grid["selected"] = mask
+    params = {
+        "batch_size": int(selected.batch_size),
+        "n_init": int(selected.n_init),
+        "max_iter": int(selected.max_iter),
+        "reassignment_ratio": float(selected.reassignment_ratio),
+    }
+    return params, grid, float(search_seconds)
+
+
 def select_dbscan(
     x: np.ndarray,
     eps_grid: list[float],
@@ -328,6 +405,30 @@ def parse_args():
     parser.add_argument("--development-fraction", type=float, default=0.80)
     parser.add_argument("--window", type=int, default=3)
     parser.add_argument("--samples-per-level", type=int, default=5000)
+    parser.add_argument(
+        "--mbk-batch-grid",
+        type=int,
+        nargs="+",
+        default=[512, 1024, 2048, 4096],
+    )
+    parser.add_argument(
+        "--mbk-n-init-grid",
+        type=int,
+        nargs="+",
+        default=[10, 20, 50],
+    )
+    parser.add_argument(
+        "--mbk-max-iter-grid",
+        type=int,
+        nargs="+",
+        default=[100, 200],
+    )
+    parser.add_argument(
+        "--mbk-reassignment-grid",
+        type=float,
+        nargs="+",
+        default=[0.0, 0.01],
+    )
     parser.add_argument("--silhouette-sample-size", type=int, default=5000)
     parser.add_argument(
         "--dbscan-eps-grid",
@@ -371,17 +472,36 @@ def main():
 
     results = []
 
-    mbk = make_minibatch_kmeans(
+    selected_mbk, mbk_grid, mbk_search_seconds = select_mbk(
+        x=x,
+        batch_grid=args.mbk_batch_grid,
+        n_init_grid=args.mbk_n_init_grid,
+        max_iter_grid=args.mbk_max_iter_grid,
+        reassignment_grid=args.mbk_reassignment_grid,
+        silhouette_sample_size=min(
+            2000, args.silhouette_sample_size
+        ),
+        seed=args.seed,
+        threads=args.threads,
+    )
+    mbk = MiniBatchKMeans(
         n_clusters=3,
-        batch_size=1024,
-        n_init=10,
-        max_iter=100,
+        init="k-means++",
         random_state=args.seed,
+        **selected_mbk,
     )
     labels, seconds = timed_fit_predict(mbk, x, args.threads)
     results.append(evaluate(
         "MiniBatchKMeans", x, truth, labels, seconds, True,
-        mbk.get_params(deep=False), args.silhouette_sample_size, args.seed,
+        {
+            **selected_mbk,
+            "selection": (
+                "label-free silhouette, then Davies-Bouldin, "
+                "Calinski-Harabasz, and fit time"
+            ),
+        },
+        args.silhouette_sample_size,
+        args.seed,
     ))
 
     selected_eps, dbscan_grid, dbscan_search_seconds = select_dbscan(
@@ -469,6 +589,7 @@ def main():
     result_frame.to_csv(
         args.output / "clustering_comparison.csv", index=False
     )
+    mbk_grid.to_csv(args.output / "mbk_grid.csv", index=False)
     dbscan_grid.to_csv(args.output / "dbscan_grid.csv", index=False)
     sample_audit.to_csv(args.output / "sample_audit.csv", index=False)
 
@@ -489,6 +610,9 @@ def main():
         "threads": args.threads,
         "labels_used_for_fitting": False,
         "labels_used_for_dbscan_selection": False,
+        "labels_used_for_mbk_selection": False,
+        "mbk_search_seconds": mbk_search_seconds,
+        "mbk_selected_parameters": selected_mbk,
         "labels_used_only_for_external_evaluation": True,
         "scaler_fit_scope": "sampled development rows only",
         "dbscan_search_seconds": dbscan_search_seconds,
