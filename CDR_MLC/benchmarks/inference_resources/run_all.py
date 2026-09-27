@@ -13,6 +13,94 @@ import pandas as pd
 
 HERE = Path(__file__).resolve().parent
 
+METHOD_CODES = {
+    "rf": "RF",
+    "original-cdr": "O-CDR",
+    "MF-Sequential": "MF-Seq",
+    "MF-Parallel": "MF-Par",
+    "MF-Pipelined": "MF-Pipe",
+    "1d-cnn": "1D-CNN",
+    "ft-transformer": "FT-T",
+    "graphsage": "G-SAGE",
+    "scarf": "SCARF",
+    "dfe": "DFE",
+    "af": "AF",
+}
+
+
+def _fmt(series, digits):
+    return series.map(lambda value: f"{float(value):.{digits}f}")
+
+
+def print_compact_results(combined, mode):
+    codes = combined["method"].map(
+        lambda name: METHOD_CODES.get(str(name), str(name))
+    )
+    if mode == "streaming":
+        display = pd.DataFrame({
+            "M": codes,
+            "N": combined["evaluated_rows"].astype(int),
+            "Acc": _fmt(combined["accuracy"], 4),
+            "MF1": _fmt(combined["macro_f1"], 4),
+            "P50us": _fmt(combined["latency_record_p50_us"], 2),
+            "P95us": _fmt(combined["latency_record_p95_us"], 2),
+            "P99us": _fmt(combined["latency_record_p99_us"], 2),
+            "R/s": _fmt(
+                combined["throughput_evaluated_rows_per_second"], 2
+            ),
+            "RAM": _fmt(combined["peak_rss_delta_mb"], 2),
+            "Size": _fmt(combined["model_bytes"] / (1024.0 ** 2), 2),
+        })
+        legend = [
+            ("M", "Method"),
+            ("N", "Evaluated records"),
+            ("Acc", "Accuracy"),
+            ("MF1", "Macro F1-score"),
+            ("P50us", "Median per-record latency (us)"),
+            ("P95us", "95th-percentile per-record latency (us)"),
+            ("P99us", "99th-percentile per-record latency (us)"),
+            ("R/s", "Evaluated records per second"),
+            ("RAM", "Peak RSS increase (MiB)"),
+            ("Size", "Serialized model size (MiB)"),
+        ]
+    else:
+        display = pd.DataFrame({
+            "M": codes,
+            "N": combined["evaluated_rows"].astype(int),
+            "Acc": _fmt(combined["accuracy"], 4),
+            "MF1": _fmt(combined["macro_f1"], 4),
+            "P50s": _fmt(combined["latency_batch_p50_seconds"], 4),
+            "P95s": _fmt(combined["latency_batch_p95_seconds"], 4),
+            "us/R": _fmt(combined["mean_us_per_evaluated_row"], 2),
+            "R/s": _fmt(
+                combined["throughput_evaluated_rows_per_second"], 2
+            ),
+            "RAM": _fmt(combined["peak_rss_delta_mb"], 2),
+            "Size": _fmt(combined["model_bytes"] / (1024.0 ** 2), 2),
+        })
+        legend = [
+            ("M", "Method"),
+            ("N", "Evaluated records"),
+            ("Acc", "Accuracy"),
+            ("MF1", "Macro F1-score"),
+            ("P50s", "Median batch latency (s)"),
+            ("P95s", "95th-percentile batch latency (s)"),
+            ("us/R", "Mean microseconds per evaluated record"),
+            ("R/s", "Evaluated records per second"),
+            ("RAM", "Peak RSS increase (MiB)"),
+            ("Size", "Serialized model size (MiB)"),
+        ]
+
+    seen = set()
+    for original, code in zip(combined["method"].astype(str), codes):
+        if code not in seen:
+            legend.append((code, original))
+            seen.add(code)
+    print("\nColumn abbreviations")
+    print(pd.DataFrame(legend, columns=["Key", "Meaning"]).to_string(index=False))
+    print("\nResults")
+    print(display.to_string(index=False))
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -70,28 +158,22 @@ def main():
             "--warmup-runs", str(args.warmup_runs),
             "--repeats", str(args.repeats),
         ]
-        print("RUN:", " ".join(command), flush=True)
-        subprocess.run(command, check=True, env=environment)
+        print(f"RUN {method} ({args.mode})", flush=True)
+        completed = subprocess.run(
+            command, env=environment, capture_output=True, text=True
+        )
+        if completed.returncode != 0:
+            if completed.stdout:
+                print(completed.stdout, file=sys.stdout)
+            if completed.stderr:
+                print(completed.stderr, file=sys.stderr)
+            raise subprocess.CalledProcessError(
+                completed.returncode, command
+            )
         frames.append(pd.read_csv(destination / "summary.csv"))
     combined = pd.concat(frames, ignore_index=True)
     combined.to_csv(args.output / "inference_resource_summary.csv", index=False)
-    print("\nCombined CPU-only inference results")
-    columns = (
-        [
-            "method", "evaluated_rows", "accuracy", "macro_f1",
-            "latency_record_p50_us", "latency_record_p95_us",
-            "latency_record_p99_us",
-            "throughput_evaluated_rows_per_second",
-            "peak_rss_delta_mb", "model_bytes",
-        ] if args.mode == "streaming" else [
-            "method", "evaluated_rows", "accuracy", "macro_f1",
-            "latency_batch_p50_seconds", "latency_batch_p95_seconds",
-            "mean_us_per_evaluated_row",
-            "throughput_evaluated_rows_per_second",
-            "peak_rss_delta_mb", "model_bytes",
-        ]
-    )
-    print(combined[columns].to_string(index=False))
+    print_compact_results(combined, args.mode)
 
 
 if __name__ == "__main__":
