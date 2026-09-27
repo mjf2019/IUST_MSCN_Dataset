@@ -17,11 +17,11 @@ The directory `artifacts/` contains models and the prepared sample. Both
 - Model loading is measured separately and excluded from inference latency.
 - In streaming mode every sklearn forest uses `n_jobs=1`; per-record joblib
   fan-out is avoided because it adds more overhead than useful tree work.
-- The streaming protocol reports only `MF-Sequential`: expert and utility
-  forests are evaluated in dependency order for true record-by-record latency.
-- The offline batch protocol reports only `MF-Parallel`: persistent workers
-  evaluate three Expert branches concurrently and then three Utility branches.
-  Its internal forests remain single-threaded to avoid nested parallelism.
+- Both streaming and offline batch protocols report `MF-Sequential` and
+  `MF-Parallel`. Sequential evaluates the Expert and Utility banks serially;
+  Parallel uses persistent workers for three concurrent Expert branches and
+  then three concurrent Utility branches. Internal forests remain
+  single-threaded to avoid nested parallelism.
 - Other batch methods may use `--cpu-threads` internal estimator jobs.
 - CUDA is disabled in each measured child process.
 - Streaming is the default deployment protocol: records arrive in capture
@@ -35,9 +35,10 @@ The directory `artifacts/` contains models and the prepared sample. Both
 - Accuracy is computed on the marked 2,000 rows. Throughput is reported both
   for all processed input rows and for scored rows.
 - Original CDR-MLC does not compute oracle routes at inference.
-- MF-CDR-MLC uses the same saved model in both protocols. Streaming selects
-  `MF-Sequential`, while batch throughput selects `MF-Parallel`. The execution
-  schedule changes, but dependency order and predictions remain unchanged.
+- MF-CDR-MLC uses the same saved model for Sequential and Parallel execution.
+  Only the execution schedule changes; dependency order and predictions remain
+  unchanged. `MF-Pipelined` is intentionally excluded because it requires a
+  distinct continuous multi-record protocol.
 
 AF intrinsically needs labeled target adaptation. Its default 1% Medium
 calibration prefix is disjoint from the fixed Medium tail used for timing. The
