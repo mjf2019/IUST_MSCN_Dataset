@@ -114,10 +114,6 @@ def main():
     parser.add_argument("--mode", choices=("streaming", "batch"), default="streaming")
     parser.add_argument("--cpu-threads", type=int, default=3)
     parser.add_argument(
-        "--forest-jobs", type=int, default=-1,
-        help="sklearn forest n_jobs; -1 uses all available logical CPUs",
-    )
-    parser.add_argument(
         "--mf-branch-workers", type=int, default=3,
         help="concurrent MF expert/utility branch workers",
     )
@@ -153,7 +149,6 @@ def main():
             "--output", str(destination),
             "--mode", args.mode,
             "--cpu-threads", str(args.cpu_threads),
-            "--forest-jobs", str(args.forest_jobs),
             "--mf-branch-workers", str(args.mf_branch_workers),
             "--warmup-runs", str(args.warmup_runs),
             "--repeats", str(args.repeats),
