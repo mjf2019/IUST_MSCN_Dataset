@@ -184,14 +184,13 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
             "rows": int(mask.sum()),
             **{f"class_{label}": int(counts.get(label, 0)) for label in APPLICATIONS},
         })
-    router_audit = minibatch_kmeans_audit(router)
     return {
         "window": window,
         "trend_columns": trend_columns,
         "scaler": scaler,
         "router": router,
-        "router_algorithm": router_audit["algorithm"],
-        "router_audit": router_audit,
+        "router_algorithm": "MiniBatchKMeans",
+        "router_audit": minibatch_kmeans_audit(router),
         "preprocessor": preprocessor,
         "numeric": numeric,
         "categorical": categorical,
