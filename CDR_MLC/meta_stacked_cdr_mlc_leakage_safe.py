@@ -42,6 +42,7 @@ class MetaStackConfig:
     utility_fraction: float = .15
     meta_fraction: float = .15
     meta_confidence_candidates: tuple[float, ...] = (.00, .40, .50, .60, .70, .80, .90, 1.01)
+    refit_experts: bool = True
     random_state: int = 42
 
     def validate(self):
@@ -219,10 +220,13 @@ def fit_meta_stacker(source, config: MetaStackConfig):
         trial["worst_level_delta_vs_hard"], trial["macro_f1"],
         trial["meta_confidence_threshold"], -trial["meta_rows"],
     ))
-    # Refit only the expert classifiers/preprocessor on all permitted
-    # development rows. The scaler and MiniBatchKMeans fitted on the expert partition
-    # remain frozen, so the meta feature geometry does not see future rows.
-    final = _refit_experts_with_frozen_router(initial, source, helper)
+    # Optional ablation: retain the preliminary experts to keep the
+    # second-level feature distribution identical between fitting and inference.
+    # The default preserves the published full-development expert refit.
+    if config.refit_experts:
+        final = _refit_experts_with_frozen_router(initial, source, helper)
+    else:
+        final = initial.copy()
     final.update({
         "meta_stack_config": config,
         "congestion_config": congestion_config,
@@ -246,7 +250,8 @@ def fit_meta_stacker(source, config: MetaStackConfig):
             "router_scaler_fit_partition": "expert_only",
             "router_scaler_frozen_after_fit": True,
             "utility_meta_selection_are_strictly_later": True,
-            "final_experts_refit_on_full_development": True,
+            "final_experts_refit_on_full_development": bool(config.refit_experts),
+            "expert_variant": "refit" if config.refit_experts else "preliminary",
         },
     })
     return final

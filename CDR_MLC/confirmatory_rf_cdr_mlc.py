@@ -220,20 +220,22 @@ def evaluate_once(
     _assert_common_rows(observed, original_all)
     original_prediction = original_all.loc[observed.index].to_numpy()
     embedded_original = mf_result["CDR_MLC_actual_router"]
-    if not np.array_equal(original_prediction, embedded_original):
+    if config.refit_experts and not np.array_equal(
+        original_prediction, embedded_original
+    ):
         mismatches = int(np.sum(original_prediction != embedded_original))
         raise RuntimeError(
             f"{definition['name']}: independently fitted Original CDR-MLC "
             f"differs from MF actual-router branch on {mismatches} rows"
         )
 
-    if list(original_model["source_eligible_index"]) != list(
-        mf_model["source_eligible_index"]
-    ):
+    if config.refit_experts and list(
+        original_model["source_eligible_index"]
+    ) != list(mf_model["source_eligible_index"]):
         raise RuntimeError(
             f"{definition['name']}: RF eligibility differs across model fits"
         )
-    eligible = development.loc[mf_model["source_eligible_index"]]
+    eligible = development.loc[original_model["source_eligible_index"]]
     rf_model, rf_fit_seconds, rf_fit_mem = _timed(
         fit_rf, eligible, (), config.random_state, rf_trees
     )
@@ -481,6 +483,12 @@ def main() -> None:
     parser.add_argument("--utility-trees", type=int, default=10)
     parser.add_argument("--meta-trees", type=int, default=20)
     parser.add_argument("--rf-trees", type=int, default=110)
+    parser.add_argument(
+        "--expert-refit",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="refit MF experts on full development data after meta-model selection",
+    )
     args = parser.parse_args()
 
     if not args.seeds or len(args.seeds) != len(set(args.seeds)):
@@ -520,6 +528,7 @@ def main() -> None:
                 expert_trees=args.expert_trees,
                 utility_trees=args.utility_trees,
                 meta_trees=args.meta_trees,
+                refit_experts=args.expert_refit,
                 random_state=seed,
             ).validate()
             rows, audit = evaluate_once(
