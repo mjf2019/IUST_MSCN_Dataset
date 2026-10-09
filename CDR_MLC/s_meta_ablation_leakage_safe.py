@@ -1,8 +1,9 @@
 """Leakage-safe component ablation for S-Meta evaluation protocols.
 
-Each learned ablation preserves the same strict four-way temporal partitions,
-frozen expert-only congestion geometry, test set, seed, and tree budgets.  The
-only change is the component named by the ablation.  The full reference calls
+All variants share strict four-way temporal partitions, test rows, seed, and
+model settings. Geometry is frozen on the expert partition for clustering-based
+variants; No_Clustering replaces it with label-independent random partitions.
+Experts_Plus_G restores the three timing fields only to the expert inputs.  The full reference calls
 the production ``fit_meta_stacker`` and ``predict_all`` functions directly.
 Scenarios 1--3 train on the complete source level and evaluate on the complete,
 untouched target level; no target record is used during model development.
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -68,6 +69,8 @@ LEARNED_ABLATIONS = {
 
 METHOD_ORDER = (
     "S_Meta_Full",
+    "Experts_Plus_G",
+    "No_Clustering",
     "No_Congestion_Context",
     "No_Utility_Meta_Features",
     "No_Level_Balancing",
@@ -121,7 +124,13 @@ def fit_ablation(source, config: MetaStackConfig, name: str, spec: AblationSpec)
     split = four_way_split(source, config)
     congestion_config = _congestion_config(config)
     initial = fit_fixed_cdr(
-        split["expert"], config.window, config.random_state, config.expert_trees
+        split["expert"], config.window, config.random_state, config.expert_trees,
+        include_timing_in_experts=config.include_timing_in_experts,
+        use_clustering=config.use_clustering,
+        mbk_n_init=config.mbk_n_init,
+        mbk_batch_size=config.mbk_batch_size,
+        mbk_max_iter=config.mbk_max_iter,
+        mbk_label_aware=config.mbk_label_aware,
     )
     helper = LearnedRouterConfig(
         window=config.window,
@@ -305,6 +314,29 @@ def evaluate_split(
         full_result["routes"]["meta_confidence"]
     )
 
+    # Both interventions share the exact Full model fitted above.
+    from expert_input_ablation import check_pair as check_expert_inputs
+    from clustering_ablation import check_pair as check_clustering
+    interventions = (
+        ("Experts_Plus_G", replace(config, include_timing_in_experts=True),
+         check_expert_inputs),
+        ("No_Clustering", replace(config, use_clustering=False),
+         check_clustering),
+    )
+    for name, variant_config, check in interventions:
+        model = fit_meta_stacker(development, variant_config)
+        check([full_model, model], development, test)
+        result = predict_full(model, test)
+        if frame_identity(result["observed"]) != frame_identity(observed):
+            raise RuntimeError(f"{evaluation_name}/{name}: evaluated rows differ")
+        predictions[name] = result["CDR_MLC_meta_stacker"]
+        prediction_details[name] = {
+            "config": asdict(variant_config),
+            "selected_meta_variant": model["selected_meta_variant"],
+            "selected_meta_confidence": model["selected_meta_confidence"],
+            "partition_rows": model["partition_rows"],
+        }
+
     for name, spec in LEARNED_ABLATIONS.items():
         model = fit_ablation(development, config, name, spec)
         ablation_observed, prediction, confidence, use_meta = predict_ablation(
@@ -450,6 +482,10 @@ def main():
     parser.add_argument("--expert-trees", type=int, default=20)
     parser.add_argument("--utility-trees", type=int, default=10)
     parser.add_argument("--meta-trees", type=int, default=20)
+    parser.add_argument("--mbk-n-init", type=int, default=10)
+    parser.add_argument("--mbk-batch-size", type=int, default=1024)
+    parser.add_argument("--mbk-max-iter", type=int, default=100)
+    parser.add_argument("--mbk-label-aware", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     if not 0 < args.train_fraction < 1:
@@ -463,7 +499,13 @@ def main():
         utility_trees=args.utility_trees,
         meta_trees=args.meta_trees,
         random_state=args.seed,
+        mbk_n_init=args.mbk_n_init,
+        mbk_batch_size=args.mbk_batch_size,
+        mbk_max_iter=args.mbk_max_iter,
+        mbk_label_aware=args.mbk_label_aware,
     ).validate()
+    if args.output.exists() and any(args.output.iterdir()):
+        parser.error("Output is not empty; use a new --output folder")
     args.output.mkdir(parents=True, exist_ok=True)
     candidates = tuple(dict.fromkeys([*TIMING, *args.congestion_features]))
     data, input_audit = load_dataset(args.data_dir, candidates)
@@ -486,9 +528,12 @@ def main():
         },
         "same_temporal_partitions_for_all_variants": True,
         "full_model_uses_production_implementation": True,
+        "single_full_reference_per_protocol": True,
+        "delta_direction": "variant minus the same S_Meta_Full run",
         "protocol_audits": {},
     }
     for protocol_name in args.protocols:
+        print(f"Running {protocol_name}, seed {args.seed}: all nine variants", flush=True)
         rows, predictions, scores, audit = evaluate_mixed_protocol(
             data, protocol_name, args.train_fraction, config
         )
@@ -507,6 +552,7 @@ def main():
     for scenario in args.scenarios:
         source, target = SCENARIOS[scenario]
         evaluation_name = f"Scenario-{scenario}-{source}-to-{target}"
+        print(f"Running {evaluation_name}, seed {args.seed}: all nine variants", flush=True)
         rows, predictions, scores, audit = evaluate_full_target_scenario(
             data, scenario, config
         )
@@ -532,10 +578,19 @@ def main():
     )
     summary = summary.sort_values(["evaluation_type", "protocol", "method"])
     summary.to_csv(args.output / "s_meta_ablation_summary.csv", index=False)
+    table_columns = ["accuracy", "macro_f1", "accuracy_change_vs_full",
+                     "macro_f1_change_vs_full"]
+    table = summary.groupby("method", observed=True)[table_columns].mean()
+    table = table.reindex(METHOD_ORDER).reset_index()
+    table[table_columns] *= 100.0
+    table.to_csv(args.output / "ablation_table_percent.csv", index=False)
     (args.output / "s_meta_ablation_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
     print_compact_results(summary)
+    print("\nAblation table (percent; deltas in percentage points):", flush=True)
+    print(table.to_string(index=False), flush=True)
+    print(f"Results: {args.output.resolve()}", flush=True)
 
 
 if __name__ == "__main__":
