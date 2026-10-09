@@ -129,3 +129,39 @@ read by the RNG partition function.
 This seeded uniform design is reproducible and independent of labels.
 Group sizes are random, often close to equal by chance; it does not
 force unequal sizes or deliberately weaken the control.
+
+## Optional class-covered MBK expert partitions
+
+--mbk-label-aware adds a supervised training-only constraint: each observed
+application class must appear at least once in every expert partition.
+MBK still fits its three centers on the earliest eligible expert partition
+using the original TTFEF geometry. After fitting, constrained assignments
+minimize total squared distance to those frozen centers subject to class
+coverage. Distinct class-specific anchors are selected with a minimum-cost
+assignment; all other records keep their nearest-center assignment.
+No record is duplicated, oversampled or discarded; equal sizes or class
+proportions are not required.
+
+The same constraint is applied to authorized full-development expert refit.
+If an observed class has fewer than three eligible records, training fails
+explicitly rather than silently duplicating data or relaxing coverage.
+
+This is MBK plus label-constrained training partitioning, a new variant, not
+ordinary unsupervised MBK. Inference does not require labels and uses the
+frozen centers/geometry as before. For the moved training records, expert
+membership differs from nearest-center membership; this mismatch and the
+performance impact must be assessed, not presumed beneficial. Since the
+fusion evaluates all experts, it does not require a test label to select one.
+
+The random control remains independent uniform RNG and ignores this flag.
+pair.json records initial/refit per-class coverage, number/fraction reassigned,
+distance penalty, and initial/final expert class counts. No later utility,
+meta, selection or test labels are used in preliminary constrained assignment.
+
+```powershell
+python CDR_MLC/clustering_ablation.py --seeds 42 --mbk-n-init 26 --mbk-batch-size 1024 --mbk-max-iter 100 --mbk-label-aware --output CDR_MLC/outputs/clustering_classcovered_seed42
+```
+
+Use a new output folder. The original MBK remains the default without the flag.
+Results of this new variant must not replace the original method's results
+without updating its definition, training algorithm and experimental reporting.

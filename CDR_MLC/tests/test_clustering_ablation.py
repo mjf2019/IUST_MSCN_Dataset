@@ -9,7 +9,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from clustering_ablation import METHODS, SCORES, evaluate_pair, summarize
-from compare_clean_valid import TIMING
+from compare_clean_valid import TIMING, class_covered_mbk_routes
 from expert_partitioning import random_expert_assignments, random_expert_partition
 from meta_stacked_cdr_mlc_leakage_safe import MetaStackConfig, fit_meta_stacker, predict_all
 from test_expert_input_ablation import synthetic_data
@@ -117,6 +117,46 @@ class ClusteringAblationTests(unittest.TestCase):
             for value in (0, -1):
                 with self.subTest(parameter=parameter, value=value), self.assertRaises(ValueError):
                     replace(self.config, **{parameter: value}).validate()
+
+    def test_constrained_assignment_is_minimum_cost_without_duplicates(self):
+        from itertools import product
+        distances = np.array([[0., 4., 8.], [1., 3., 7.], [2., 2., 6.],
+                              [3., 1., 5.], [1., 5., 9.]])
+        routes, audit = class_covered_mbk_routes(distances, np.array(["HTTP"] * 5))
+        self.assertEqual(set(routes), {0, 1, 2})
+        cost = (distances[np.arange(5), routes] ** 2).sum()
+        optimum = min(sum(distances[i, c] ** 2 for i, c in enumerate(candidate))
+            for candidate in product(range(3), repeat=5) if len(set(candidate)) == 3)
+        self.assertAlmostEqual(cost, optimum)
+        self.assertFalse(audit["duplicates_or_oversampling"])
+        with self.assertRaises(ValueError):
+            class_covered_mbk_routes(distances[:2], np.array(["HTTP"] * 2))
+
+    def test_label_aware_class_coverage_and_inference_label_independence(self):
+        for refit in (False, True):
+            config = replace(self.config, mbk_label_aware=True, refit_experts=refit)
+            rows, _, audit = evaluate_pair(self.development, self.test, config)
+            full = audit[METHODS[0]]
+            self.assertTrue(full["mbk_label_aware"])
+            for item in full["initial_class_coverage_audit"]["class_counts"]:
+                self.assertTrue(all(count >= 1 for count in item["constrained"]))
+            if refit:
+                for item in full["refit_class_coverage_audit"]["class_counts"]:
+                    self.assertTrue(all(count >= 1 for count in item["constrained"]))
+            self.assertFalse(audit[METHODS[1]]["mbk_label_aware"])
+        model = fit_meta_stacker(self.development, config)
+        hidden = self.test.copy()
+        hidden["traffic_label"] = "HTTP"
+        hidden["congestion_level"] = "Low"
+        np.testing.assert_array_equal(
+            predict_all(model, self.test)["CDR_MLC_meta_stacker"],
+            predict_all(model, hidden)["CDR_MLC_meta_stacker"])
+        plain = fit_meta_stacker(self.development, replace(self.config, use_clustering=False))
+        aware = fit_meta_stacker(self.development, replace(config, use_clustering=False))
+        self.assertEqual(plain["random_partition"], aware["random_partition"])
+        np.testing.assert_array_equal(
+            predict_all(plain, self.test)["CDR_MLC_meta_stacker"],
+            predict_all(aware, self.test)["CDR_MLC_meta_stacker"])
 
     def test_summary_delta_and_equal_protocol_weighting(self):
         rows = [{"protocol": protocol, "seed": 42, "method": method,

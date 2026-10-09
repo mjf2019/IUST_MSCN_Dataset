@@ -149,16 +149,71 @@ def predict_rf(model: dict, target: pd.DataFrame) -> np.ndarray:
     return model["model"].predict(x)
 
 
+def class_covered_mbk_routes(distances, labels):
+    """Minimum squared-distance assignment with every observed class in each cluster.
+
+    MBK centers remain frozen. Training labels constrain partitions only.
+    Each class must have at least one distinct record per cluster. No duplication.
+    """
+    from scipy.optimize import linear_sum_assignment
+
+    distances = np.asarray(distances, dtype=float)
+    labels = np.asarray(labels)
+    if distances.ndim != 2 or len(labels) != len(distances):
+        raise ValueError("Distances and training labels must align")
+    if not np.isfinite(distances).all() or (distances < 0).any():
+        raise ValueError("Distances must be finite and nonnegative")
+    if pd.isna(labels).any():
+        raise ValueError("Training labels must be valid")
+    n_clusters = distances.shape[1]
+    nearest = distances.argmin(axis=1)
+    routes = nearest.copy()
+    squared = distances ** 2
+    # Independent classes: choose a distinct anchor for each cluster at minimum
+    # extra cost relative to nearest-center assignment; other rows stay nearest.
+    for label in pd.unique(labels):
+        rows = np.flatnonzero(labels == label)
+        if len(rows) < n_clusters:
+            raise ValueError(
+                f"Class {label!r} has {len(rows)} eligible training rows; "
+                f"at least {n_clusters} are needed for class-covered clusters")
+        penalties = squared[rows] - squared[rows].min(axis=1, keepdims=True)
+        clusters, anchors = linear_sum_assignment(penalties.T)
+        routes[rows[anchors]] = clusters
+    row = np.arange(len(routes))
+    return routes, {
+        "enabled": True,
+        "policy": "minimum squared-distance cost with one sample per observed class per cluster",
+        "training_labels_only": True,
+        "duplicates_or_oversampling": False,
+        "n_reassigned": int((routes != nearest).sum()),
+        "reassigned_fraction": float(np.mean(routes != nearest)),
+        "extra_squared_distance": float(
+            (squared[row, routes] - squared[row, nearest]).sum()),
+        "nearest_cluster_counts": [int((nearest == c).sum()) for c in range(n_clusters)],
+        "constrained_cluster_counts": [int((routes == c).sum()) for c in range(n_clusters)],
+        "class_counts": [
+            {"label": str(label),
+             "nearest": [int(((labels == label) & (nearest == c)).sum())
+                         for c in range(n_clusters)],
+             "constrained": [int(((labels == label) & (routes == c)).sum())
+                             for c in range(n_clusters)]}
+            for label in pd.unique(labels)],
+    }
+
+
 def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
                   expert_trees: int, *, include_timing_in_experts: bool = False,
                   use_clustering: bool = True, mbk_n_init: int = 10,
-                  mbk_batch_size: int = 1024, mbk_max_iter: int = 100) -> dict:
+                  mbk_batch_size: int = 1024, mbk_max_iter: int = 100,
+                  mbk_label_aware: bool = False) -> dict:
     view = trend_frame(source, TIMING, window)
     trend_columns = [f"{feature}_{stat}" for feature in TIMING for stat in STATS]
     if len(view) < 3:
         raise ValueError("fixed CDR-MLC has fewer than three complete source windows")
     raw = source.loc[view.index]
     random_partition = None
+    coverage_audit = {"enabled": False}
     if use_clustering:
         scaler = StandardScaler().fit(view[trend_columns])
         z = scaler.transform(view[trend_columns])
@@ -168,6 +223,9 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
             random_state=seed,
         ).fit(z)
         routes = router.predict(z)
+        if mbk_label_aware:
+            routes, coverage_audit = class_covered_mbk_routes(
+                router.transform(z), raw.traffic_label.to_numpy())
     else:
         # Retain the same complete-window eligibility, but fit no geometry.
         scaler, router = None, None
@@ -206,6 +264,8 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
             "forced_balancing": False,
             "partition_seed": seed, "n_experts": 3,
         },
+        "mbk_label_aware": bool(mbk_label_aware and use_clustering),
+        "class_coverage_audit": coverage_audit,
         "use_clustering": use_clustering,
         "expert_partition_seed": seed,
         "random_partition": random_partition,

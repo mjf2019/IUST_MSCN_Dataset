@@ -16,7 +16,7 @@ from adaptive_cdr_mlc import (
     APPLICATIONS, aligned_probabilities, make_preprocessor,
     select_classifier_columns, trend_frame,
 )
-from compare_clean_valid import TIMING, fit_fixed_cdr, rf_config
+from compare_clean_valid import TIMING, fit_fixed_cdr, rf_config, class_covered_mbk_routes
 from expert_partitioning import random_expert_partition
 
 
@@ -112,9 +112,13 @@ def _refit_experts_with_frozen_router(initial, full_source, config):
     view = trend_frame(full_source, TIMING, initial["window"])
     raw = full_source.loc[view.index]
     random_partition = initial.get("random_partition")
+    coverage_audit = {"enabled": False}
     if initial.get("use_clustering", True):
         z = initial["scaler"].transform(view[initial["trend_columns"]])
         routes = initial["router"].predict(z)
+        if initial.get("mbk_label_aware", False):
+            routes, coverage_audit = class_covered_mbk_routes(
+                initial["router"].transform(z), raw.traffic_label.to_numpy())
     else:
         routes, random_partition = random_expert_partition(
             raw, initial["expert_partition_seed"], previous=random_partition)
@@ -132,7 +136,10 @@ def _refit_experts_with_frozen_router(initial, full_source, config):
         experts[cluster] = RandomForestClassifier(
             **rf_config(config.random_state + cluster, config.expert_trees)
         ).fit(x[mask], labels[mask])
-        counts.append({"cluster": cluster, "rows": int(mask.sum())})
+        class_counts = pd.Series(labels[mask]).value_counts().to_dict()
+        counts.append({"cluster": cluster, "rows": int(mask.sum()),
+                       **{f"class_{label}": int(class_counts.get(label, 0))
+                          for label in APPLICATIONS}})
     final = dict(initial)
     final.update({
         "preprocessor": preprocessor,
@@ -143,6 +150,7 @@ def _refit_experts_with_frozen_router(initial, full_source, config):
         "source_eligible_index": view.index.tolist(),
         "full_source_cluster_counts": counts,
         "random_partition": random_partition,
+        "refit_class_coverage_audit": coverage_audit,
     })
     return final
 

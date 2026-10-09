@@ -87,6 +87,10 @@ def evaluate_pair(development, test, config):
             "use_clustering": model["use_clustering"],
             "router_algorithm": model["router_algorithm"],
             "router_audit": model["router_audit"],
+            "mbk_label_aware": model["mbk_label_aware"],
+            "initial_class_coverage_audit": model["class_coverage_audit"],
+            "refit_class_coverage_audit": model.get("refit_class_coverage_audit"),
+            "initial_expert_partition_counts": model["cluster_counts"],
             "expert_partition_counts": model.get("full_source_cluster_counts", model["cluster_counts"]),
             "expert_input_columns": model["numeric"] + model["categorical"],
             "congestion_columns": model["congestion_columns"],
@@ -140,6 +144,8 @@ def main():
                         help="MBK minibatch size; ignored by No_Clustering")
     parser.add_argument("--mbk-max-iter", type=int, default=100,
                         help="MBK maximum iterations; ignored by No_Clustering")
+    parser.add_argument("--mbk-label-aware", action="store_true",
+                        help="Constrain training expert partitions to contain every observed application class")
     parser.add_argument("--window", type=int, default=3)
     parser.add_argument("--congestion-window", type=int, default=50)
     parser.add_argument("--expert-trees", type=int, default=20)
@@ -162,7 +168,8 @@ def main():
         expert_trees=args.expert_trees, utility_trees=args.utility_trees,
         meta_trees=args.meta_trees, refit_experts=args.expert_refit,
         mbk_n_init=args.mbk_n_init, mbk_batch_size=args.mbk_batch_size,
-        mbk_max_iter=args.mbk_max_iter).validate()
+        mbk_max_iter=args.mbk_max_iter,
+        mbk_label_aware=args.mbk_label_aware).validate()
     data, input_audit = load_dataset(args.data_dir, tuple(dict.fromkeys(
         [*TIMING, *DEFAULT_CONGESTION_FEATURES])))
     evaluations = build_evaluations(data, args.scenarios, args.protocols,

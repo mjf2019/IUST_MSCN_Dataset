@@ -49,6 +49,7 @@ class MetaStackConfig:
     mbk_n_init: int = 10
     mbk_batch_size: int = 1024
     mbk_max_iter: int = 100
+    mbk_label_aware: bool = False
 
     def validate(self):
         if min(self.mbk_n_init, self.mbk_batch_size, self.mbk_max_iter) < 1:
@@ -137,6 +138,7 @@ def fit_meta_stacker(source, config: MetaStackConfig):
         mbk_n_init=config.mbk_n_init,
         mbk_batch_size=config.mbk_batch_size,
         mbk_max_iter=config.mbk_max_iter,
+        mbk_label_aware=config.mbk_label_aware,
     )
     helper = LearnedRouterConfig(
         window=config.window, expert_trees=config.expert_trees,
@@ -259,6 +261,7 @@ def fit_meta_stacker(source, config: MetaStackConfig):
         "leakage_control": {
             "router_algorithm": initial["router_algorithm"],
             "router_parameters": initial["router_audit"],
+            "training_partition_label_constraint": initial["class_coverage_audit"],
             "router_scaler_fit_partition": "expert_only" if config.use_clustering else None,
             "router_scaler_frozen_after_fit": bool(config.use_clustering),
             "use_clustering": config.use_clustering,
