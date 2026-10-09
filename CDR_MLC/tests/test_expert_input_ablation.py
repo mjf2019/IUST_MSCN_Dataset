@@ -57,10 +57,21 @@ class ExpertInputAblationTests(unittest.TestCase):
                 self.assertEqual(len(rows), 2)
                 self.assertEqual(rows[0]["n"], rows[1]["n"])
                 self.assertEqual(len(predictions), rows[0]["n"])
-                for method, count in (("MF_32_Features", 32), ("MF_35_Features", 35)):
+                for method, count in (("MF_Separated_Expert_Inputs", 32), ("MF_All_Expert_Inputs", 35)):
                     self.assertEqual(len(audit[method]["expert_input_columns"]), count)
                     self.assertEqual(audit[method]["encoded_expert_dimension"], count)
                 self.assertTrue(audit["same_router_scaler_and_congestion_values_verified"])
+
+    def test_pair_with_24_and_27_usable_features(self):
+        dropped = [f"feature_{i}" for i in range(24, 32)]
+        # Match columns rejected as constant by the production selector.
+        development = self.development.copy()
+        test = self.test.copy()
+        development[dropped] = 0.0
+        test[dropped] = 0.0
+        rows, _, audit = evaluate_pair(development, test, self.config)
+        self.assertEqual([r["raw_expert_features"] for r in rows], [24, 27])
+        self.assertTrue(audit["same_router_scaler_and_congestion_values_verified"])
 
     def test_default_model_and_hidden_test_labels(self):
         default = fit_meta_stacker(self.development, self.config)
@@ -76,9 +87,9 @@ class ExpertInputAblationTests(unittest.TestCase):
     def test_delta_direction(self):
         rows = [{"protocol": "test", "seed": 42, "method": method,
                  **{key: score for key in ("accuracy", "balanced_accuracy", "macro_f1", "weighted_f1")}}
-                for method, score in (("MF_32_Features", .8), ("MF_35_Features", .9))]
+                for method, score in (("MF_Separated_Expert_Inputs", .8), ("MF_All_Expert_Inputs", .9))]
         _, _, delta = summarize(rows)
-        self.assertAlmostEqual(delta.iloc[0].accuracy_delta_35_minus_32, .1)
+        self.assertAlmostEqual(delta.iloc[0].accuracy_delta_all_minus_separated, .1)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Paired MF-CDR-MLC ablation: 32 versus 35 raw expert features.
+"""Paired MF-CDR-MLC ablation: separated versus complete expert inputs.
 
 Both variants retain the complete congestion-context path and use the same
 production training/selection procedure. No hyperparameter is chosen on test.
@@ -25,7 +25,7 @@ from meta_stacked_cdr_mlc_leakage_safe import (
 from mixed_level_protocols_leakage_safe import PROTOCOLS, frame_identity
 
 
-METHODS = ("MF_32_Features", "MF_35_Features")
+METHODS = ("MF_Separated_Expert_Inputs", "MF_All_Expert_Inputs")
 SCORES = ("accuracy", "balanced_accuracy", "macro_f1", "weighted_f1")
 
 
@@ -34,15 +34,12 @@ def check_pair(models, development, test):
     left, right = models
     left_columns = left["numeric"] + left["categorical"]
     right_columns = right["numeric"] + right["categorical"]
-    if len(left_columns) != 32 or len(right_columns) != 35:
-        raise ValueError(
-            f"Expected 32/35 raw expert columns, found {len(left_columns)}/"
-            f"{len(right_columns)}. Check the Clean_Valid schema and constant fields."
-        )
+    if not left_columns:
+        raise ValueError("No usable separated expert inputs")
     if set(right_columns) - set(left_columns) != set(TIMING):
         raise RuntimeError("Expert inputs differ by fields other than the three timing fields")
     if set(left_columns) - set(right_columns):
-        raise RuntimeError("The 32-feature inputs are not a subset of the 35-feature inputs")
+        raise RuntimeError("Separated expert inputs are not a subset of complete expert inputs")
     if left["partition_rows"] != right["partition_rows"]:
         raise RuntimeError("Training partition sizes differ")
     if left["source_eligible_index"] != right["source_eligible_index"]:
@@ -91,6 +88,8 @@ def evaluate_pair(development, test, config):
         prediction = result["CDR_MLC_meta_stacker"]
         score = metrics(observed.traffic_label.to_numpy(), prediction, APPLICATIONS)
         rows.append({"method": method, "n": score["n"],
+                     "raw_expert_features": len(model["numeric"] + model["categorical"]),
+                     "encoded_expert_dimension": int(model["experts"][0].n_features_in_),
                      **{key: score[key] for key in SCORES}})
         predictions[f"prediction_{method}"] = prediction
         audit[method] = {
@@ -117,7 +116,7 @@ def summarize(rows):
     for (protocol, seed), group in frame.groupby(["protocol", "seed"], sort=False):
         indexed = group.set_index("method")
         delta.append({"protocol": protocol, "seed": seed,
-                      **{f"{key}_delta_35_minus_32": float(
+                      **{f"{key}_delta_all_minus_separated": float(
                           indexed.loc[METHODS[1], key] - indexed.loc[METHODS[0], key]
                       ) for key in SCORES}})
     return frame, aggregate.reset_index(), pd.DataFrame(delta)
@@ -172,7 +171,7 @@ def main():
                         for p in sorted(root.glob("*.py"))},
         "only_intervention": "include AckDat, TcpRtt, SynAck in RF expert inputs",
         "selection_policy": "same development-only candidate search for both variants",
-        "delta_direction": "35 features minus 32 features; positive favors 35",
+        "delta_direction": "all expert inputs minus separated expert inputs; positive favors including timing",
     }
     # Normalize tuple fields to their on-disk JSON representation.
     manifest = json.loads(json.dumps(manifest))
@@ -195,7 +194,7 @@ def main():
                 rows = json.loads(checkpoint.read_text())["rows"]
                 print(f"Resume: {name}, seed {seed}", flush=True)
             else:
-                print(f"Running: {name}, seed {seed} (32 and 35 features)", flush=True)
+                print(f"Running: {name}, seed {seed} (separated and complete expert inputs)", flush=True)
                 rows, predictions, audit = evaluate_pair(
                     development, test, replace(config, random_state=seed)
                 )

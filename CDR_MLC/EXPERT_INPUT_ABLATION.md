@@ -1,7 +1,10 @@
 # MF-CDR-MLC expert-input ablation (Reviewer 2, comment D)
 
-This experiment directly compares the full MF-CDR-MLC with 32 raw expert
-features against the same architecture with 35 raw expert features. The only
+This experiment directly compares separated expert inputs with complete expert
+inputs in the full MF-CDR-MLC architecture. The nominal 32/35 schema does not
+imply that every column is usable in each development partition: the production
+selector rejects constant or otherwise unusable fields. Actual counts such as
+24/27 are recorded without changing this existing selection behavior. The only
 intervention is restoring `AckDat`, `TcpRtt`, and `SynAck` to the RF expert
 inputs. Both variants retain those measurements in the congestion-context
 path, utility estimation, meta-fusion, level balancing, and confidence fallback.
@@ -59,19 +62,19 @@ ignored by Git:
   weighted-F1, and evaluated row count for every protocol/seed.
 - `summary.csv`: per-protocol mean and sample standard deviation over seeds.
   Standard deviation is undefined with one seed.
-- `paired_deltas.csv`: **35 minus 32** for each score. Positive favors retaining
-  all 35 expert inputs; negative favors separation.
+- `paired_deltas.csv`: **all inputs minus separated inputs** for each score.
+  Positive favors including the three timing fields; negative favors separation.
 - `<protocol>/seed_<seed>/predictions.csv`: paired predictions on identical rows.
 - `<protocol>/seed_<seed>/pair.json`: selected thresholds/variants, selection
   trials, actual expert columns and encoded dimensions, and invariant audits.
 - `manifest.json` and `input_audit.csv`: run configuration and input provenance.
 
 The runner verifies identical routing geometry, context values, partition
-sizes, and eligible rows, and rejects development/test overlap. It fails if
-the actual usable raw expert columns are not exactly 32 and 35; constant-field
-or schema differences must be investigated rather than silently mislabeling
-the comparison. These are raw input counts; category encoding can increase
-the RF's internal feature dimension, which is separately recorded.
+sizes, and eligible rows, and rejects development/test overlap. It requires
+that the complete expert input set differs by exactly the three timing fields,
+with all shared inputs preserved. Metric rows record the actual raw and encoded
+feature counts; category encoding can increase the RF's internal dimension.
+The method names describe the intervention rather than assume fixed counts.
 
 Report all seven protocols and all requested seeds, regardless of which model
 wins. A one-seed check is exploratory evidence, not a significance claim.
