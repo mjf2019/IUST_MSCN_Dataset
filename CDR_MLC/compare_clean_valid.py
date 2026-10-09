@@ -44,6 +44,7 @@ from sensitive_cdr_mlc import (
     SensitiveConfig, predict as predict_sensitive, select_and_fit as fit_sensitive,
 )
 from minibatch_clustering import make_minibatch_kmeans, minibatch_kmeans_audit
+from expert_partitioning import random_expert_assignments
 
 
 TIMING = ["TcpRtt", "SynAck", "AckDat"]
@@ -149,22 +150,27 @@ def predict_rf(model: dict, target: pd.DataFrame) -> np.ndarray:
 
 
 def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
-                  expert_trees: int, *, include_timing_in_experts: bool = False) -> dict:
+                  expert_trees: int, *, include_timing_in_experts: bool = False,
+                  use_clustering: bool = True) -> dict:
     view = trend_frame(source, TIMING, window)
     trend_columns = [f"{feature}_{stat}" for feature in TIMING for stat in STATS]
     if len(view) < 3:
         raise ValueError("fixed CDR-MLC has fewer than three complete source windows")
-    scaler = StandardScaler().fit(view[trend_columns])
-    z = scaler.transform(view[trend_columns])
-    router = make_minibatch_kmeans(
-        n_clusters=3, batch_size=1024, n_init=10, max_iter=100,
-        random_state=seed,
-    ).fit(z)
-    routes = router.predict(z)
-    if len(np.unique(routes)) != 3:
-        raise ValueError("fixed CDR-MLC produced fewer than three source clusters")
-
     raw = source.loc[view.index]
+    if use_clustering:
+        scaler = StandardScaler().fit(view[trend_columns])
+        z = scaler.transform(view[trend_columns])
+        router = make_minibatch_kmeans(
+            n_clusters=3, batch_size=1024, n_init=10, max_iter=100,
+            random_state=seed,
+        ).fit(z)
+        routes = router.predict(z)
+    else:
+        # Retain the same complete-window eligibility, but fit no geometry.
+        scaler, router = None, None
+        routes = random_expert_assignments(raw, seed)
+    if len(np.unique(routes)) != 3:
+        raise ValueError("expert partition produced fewer than three groups")
     excluded = () if include_timing_in_experts else TIMING
     numeric, categorical = select_classifier_columns(raw, excluded)
     preprocessor = make_preprocessor(numeric, categorical)
@@ -190,8 +196,13 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
         "trend_columns": trend_columns,
         "scaler": scaler,
         "router": router,
-        "router_algorithm": "MiniBatchKMeans",
-        "router_audit": minibatch_kmeans_audit(router),
+        "router_algorithm": "MiniBatchKMeans" if use_clustering else "None",
+        "router_audit": minibatch_kmeans_audit(router) if use_clustering else {
+            "expert_partition": "label-free SHA256 record-identity partition",
+            "partition_seed": seed, "n_experts": 3,
+        },
+        "use_clustering": use_clustering,
+        "expert_partition_seed": seed,
         "expert_excluded_features": tuple(excluded),
         "preprocessor": preprocessor,
         "numeric": numeric,
@@ -203,6 +214,8 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
 
 
 def predict_fixed_cdr(model: dict, target: pd.DataFrame) -> pd.Series:
+    if not model.get("use_clustering", True):
+        raise ValueError("No-clustering experts require the all-expert meta-fusion pipeline")
     view = trend_frame(target, TIMING, model["window"])
     routes = model["router"].predict(
         model["scaler"].transform(view[model["trend_columns"]])

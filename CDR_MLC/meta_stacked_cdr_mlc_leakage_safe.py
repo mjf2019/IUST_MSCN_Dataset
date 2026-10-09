@@ -45,6 +45,7 @@ class MetaStackConfig:
     refit_experts: bool = True
     random_state: int = 42
     include_timing_in_experts: bool = False
+    use_clustering: bool = True
 
     def validate(self):
         fractions = (self.expert_fraction, self.utility_fraction, self.meta_fraction)
@@ -127,6 +128,7 @@ def fit_meta_stacker(source, config: MetaStackConfig):
     initial = fit_fixed_cdr(
         split["expert"], config.window, config.random_state, config.expert_trees,
         include_timing_in_experts=config.include_timing_in_experts,
+        use_clustering=config.use_clustering,
     )
     helper = LearnedRouterConfig(
         window=config.window, expert_trees=config.expert_trees,
@@ -249,8 +251,10 @@ def fit_meta_stacker(source, config: MetaStackConfig):
         "leakage_control": {
             "router_algorithm": initial["router_algorithm"],
             "router_parameters": initial["router_audit"],
-            "router_scaler_fit_partition": "expert_only",
-            "router_scaler_frozen_after_fit": True,
+            "router_scaler_fit_partition": "expert_only" if config.use_clustering else None,
+            "router_scaler_frozen_after_fit": bool(config.use_clustering),
+            "use_clustering": config.use_clustering,
+            "expert_partition": "MBK" if config.use_clustering else "label-free random",
             "utility_meta_selection_are_strictly_later": True,
             "final_experts_refit_on_full_development": bool(config.refit_experts),
             "expert_variant": "refit" if config.refit_experts else "preliminary",
@@ -282,12 +286,13 @@ def predict_all(model, frame):
     oracle = _oracle_route(truth, probabilities, predictions)
     return {
         "observed": raw,
-        "CDR_MLC_actual_router": predictions[row, kroute],
+        "CDR_MLC_actual_router": predictions[row, kroute] if model.get("use_clustering", True) else None,
         "CDR_MLC_utility_router": hard_prediction,
         "CDR_MLC_meta_stacker": stacked,
         "CDR_MLC_oracle_router": predictions[row, oracle],
         "routes": pd.DataFrame({
-            "minibatch_kmeans_route": kroute, "utility_route": utility_route,
+            "minibatch_kmeans_route": kroute if model.get("use_clustering", True) else np.nan,
+            "utility_route": utility_route,
             "oracle_route": oracle, "utility_gain": utility_gain,
             "meta_prediction": meta_prediction, "meta_confidence": confidence,
             "used_meta_prediction": use_meta,

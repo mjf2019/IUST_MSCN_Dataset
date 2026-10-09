@@ -17,6 +17,7 @@ from adaptive_cdr_mlc import (
     select_classifier_columns, trend_frame,
 )
 from compare_clean_valid import TIMING, fit_fixed_cdr, rf_config
+from expert_partitioning import random_expert_assignments
 
 
 @dataclass(frozen=True)
@@ -55,9 +56,16 @@ def chronological_split(frame: pd.DataFrame, fraction: float):
 def _expert_outputs(model, frame):
     view = trend_frame(frame, TIMING, model["window"])
     raw = frame.loc[view.index]
-    z = model["scaler"].transform(view[model["trend_columns"]])
-    distances = model["router"].transform(z)
-    minibatch_route = model["router"].predict(z)
+    if model.get("use_clustering", True):
+        z = model["scaler"].transform(view[model["trend_columns"]])
+        distances = model["router"].transform(z)
+        minibatch_route = model["router"].predict(z)
+    else:
+        z = np.empty((len(raw), 0))
+        distances = np.empty((len(raw), 0))
+        # Placeholder for shared result plumbing, never a prediction feature.
+        # Utility fallback chooses argmax utility, including deterministic ties.
+        minibatch_route = np.zeros(len(raw), dtype=np.int64)
     columns = model["numeric"] + model["categorical"]
     x = model["preprocessor"].transform(raw[columns])
     probabilities, predictions = [], []
@@ -103,8 +111,11 @@ def _oracle_route(truth, probabilities, predictions):
 def _refit_experts_with_frozen_router(initial, full_source, config):
     view = trend_frame(full_source, TIMING, initial["window"])
     raw = full_source.loc[view.index]
-    z = initial["scaler"].transform(view[initial["trend_columns"]])
-    routes = initial["router"].predict(z)
+    if initial.get("use_clustering", True):
+        z = initial["scaler"].transform(view[initial["trend_columns"]])
+        routes = initial["router"].predict(z)
+    else:
+        routes = random_expert_assignments(raw, initial["expert_partition_seed"])
     # Preserve the expert-input ablation during the full-development refit.
     excluded = initial.get("expert_excluded_features", TIMING)
     numeric, categorical = select_classifier_columns(raw, excluded)

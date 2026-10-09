@@ -76,6 +76,10 @@ def _enhanced_outputs(model, frame, congestion_config):
     congestion_columns = [column for column in congestion if column.startswith("router_")]
     congestion_values = congestion.loc[rows, congestion_columns].to_numpy(dtype=float)
     base_features = _gate_features(distances, kroute, probabilities)
+    if not model.get("use_clustering", True):
+        # There are no distances in this mode; remove the final three one-hot
+        # route columns. Expert probabilities and confidence evidence remain.
+        base_features = base_features[:, :-3]
     return (
         raw, distances, kroute, probabilities, predictions,
         np.column_stack([base_features, congestion_values]), congestion_columns,
@@ -199,3 +203,4 @@ def predict_all(model, frame):
             "minibatch_kmeans_matches_oracle": kroute == oracle,
         }, index=raw.index),
     }
+
