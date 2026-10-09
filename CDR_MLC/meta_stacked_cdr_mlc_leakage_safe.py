@@ -47,10 +47,12 @@ class MetaStackConfig:
     include_timing_in_experts: bool = False
     use_clustering: bool = True
     mbk_n_init: int = 10
+    mbk_batch_size: int = 1024
+    mbk_max_iter: int = 100
 
     def validate(self):
-        if self.mbk_n_init < 1:
-            raise ValueError("mbk_n_init must be positive")
+        if min(self.mbk_n_init, self.mbk_batch_size, self.mbk_max_iter) < 1:
+            raise ValueError("MBK n_init, batch_size and max_iter must be positive")
         fractions = (self.expert_fraction, self.utility_fraction, self.meta_fraction)
         if any(value <= 0 for value in fractions) or sum(fractions) >= 1:
             raise ValueError("positive fractions with a nonempty selection tail are required")
@@ -133,6 +135,8 @@ def fit_meta_stacker(source, config: MetaStackConfig):
         include_timing_in_experts=config.include_timing_in_experts,
         use_clustering=config.use_clustering,
         mbk_n_init=config.mbk_n_init,
+        mbk_batch_size=config.mbk_batch_size,
+        mbk_max_iter=config.mbk_max_iter,
     )
     helper = LearnedRouterConfig(
         window=config.window, expert_trees=config.expert_trees,

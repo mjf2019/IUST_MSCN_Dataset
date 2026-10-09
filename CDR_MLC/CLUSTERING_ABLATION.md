@@ -92,3 +92,23 @@ recorded in pair.json and the requested value in manifest.json. This parameter
 selects among initialization candidates, not multiple complete MBK fits.
 Use development validation to select a setting; test comparisons are descriptive
 and must not be used to choose the final configuration.
+
+## MBK batch size and iteration limit
+
+The runner also accepts --mbk-batch-size (default 1024) and --mbk-max-iter
+(default 100). Both must be positive integers and affect only the MBK variant.
+They are recorded in manifest.json and the fitted router audit in pair.json.
+Increasing max_iter only raises the iteration limit; convergence may stop sooner.
+
+For one-factor comparisons at seed 42 and n_init=26, run each setting in a new
+output folder. Every command evaluates both MF_Full and MF_No_Clustering:
+
+```powershell
+python CDR_MLC/clustering_ablation.py --seeds 42 --mbk-n-init 26 --mbk-batch-size 1024 --mbk-max-iter 100 --output CDR_MLC/outputs/mbk26_b1024_i100_seed42
+python CDR_MLC/clustering_ablation.py --seeds 42 --mbk-n-init 26 --mbk-batch-size 2048 --mbk-max-iter 100 --output CDR_MLC/outputs/mbk26_b2048_i100_seed42
+python CDR_MLC/clustering_ablation.py --seeds 42 --mbk-n-init 26 --mbk-batch-size 1024 --mbk-max-iter 300 --output CDR_MLC/outputs/mbk26_b1024_i300_seed42
+```
+
+For a combined exploratory setting, pass --mbk-batch-size 2048 and
+--mbk-max-iter 300 together and use another output folder.
+All other preprocessing, windows, experts and evaluation protocols are unchanged.
