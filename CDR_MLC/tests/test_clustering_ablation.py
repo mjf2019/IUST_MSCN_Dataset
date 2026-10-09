@@ -10,7 +10,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from clustering_ablation import METHODS, SCORES, evaluate_pair, summarize
 from compare_clean_valid import TIMING
-from expert_partitioning import random_expert_assignments
+from expert_partitioning import random_expert_assignments, random_expert_partition
 from meta_stacked_cdr_mlc_leakage_safe import MetaStackConfig, fit_meta_stacker, predict_all
 from test_expert_input_ablation import synthetic_data
 
@@ -24,19 +24,38 @@ class ClusteringAblationTests(unittest.TestCase):
         cls.config = MetaStackConfig(congestion_window=5, expert_trees=3,
             utility_trees=3, meta_trees=3, congestion_features=tuple(TIMING), random_state=42)
 
-    def test_partitions_ignore_labels_values_order_and_future_rows(self):
+    def test_rng_uses_only_count_seed_and_no_balancing(self):
         frame = self.development
         a = random_expert_assignments(frame, 42)
+        expected = np.random.default_rng(42).integers(0, 3, size=len(frame), dtype=np.int64)
+        np.testing.assert_array_equal(a, expected)
         altered = frame.copy()
         altered["traffic_label"] = "hidden"
         altered["congestion_level"] = "hidden"
+        altered["source_file"] = "renamed.flow"
+        altered["source_row"] = -999
         altered[TIMING] = -999
         np.testing.assert_array_equal(a, random_expert_assignments(altered, 42))
-        subset = frame.iloc[::3]
-        np.testing.assert_array_equal(a[::3], random_expert_assignments(subset, 42))
-        np.testing.assert_array_equal(a[::-1], random_expert_assignments(frame.iloc[::-1], 42))
-        self.assertEqual(set(a), {0, 1, 2})
+        np.testing.assert_array_equal(a, random_expert_assignments(frame.iloc[::-1], 42))
+        np.testing.assert_array_equal(a[:20], random_expert_assignments(frame.iloc[:20], 42))
         self.assertFalse(np.array_equal(a, random_expert_assignments(frame, 52)))
+        # Tiny samples retain raw draws; no equal-size quotas or redraws.
+        np.testing.assert_array_equal(random_expert_assignments(frame.iloc[:7], 42),
+            np.random.default_rng(42).integers(0, 3, size=7, dtype=np.int64))
+
+    def test_saved_draws_survive_reordering_and_development_extension(self):
+        frame = self.development
+        preliminary = frame.iloc[::3]
+        a, state = random_expert_partition(preliminary, 42)
+        b, final = random_expert_partition(frame, 42, previous=state)
+        np.testing.assert_array_equal(a, b[::3])
+        reordered, again = random_expert_partition(frame.iloc[::-1], 42, previous=final)
+        np.testing.assert_array_equal(reordered, b[::-1])
+        renamed = preliminary.copy()
+        renamed.index = renamed.index + 100000
+        same, _ = random_expert_partition(renamed, 42)
+        np.testing.assert_array_equal(a, same)
+        self.assertEqual(final["rng_state"], again["rng_state"])
 
     def test_no_clustering_calls_and_hidden_test_labels(self):
         config = replace(self.config, use_clustering=False)
@@ -65,6 +84,16 @@ class ClusteringAblationTests(unittest.TestCase):
                 self.assertEqual(rows[0]["meta_input_dimension"] - rows[1]["meta_input_dimension"], 6)
                 self.assertTrue(audit["same_scored_rows_and_context_values_verified"])
                 self.assertTrue(audit["no_MBK_scaler_distances_or_route_features_verified"])
+                saved = audit[METHODS[1]]["random_partition"]
+                self.assertEqual(len(saved["row_indices"]), len(saved["assignments"]))
+                self.assertEqual(saved["seed"], self.config.random_state)
+                if refit:
+                    preliminary = fit_meta_stacker(self.development,
+                        replace(self.config, use_clustering=False, refit_experts=False))
+                    initial = preliminary["random_partition"]
+                    final_map = dict(zip(saved["row_indices"], saved["assignments"]))
+                    self.assertEqual(initial["assignments"],
+                        [final_map[key] for key in initial["row_indices"]])
 
     def test_mbk_parameters_propagation_and_control_invariance(self):
         for refit in (True, False):

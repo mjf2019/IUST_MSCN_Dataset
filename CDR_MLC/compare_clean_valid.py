@@ -44,7 +44,7 @@ from sensitive_cdr_mlc import (
     SensitiveConfig, predict as predict_sensitive, select_and_fit as fit_sensitive,
 )
 from minibatch_clustering import make_minibatch_kmeans, minibatch_kmeans_audit
-from expert_partitioning import random_expert_assignments
+from expert_partitioning import random_expert_partition
 
 
 TIMING = ["TcpRtt", "SynAck", "AckDat"]
@@ -158,6 +158,7 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
     if len(view) < 3:
         raise ValueError("fixed CDR-MLC has fewer than three complete source windows")
     raw = source.loc[view.index]
+    random_partition = None
     if use_clustering:
         scaler = StandardScaler().fit(view[trend_columns])
         z = scaler.transform(view[trend_columns])
@@ -170,7 +171,7 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
     else:
         # Retain the same complete-window eligibility, but fit no geometry.
         scaler, router = None, None
-        routes = random_expert_assignments(raw, seed)
+        routes, random_partition = random_expert_partition(raw, seed)
     if len(np.unique(routes)) != 3:
         raise ValueError("expert partition produced fewer than three groups")
     excluded = () if include_timing_in_experts else TIMING
@@ -200,11 +201,14 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
         "router": router,
         "router_algorithm": "MiniBatchKMeans" if use_clustering else "None",
         "router_audit": minibatch_kmeans_audit(router) if use_clustering else {
-            "expert_partition": "label-free SHA256 record-identity partition",
+            "expert_partition": "independent uniform NumPy PCG64 draws",
+            "uses_filenames_features_or_labels": False,
+            "forced_balancing": False,
             "partition_seed": seed, "n_experts": 3,
         },
         "use_clustering": use_clustering,
         "expert_partition_seed": seed,
+        "random_partition": random_partition,
         "expert_excluded_features": tuple(excluded),
         "preprocessor": preprocessor,
         "numeric": numeric,

@@ -262,7 +262,7 @@ def fit_meta_stacker(source, config: MetaStackConfig):
             "router_scaler_fit_partition": "expert_only" if config.use_clustering else None,
             "router_scaler_frozen_after_fit": bool(config.use_clustering),
             "use_clustering": config.use_clustering,
-            "expert_partition": "MBK" if config.use_clustering else "label-free random",
+            "expert_partition": "MBK" if config.use_clustering else "independent uniform RNG",
             "utility_meta_selection_are_strictly_later": True,
             "final_experts_refit_on_full_development": bool(config.refit_experts),
             "expert_variant": "refit" if config.refit_experts else "preliminary",

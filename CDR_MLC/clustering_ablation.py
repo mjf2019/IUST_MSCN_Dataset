@@ -92,6 +92,7 @@ def evaluate_pair(development, test, config):
             "congestion_columns": model["congestion_columns"],
             "meta_input_dimension": meta_dimension,
             "partition_rows": model["partition_rows"],
+            "random_partition": model.get("random_partition"),
             "selected_meta_variant": model["selected_meta_variant"],
             "selected_meta_confidence": model["selected_meta_confidence"],
             "selection_trials": model["meta_selection_trials"],
@@ -175,7 +176,7 @@ def main():
                          for p in sorted(args.data_dir.glob("*.flow"))},
         "code_sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                         for p in sorted(root.glob("*.py"))},
-        "intervention": "replace MBK expert partitions with label-free stable random partitions; remove all geometry features",
+        "intervention": "replace MBK expert partitions with independent uniform RNG partitions; remove all geometry features",
         "retained": "three experts, context, utility, meta-fusion, fallback, partitions, seed and tree budgets",
         "eligibility": "same complete TTFEF/context windows in both variants",
         "selection_policy": "same development-only search, independently selected per variant",

@@ -17,7 +17,7 @@ from adaptive_cdr_mlc import (
     select_classifier_columns, trend_frame,
 )
 from compare_clean_valid import TIMING, fit_fixed_cdr, rf_config
-from expert_partitioning import random_expert_assignments
+from expert_partitioning import random_expert_partition
 
 
 @dataclass(frozen=True)
@@ -111,11 +111,13 @@ def _oracle_route(truth, probabilities, predictions):
 def _refit_experts_with_frozen_router(initial, full_source, config):
     view = trend_frame(full_source, TIMING, initial["window"])
     raw = full_source.loc[view.index]
+    random_partition = initial.get("random_partition")
     if initial.get("use_clustering", True):
         z = initial["scaler"].transform(view[initial["trend_columns"]])
         routes = initial["router"].predict(z)
     else:
-        routes = random_expert_assignments(raw, initial["expert_partition_seed"])
+        routes, random_partition = random_expert_partition(
+            raw, initial["expert_partition_seed"], previous=random_partition)
     # Preserve the expert-input ablation during the full-development refit.
     excluded = initial.get("expert_excluded_features", TIMING)
     numeric, categorical = select_classifier_columns(raw, excluded)
@@ -140,6 +142,7 @@ def _refit_experts_with_frozen_router(initial, full_source, config):
         "full_source_rows": len(raw),
         "source_eligible_index": view.index.tolist(),
         "full_source_cluster_counts": counts,
+        "random_partition": random_partition,
     })
     return final
 

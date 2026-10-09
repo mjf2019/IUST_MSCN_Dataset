@@ -18,10 +18,14 @@ score exactly the same complete-window records and use the same chronological
 - `MF_Full`: the unchanged production MF-CDR-MLC, with MBK-trained geometry and
   three congestion-specific experts.
 - `MF_No_Clustering`: no MBK or router scaler is fitted. The same eligible
-  development records are assigned to three approximately balanced random
-  expert partitions using a seeded SHA256 hash of their opaque record IDs.
-  This assignment uses neither features nor application/congestion labels,
-  stays fixed during the final expert refit, and is never used at inference.
+  development records receive independent uniform draws from {0, 1, 2}
+  using a seeded NumPy PCG64 generator. Filenames, record identities, features
+  and application/congestion labels do not enter the random draw. No quotas,
+  stratification, balancing, rejection or redrawing are applied.
+  Existing draws are saved and preserved during final refit; newly eligible
+  development records receive draws from the continued RNG stream.
+  Integer DataFrame indices are only lookup keys for saved assignments.
+  Assignments are never used at inference.
   All three experts are evaluated for every eligible input record.
 - Centroid distances and the three one-hot cluster indicators are removed from
   utility and meta-fusion inputs. Expert probabilities and confidence evidence
@@ -112,3 +116,16 @@ python CDR_MLC/clustering_ablation.py --seeds 42 --mbk-n-init 26 --mbk-batch-siz
 For a combined exploratory setting, pass --mbk-batch-size 2048 and
 --mbk-max-iter 300 together and use another output folder.
 All other preprocessing, windows, experts and evaluation protocols are unchanged.
+
+## RNG control version
+
+This replaces the previous filename/row-identity hash control. Historical
+results are a different control experiment and must not be resumed or pooled
+with new results. Use a new output directory. Each pair.json stores the final
+random assignments, integer row lookup keys and generator state for auditing.
+Source filenames remain available to data-split/overlap checks, but are never
+read by the RNG partition function.
+
+This seeded uniform design is reproducible and independent of labels.
+Group sizes are random, often close to equal by chance; it does not
+force unequal sizes or deliberately weaken the control.
