@@ -25,6 +25,7 @@ from meta_stacked_cdr_mlc_leakage_safe import (
     MetaStackConfig, fit_meta_stacker, four_way_split, predict_all,
 )
 from mixed_level_protocols_leakage_safe import PROTOCOLS, frame_identity
+from dynamic_drift_patterns import SCENARIOS as DYNAMIC_SCENARIOS, ordered_development_tail, build_stream
 
 
 METHODS = ("MF_Full", "MF_No_Clustering")
@@ -70,8 +71,11 @@ def evaluate_pair(development, test, config):
     observed = results[0]["observed"]
     if frame_identity(observed) != frame_identity(results[1]["observed"]):
         raise RuntimeError("Scored records differ")
-    predictions = observed[["timestamp", "source_file", "source_row",
-                            "traffic_label", "congestion_level"]].copy()
+    prediction_columns = ["timestamp", "source_file", "source_row",
+                          "traffic_label", "congestion_level"]
+    prediction_columns += [name for name in ("dynamic_scenario", "drift_segment", "segment_order")
+                           if name in observed]
+    predictions = observed[prediction_columns].copy()
     rows, audit = [], {}
     for method, model, result in zip(METHODS, models, results):
         prediction = result["CDR_MLC_meta_stacker"]
@@ -136,6 +140,9 @@ def main():
     parser.add_argument("--seeds", type=int, nargs="+", default=[42])
     parser.add_argument("--scenarios", nargs="*", choices=["1", "2", "3"], default=["1", "2", "3"])
     parser.add_argument("--protocols", nargs="*", choices=list(PROTOCOLS), default=list(PROTOCOLS))
+    parser.add_argument("--dynamic-scenarios", nargs="*", choices=list(DYNAMIC_SCENARIOS), default=[])
+    parser.add_argument("--block-rows", type=int, default=1000,
+                        help="Records per dynamic-stream segment")
     parser.add_argument("--train-fraction", type=float, default=.80)
     parser.add_argument("--target-test-fraction", type=float, default=1.0)
     parser.add_argument("--mbk-n-init", type=int, default=10,
@@ -156,8 +163,10 @@ def main():
     args = parser.parse_args()
     if len(set(args.seeds)) != len(args.seeds) or any(s < 0 for s in args.seeds):
         parser.error("Seeds must be distinct nonnegative integers")
-    if not args.scenarios and not args.protocols:
-        parser.error("Select at least one scenario or protocol")
+    if not args.scenarios and not args.protocols and not args.dynamic_scenarios:
+        parser.error("Select at least one scenario, protocol or dynamic scenario")
+    if args.dynamic_scenarios and (args.block_rows < len(APPLICATIONS) or args.block_rows % len(APPLICATIONS)):
+        parser.error("--block-rows must be a positive multiple of application count")
     if not 0 < args.train_fraction < 1 or not 0 < args.target_test_fraction <= 1:
         parser.error("Invalid train/test fractions")
     if min(args.mbk_n_init, args.mbk_batch_size, args.mbk_max_iter) < 1:
@@ -174,9 +183,17 @@ def main():
         [*TIMING, *DEFAULT_CONGESTION_FEATURES])))
     evaluations = build_evaluations(data, args.scenarios, args.protocols,
                                     args.train_fraction, args.target_test_fraction)
+    if args.dynamic_scenarios:
+        development, tails = ordered_development_tail(data, args.train_fraction)
+        evaluations.extend((development, tails, {
+            "name": name, "dynamic": True, "drift_type": DYNAMIC_SCENARIOS[name]["name"],
+            "block_rows": args.block_rows,
+        }) for name in args.dynamic_scenarios)
     manifest = json.loads(json.dumps({
         "config": asdict(config), "seeds": args.seeds,
         "scenarios": args.scenarios, "protocols": args.protocols,
+        "dynamic_scenarios": args.dynamic_scenarios, "block_rows": args.block_rows,
+        "dynamic_definitions": {name: DYNAMIC_SCENARIOS[name] for name in args.dynamic_scenarios},
         "train_fraction": args.train_fraction,
         "target_test_fraction": args.target_test_fraction,
         "input_sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
@@ -202,6 +219,11 @@ def main():
     for development, test, definition in evaluations:
         name = definition["name"]
         for seed in args.seeds:
+            run_test, run_definition = test, definition
+            if definition.get("dynamic"):
+                run_test, segments = build_stream(test, name, args.block_rows, seed)
+                run_definition = {**definition, "segments": segments,
+                                  "raw_stream_rows": len(run_test)}
             destination = args.output / name / f"seed_{seed}"
             checkpoint = destination / "pair.json"
             if args.resume and checkpoint.exists():
@@ -209,12 +231,12 @@ def main():
                 print(f"Resume: {name}, seed {seed}", flush=True)
             else:
                 print(f"Running: {name}, seed {seed} (full and no clustering)", flush=True)
-                rows, predictions, audit = evaluate_pair(development, test, replace(config, random_state=seed))
+                rows, predictions, audit = evaluate_pair(development, run_test, replace(config, random_state=seed))
                 rows = [{"protocol": name, "seed": seed, **r} for r in rows]
                 destination.mkdir(parents=True, exist_ok=True)
                 predictions.to_csv(destination / "predictions.csv", index=False)
                 temporary = destination / "pair.tmp"
-                temporary.write_text(json.dumps({"rows": rows, "definition": definition, "audit": audit}, indent=2) + "\n", encoding="utf-8")
+                temporary.write_text(json.dumps({"rows": rows, "definition": run_definition, "audit": audit}, indent=2) + "\n", encoding="utf-8")
                 temporary.replace(checkpoint)
             all_rows.extend(rows)
             frame, aggregate, delta, means, mean_delta = summarize(all_rows)

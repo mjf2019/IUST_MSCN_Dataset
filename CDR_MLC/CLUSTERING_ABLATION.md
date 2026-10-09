@@ -165,3 +165,23 @@ python CDR_MLC/clustering_ablation.py --seeds 42 --mbk-n-init 26 --mbk-batch-siz
 Use a new output folder. The original MBK remains the default without the flag.
 Results of this new variant must not replace the original method's results
 without updating its definition, training algorithm and experimental reporting.
+
+## Dynamic D1/D2/D3 paired ablation
+
+Use --dynamic-scenarios D1 D2 D3 to add the established dynamic streams.
+Empty --scenarios and --protocols disable the default seven static evaluations:
+
+```powershell
+python CDR_MLC/clustering_ablation.py --scenarios --protocols --dynamic-scenarios D1 D2 D3 --seeds 42 --mbk-n-init 26 --mbk-batch-size 1024 --mbk-max-iter 100 --mbk-label-aware --output CDR_MLC/outputs/clustering_classcovered_dynamic_seed42
+```
+
+The dynamic builder reuses dynamic_drift_patterns.py: ordered 80% development
+prefixes at all three levels and disjoint tails for gradual (D1), recurring
+(D2), and mixed (D3) streams. --block-rows defaults to 1000 per segment and
+must be a multiple of the application count. Reduce it if tails are too small.
+Both models are fitted before evaluation and remain frozen within each stream.
+Unlike unseen-level static protocols, dynamic development includes all levels.
+
+Outputs use the existing paired format with D1/D2/D3 as protocol names.
+Per-pair predictions retain dynamic segment labels; pair.json retains segment
+construction details. Change --seeds to run multiple paired seeds.

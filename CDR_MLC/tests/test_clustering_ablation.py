@@ -13,6 +13,7 @@ from compare_clean_valid import TIMING, class_covered_mbk_routes
 from expert_partitioning import random_expert_assignments, random_expert_partition
 from meta_stacked_cdr_mlc_leakage_safe import MetaStackConfig, fit_meta_stacker, predict_all
 from test_expert_input_ablation import synthetic_data
+from dynamic_drift_patterns import ordered_development_tail, build_stream
 
 
 class ClusteringAblationTests(unittest.TestCase):
@@ -157,6 +158,23 @@ class ClusteringAblationTests(unittest.TestCase):
         np.testing.assert_array_equal(
             predict_all(plain, self.test)["CDR_MLC_meta_stacker"],
             predict_all(aware, self.test)["CDR_MLC_meta_stacker"])
+
+    def test_dynamic_stream_pairs_use_disjoint_identical_rows(self):
+        development, tails = ordered_development_tail(synthetic_data(), .80)
+        dev_ids = set(zip(development.source_file, development.source_row))
+        for scenario in ("D1", "D2", "D3"):
+            stream, segments = build_stream(tails, scenario, block_rows=20, seed=42)
+            test_ids = set(zip(stream.source_file, stream.source_row))
+            self.assertFalse(dev_ids & test_ids)
+            self.assertEqual(len(test_ids), len(stream))
+            repeat, _ = build_stream(tails, scenario, block_rows=20, seed=42)
+            self.assertEqual(stream.to_dict("records"), repeat.to_dict("records"))
+            rows, predictions, audit = evaluate_pair(development, stream,
+                replace(self.config, mbk_label_aware=True))
+            self.assertEqual(rows[0]["n"], rows[1]["n"])
+            self.assertEqual(len(predictions), rows[0]["n"])
+            self.assertIn("drift_segment", predictions)
+            self.assertTrue(audit["same_scored_rows_and_context_values_verified"])
 
     def test_summary_delta_and_equal_protocol_weighting(self):
         rows = [{"protocol": protocol, "seed": 42, "method": method,
