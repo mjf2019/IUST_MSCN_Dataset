@@ -44,6 +44,7 @@ class MetaStackConfig:
     meta_confidence_candidates: tuple[float, ...] = (.00, .40, .50, .60, .70, .80, .90, 1.01)
     refit_experts: bool = True
     random_state: int = 42
+    include_timing_in_experts: bool = False
 
     def validate(self):
         fractions = (self.expert_fraction, self.utility_fraction, self.meta_fraction)
@@ -124,7 +125,8 @@ def fit_meta_stacker(source, config: MetaStackConfig):
     # including StandardScaler and MiniBatchKMeans, on the earliest partition only.
     # The router/scaler are frozen for all later partitions and final inference.
     initial = fit_fixed_cdr(
-        split["expert"], config.window, config.random_state, config.expert_trees
+        split["expert"], config.window, config.random_state, config.expert_trees,
+        include_timing_in_experts=config.include_timing_in_experts,
     )
     helper = LearnedRouterConfig(
         window=config.window, expert_trees=config.expert_trees,
@@ -252,6 +254,8 @@ def fit_meta_stacker(source, config: MetaStackConfig):
             "utility_meta_selection_are_strictly_later": True,
             "final_experts_refit_on_full_development": bool(config.refit_experts),
             "expert_variant": "refit" if config.refit_experts else "preliminary",
+            "expert_input_columns": final["numeric"] + final["categorical"],
+            "include_timing_in_experts": config.include_timing_in_experts,
         },
     })
     return final
@@ -290,3 +294,4 @@ def predict_all(model, frame):
             "meta_prediction_correct": meta_prediction == truth,
         }, index=raw.index),
     }
+

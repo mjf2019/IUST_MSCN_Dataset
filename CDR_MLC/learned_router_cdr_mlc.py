@@ -105,7 +105,9 @@ def _refit_experts_with_frozen_router(initial, full_source, config):
     raw = full_source.loc[view.index]
     z = initial["scaler"].transform(view[initial["trend_columns"]])
     routes = initial["router"].predict(z)
-    numeric, categorical = select_classifier_columns(raw, TIMING)
+    # Preserve the expert-input ablation during the full-development refit.
+    excluded = initial.get("expert_excluded_features", TIMING)
+    numeric, categorical = select_classifier_columns(raw, excluded)
     preprocessor = make_preprocessor(numeric, categorical)
     x = preprocessor.fit_transform(raw[numeric + categorical])
     labels = raw.traffic_label.to_numpy()
@@ -208,3 +210,4 @@ def predict_all(model, frame):
         "CDR_MLC_oracle_router": predictions[row, oracle_route],
         "routes": report,
     }
+

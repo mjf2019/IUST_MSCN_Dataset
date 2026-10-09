@@ -149,7 +149,7 @@ def predict_rf(model: dict, target: pd.DataFrame) -> np.ndarray:
 
 
 def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
-                  expert_trees: int) -> dict:
+                  expert_trees: int, *, include_timing_in_experts: bool = False) -> dict:
     view = trend_frame(source, TIMING, window)
     trend_columns = [f"{feature}_{stat}" for feature in TIMING for stat in STATS]
     if len(view) < 3:
@@ -165,7 +165,8 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
         raise ValueError("fixed CDR-MLC produced fewer than three source clusters")
 
     raw = source.loc[view.index]
-    numeric, categorical = select_classifier_columns(raw, TIMING)
+    excluded = () if include_timing_in_experts else TIMING
+    numeric, categorical = select_classifier_columns(raw, excluded)
     preprocessor = make_preprocessor(numeric, categorical)
     x = preprocessor.fit_transform(raw[numeric + categorical])
     labels = raw.traffic_label.to_numpy()
@@ -191,6 +192,7 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
         "router": router,
         "router_algorithm": "MiniBatchKMeans",
         "router_audit": minibatch_kmeans_audit(router),
+        "expert_excluded_features": tuple(excluded),
         "preprocessor": preprocessor,
         "numeric": numeric,
         "categorical": categorical,
@@ -467,3 +469,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
