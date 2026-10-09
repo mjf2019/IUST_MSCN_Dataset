@@ -66,6 +66,23 @@ class ClusteringAblationTests(unittest.TestCase):
                 self.assertTrue(audit["same_scored_rows_and_context_values_verified"])
                 self.assertTrue(audit["no_MBK_scaler_distances_or_route_features_verified"])
 
+    def test_n_init_propagation_and_control_invariance(self):
+        for refit in (True, False):
+            with self.subTest(refit=refit):
+                config = replace(self.config, mbk_n_init=50, refit_experts=refit)
+                rows, predictions, audit = evaluate_pair(self.development, self.test, config)
+                self.assertEqual(audit[METHODS[0]]["router_audit"]["n_init"], 50)
+                control10 = fit_meta_stacker(self.development,
+                    replace(config, use_clustering=False, mbk_n_init=10))
+                control50 = fit_meta_stacker(self.development,
+                    replace(config, use_clustering=False))
+                np.testing.assert_array_equal(
+                    predict_all(control10, self.test)["CDR_MLC_meta_stacker"],
+                    predict_all(control50, self.test)["CDR_MLC_meta_stacker"])
+                self.assertEqual(rows[0]["n"], rows[1]["n"])
+        with self.assertRaises(ValueError):
+            replace(self.config, mbk_n_init=0).validate()
+
     def test_summary_delta_and_equal_protocol_weighting(self):
         rows = [{"protocol": protocol, "seed": 42, "method": method,
                  **{key: score for key in SCORES}}

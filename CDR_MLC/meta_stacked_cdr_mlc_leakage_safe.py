@@ -46,8 +46,11 @@ class MetaStackConfig:
     random_state: int = 42
     include_timing_in_experts: bool = False
     use_clustering: bool = True
+    mbk_n_init: int = 10
 
     def validate(self):
+        if self.mbk_n_init < 1:
+            raise ValueError("mbk_n_init must be positive")
         fractions = (self.expert_fraction, self.utility_fraction, self.meta_fraction)
         if any(value <= 0 for value in fractions) or sum(fractions) >= 1:
             raise ValueError("positive fractions with a nonempty selection tail are required")
@@ -129,6 +132,7 @@ def fit_meta_stacker(source, config: MetaStackConfig):
         split["expert"], config.window, config.random_state, config.expert_trees,
         include_timing_in_experts=config.include_timing_in_experts,
         use_clustering=config.use_clustering,
+        mbk_n_init=config.mbk_n_init,
     )
     helper = LearnedRouterConfig(
         window=config.window, expert_trees=config.expert_trees,

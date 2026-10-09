@@ -73,3 +73,22 @@ python -m unittest discover -s CDR_MLC/tests -p "test_*ablation.py" -v
 `use_clustering` defaults to `True` in the production configuration. Existing
 experiment commands retain their MBK path unless the new option is explicitly
 disabled by this runner.
+
+## Small MBK initialization comparison
+
+Only the number of MBK initialization candidates changes. The default remains
+10. Run the current and higher setting against the same No_Clustering control,
+using fresh output folders after pulling this change:
+
+```powershell
+python CDR_MLC/clustering_ablation.py --seeds 42 --mbk-n-init 10 --output CDR_MLC/outputs/clustering_ninit10_seed42
+python CDR_MLC/clustering_ablation.py --seeds 42 --mbk-n-init 50 --output CDR_MLC/outputs/clustering_ninit50_seed42
+```
+
+Compare protocol_means.csv and paired_deltas.csv in the two folders.
+No_Clustering does not use this parameter and should have identical predictions
+for identical data, seed and other settings. The fitted router's n_init is
+recorded in pair.json and the requested value in manifest.json. This parameter
+selects among initialization candidates, not multiple complete MBK fits.
+Use development validation to select a setting; test comparisons are descriptive
+and must not be used to choose the final configuration.

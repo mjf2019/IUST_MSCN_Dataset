@@ -151,7 +151,7 @@ def predict_rf(model: dict, target: pd.DataFrame) -> np.ndarray:
 
 def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
                   expert_trees: int, *, include_timing_in_experts: bool = False,
-                  use_clustering: bool = True) -> dict:
+                  use_clustering: bool = True, mbk_n_init: int = 10) -> dict:
     view = trend_frame(source, TIMING, window)
     trend_columns = [f"{feature}_{stat}" for feature in TIMING for stat in STATS]
     if len(view) < 3:
@@ -161,7 +161,7 @@ def fit_fixed_cdr(source: pd.DataFrame, window: int, seed: int,
         scaler = StandardScaler().fit(view[trend_columns])
         z = scaler.transform(view[trend_columns])
         router = make_minibatch_kmeans(
-            n_clusters=3, batch_size=1024, n_init=10, max_iter=100,
+            n_clusters=3, batch_size=1024, n_init=mbk_n_init, max_iter=100,
             random_state=seed,
         ).fit(z)
         routes = router.predict(z)

@@ -133,6 +133,8 @@ def main():
     parser.add_argument("--protocols", nargs="*", choices=list(PROTOCOLS), default=list(PROTOCOLS))
     parser.add_argument("--train-fraction", type=float, default=.80)
     parser.add_argument("--target-test-fraction", type=float, default=1.0)
+    parser.add_argument("--mbk-n-init", type=int, default=10,
+                        help="MBK initialization candidates; ignored by No_Clustering")
     parser.add_argument("--window", type=int, default=3)
     parser.add_argument("--congestion-window", type=int, default=50)
     parser.add_argument("--expert-trees", type=int, default=20)
@@ -147,11 +149,14 @@ def main():
         parser.error("Select at least one scenario or protocol")
     if not 0 < args.train_fraction < 1 or not 0 < args.target_test_fraction <= 1:
         parser.error("Invalid train/test fractions")
+    if args.mbk_n_init < 1:
+        parser.error("--mbk-n-init must be positive")
     if min(args.expert_trees, args.utility_trees, args.meta_trees) < 1:
         parser.error("Tree counts must be positive")
     config = MetaStackConfig(window=args.window, congestion_window=args.congestion_window,
         expert_trees=args.expert_trees, utility_trees=args.utility_trees,
-        meta_trees=args.meta_trees, refit_experts=args.expert_refit).validate()
+        meta_trees=args.meta_trees, refit_experts=args.expert_refit,
+        mbk_n_init=args.mbk_n_init).validate()
     data, input_audit = load_dataset(args.data_dir, tuple(dict.fromkeys(
         [*TIMING, *DEFAULT_CONGESTION_FEATURES])))
     evaluations = build_evaluations(data, args.scenarios, args.protocols,
