@@ -395,3 +395,44 @@ selector controls, and do not interpret historical mode names as no-RL runs.
 No training/evaluation was run by the assistant. Syntax, dispatch ordering,
 loaded checkpoint paths, budget accounting and the absence of DQN calls in
 the ablation runner were reviewed statically.
+
+
+## Original-style console output and all-level evaluation
+
+The no-RL random ablation now prints the same concise per-level results and
+Combined Results Table columns as original: Test Accuracy, weighted Precision,
+Recall, F1, Context Updates Used, DQN Updates Used and DQN Loss. DQN columns are
+zero in the ablation. The frozen-CNN/pre-update/post-update diagnostic line is
+retained. Detailed per-class JSON, trace and manifests remain in files instead
+of flooding the console.
+
+Omitting --per now evaluates all ten levels in BOTH modes:
+0, 1, 3, 5, 7, 10, 12, 15, 17, 20.
+--per 20 still evaluates only PER20. The standalone random runner has the same
+default. Each level reloads the same initial CNN/Context checkpoints, creates
+a fresh Context optimizer and resets the label budget; no adapted weights carry
+over between levels. Original also reloads its DQN and replay per level, as before.
+The random runner keeps its previous per-invocation seed initialization for each
+level. Original keeps its existing random-draw history across levels, so an
+all-level invocation is not numerically identical to an isolated PER20 run.
+
+Both modes save a combined CSV, a transposed cumulative-accuracy CSV and the
+same cumulative-accuracy PNG format. They use their separate result directories:
+original_seed42 versus random_no_rl_none_seed42 (or random_no_rl_legacy_seed42).
+Original model/learning logic, the random query policy, Context loss, scaler,
+learning rate and budget are unchanged. Dispatch reuses the loaded legacy module
+to avoid the duplicated pair of device announcements in random mode.
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+# Original method on every Burst level, with its original threshold:
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_original --reward-mode original --transition-mode terminal --gamma 0.2 --context-loss-mode legacy --query-gate legacy --seed 42 --selector-mode original
+# Pure random no-RL ablation on every Burst level:
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_original --seed 42 --selector-mode random
+```
+
+For the matched-filter no-RL control append --query-gate legacy to the random
+command. It retains both disagreement and 0.005 confidence filters rather than
+uniform fixed-budget sampling. No training/evaluation was run by the assistant;
+syntax, the unchanged online loop, per-level reloads and reporting paths were
+reviewed statically.

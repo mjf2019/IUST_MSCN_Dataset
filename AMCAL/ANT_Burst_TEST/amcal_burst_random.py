@@ -42,7 +42,8 @@ def parse_args():
                         help="Existing CNN/Context model folder, not a new training folder.")
     parser.add_argument("--results-output", type=Path,
                         help="Optional separate result folder.")
-    parser.add_argument("--per", type=int, choices=PER_LEVELS, default=20)
+    parser.add_argument("--per", type=int, choices=PER_LEVELS,
+                        help="One perturbation level; omit to evaluate all ten levels.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--budget", type=int, default=214)
     parser.add_argument("--max-samples", type=int, default=1073)
@@ -57,7 +58,7 @@ def parse_args():
     return args
 
 
-def evaluate(args):
+def evaluate_level(args):
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -237,8 +238,89 @@ def evaluate(args):
     (results_dir / f"{prefix}_manifest.json").write_text(
         json.dumps({key: str(value) if isinstance(value, Path) else value
                     for key, value in vars(args).items()}, indent=2), encoding="utf-8")
-    print(json.dumps(diagnostics, indent=2))
-    print(f"Results saved to: {results_dir}")
+    # Keep detailed diagnostics in JSON; console follows the original notebook.
+    weighted = diagnostics["classes_after"]["weighted avg"]
+    row = {
+        "Perturbation Level": args.per,
+        "Test Accuracy": diagnostics["amcal_accuracy_after_update"],
+        "Precision": float(weighted["precision"]),
+        "Recall": float(weighted["recall"]),
+        "F1 Score": diagnostics["after_weighted_f1"],
+        "Context Updates Used": updates,
+        "DQN Updates Used": 0,
+        "DQN Loss": 0.0,
+    }
+    print("Diagnostic frozen CNN / pre-update AMCAL / post-update AMCAL:",
+          diagnostics["base_accuracy_legacy_scaler"],
+          diagnostics["amcal_accuracy_before_update"],
+          diagnostics["amcal_accuracy_after_update"])
+    print(f"\nResults for Perturbation Level {args.per}:")
+    print(f"  Test Accuracy: {row['Test Accuracy']:.4f}")
+    print(f"  Precision (weighted): {row['Precision']:.4f}")
+    print(f"  Recall (weighted): {row['Recall']:.4f}")
+    print(f"  F1 Score (weighted): {row['F1 Score']:.4f}")
+    print(f"  Context Updates Used: {updates}/{label_budget}")
+    print("  DQN Updates Used: 0 (RL removed)")
+    print("  Average DQN Loss: 0.0000 (RL removed)")
+    return row, [item["cumulative_accuracy"] for item in trace], results_dir
+
+
+def evaluate(args):
+    levels = list(PER_LEVELS) if args.per is None else [args.per]
+    rows, accuracy_by_level = [], {}
+    results_dir = None
+    for per in levels:
+        print("\n" + "=" * 50)
+        print(f"Starting processing for perturbation level {per}")
+        print("=" * 50)
+        level_args = argparse.Namespace(**vars(args))
+        level_args.per = per
+        # Reload CNN/Context AND recreate optimizer/budget inside each level.
+        row, cumulative_accuracy, results_dir = evaluate_level(level_args)
+        rows.append(row)
+        accuracy_by_level[per] = cumulative_accuracy
+
+    results = pd.DataFrame(rows)
+    results_path = results_dir / "AMCAL_20_cumulative_accuracy.csv"
+    results.to_csv(results_path, index=False)
+    print("\nCombined Results Table:")
+    print(results.to_string(index=False))
+    print(f"\nCombined results saved to '{results_path}'.")
+
+    max_samples = max(len(values) for values in accuracy_by_level.values())
+    combined_columns = {"Size": list(accuracy_by_level)}
+    for index in range(max_samples):
+        combined_columns[str(index + 1)] = [
+            values[index] if index < len(values) else np.nan
+            for values in accuracy_by_level.values()]
+    cumulative_path = results_dir / "Micfoal_Conf_cumulative_accuracy_all_perturbations_transposed.csv"
+    pd.DataFrame(combined_columns).to_csv(cumulative_path, index=False)
+    print(f"Combined cumulative accuracy saved to '{cumulative_path}'")
+
+    # Same cumulative-accuracy chart as original, saved without opening a window.
+    original.plt.figure(figsize=(12, 8))
+    for per, values in accuracy_by_level.items():
+        original.plt.plot(range(1, len(values) + 1), values,
+                          label=f"Perturbation {per}", marker="o",
+                          markersize=4, linewidth=1.5)
+    original.plt.xlabel("Sample Index")
+    original.plt.ylabel("Cumulative Accuracy")
+    original.plt.title("Cumulative Accuracy per Sample Across Perturbation Levels")
+    original.plt.legend()
+    original.plt.grid(True, linestyle="--", alpha=0.7)
+    figure_path = results_dir / "AMCAL_20_cumulative_accuracy.png"
+    original.plt.savefig(figure_path, dpi=300)
+    original.plt.close()
+    print(f"Plot saved to '{figure_path}'")
+
+    manifest = {key: str(value) if isinstance(value, Path) else value
+                for key, value in vars(args).items()}
+    manifest["perturbation_levels"] = levels
+    suffix = "all_levels" if args.per is None else f"PER_{args.per}"
+    (results_dir / f"no_rl_{suffix}_manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8")
+    return results
+
 
 
 if __name__ == "__main__":

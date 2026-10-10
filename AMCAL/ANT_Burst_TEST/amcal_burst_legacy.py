@@ -1352,12 +1352,16 @@ def cli():
         if args.command != "evaluate":
             parser.error("random is an online-only ablation; use existing CNN/Context checkpoints.")
         # Dispatch before ANY legacy DQN checkpoint validation or construction.
+        # Reuse this already-loaded module; avoid importing/printing it twice.
+        import sys
+        if __name__ == "__main__":
+            sys.modules.setdefault("amcal_burst_legacy", sys.modules[__name__])
         from amcal_burst_random import evaluate as evaluate_random
         evaluate_random(argparse.Namespace(
             command="evaluate", data_dir=Path(args.data_dir),
             output=Path(args.output) if args.output else
                    Path(__file__).resolve().parent / "protocol_runs" / "notebook_original",
-            results_output=None, per=args.per if args.per is not None else 20,
+            results_output=None, per=args.per,
             seed=args.seed if args.seed is not None else 42,
             budget=214, max_samples=1073, lr=0.25,
             context_loss_mode=args.context_loss_mode,
