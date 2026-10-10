@@ -7,6 +7,7 @@ BURST_DATA_DIR = Path(__file__).resolve().parent / "Dataset"
 LEGACY_PER_LEVELS = None
 LEGACY_DIAGNOSTIC_SEED = None
 LEGACY_SELECTOR_MODE = 'random'
+LEGACY_QUERY_GATE = 'no-threshold'
 SELECTOR_REWARD_MODE = 'original'
 SELECTOR_TRANSITION_MODE = 'terminal'
 SELECTOR_GAMMA = 0.2
@@ -900,7 +901,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             max_weighted_prob, _ = torch.max(weighted_probs_before, dim=1, keepdim=True)
             max_prob_diff = torch.max(torch.abs(max_weighted_prob - max_prob)).item()
             
-            if weighted_pred != cnn_pred and max_prob_diff >= threshold and updates_used < budget:
+            if weighted_pred != cnn_pred and (threshold is None or max_prob_diff >= threshold) and updates_used < budget:
                 
                 updates_used += 1
                 context_optimizer.zero_grad()
@@ -1010,6 +1011,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         epsilon=float(dqn_agent.epsilon), selector_mode=LEGACY_SELECTOR_MODE,
         reward_mode=SELECTOR_REWARD_MODE,
         transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
+        query_gate=LEGACY_QUERY_GATE, confidence_gap_threshold=threshold,
         bootstrap_optimizer_steps=dqn_agent.bootstrap_optimizer_steps,
         replay_terminal_rows=sum(float(e[4]) == 1.0 for e in dqn_agent.replay_buffer.buffer),
         replay_nonterminal_rows=sum(float(e[4]) == 0.0 for e in dqn_agent.replay_buffer.buffer),
@@ -1192,8 +1194,11 @@ def evaluate_main():
             traceback.print_exc()
             continue
             
-        threshold = 0.005
-        print(f"Test - Using DQN threshold: {threshold:.4f}")
+        threshold = None if LEGACY_QUERY_GATE == "no-threshold" else 0.005
+        if threshold is None:
+            print("Test - Confidence-gap threshold disabled; disagreement and budget gates retained.")
+        else:
+            print(f"Test - Using DQN threshold: {threshold:.4f}")
         
         results, cumulative_accuracy_df = test_system(
             cnn_model, dqn_agent, context_model, base_path, perturb_level,
@@ -1250,7 +1255,7 @@ def evaluate_main():
 
 
 def cli():
-    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA
+    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE
     import argparse
     import json
     parser=argparse.ArgumentParser(description="Original Burst notebook reproduction, 20% configuration.")
@@ -1267,6 +1272,8 @@ def cli():
                         help="local enables same-input DDQN bootstrap; terminal preserves legacy immediate targets.")
     parser.add_argument("--gamma", type=float, default=0.2,
                         help="Discount factor; legacy default 0.2, paper value 0.95.")
+    parser.add_argument("--query-gate", choices=("no-threshold","legacy"), default="no-threshold",
+                        help="Online only: default removes the confidence-gap threshold; legacy restores 0.005.")
     args=parser.parse_args()
     if not 0.0 <= args.gamma < 1.0:
         parser.error("--gamma must be in [0, 1).")
@@ -1281,8 +1288,10 @@ def cli():
     if args.command=="train" and args.selector_mode!="random":
         parser.error("--selector-mode is only for evaluate.")
     LEGACY_SELECTOR_MODE=args.selector_mode
+    LEGACY_QUERY_GATE=args.query_gate
     seed_tag=str(args.seed) if args.seed is not None else "unseeded"
-    LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}")
+    gate_suffix="_no_threshold" if args.query_gate=="no-threshold" else ""
+    LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")
     LEGACY_PER_LEVELS = [args.per] if args.per is not None else None
@@ -1311,10 +1320,14 @@ def cli():
                 parser.error("Checkpoint gamma mismatch: use the gamma from training.")
     output.mkdir(parents=True,exist_ok=True)
     import sys
-    (output/("reproduction_"+args.command+".json")).write_text(json.dumps(dict(
+    manifest_name="reproduction_"+args.command
+    if args.command=="evaluate":
+        manifest_name += f"_{args.selector_mode}_seed{seed_tag}{gate_suffix}"
+    (output/(manifest_name+".json")).write_text(json.dumps(dict(
         mode="legacy notebook diagnostic",source_cells=[2,7,9],random_seed=args.seed if args.seed is not None else "not fixed in original",
         scoring="post-update",selector_mode=args.selector_mode,reward_mode=args.reward_mode,
         transition_mode=args.transition_mode,gamma=args.gamma,
+        query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate=="no-threshold" else 0.005,
         next_state_scope="same input after Context update; not next traffic row",
         online_epsilon=0.0 if args.selector_mode=="learned" else 1.0,torch_version=str(torch.__version__),
         data_dir=str(BURST_DATA_DIR)),indent=2),encoding="utf-8")

@@ -156,3 +156,35 @@ not full paper conformity or a guarantee of improvement. In particular, base
 CNN uncertainty remains the legacy input state, and online natural skips are
 still not inserted into replay. No training or evaluation was run by the
 assistant; the source and transition/checkpoint paths were reviewed statically.
+
+
+## Remove the online confidence-gap threshold first
+
+Online evaluation now defaults to --query-gate no-threshold. A query/update
+requires action=1, CNN/Context prediction disagreement, and remaining budget.
+The confidence-gap check is disabled with threshold=None, not reduced to an
+arbitrary smaller value. Confidence gaps are still recorded for observation.
+
+Architecture, reward, transition mode, gamma, learning rates, saved replay and
+all training behavior are unchanged. Reuse the existing local/gamma0.95,
+skip-zero checkpoints; no retraining is needed. This change tests the effect of
+the filter without changing the initial models. It does not remove the
+prediction-disagreement gate. The unrelated threshold argument of offline
+evaluate_model is also unchanged.
+
+The previous online gate remains available explicitly with --query-gate legacy.
+Earlier evaluation commands in this document used the legacy threshold; append
+that flag to reproduce their gate after this change.
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --per 20 --seed 42 --selector-mode learned --query-gate no-threshold
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --per 20 --seed 42 --selector-mode random --query-gate no-threshold
+```
+
+New results are saved in Results/learned_seed42_no_threshold and
+Results/random_seed42_no_threshold, preserving the prior thresholded results.
+Diagnostics record query_gate and confidence_gap_threshold (null when disabled).
+Evaluation manifests now include mode, seed and gate in the filename to avoid
+overwriting the other evaluation's settings. No training or evaluation was run
+by the assistant; changes were reviewed statically.
