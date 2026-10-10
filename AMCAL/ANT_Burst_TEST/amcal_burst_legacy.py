@@ -7,6 +7,7 @@ BURST_DATA_DIR = Path(__file__).resolve().parent / "Dataset"
 LEGACY_PER_LEVELS = None
 LEGACY_DIAGNOSTIC_SEED = None
 LEGACY_SELECTOR_MODE = 'random'
+SELECTOR_REWARD_MODE = 'original'
 LEGACY_RESULTS_DIR = 'Results'
 
 import numpy as np
@@ -424,7 +425,7 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
         else:
             reward = 0.0
     else:
-        reward = 1.5 if cnn_pred == label else -1.0
+        reward = 0.0 if SELECTOR_REWARD_MODE == "paper" else (1.5 if cnn_pred == label else -1.0)
     return reward
 
 def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, val_loader, class_counts, input_length, num_classes, fine_tune_epochs=500, patience=50):
@@ -732,7 +733,7 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
         else:
             reward = 0.0
     else:
-        reward = 1.5 if cnn_pred == label else -1.0
+        reward = 0.0 if SELECTOR_REWARD_MODE == "paper" else (1.5 if cnn_pred == label else -1.0)
     return reward
 
 def load_metadata(base_path='AdvBurst_FTSC-IAT', train_perturb_level=0):
@@ -993,6 +994,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         before_weighted_f1=float(f1_score(y_true,before_predictions,average="weighted",zero_division=0)),
         after_weighted_f1=float(f1), labels_used=updates_used,
         epsilon=float(dqn_agent.epsilon), selector_mode=LEGACY_SELECTOR_MODE,
+        reward_mode=SELECTOR_REWARD_MODE,
         learned_policy_used_for_actions=LEGACY_SELECTOR_MODE=="learned",
         classes_before=classification_report(y_true,before_predictions,output_dict=True,zero_division=0),
         classes_after=classification_report(y_true,y_pred,output_dict=True,zero_division=0))
@@ -1230,18 +1232,24 @@ def evaluate_main():
 
 
 def cli():
-    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR
+    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE
     import argparse
     import json
     parser=argparse.ArgumentParser(description="Original Burst notebook reproduction, 20% configuration.")
     parser.add_argument("command",choices=("train","evaluate"))
     parser.add_argument("--data-dir",default=str(BURST_DATA_DIR))
-    parser.add_argument("--output",default=str(Path(__file__).resolve().parent/"protocol_runs"/"notebook_original"))
+    parser.add_argument("--output",help="Output/model folder; original and paper reward modes have separate defaults.")
     parser.add_argument("--per",type=int,choices=(0,1,3,5,7,10,12,15,17,20))
     parser.add_argument("--seed",type=int,help="Optional fixed random seed; legacy default stays unseeded.")
     parser.add_argument("--selector-mode", choices=("random","learned"), default="random",
                         help="Online action source only; online DDQN learning remains active in both modes.")
+    parser.add_argument("--reward-mode", choices=("original","paper"), default="original",
+                        help="paper sets only action-0 reward to zero; other legacy logic is unchanged.")
     args=parser.parse_args()
+    SELECTOR_REWARD_MODE=args.reward_mode
+    if args.output is None:
+        folder="notebook_original" if args.reward_mode=="original" else "notebook_skip_zero"
+        args.output=str(Path(__file__).resolve().parent/"protocol_runs"/folder)
     if args.command=="train" and args.selector_mode!="random":
         parser.error("--selector-mode is only for evaluate.")
     LEGACY_SELECTOR_MODE=args.selector_mode
@@ -1263,18 +1271,31 @@ def cli():
         parser.error("Models already exist; choose a fresh --output.")
     if args.command=="evaluate" and not (output/"Models").exists():
         parser.error("Train this reproduction first, or use --output with its Models folder.")
+    if args.command=="evaluate":
+        for checkpoint_name in ("initial_cnn_model.pth","adversarial_best_context.pth","adversarial_best_dqn.pth"):
+            checkpoint=torch.load(output/"Models"/checkpoint_name,map_location="cpu",weights_only=False)
+            saved_mode=checkpoint.get("selector_reward_mode","original")
+            if saved_mode!=args.reward_mode:
+                parser.error("Checkpoint reward mode mismatch: use the matching --reward-mode and --output.")
     output.mkdir(parents=True,exist_ok=True)
     import sys
     (output/("reproduction_"+args.command+".json")).write_text(json.dumps(dict(
         mode="legacy notebook diagnostic",source_cells=[2,7,9],random_seed=args.seed if args.seed is not None else "not fixed in original",
-        scoring="post-update",selector_mode=args.selector_mode,
+        scoring="post-update",selector_mode=args.selector_mode,reward_mode=args.reward_mode,
         online_epsilon=0.0 if args.selector_mode=="learned" else 1.0,torch_version=str(torch.__version__),
         data_dir=str(BURST_DATA_DIR)),indent=2),encoding="utf-8")
     previous=Path.cwd()
     try:
         os.chdir(output)
         if args.command=="train":
+            print("Selector reward mode:", SELECTOR_REWARD_MODE)
             train_main()
+            # Tag artifacts without altering the saved weights or replay experiences.
+            for checkpoint_name in ("initial_cnn_model.pth","adversarial_best_context.pth","adversarial_best_dqn.pth"):
+                checkpoint_path=Path("Models")/checkpoint_name
+                checkpoint=torch.load(checkpoint_path,map_location="cpu",weights_only=False)
+                checkpoint["selector_reward_mode"]=SELECTOR_REWARD_MODE
+                torch.save(checkpoint,checkpoint_path)
         else:
             evaluate_main()
     finally:

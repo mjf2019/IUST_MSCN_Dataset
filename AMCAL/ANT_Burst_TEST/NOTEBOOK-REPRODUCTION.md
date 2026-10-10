@@ -80,3 +80,31 @@ Different actions change later replay and RNG history despite a common initial
 seed; this is a pilot comparison, not a multi-seed effectiveness claim. Selecting
 only PER20 has a different draw history from running all ten levels.
 No training or evaluation was run by the assistant.
+
+
+## Isolated action-0 reward correction
+
+--reward-mode original (default) retains +1.5/-1 for skip. --reward-mode paper
+sets skip reward to 0 in BOTH training and online reward definitions. Action-1
+reward values, architecture, scaler, transition semantics, exploration schedule,
+Context loss, threshold, budget, replay and checkpoint selection are unchanged.
+This name refers only to the paper's skip reward, not full paper conformity.
+
+Paper reward defaults to protocol_runs/notebook_skip_zero, preserving the
+original models. Training is required because selector targets and stored replay
+rewards differ. Model checkpoints record selector_reward_mode; evaluation
+rejects a different requested mode. Untagged historical checkpoints are original.
+
+```powershell
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --reward-mode paper --seed 42
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --per 20 --seed 42 --selector-mode learned
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --per 20 --seed 42 --selector-mode random
+```
+
+Compare learned and random using the SAME new checkpoints, pre-update accuracy,
+weighted F1, executed actions and labels consumed. The previous unseeded training
+run is not a paired seed-42 training control; a causal claim about reward alone
+would require original-reward training with the same seed/configuration too.
+Zero skip reward does not by itself prove that the learned selector will improve.
+All other legacy limitations documented above remain. No training/evaluation
+was run by the assistant.
