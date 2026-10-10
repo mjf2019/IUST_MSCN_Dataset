@@ -60,21 +60,21 @@ actions then come from random exploration, independently of Q values.
 These observer additions were reviewed statically; no experiments were run.
 
 
-## Random versus learned online selector
+## Original versus greedy learned online selector
 
 No retraining is required. Both modes load the same original checkpoints and
 replay, and preserve scaler, online loss, query gate, budget and online learner
-updates. Only the source of online actions changes. Random uses the original
+updates. Only the source of online actions changes. Original uses the original
 epsilon=1 path; learned uses argmax Q in eval mode (no dropout). DDQN replay
-optimization remains active in both modes. Thus random is not a frozen-selector
+optimization remains active in both modes. Thus original is not a no-RL
 ablation: its learned Q values are updated but do not choose actions.
 
 ```powershell
-python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --per 20 --seed 42 --selector-mode random
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --per 20 --seed 42 --selector-mode original
 python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --per 20 --seed 42 --selector-mode learned
 ```
 
-Results are separated in Results/random_seed42 and Results/learned_seed42.
+Results are now separated in Results/original_seed42 and Results/learned_seed42.
 Compare amcal_accuracy_before_update and before_weighted_f1 in diagnostics.json.
 Different actions change later replay and RNG history despite a common initial
 seed; this is a pilot comparison, not a multi-seed effectiveness claim. Selecting
@@ -98,7 +98,7 @@ rejects a different requested mode. Untagged historical checkpoints are original
 ```powershell
 python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --reward-mode paper --seed 42
 python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --per 20 --seed 42 --selector-mode learned
-python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --per 20 --seed 42 --selector-mode random
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --per 20 --seed 42 --selector-mode original
 ```
 
 Compare learned and random using the SAME new checkpoints, pre-update accuracy,
@@ -139,7 +139,7 @@ Retraining is required. The old notebook_skip_zero models/results are preserved.
 git pull --ff-only origin experiment/amcal-protocol
 python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --reward-mode paper --transition-mode local --gamma 0.95 --seed 42
 python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --per 20 --seed 42 --selector-mode learned
-python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --per 20 --seed 42 --selector-mode random
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --per 20 --seed 42 --selector-mode original
 ```
 
 Both evaluations reload the same new checkpoints. Compare pre-update accuracy,
@@ -179,7 +179,7 @@ that flag to reproduce their gate after this change.
 ```powershell
 git pull --ff-only origin experiment/amcal-protocol
 python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --per 20 --seed 42 --selector-mode learned --query-gate no-threshold
-python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --per 20 --seed 42 --selector-mode random --query-gate no-threshold
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --per 20 --seed 42 --selector-mode original --query-gate no-threshold
 ```
 
 New results are saved in Results/learned_seed42_no_threshold and
@@ -227,7 +227,7 @@ all previous runs. Base CNN uses its original training procedure/seed.
 git pull --ff-only origin experiment/amcal-protocol
 python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --seed 42
 python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --per 20 --seed 42 --selector-mode learned --query-gate no-threshold
-python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --per 20 --seed 42 --selector-mode random --query-gate no-threshold
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --per 20 --seed 42 --selector-mode original --query-gate no-threshold
 ```
 
 Compare pre-update accuracy, weighted F1, labels consumed and query timing
@@ -303,7 +303,7 @@ learned and random selectors using that SAME checkpoint:
 git pull --ff-only origin experiment/amcal-protocol
 python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --seed 42
 python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --per 20 --seed 42 --selector-mode learned --query-gate no-threshold
-python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --per 20 --seed 42 --selector-mode random --query-gate no-threshold
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --per 20 --seed 42 --selector-mode original --query-gate no-threshold
 ```
 
 Default output:
@@ -313,3 +313,85 @@ Assess pre-update accuracy/F1, query timing and per-class coverage. A fix does
 not guarantee improved performance. No model training/evaluation was run by the
 assistant; source syntax, the diff and validation/snapshot paths were checked
 statically.
+
+
+## Selector naming and true random online ablation
+
+Current CLI names:
+
+| Mode | Online action source | DQN checkpoint/replay/optimizer |
+| --- | --- | --- |
+| original | Original notebook epsilon=1 path | Present, including online learning |
+| learned | Greedy Q argmax | Present, including online learning |
+| random | Independent random updater | Completely absent during evaluation |
+
+Earlier revisions called the original notebook path --selector-mode random.
+That historical name is now --selector-mode original. Old random_seed42 result
+folders are preserved; new original-mode results use original_seed42. Repeating
+an OLD command with random now runs the NEW no-RL ablation, not the notebook
+selector. Model weights and original online numerical logic are unchanged by
+this naming update.
+
+The new implementation is amcal_burst_random.py, invoked directly or dispatched
+by amcal_burst_legacy.py evaluate --selector-mode random. Dispatch occurs before
+any DQN checkpoint validation/loading. Only CNN/Context checkpoint files are
+required. No DQN is instantiated, no Q values or rewards are computed, no
+replay is loaded/created, and no selector optimization occurs. Diagnostics
+report dqn_loaded=false, dqn_updates=0, replay_size=0 and reward_computations=0.
+
+For the user's pure random updater, --query-gate no-threshold (CLI default)
+dispatches to uniform sampling: exactly min(214,N) distinct positions are
+chosen without replacement from the stream using seed42. Positions depend
+only on stream length, budget and seed, not features, predictions or labels.
+The stream order is unchanged. A selected row is predicted before its label
+is queried and Context is updated once. The legacy post-update prediction is
+also recorded separately. Sampling random positions across the whole stream
+is not an imposed early-block schedule. The budget is consumed by the last
+selected position, then no further Context updates occur.
+
+This pure random policy removes disagreement AND confidence filters so that
+every selected row is actually updated. It changes the entire query policy;
+its difference from the original gated method is not solely the removal of
+DQN optimization. For a narrower matched-gate control, use --query-gate legacy:
+50/50 random actions retain the original disagreement and 0.005 confidence-gap
+filters, still without any DQN/replay/reward work. It may consume less than
+214 labels if too few rows pass the gate; actual use is reported rather than
+silently forcing extra queries. The direct runner calls its pure policy
+--query-gate none and its matched policy --query-gate legacy.
+
+Reuse the successful notebook_original CNN and Context checkpoint, the same
+PER0-fitted scaler/encoder and class-count online CE weights, original Context
+loss, online Adam lr0.25/weight_decay1e-4 and eval-mode Context behavior.
+Every command reloads initial model weights; no online-adapted models are saved.
+CNN tensors and buffers are compared before/after to verify it remains frozen.
+
+Scope: ONLINE ablation only. The reused initial Context checkpoint was trained
+with the original selector. This is not an end-to-end removal of RL from offline
+training; that would require a separate random-selector training experiment.
+
+Results are saved separately under the model folder:
+Results/random_no_rl_none_seed42 for pure random updates, or
+Results/random_no_rl_legacy_seed42 for the matched filter, with trace,
+diagnostics, checkpoint/data hashes and an invocation manifest.
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+# Original notebook reference (same saved successful models and threshold):
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_original --reward-mode original --transition-mode terminal --gamma 0.2 --context-loss-mode legacy --query-gate legacy --per 20 --seed 42 --selector-mode original
+# Requested pure random updater: no RL or confidence/disagreement filters:
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_original --per 20 --seed 42 --selector-mode random
+# Optional matched-filter control, also completely without online RL:
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_original --per 20 --seed 42 --selector-mode random --query-gate legacy
+```
+
+Reported skip-zero comparison: terminal skip-zero random-action run achieved
+0.932898 post-update accuracy, while the later local/gamma0.95 run achieved
+0.958062. Original reward runs achieved 0.952470/0.971109 at different points
+and the latest original reference was 0.953402. These used different trained
+checkpoints/RNG trajectories; the local-run improvement cannot be attributed
+to skip reward zero alone. Compare pre-update metrics and same-checkpoint
+selector controls, and do not interpret historical mode names as no-RL runs.
+
+No training/evaluation was run by the assistant. Syntax, dispatch ordering,
+loaded checkpoint paths, budget accounting and the absence of DQN calls in
+the ablation runner were reviewed statically.

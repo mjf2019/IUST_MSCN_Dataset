@@ -8,7 +8,7 @@ from contextlib import contextmanager
 BURST_DATA_DIR = Path(__file__).resolve().parent / "Dataset"
 LEGACY_PER_LEVELS = None
 LEGACY_DIAGNOSTIC_SEED = None
-LEGACY_SELECTOR_MODE = 'random'
+LEGACY_SELECTOR_MODE = 'original'
 LEGACY_QUERY_GATE = 'no-threshold'
 SELECTOR_REWARD_MODE = 'original'
 SELECTOR_TRANSITION_MODE = 'terminal'
@@ -1333,8 +1333,9 @@ def cli():
     parser.add_argument("--output",help="Output/model folder; original and paper reward modes have separate defaults.")
     parser.add_argument("--per",type=int,choices=(0,1,3,5,7,10,12,15,17,20))
     parser.add_argument("--seed",type=int,help="Optional fixed random seed; legacy default stays unseeded.")
-    parser.add_argument("--selector-mode", choices=("random","learned"), default="random",
-                        help="Online action source only; online DDQN learning remains active in both modes.")
+    parser.add_argument("--selector-mode", choices=("original","random","learned"), default="original",
+                        help="original: notebook selector with online DQN; random: no-RL random updater; "
+                             "learned: greedy Q actions with online DQN.")
     parser.add_argument("--reward-mode", choices=("original","paper"), default="original",
                         help="paper sets only action-0 reward to zero; other legacy logic is unchanged.")
     parser.add_argument("--transition-mode", choices=("terminal","local"), default="terminal",
@@ -1342,10 +1343,26 @@ def cli():
     parser.add_argument("--gamma", type=float, default=0.2,
                         help="Discount factor; legacy default 0.2, paper value 0.95.")
     parser.add_argument("--query-gate", choices=("no-threshold","legacy"), default="no-threshold",
-                        help="Online only: default removes the confidence-gap threshold; legacy restores 0.005.")
+                        help="Original/learned: disable confidence threshold only; random: uniform queries. "
+                             "legacy retains disagreement and 0.005 confidence filters in all modes.")
     parser.add_argument("--context-loss-mode", choices=("legacy","aligned"), default="legacy",
                         help="aligned uses base/Context CE ratio in train and online, without the training loss cap.")
     args=parser.parse_args()
+    if args.selector_mode == "random":
+        if args.command != "evaluate":
+            parser.error("random is an online-only ablation; use existing CNN/Context checkpoints.")
+        # Dispatch before ANY legacy DQN checkpoint validation or construction.
+        from amcal_burst_random import evaluate as evaluate_random
+        evaluate_random(argparse.Namespace(
+            command="evaluate", data_dir=Path(args.data_dir),
+            output=Path(args.output) if args.output else
+                   Path(__file__).resolve().parent / "protocol_runs" / "notebook_original",
+            results_output=None, per=args.per if args.per is not None else 20,
+            seed=args.seed if args.seed is not None else 42,
+            budget=214, max_samples=1073, lr=0.25,
+            context_loss_mode=args.context_loss_mode,
+            query_gate="legacy" if args.query_gate == "legacy" else "none"))
+        return
     if not 0.0 <= args.gamma < 1.0:
         parser.error("--gamma must be in [0, 1).")
     SELECTOR_REWARD_MODE=args.reward_mode
@@ -1360,7 +1377,7 @@ def cli():
             folder += "_context_aligned"
         folder += "_validated_best"
         args.output=str(Path(__file__).resolve().parent/"protocol_runs"/folder)
-    if args.command=="train" and args.selector_mode!="random":
+    if args.command=="train" and args.selector_mode!="original":
         parser.error("--selector-mode is only for evaluate.")
     LEGACY_SELECTOR_MODE=args.selector_mode
     LEGACY_QUERY_GATE=args.query_gate
