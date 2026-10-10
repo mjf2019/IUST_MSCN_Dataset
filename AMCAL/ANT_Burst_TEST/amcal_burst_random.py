@@ -49,9 +49,9 @@ def parse_args():
     parser.add_argument("--max-samples", type=int, default=1073)
     parser.add_argument("--lr", type=float, default=0.25)
     parser.add_argument("--context-loss-mode", choices=("legacy", "aligned"), default="legacy")
-    parser.add_argument("--query-gate", choices=("none", "legacy"), default="none",
-                        help="none: uniform fixed-budget queries; legacy: random 50%% actions "
-                             "with original disagreement/confidence-gap filters.")
+    parser.add_argument("--query-gate", choices=("none", "disagreement", "legacy"), default="none",
+                        help="none: uniform fixed-budget queries; disagreement: random 50%% actions with only "
+                             "unequal predictions; legacy additionally requires confidence gap >= 0.005.")
     args = parser.parse_args()
     if args.budget < 0 or args.max_samples < 1 or not np.isfinite(args.lr) or args.lr <= 0:
         parser.error("budget must be nonnegative, max-samples positive, and lr finite and positive.")
@@ -153,11 +153,11 @@ def evaluate_level(args):
             chosen = bool(query_mask[index])
             requested = chosen
         else:
-            # Matched-gate online ablation: retain the original 50/50 random
-            # action, disagreement filter and threshold, but remove all DQN work.
+            # Matched-gate ablation: random 50/50 actions and disagreement.
+            # Only legacy additionally applies the original confidence threshold.
             requested = bool(rng.random() < 0.5) if updates < label_budget else False
             chosen = (requested and before_prediction != base_prediction
-                      and gap >= threshold and updates < label_budget)
+                      and (threshold is None or gap >= threshold) and updates < label_budget)
 
         observed_loss = None
         if chosen:
@@ -224,6 +224,8 @@ def evaluate_level(args):
         context_checkpoint_sha256=sha256_file(context_path),
         query_rule=("uniform fixed-budget sample without replacement over stream rows"
                     if args.query_gate == "none" else
+                    "random 50/50 action, disagreement, budget remaining"
+                    if args.query_gate == "disagreement" else
                     "random 50/50 action, disagreement, confidence gap >= 0.005, budget remaining"),
         class_label_mapping=[str(label) for label in encoder.classes_],
         classes_before=classification_report(labels_array, before_predictions, output_dict=True, zero_division=0),

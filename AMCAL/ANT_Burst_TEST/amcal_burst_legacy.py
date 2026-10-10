@@ -1301,11 +1301,11 @@ def evaluate_main():
             traceback.print_exc()
             continue
             
-        threshold = None if LEGACY_QUERY_GATE in ("no-threshold", "none") else 0.005
+        threshold = None if LEGACY_QUERY_GATE in ("no-threshold", "none", "disagreement") else 0.005
         if LEGACY_QUERY_GATE == "none":
             print("Test - All prediction/confidence filters disabled; selector action and budget only.")
         elif threshold is None:
-            print("Test - Confidence-gap threshold disabled; disagreement and budget gates retained.")
+            print("Test - Disagreement condition only; confidence threshold disabled, budget retained.")
         else:
             print(f"Test - Using DQN threshold: {threshold:.4f}")
         
@@ -1382,9 +1382,9 @@ def cli():
                         help="local enables same-input DDQN bootstrap; terminal preserves legacy immediate targets.")
     parser.add_argument("--gamma", type=float, default=0.2,
                         help="Discount factor; legacy default 0.2, paper value 0.95.")
-    parser.add_argument("--query-gate", choices=("none","no-threshold","legacy"), default="no-threshold",
-                        help="none removes BOTH prediction/confidence filters; no-threshold removes confidence "
-                             "only in original/learned (uniform queries in random); legacy retains both.")
+    parser.add_argument("--query-gate", choices=("none","disagreement","no-threshold","legacy"), default="no-threshold",
+                        help="none removes both filters; disagreement retains ONLY unequal predictions in all modes; "
+                             "legacy retains both. no-threshold preserves its historical mode-dependent behavior.")
     parser.add_argument("--epsilon-start", type=float, default=0.0,
                         help="Learned online selector only; 0 preserves greedy inference.")
     parser.add_argument("--epsilon-end", type=float, default=0.0)
@@ -1421,7 +1421,7 @@ def cli():
             seed=args.seed if args.seed is not None else 42,
             budget=214, max_samples=1073, lr=0.25,
             context_loss_mode=args.context_loss_mode,
-            query_gate="legacy" if args.query_gate == "legacy" else "none"))
+            query_gate=args.query_gate if args.query_gate in ("legacy","disagreement") else "none"))
         return
     if not 0.0 <= args.gamma < 1.0:
         parser.error("--gamma must be in [0, 1).")
@@ -1443,6 +1443,7 @@ def cli():
     LEGACY_QUERY_GATE=args.query_gate
     seed_tag=str(args.seed) if args.seed is not None else "unseeded"
     gate_suffix = ("_no_filters" if args.query_gate=="none" else
+                   "_disagreement_only" if args.query_gate=="disagreement" else
                    "_no_threshold" if args.query_gate=="no-threshold" else "")
     if args.selector_mode=="learned" and scheduled_epsilon:
         gate_suffix += f"_eps{args.epsilon_start:g}to{args.epsilon_end:g}_decay{args.epsilon_decay:g}"
@@ -1492,7 +1493,7 @@ def cli():
         mode="legacy notebook diagnostic",source_cells=[2,7,9],random_seed=args.seed if args.seed is not None else "not fixed in original",
         scoring="post-update",selector_mode=args.selector_mode,reward_mode=args.reward_mode,
         transition_mode=args.transition_mode,gamma=args.gamma,
-        query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate in ("none","no-threshold") else 0.005,
+        query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate in ("none","no-threshold","disagreement") else 0.005,
         context_loss_mode=args.context_loss_mode,
         training_state_version=RUN_TRAINING_STATE_VERSION,
         next_state_scope="same input after Context update; not next traffic row",

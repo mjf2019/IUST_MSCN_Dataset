@@ -503,3 +503,48 @@ same RNG trajectory as PER20 last in an all-level run.
 No training or evaluation was run by the assistant. Syntax, unchanged model/
 reward/training methods, the no-filter query condition and schedule/trace paths
 were reviewed statically.
+
+
+## Test prediction disagreement alone, without confidence threshold
+
+--query-gate disagreement is a new explicit, consistent option for original,
+learned and random. It permits a Context query only when action=1, CNN and
+Context predictions differ, and budget remains. It never checks the confidence
+gap. Equal predictions mean no query and no Context update. No RL penalty is
+introduced at this stage: rewards, selector optimization and all losses stay
+unchanged. Any proposal to penalize an RL request on an agreement row is a
+separate later experiment, after measuring this hard gate's effect.
+
+For original/learned this is the explicit name for the disagreement-only rule
+already available as no-threshold. The no-threshold flag's historical behavior
+is preserved, including uniform random sampling in the no-RL mode. Use
+disagreement for the present experiment to avoid that mode-dependent meaning.
+
+In random/disagreement, the same independent 50/50 action generator used in
+random/legacy is retained; only the confidence threshold is removed. Natural
+skips and agreeing predictions consume no labels. A filtered stream might not
+consume all 214 labels; actual usage is reported. Pure random/none still chooses
+a uniform fixed-budget subset and is unchanged. Comparing pure sampling to a
+filtered mode includes changes in sample eligibility and query timing.
+
+Both commands below evaluate all ten levels from the same original initial
+CNN/Context checkpoints, without modifying them or requiring retraining:
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_original --seed 42 --selector-mode original --query-gate disagreement
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_original --seed 42 --selector-mode random --query-gate disagreement
+```
+
+Append --per 20 to restrict either command to the existing PER20 references.
+Original results use original_seed42_disagreement_only; random results use
+random_no_rl_disagreement_seed42. Diagnostics record confidence_gap_threshold
+as null in both modes. Existing learned epsilon schedule can also be combined
+with --query-gate disagreement, but changing that schedule simultaneously is
+not required for this gate experiment.
+
+Compare original/disagreement against original/legacy, and random/disagreement
+against random/legacy to assess removal of the confidence threshold. The
+condition-alone versus no-filter comparison can then guide a separate penalty
+experiment. No training/evaluation was run by the assistant; syntax and condition/
+dispatch paths were reviewed statically.
