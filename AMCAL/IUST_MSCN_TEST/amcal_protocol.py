@@ -913,7 +913,8 @@ def evaluate_stream(args):
     context = ContextAwareNetwork(input_length).to(device)
     context.load_state_dict(checkpoint("adversarial_best_context.pth")["context_model_state_dict"])
     context.eval()
-    agent = DQNSelectorAgent(input_length + 1, device)
+    agent = DQNSelectorAgent(input_length + 1, device,
+                             batch_size=args.online_selector_batch_size)
     agent.policy_net.load_state_dict(checkpoint("adversarial_best_dqn.pth")["dqn_policy_net_state_dict"])
     agent.update_target_network()
     agent.policy_net.eval()
@@ -924,6 +925,7 @@ def evaluate_stream(args):
     frozen_snapshot = deepcopy(cnn.state_dict())
     queried_ids, trace, predicted, base_predicted = set(), [], [], []
     selector_updates, context_updates = 0, 0
+    first_query_step = last_query_step = first_selector_update_step = None
     for step, (features, truth, source_id) in enumerate(zip(X, y, source_ids), start=1):
         source_id = int(source_id)
         inputs = torch.tensor(features, dtype=torch.float32, device=device).reshape(1, 1, -1)
@@ -946,6 +948,9 @@ def evaluate_stream(args):
         reward, loss_value, selector_loss = None, None, None
         if query:
             queried_ids.add(source_id)
+            if first_query_step is None:
+                first_query_step = step
+            last_query_step = step
             labels = torch.tensor([int(truth)], dtype=torch.long, device=device)
             optimizer.zero_grad()
             # Keep inference-mode batch statistics and dropout during online adaptation.
@@ -980,6 +985,8 @@ def evaluate_stream(args):
             agent.policy_net.eval()
             if selector_loss is not None:
                 selector_updates += 1
+                if first_selector_update_step is None:
+                    first_selector_update_step = step
                 if selector_updates % 15 == 0:
                     agent.update_target_network()
         # The evaluator may score all truths; the learner sees only queried labels.
@@ -988,6 +995,7 @@ def evaluate_stream(args):
             action=action, effective_action=effective_action,
             confidence_gap=confidence_gap, queried=query,
             transition_stored=transition_stored, budget_blocked=not adaptation_allowed,
+            replay_size=len(agent.replay_buffer),
             unique_labels_used=len(queried_ids), context_updates=context_updates,
             selector_updates=selector_updates, reward=reward,
             context_loss=loss_value, selector_loss=selector_loss))
@@ -1004,6 +1012,9 @@ def evaluate_stream(args):
         label_budget=budget, unique_labels_queried=len(queried_ids),
         actual_label_fraction=len(queried_ids)/unique_source_count,
         context_updates=context_updates, selector_updates=selector_updates,
+        online_selector_batch_size=agent.batch_size, replay_size=len(agent.replay_buffer),
+        first_query_step=first_query_step, last_query_step=last_query_step,
+        first_selector_update_step=first_selector_update_step,
         classifier_unchanged=True, protocol="predict-score-query-update",
         selector_freeze_rule="freeze at zero budget or after budget exhaustion",
         alignment=alignment, seed=args.seed, budget_fraction=args.budget_fraction,
@@ -1015,7 +1026,7 @@ def evaluate_stream(args):
         train_seed=artifact["seed"], torch_version=str(torch.__version__),
         numpy_version=np.__version__, pandas_version=pd.__version__)
     name = "clean" if args.attack_file is None else Path(args.attack_file).stem
-    tag = f"{name}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_v2"
+    tag = f"{name}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v2"
     results_dir = output / "Results"
     results_dir.mkdir(exist_ok=True)
     pd.DataFrame(trace).to_csv(results_dir / (tag+"_trace.csv"), index=False)
@@ -1101,9 +1112,13 @@ def cli():
     parser.add_argument("--max-samples",type=int)
     parser.add_argument("--budget-fraction",type=float,default=0.20)
     parser.add_argument("--lr",type=float,default=0.0001)
+    parser.add_argument("--online-selector-batch-size",type=int,default=32,
+                        help="Online replay minibatch size; offline training remains at 256.")
     args=parser.parse_args()
     if not 0 <= args.budget_fraction <= 1:
         parser.error("Budget fraction must be between 0 and 1.")
+    if args.online_selector_batch_size < 1:
+        parser.error("--online-selector-batch-size must be positive.")
     if args.max_samples is not None and args.max_samples < 1:
         parser.error("--max-samples must be positive.")
     if args.base_epochs < 1 or args.context_epochs < 1 or args.pretrain_epochs < 0:

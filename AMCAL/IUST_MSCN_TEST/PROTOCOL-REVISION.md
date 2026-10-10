@@ -139,3 +139,18 @@ The first max-samples rows are selected in original CSV order after held-out
 filtering, whereas offline clean metrics use the held-out split's stored order.
 Short-prefix and whole-test metrics therefore have different sample compositions.
 Do not compare them as the same evaluation set.
+
+## Online selector replay batch
+
+Online evaluation uses a separate replay minibatch size, default 32, configurable
+with `--online-selector-batch-size`. Offline selector training retains 256.
+A 100-label pilot may exhaust its budget before reaching the old 256-experience
+warm-up, preventing any selector optimizer update; this change allows updates
+after 32 stored experiences. It does not guarantee improved accuracy or complete
+budget consumption. For budgets/streams shorter than 32 stored transitions, lower
+the option explicitly for a diagnostic pilot; do not tune it on final test results.
+
+Metrics record the online minibatch size, final replay size, first/last query step
+and first selector update step. Traces include replay size per sample.
+Zero-budget runs still freeze both learners. Models remain compatible; retraining
+is not required. The assistant has not run this evaluator or tests.
