@@ -1,4 +1,4 @@
-# AMCAL protocol revision — IUST_MSCN pilot
+# AMCAL protocol revision v2 — IUST_MSCN pilot
 
 Work branch: `experiment/amcal-protocol`. Canonical revision entry point:
 `amcal_protocol.py`. The original notebook is retained as historical source;
@@ -20,10 +20,18 @@ its saved outputs are not revised evidence.
 - Apply the same combined context objective offline and online:
   `0.8*context_ce + 0.2/(1 + original_ce/(context_ce+1e-8))`.
   The old offline maximum clamp is removed. CE-only context warm-up remains.
-- Capture reward predictions before label-driven updates. Offline selector
-  training uses fully supervised training labels; online learning only uses
-  queried labels. Online action selection is greedy with dropout disabled;
-  online replay starts empty.
+- Score predictions before receiving labels. Separately compute the selector's
+  reward and next state after updating the context on queried samples, matching
+  Algorithm 1. These post-update outputs never replace scored predictions.
+  Offline training uses supervised training labels; online replay starts empty.
+- Align the selector with Eqs. (13)-(19): gamma=0.95, uncertainty from modulated
+  inputs, zero reward for action 0, and non-terminal same-input local transitions.
+  Sync the offline target every 15 epochs. During online streaming, sync after
+  every 15 successful selector optimizer steps (a documented online convention).
+  Greedy online selection uses eval-mode dropout; offline selection is epsilon-greedy.
+- Query only when action=1 and unique-label budget remains. Remove the legacy
+  disagreement/confidence-gap gates and hindsight replay, which were not defined
+  in Algorithm 1. Log proposed and effective actions separately.
 - Score online predictions before querying labels and adapting. Count unique
   original source-row queries separately from context/selector optimizer steps.
   Check that the frozen classifier's tensors remain unchanged.
@@ -44,16 +52,22 @@ sessions, flows, times or near-duplicate/oversampled examples. Attack provenance
 still needs verification. Matching row counts and labels cannot prove preserved
 sample order. The audit reports these facts, not a leakage-free certification.
 
-The historical selector has terminal replay targets (`done=1`), so its current
-learning target is a contextual bandit. We retain that behavior explicitly;
-we have not manufactured sequential transitions or resolved the manuscript's
-DDQN/meta-learning/game-theory claims. The reward configuration is preserved,
-including its highest reward when both classifiers are wrong.
-These method questions must be resolved before final result tables.
+Protocol v2 restores bootstrapped DDQN targets, gamma=0.95 and the article's
+same-input local transition: recompute the selected sample's modulated uncertainty
+after context adaptation; for an unselected sample use a self-transition and
+reward zero without accessing its label. No terminal boundary is introduced.
+This reproduces the paper's continuing local-transition formulation; it does not
+establish that its state is Markov or supply meta-learning/min-max guarantees.
+Those theoretical questions remain open, and empirical stability must be checked.
+Uncertainty is defined as scalar `1-max softmax` to retain the original selector's
+feature_count+1 input width; the manuscript's vector-looking notation needs clarification.
+Action-1 rewards retain Eq. (19), including highest reward when both predictions
+are wrong. Action-0 reward is corrected to zero.
+Protocol-v1 checkpoints are rejected; retrain into a fresh output directory.
 
-A label budget is a maximum, not guaranteed consumption: the existing action,
-disagreement and confidence-gap gates may use fewer labels. A zero query rate
-is an important diagnostic, not a reason to tune on test performance.
+A label budget is a maximum, not guaranteed consumption: the selector may
+choose fewer samples. A zero query rate is a diagnostic, not a reason to tune
+on test performance.
 Macro-F1 uses all training classes, including classes absent from a short pilot.
 For publication comparisons, use this same split and protocol for every baseline.
 
@@ -69,9 +83,13 @@ python AMCAL/IUST_MSCN_TEST/amcal_protocol.py audit
 ```
 
 The default output directory is
-`AMCAL/IUST_MSCN_TEST/protocol_runs/seed42/`.
+`AMCAL/IUST_MSCN_TEST/protocol_runs/seed42_v2/`.
 Audit checks the original CSV and enumerates attack CSVs with counts,
-column-order matches and rowwise label matches.
+column-order matches and rowwise label matches. It also compares attack-label
+sequences with candidate historical 80/20 and two-stage 60/20/20 splits, with and
+without stratification (using the chosen seed), and reports duplicate-group overlap
+for each candidate. A matched label sequence is not proof of sample identity and
+is never automatically exported or accepted as an attack source-row map.
 
 Then a small pipeline pilot (these epochs are not publication settings):
 

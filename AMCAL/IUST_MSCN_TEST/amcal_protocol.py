@@ -185,7 +185,7 @@ class ReplayBuffer:
 
 # DQN Agent
 class DQNSelectorAgent:
-    def __init__(self, input_size, device, lr=1e-4, gamma=0.5, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_capacity=50000, batch_size=256):
+    def __init__(self, input_size, device, lr=1e-4, gamma=0.95, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_capacity=50000, batch_size=256):
         self.device = device
         self.policy_net = DQNSelector(input_size).to(device)
         self.target_net = DQNSelector(input_size).to(device)
@@ -236,7 +236,10 @@ class DQNSelectorAgent:
         current_q_values = self.policy_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
         
         with torch.no_grad():
+            was_training = self.policy_net.training
+            self.policy_net.eval()
             next_actions = self.policy_net(next_states).argmax(1)
+            self.policy_net.train(was_training)
             next_q_values = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze(1)
             target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
         
@@ -464,7 +467,7 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
         else:
             reward = 0.0
     else:
-        reward = 1.5 if cnn_pred == label else -1.0
+        reward = 0.0  # Eq. (19): unqueried action needs no label.
     return reward
 
 def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, val_loader, class_counts, input_length, num_classes, fine_tune_epochs=500, patience=50, pretrain_epochs=20):
@@ -503,8 +506,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         print(f"Pretrain Epoch {pretrain_epoch+1}/{pretrain_epochs}, Loss: {total_context_loss/num_batches:.4f}")
     
     print("Starting adversarial training on full dataset...")
-    target_update_counter = 0
-    TARGET_UPDATE_FREQ = 100
+    # Eq. (18): offline target synchronization every 15 epochs.
     
     for epoch in range(fine_tune_epochs):
         cnn_model.eval()
@@ -525,27 +527,18 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             batch_size = inputs.size(0)
             total_samples += batch_size
             
-            # Compute CNN outputs and state for DQN
+            # Eqs. (13)-(14): uncertainty from the modulated input.
             with torch.no_grad():
                 cnn_outputs = cnn_model(inputs).detach()
-                probs = softmax(cnn_outputs)
-                _, cnn_pred = torch.max(cnn_outputs, 1)
-                max_prob, _ = torch.max(probs, dim=1, keepdim=True)
-                uncertainty = 1 - max_prob
-            
-            features = inputs.squeeze(1).detach()
-            state = torch.cat([features, uncertainty], dim=1).detach()
-            
-            # Select actions for all samples in batch
-            actions_batch = dqn_agent.select_action(state)
-            actions.extend(actions_batch.cpu().tolist())
-            
-            # Rewards use predictions captured before this batch's label-driven update.
-            with torch.no_grad():
+                cnn_pred = cnn_outputs.argmax(dim=1)
                 previous_mode = context_model.training
                 context_model.eval()
-                reward_prediction = cnn_model(context_model(inputs)).argmax(dim=1)
+                weighted_before = cnn_model(context_model(inputs))
+                uncertainty = 1.0 - weighted_before.softmax(dim=1).max(dim=1, keepdim=True).values
                 context_model.train(previous_mode)
+            state = torch.cat([inputs.squeeze(1), uncertainty], dim=1).detach()
+            actions_batch = dqn_agent.select_action(state)
+            actions.extend(actions_batch.cpu().tolist())
 
             # Find indices where action=1
             action_mask = (actions_batch == 1).cpu()
@@ -575,52 +568,27 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 context_optimizer.step()
                 running_context_loss += total_context_loss.item() * len(action_indices)
             
-            # Compute rewards and next states
+            # Algorithm 1: recompute modulated prediction/state after context update.
             with torch.no_grad():
-                encoded_inputs = context_model(inputs).detach()
-                cnn_outputs_weighted = cnn_model(encoded_inputs).detach()
-                _, weighted_pred = torch.max(cnn_outputs_weighted, 1)
-            
-            # Compute rewards for all samples
-            batch_rewards = []
+                previous_mode = context_model.training
+                context_model.eval()
+                weighted_after = cnn_model(context_model(inputs))
+                weighted_pred = weighted_after.argmax(dim=1)
+                uncertainty_after = 1.0-weighted_after.softmax(dim=1).max(dim=1, keepdim=True).values
+                next_state_new = torch.cat([inputs.squeeze(1), uncertainty_after], dim=1).detach()
+                context_model.train(previous_mode)
             for i in range(batch_size):
-                r = compute_reward(actions_batch[i].item(), cnn_pred[i].item(), reward_prediction[i].item(), labels[i].item())
-                batch_rewards.append(r)
-            rewards.extend(batch_rewards)
-            
-            # Compute next states based on action
-            with torch.no_grad():
-                if len(action_indices) > 0:
-                    cnn_outputs_new = cnn_model(context_model(inputs)).detach()
-                    probs_new = softmax(cnn_outputs_new)
-                    max_prob_new, _ = torch.max(probs_new, dim=1, keepdim=True)
-                    uncertainty_new = 1 - max_prob_new
-                    features_new = inputs.squeeze(1).detach()
-                    next_state_new = torch.cat([features_new, uncertainty_new], dim=1).detach()
-                else:
-                    next_state_new = state
-            
-            # Push to replay buffer for ALL actions
-            for i in range(batch_size):
-                if actions_batch[i] == 1 and len(action_indices) > 0:
-                    next_state = next_state_new[i:i+1]
-                else:
-                    next_state = state[i:i+1]
-                
-                dqn_agent.replay_buffer.push(
-                    state[i:i+1],
-                    actions_batch[i].item(),
-                    batch_rewards[i],
-                    next_state,
-                    1.0
-                )
-                target_update_counter += 1
-            
-            # Update target network every N steps
-            if target_update_counter >= TARGET_UPDATE_FREQ:
-                dqn_agent.update_target_network()
-                target_update_counter = 0
-            
+                selected = int(actions_batch[i].item())
+                # Short-circuit: action 0 has reward 0 without accessing its label.
+                reward = (compute_reward(1, int(cnn_pred[i].item()),
+                          int(weighted_pred[i].item()), int(labels[i].item()))
+                          if selected else 0.0)
+                rewards.append(reward)
+                next_state = next_state_new[i:i+1] if selected else state[i:i+1]
+                agent_state = state[i:i+1]
+                # Continuing local transition defined in the paper; no terminal flag.
+                dqn_agent.replay_buffer.push(agent_state, selected, reward, next_state, 0.0)
+
             # Optimize DQN
             dqn_loss = dqn_agent.optimize()
             if dqn_loss is not None:
@@ -632,7 +600,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         
         dqn_agent.update_epsilon()
         
-        if epoch % 5 == 0:
+        if (epoch + 1) % 15 == 0:
             dqn_agent.update_target_network()
         
         avg_reward = np.mean(rewards) if rewards else 0.0
@@ -680,6 +648,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     
     torch.save({
         'preprocessing_sha256': file_sha256('Models/protocol_preprocessing.joblib'),
+        'protocol_version': 2,
         'context_model_state_dict': context_model.state_dict(),
         'input_length': input_length,
         'num_classes': num_classes
@@ -688,6 +657,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     
     torch.save({
         'preprocessing_sha256': file_sha256('Models/protocol_preprocessing.joblib'),
+        'protocol_version': 2,
         'dqn_policy_net_state_dict': dqn_agent.policy_net.state_dict(),
         'input_length': input_length,
         'num_classes': num_classes
@@ -726,6 +696,7 @@ def train_main(dataset_path, base_epoch=200, base_patience=50,
     
     torch.save({
         'preprocessing_sha256': file_sha256('Models/protocol_preprocessing.joblib'),
+        'protocol_version': 2,
         'model_state_dict': cnn_model.state_dict(),
         'input_length': input_length,
         'num_classes': num_classes
@@ -795,8 +766,8 @@ def train_main(dataset_path, base_epoch=200, base_patience=50,
     print("\nTraining completed successfully!")
 
 
-# Protocol v1: terminal selector targets retain the historical contextual-bandit
-# behavior. This runner does not claim a sequential DDQN or meta-learning fix.
+# Protocol v2 implements the article's same-input local DDQN transitions.
+# This alignment alone does not establish meta-learning or min-max guarantees.
 RUN_SEED = 42
 
 def file_sha256(path):
@@ -830,7 +801,7 @@ def save_preprocessing(frame, dataset_path, filename, scaler, encoder,
                        class_counts, train_ids, val_ids, test_ids):
     source = Path(dataset_path) / filename
     artifact = dict(
-        protocol_version=1, seed=RUN_SEED, source_sha256=file_sha256(source),
+        protocol_version=2, seed=RUN_SEED, source_sha256=file_sha256(source),
         source_rows=len(frame), feature_names=list(frame.columns[:-1]),
         label_name=frame.columns[-1], scaler=scaler, label_encoder=encoder,
         class_counts=class_counts, train_ids=train_ids, val_ids=val_ids,
@@ -838,12 +809,14 @@ def save_preprocessing(frame, dataset_path, filename, scaler, encoder,
         source_labels=frame.iloc[:, -1].to_numpy())
     Path("Models").mkdir(exist_ok=True)
     joblib.dump(artifact, "Models/protocol_preprocessing.joblib")
-    report = dict(protocol_version=1, seed=RUN_SEED,
+    report = dict(protocol_version=2, seed=RUN_SEED,
         source_sha256=artifact["source_sha256"], source_rows=len(frame),
         split_sizes={k:len(v) for k,v in
                      (("train",train_ids),("validation",val_ids),("test",test_ids))},
         split_rule="group feature-identical rows before random splitting",
-        selector_target="terminal contextual bandit (historical implementation)",
+        selector_target="DDQN gamma=0.95; same-input local transitions; continuing task",
+        uncertainty="1 - max softmax of modulated input",
+        target_sync="offline: 15 epochs; online: 15 successful selector optimizer steps",
         preprocessing="fit on training only", offline_labels="fully supervised train partition",
         loss="0.8*context_ce + 0.2/(1 + original_ce/(context_ce+1e-8)); no clamp",
         limitation="Exact-feature grouping does not establish session/time independence.")
@@ -907,6 +880,8 @@ def evaluate_stream(args):
     models = output / "Models"
     artifact_path = models / "protocol_preprocessing.joblib"
     artifact = joblib.load(artifact_path)
+    if artifact.get('protocol_version') != 2:
+        raise ValueError('Preprocessing is not protocol v2; retrain in a fresh directory.')
     frame, source_ids, attack_path, alignment = load_evaluation_frame(
         args.data_dir, args.attack_file, artifact, args.row_map, args.assume_row_aligned)
     if args.max_samples is not None:
@@ -923,6 +898,8 @@ def evaluate_stream(args):
     digest = file_sha256(artifact_path)
     def checkpoint(name):
         saved = torch.load(models / name, map_location=device, weights_only=True)
+        if saved.get("protocol_version") != 2:
+            raise ValueError("Checkpoint is not protocol v2; retrain in a fresh output directory.")
         if saved.get("preprocessing_sha256") != digest:
             raise ValueError("Checkpoint/preprocessing mismatch; train with this protocol runner.")
         if saved["input_length"] != input_length or saved["num_classes"] != num_classes:
@@ -940,7 +917,7 @@ def evaluate_stream(args):
     agent.policy_net.load_state_dict(checkpoint("adversarial_best_dqn.pth")["dqn_policy_net_state_dict"])
     agent.update_target_network()
     agent.policy_net.eval()
-    # Online replay starts empty; only queried labels create online transitions.
+    # Online replay starts empty; skipped samples create label-free zero-reward transitions.
     optimizer = optim.Adam(context.parameters(), lr=args.lr, weight_decay=1e-4)
     weights = torch.tensor(1.0 / artifact["class_counts"], dtype=torch.float32, device=device)
     criterion = nn.CrossEntropyLoss(weight=weights)
@@ -955,18 +932,17 @@ def evaluate_stream(args):
             base_logits = cnn(inputs)
             base_prob = base_logits.softmax(dim=1)
             base_prediction = int(base_logits.argmax(1).item())
-            state = torch.cat([inputs.squeeze(1), 1.0-base_prob.max(1, keepdim=True).values], dim=1)
             adapted_logits = cnn(context(inputs))
             adapted_prob = adapted_logits.softmax(dim=1)
+            state = torch.cat([inputs.squeeze(1), 1.0-adapted_prob.max(1, keepdim=True).values], dim=1)
             prediction = int(adapted_logits.argmax(1).item())
             action = int(agent.select_action(state, explore=False).item())
             confidence_gap = float(abs(adapted_prob.max().item()-base_prob.max().item()))
         # Capture the scored prediction before acquiring a label or changing weights.
         predicted.append(prediction)
         base_predicted.append(base_prediction)
-        query = (action == 1 and prediction != base_prediction
-                 and confidence_gap >= args.threshold
-                 and len(queried_ids) < budget and source_id not in queried_ids)
+        query = (action == 1 and len(queried_ids) < budget
+                 and source_id not in queried_ids)
         reward, loss_value, selector_loss = None, None, None
         if query:
             queried_ids.add(source_id)
@@ -980,23 +956,33 @@ def evaluate_stream(args):
             optimizer.step()
             context_updates += 1
             loss_value = float(loss.item())
-            reward = compute_reward(1, base_prediction, prediction, int(truth))
-            # Historical targets are terminal; do not relabel them as sequential DDQN.
-            agent.replay_buffer.push(state.detach(), 1, reward, state.detach(), 1.0)
-            if reward < 0:
-                alternative = compute_reward(0, base_prediction, prediction, int(truth))
-                agent.replay_buffer.push(state.detach(), 0, alternative, state.detach(), 1.0)
-            agent.policy_net.train()
-            selector_loss = agent.optimize()
-            agent.policy_net.eval()
-            if selector_loss is not None:
-                selector_updates += 1
-                if selector_updates % 10 == 0:
-                    agent.update_target_network()
+            # Reward/state may use post-update outputs of this queried sample.
+            # Those outputs never replace the pre-update scored prediction.
+            with torch.no_grad():
+                after_logits = cnn(context(inputs))
+                after_prob = after_logits.softmax(dim=1)
+                after_prediction = int(after_logits.argmax(1).item())
+                next_state = torch.cat([inputs.squeeze(1),
+                    1.0-after_prob.max(1, keepdim=True).values], dim=1)
+            reward = compute_reward(1, base_prediction, after_prediction, int(truth))
+            effective_action = 1
+        else:
+            # No label access for an unqueried sample (including exhausted budget).
+            effective_action, reward, next_state = 0, 0.0, state
+        agent.replay_buffer.push(state.detach(), effective_action, reward,
+                                 next_state.detach(), 0.0)
+        agent.policy_net.train()
+        selector_loss = agent.optimize()
+        agent.policy_net.eval()
+        if selector_loss is not None:
+            selector_updates += 1
+            if selector_updates % 15 == 0:
+                agent.update_target_network()
         # The evaluator may score all truths; the learner sees only queried labels.
         trace.append(dict(step=step, source_row=source_id, prediction_before_update=prediction,
             base_prediction=base_prediction, true_label=int(truth), correct=int(prediction == truth),
-            action=action, confidence_gap=confidence_gap, queried=query,
+            action=action, effective_action=effective_action,
+            confidence_gap=confidence_gap, queried=query,
             unique_labels_used=len(queried_ids), context_updates=context_updates,
             selector_updates=selector_updates, reward=reward,
             context_loss=loss_value, selector_loss=selector_loss))
@@ -1015,18 +1001,39 @@ def evaluate_stream(args):
         context_updates=context_updates, selector_updates=selector_updates,
         classifier_unchanged=True, protocol="predict-score-query-update",
         alignment=alignment, seed=args.seed, budget_fraction=args.budget_fraction,
-        threshold=args.threshold, online_lr=args.lr, attack_sha256=file_sha256(attack_path),
+        query_rule='selector action 1 and remaining unique-label budget',
+        online_lr=args.lr, attack_sha256=file_sha256(attack_path),
         preprocessing_sha256=digest, device=str(device),
-        selector_target="historical terminal contextual bandit",
+        protocol_version=2, selector_target="DDQN gamma=0.95; same-input local transitions",
+        uncertainty="1 - max modulated softmax", target_sync_steps=15,
         train_seed=artifact["seed"], torch_version=str(torch.__version__),
         numpy_version=np.__version__, pandas_version=pd.__version__)
     name = "clean" if args.attack_file is None else Path(args.attack_file).stem
-    tag = f"{name}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_thr{args.threshold:g}_lr{args.lr:g}"
+    tag = f"{name}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_v2"
     results_dir = output / "Results"
     results_dir.mkdir(exist_ok=True)
     pd.DataFrame(trace).to_csv(results_dir / (tag+"_trace.csv"), index=False)
     (results_dir / (tag+"_metrics.json")).write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     print(json.dumps(metrics, indent=2))
+
+
+def legacy_split_candidates(frame, seed):
+    """Label-order hypotheses only; these cannot certify attack provenance."""
+    ids = np.arange(len(frame))
+    y = frame.iloc[:, -1].to_numpy()
+    groups = feature_groups(frame)
+    candidates = []
+    for stratified in (False, True):
+        labels = y if stratified else None
+        train, test = train_test_split(ids, test_size=0.2, random_state=seed, stratify=labels)
+        candidates.append(("80_20_" + ("stratified" if stratified else "unstratified"), train, test))
+        train, rest = train_test_split(ids, test_size=0.4, random_state=seed, stratify=labels)
+        val, test = train_test_split(rest, test_size=0.5, random_state=seed,
+                                    stratify=y[rest] if stratified else None)
+        candidates.append(("60_20_20_" + ("stratified" if stratified else "unstratified"), train, test))
+    return [dict(name=name, train_rows=len(train), test_rows=len(test),
+                 duplicate_feature_groups_crossing_train_test=len(set(groups[train]) & set(groups[test])),
+                 source_ids=test) for name, train, test in candidates]
 
 def audit_dataset(args):
     source = Path(args.data_dir) / "IUST_MSCN_original.csv"
@@ -1044,13 +1051,25 @@ def audit_dataset(args):
         split_classes={name:{str(k):int(v) for k,v in frame.iloc[ids,-1].value_counts().items()}
                        for name,ids in (("train",train),("validation",val),("test",test))},
         note="Exact duplicates are grouped; session/time provenance remains to be checked.")
+    candidates = legacy_split_candidates(frame, args.seed)
+    report["legacy_split_candidates"] = [
+        {key:value for key,value in item.items() if key != "source_ids"}
+        for item in candidates]
+    report["legacy_candidate_warning"] = (
+        "Matching label sequences are hypotheses, not confirmed source-row maps. "
+        "Do not use a candidate for evaluation without attack-generation provenance.")
     attack_info=[]
     for path in sorted(Path(args.data_dir).glob("*/*.csv")):
         sample=pd.read_csv(path)
+        matches = [item["name"] for item in candidates
+                   if len(sample) == len(item["source_ids"]) and
+                   np.array_equal(sample.iloc[:, -1].to_numpy(),
+                                  frame.iloc[item["source_ids"], -1].to_numpy())]
         attack_info.append(dict(file=str(path), rows=len(sample),
             schema_matches=list(sample.columns)==list(frame.columns),
             rowwise_labels_match=(len(sample)==len(frame) and
-                np.array_equal(sample.iloc[:,-1].to_numpy(),frame.iloc[:,-1].to_numpy()))))
+                np.array_equal(sample.iloc[:,-1].to_numpy(),frame.iloc[:,-1].to_numpy())),
+            candidate_label_sequence_matches=matches))
     report["attack_files"]=attack_info
     Path(args.output).mkdir(parents=True, exist_ok=True)
     target=Path(args.output)/"audit.json"
@@ -1062,7 +1081,7 @@ def cli():
     parser=argparse.ArgumentParser(description="IUST AMCAL revision protocol; original architectures, corrected evaluation.")
     parser.add_argument("command",choices=("audit","train","evaluate"))
     parser.add_argument("--data-dir",default=str(Path(__file__).resolve().parent/"Dataset"))
-    parser.add_argument("--output",default=str(Path(__file__).resolve().parent/"protocol_runs"/"seed42"))
+    parser.add_argument("--output",default=str(Path(__file__).resolve().parent/"protocol_runs"/"seed42_v2"))
     parser.add_argument("--seed",type=int,default=42)
     parser.add_argument("--device",choices=("auto","cpu","cuda"),default="auto")
     parser.add_argument("--base-epochs",type=int,default=200)
@@ -1075,11 +1094,10 @@ def cli():
     parser.add_argument("--assume-row-aligned",action="store_true")
     parser.add_argument("--max-samples",type=int)
     parser.add_argument("--budget-fraction",type=float,default=0.20)
-    parser.add_argument("--threshold",type=float,default=0.5)
     parser.add_argument("--lr",type=float,default=0.0001)
     args=parser.parse_args()
-    if not 0 <= args.budget_fraction <= 1 or not 0 <= args.threshold <= 1:
-        parser.error("Budget fraction and threshold must be between 0 and 1.")
+    if not 0 <= args.budget_fraction <= 1:
+        parser.error("Budget fraction must be between 0 and 1.")
     if args.max_samples is not None and args.max_samples < 1:
         parser.error("--max-samples must be positive.")
     if args.base_epochs < 1 or args.context_epochs < 1 or args.pretrain_epochs < 0:
