@@ -222,6 +222,8 @@ def evaluate_level(args):
         attack_sha256=sha256_file(attack_path),
         cnn_checkpoint_sha256=sha256_file(cnn_path),
         context_checkpoint_sha256=sha256_file(context_path),
+        training_selector_mode=context_checkpoint.get("training_selector_mode", "original"),
+        training_agreement_penalty=context_checkpoint.get("agreement_penalty"),
         query_rule=("uniform fixed-budget sample without replacement over stream rows"
                     if args.query_gate == "none" else
                     "random 50/50 action, disagreement, budget remaining"
@@ -230,8 +232,9 @@ def evaluate_level(args):
         class_label_mapping=[str(label) for label in encoder.classes_],
         classes_before=classification_report(labels_array, before_predictions, output_dict=True, zero_division=0),
         classes_after=classification_report(labels_array, after_predictions, output_dict=True, zero_division=0))
+    budget_suffix = f"_budget{args.budget}" if args.budget != 214 else ""
     results_dir = (args.results_output.resolve() if args.results_output else
-                   args.output.resolve() / "Results" / f"random_no_rl_{args.query_gate}_seed{args.seed}")
+                   args.output.resolve() / "Results" / f"random_no_rl_{args.query_gate}_seed{args.seed}{budget_suffix}")
     results_dir.mkdir(parents=True, exist_ok=True)
     prefix = f"no_rl_PER_{args.per}"
     pd.DataFrame(trace).to_csv(results_dir / f"{prefix}_trace.csv", index=False)
@@ -327,3 +330,4 @@ def evaluate(args):
 
 if __name__ == "__main__":
     evaluate(parse_args())
+

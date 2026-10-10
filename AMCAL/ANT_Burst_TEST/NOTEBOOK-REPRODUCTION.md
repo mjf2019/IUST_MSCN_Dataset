@@ -548,3 +548,45 @@ against random/legacy to assess removal of the confidence threshold. The
 condition-alone versus no-filter comparison can then guide a separate penalty
 experiment. No training/evaluation was run by the assistant; syntax and condition/
 dispatch paths were reviewed statically.
+
+# Training disagreement penalty and configurable test budget
+
+This is an optional, isolated training change. Use a NEW output folder; existing
+`notebook_original` models remain available as the control. CNN, Context architecture,
+pretraining, Context objective, original skip rewards, transitions and gamma stay unchanged.
+
+With `--training-selector-mode disagreement`, observe CNN and Context predictions
+before the batch update, without labels, dropout or BatchNorm updates. For action 1:
+
+- Equal predictions: no Context update; store the requested action 1 in replay with
+  reward `-agreement_penalty` (default **-0.2**) and unchanged local state.
+- Unequal predictions: keep the original Context update and original competitive reward.
+- Action 0: keep the original skip reward. ALL actions still enter training replay.
+
+The DQN MSE/TD loss is unchanged; the new reward changes its target. The magnitude
+0.2 is a configurable experimental choice, not a proven optimum. Agreement can include
+both models being wrong, so this rule does not mean the example is necessarily easy.
+This change adds no budget state, future-stream transition, cost-aware meta objective
+or convergence guarantee. Training and evaluation report rejected requests/budgets;
+use pre-update stream accuracy for the main comparison.
+
+The penalty is applied during adversarial TRAINING only. Existing online reward/replay
+logic is preserved. At evaluation, `--query-gate disagreement` retains unequal
+predictions and removes only the confidence-gap threshold. Rejected online requests
+consume no label budget. Budgets are maximums: gated runs may use fewer than requested.
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_train_disagreement --seed 42 --training-selector-mode disagreement --agreement-penalty 0.2
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_train_disagreement --seed 42 --training-selector-mode disagreement --agreement-penalty 0.2 --selector-mode learned --query-gate disagreement --budget 214
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_train_disagreement --seed 42 --selector-mode random --query-gate disagreement --budget 214
+```
+
+Without `--per`, evaluate all ten levels independently. `--budget` is an integer
+maximum per level (0..1073), default 214; for example 107 is roughly 10% of 1073.
+It applies consistently to original, learned and no-RL random evaluation. Alternate
+budgets have separate result folders. Only random `--query-gate none` guarantees the
+exact requested number; the disagreement condition remains enforced in these commands.
+The random control removes ONLINE RL only; its initial Context still comes from
+the same adversarial training. Compare multiple seeds before claiming improvement.
+

@@ -19,6 +19,9 @@ RUN_TRAINING_STATE_VERSION = TRAINING_STATE_VERSION
 ONLINE_EPSILON_START = 0.0
 ONLINE_EPSILON_END = 0.0
 ONLINE_EPSILON_DECAY = 1.0
+TRAINING_SELECTOR_MODE = 'original'
+AGREEMENT_PENALTY = 0.2
+TEST_LABEL_BUDGET = 214
 
 
 def replay_done(terminal=False):
@@ -528,6 +531,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         dqn_loss_count = 0
         total_samples = 0
         context_updated_samples = 0
+        rejected_agreement_samples = 0
         rewards = []
         actions = []
         context_updated = False
@@ -552,8 +556,15 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             actions_batch = dqn_agent.select_action(state)
             actions.extend(actions_batch.cpu().tolist())
             
-            # Find indices where action=1
-            action_mask = (actions_batch == 1).cpu()
+            # Optional training-only gate, observed BEFORE this batch's update.
+            # Eval mode avoids dropout noise and extra BatchNorm updates.
+            rejected_agreement = torch.zeros(batch_size, dtype=torch.bool, device=device)
+            if TRAINING_SELECTOR_MODE == 'disagreement':
+                with evaluation_mode(cnn_model, context_model), torch.no_grad():
+                    pre_context_pred = cnn_model(context_model(inputs)).argmax(dim=1)
+                rejected_agreement = (actions_batch == 1) & (cnn_pred == pre_context_pred)
+                rejected_agreement_samples += int(rejected_agreement.sum().item())
+            action_mask = ((actions_batch == 1) & ~rejected_agreement).cpu()
             action_indices = action_mask.nonzero(as_tuple=True)[0]
             
             # Update ContextAwareNetwork only for samples with action=1
@@ -588,6 +599,9 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             # Compute rewards for all samples
             for i in range(batch_size):
                 r = compute_reward(actions_batch[i].item(), cnn_pred[i].item(), weighted_pred[i].item(), labels[i].item())
+                if rejected_agreement[i].item():
+                    # Keep action=1 in replay so Q learns that this request is wasteful.
+                    r = -AGREEMENT_PENALTY
                 rewards.append(r)
             
             # Compute next states based on action
@@ -604,7 +618,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             
             # Push to replay buffer for ALL actions
             for i in range(batch_size):
-                if actions_batch[i] == 1:
+                if actions_batch[i] == 1 and not rejected_agreement[i].item():
                     next_state = next_state_new[i:i+1]  # state جدید بعد از context update
                 else:
                     next_state = state[i:i+1]  # state فعلی (بدون تغییر)
@@ -641,6 +655,8 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         print(f"  Context Loss: {running_context_loss / max(context_updated_samples, 1):.4f}")
         print(f"  DQN Loss: {running_dqn_loss / max(dqn_loss_count, 1):.4f}")
         print(f"  Context Updated Samples: {context_updated_samples}")
+        if TRAINING_SELECTOR_MODE == 'disagreement':
+            print(f"  Agreement requests rejected/penalized: {rejected_agreement_samples}")
         print(f"  Average Reward: {np.mean(rewards) if rewards else 0.0:.4f}")
         print(f"  Action Distribution: {np.bincount(actions, minlength=2) if actions else [0, 0]}")
         
@@ -1113,6 +1129,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
         query_gate=LEGACY_QUERY_GATE, confidence_gap_threshold=threshold,
         context_loss_mode=CONTEXT_LOSS_MODE,
+        training_selector_mode=TRAINING_SELECTOR_MODE,
+        agreement_penalty=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=='disagreement' else None,
         training_state_version=RUN_TRAINING_STATE_VERSION,
         bootstrap_optimizer_steps=dqn_agent.bootstrap_optimizer_steps,
         replay_terminal_rows=sum(float(e[4]) == 1.0 for e in dqn_agent.replay_buffer.buffer),
@@ -1182,7 +1200,7 @@ def evaluate_main():
     test_perturb_levels = LEGACY_PER_LEVELS or [0, 1, 3, 5, 7, 10, 12, 15, 17, 20]
     cnn_perturb_level = 0
     base_path = str(BURST_DATA_DIR / 'AdvBurst_FTSC-IAT')
-    context_budget_test = 214
+    context_budget_test = TEST_LABEL_BUDGET
     cnn_model_path = 'Models/initial_cnn_model.pth'
     context_model_path = 'Models/adversarial_best_context.pth'
     dqn_model_path = 'Models/adversarial_best_dqn.pth'
@@ -1364,6 +1382,7 @@ def evaluate_main():
 
 
 def cli():
+    global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1392,7 +1411,20 @@ def cli():
                         help="Learned online selector only; multiply epsilon after each successful optimizer step.")
     parser.add_argument("--context-loss-mode", choices=("legacy","aligned"), default="legacy",
                         help="aligned uses base/Context CE ratio in train and online, without the training loss cap.")
+    parser.add_argument("--training-selector-mode", choices=("original","disagreement"), default="original",
+                        help="disagreement: penalize action-1 requests on equal pre-update predictions; do not update Context.")
+    parser.add_argument("--agreement-penalty", type=float, default=0.2,
+                        help="Positive penalty magnitude for rejected training requests; default 0.2.")
+    parser.add_argument("--budget", type=int, default=214,
+                        help="Maximum labels/Context updates per test level, from 0 to 1073. Gates may use fewer.")
     args=parser.parse_args()
+    if not np.isfinite(args.agreement_penalty) or args.agreement_penalty <= 0:
+        parser.error("agreement-penalty must be finite and positive.")
+    if not 0 <= args.budget <= 1073:
+        parser.error("budget must be between 0 and 1073.")
+    TRAINING_SELECTOR_MODE = args.training_selector_mode
+    AGREEMENT_PENALTY = args.agreement_penalty
+    TEST_LABEL_BUDGET = args.budget
     if not 0.0 <= args.epsilon_end <= args.epsilon_start <= 1.0:
         parser.error("epsilon requires 0 <= end <= start <= 1.")
     if not 0.0 < args.epsilon_decay <= 1.0:
@@ -1419,7 +1451,7 @@ def cli():
                    Path(__file__).resolve().parent / "protocol_runs" / "notebook_original",
             results_output=None, per=args.per,
             seed=args.seed if args.seed is not None else 42,
-            budget=214, max_samples=1073, lr=0.25,
+            budget=args.budget, max_samples=1073, lr=0.25,
             context_loss_mode=args.context_loss_mode,
             query_gate=args.query_gate if args.query_gate in ("legacy","disagreement") else "none"))
         return
@@ -1436,6 +1468,8 @@ def cli():
         if args.context_loss_mode == "aligned":
             folder += "_context_aligned"
         folder += "_validated_best"
+        if args.training_selector_mode == "disagreement":
+            folder += f"_train_disagreement_penalty{args.agreement_penalty:g}"
         args.output=str(Path(__file__).resolve().parent/"protocol_runs"/folder)
     if args.command=="train" and args.selector_mode!="original":
         parser.error("--selector-mode is only for evaluate.")
@@ -1447,6 +1481,8 @@ def cli():
                    "_no_threshold" if args.query_gate=="no-threshold" else "")
     if args.selector_mode=="learned" and scheduled_epsilon:
         gate_suffix += f"_eps{args.epsilon_start:g}to{args.epsilon_end:g}_decay{args.epsilon_decay:g}"
+    if args.budget != 214:
+        gate_suffix += f"_budget{args.budget}"
     LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")
@@ -1479,6 +1515,10 @@ def cli():
                 parser.error("Checkpoint gamma mismatch: use the gamma from training.")
             if checkpoint.get("context_loss_mode","legacy") != args.context_loss_mode:
                 parser.error("Checkpoint Context loss mismatch: train with the requested --context-loss-mode in a fresh --output.")
+            if checkpoint.get("training_selector_mode", "original") != args.training_selector_mode:
+                parser.error("Training selector mode mismatch: use the mode from training.")
+            if args.training_selector_mode == "disagreement" and checkpoint.get("agreement_penalty") != args.agreement_penalty:
+                parser.error("Agreement penalty mismatch: use the penalty from training.")
         if len(saved_versions) != 1:
             parser.error("Checkpoint training-state versions differ; use one complete Models folder.")
         RUN_TRAINING_STATE_VERSION = saved_versions.pop()
@@ -1495,6 +1535,9 @@ def cli():
         transition_mode=args.transition_mode,gamma=args.gamma,
         query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate in ("none","no-threshold","disagreement") else 0.005,
         context_loss_mode=args.context_loss_mode,
+        training_selector_mode=args.training_selector_mode,
+        agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
+        test_label_budget=args.budget,
         training_state_version=RUN_TRAINING_STATE_VERSION,
         next_state_scope="same input after Context update; not next traffic row",
         online_epsilon=args.epsilon_start if args.selector_mode=="learned" else 1.0,
@@ -1509,6 +1552,7 @@ def cli():
         if args.command=="train":
             print("Selector reward / transitions / gamma:", SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA)
             print("Context loss mode:", CONTEXT_LOSS_MODE)
+            print("Training selector mode / agreement penalty:", TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY)
             train_main()
             # Tag artifacts without altering the saved weights or replay experiences.
             for checkpoint_name in ("initial_cnn_model.pth","adversarial_best_context.pth","adversarial_best_dqn.pth"):
@@ -1519,6 +1563,8 @@ def cli():
                 checkpoint["selector_gamma"]=SELECTOR_GAMMA
                 checkpoint["context_loss_mode"]=CONTEXT_LOSS_MODE
                 checkpoint["training_state_version"]=TRAINING_STATE_VERSION
+                checkpoint["training_selector_mode"]=TRAINING_SELECTOR_MODE
+                checkpoint["agreement_penalty"]=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=="disagreement" else None
                 torch.save(checkpoint,checkpoint_path)
         else:
             evaluate_main()
@@ -1527,3 +1573,4 @@ def cli():
 
 if __name__=="__main__":
     cli()
+
