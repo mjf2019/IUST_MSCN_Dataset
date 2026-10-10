@@ -154,3 +154,33 @@ Metrics record the online minibatch size, final replay size, first/last query st
 and first selector update step. Traces include replay size per sample.
 Zero-budget runs still freeze both learners. Models remain compatible; retraining
 is not required. The assistant has not run this evaluator or tests.
+
+
+## Feature-token attention correction (protocol v3)
+
+The Context Transformer previously received [batch, 1, features], making
+self-attention operate on a single token. Protocol v3 gives each feature a token:
+[batch, features, 1] -> a shared linear projection to dimension 64 -> learned
+feature-identity embeddings -> four Transformer layers with four heads -> a
+shared scalar sigmoid readout per token. Feature identity follows the persisted
+training column order. The resulting weights have shape [batch, features].
+The two-channel stack of raw features and weights, convolutional encoder, and
+frozen base CNN retain their input/output interfaces.
+
+This is an architecture correction, not a checkpoint conversion. All v3 artifacts
+and checkpoints must be trained together; v2 artifacts are rejected. The default
+output is protocol_runs/seed42_v3, preserving existing v2 results. Earlier results
+must not be presented as results of feature-to-feature attention. This change
+currently applies to the IUST protocol runner; legacy dataset notebooks remain
+unchanged pending their migration to the corrected common architecture.
+
+Pull and retrain (the short run below is a pilot, not final convergence training):
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/IUST_MSCN_TEST/amcal_protocol.py train --base-epochs 5 --context-epochs 5 --pretrain-epochs 2
+```
+
+Implementation reviewed statically; no training or evaluation was run for this
+change. Architecture configuration and diagrams in the revised manuscript must
+be updated to describe feature tokens, their dimension and identity embeddings.

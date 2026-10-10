@@ -84,22 +84,18 @@ class ContextAwareNetwork(nn.Module):
         super(ContextAwareNetwork, self).__init__()
         self.input_size = input_size
         
-        # محاسبه خودکار تعداد heads بر اساس input_size
-        possible_heads = [8, 4, 2, 1]
-        num_heads = 1
-        for h in possible_heads:
-            if input_size % h == 0:
-                num_heads = h
-                break
-        
-        if input_size % num_heads != 0:
-            num_heads = 1
-            print(f"Warning: Using num_heads=1 for input_size={input_size}")
-        
-        print(f"Selected num_heads={num_heads} for input_size={input_size}")
-        
+        # One token per feature. Identity embeddings preserve column semantics.
+        token_dim = 64
+        num_heads = 4
+        self.feature_projection = nn.Linear(1, token_dim)
+        self.feature_embedding = nn.Parameter(torch.empty(1, input_size, token_dim))
+        nn.init.normal_(self.feature_embedding, mean=0.0, std=0.02)
+        self.weight_projection = nn.Linear(token_dim, 1)
+        print(f"Feature-token attention: tokens={input_size}, "
+              f"d_model={token_dim}, num_heads={num_heads}")
+
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=input_size,
+            d_model=token_dim,
             nhead=num_heads,
             dim_feedforward=dim_feedforward,
             dropout=0.3,
@@ -132,8 +128,10 @@ class ContextAwareNetwork(nn.Module):
     
     def forward(self, x):
         x_flat = x.squeeze(1)
-        x_transformed = self.transformer(x_flat.unsqueeze(1)).squeeze(1)
-        weights = torch.sigmoid(x_transformed)
+        # [B, F, 1] -> [B, F, D]: attention now spans F feature tokens.
+        tokens = self.feature_projection(x_flat.unsqueeze(-1)) + self.feature_embedding
+        attended = self.transformer(tokens)
+        weights = torch.sigmoid(self.weight_projection(attended).squeeze(-1))
         combined = torch.stack([x_flat, weights], dim=1)
         encoded = self.encoder(combined)
         return encoded.unsqueeze(1)
@@ -648,7 +646,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     
     torch.save({
         'preprocessing_sha256': file_sha256('Models/protocol_preprocessing.joblib'),
-        'protocol_version': 2,
+        'protocol_version': 3,
         'context_model_state_dict': context_model.state_dict(),
         'input_length': input_length,
         'num_classes': num_classes
@@ -657,7 +655,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     
     torch.save({
         'preprocessing_sha256': file_sha256('Models/protocol_preprocessing.joblib'),
-        'protocol_version': 2,
+        'protocol_version': 3,
         'dqn_policy_net_state_dict': dqn_agent.policy_net.state_dict(),
         'input_length': input_length,
         'num_classes': num_classes
@@ -696,7 +694,7 @@ def train_main(dataset_path, base_epoch=200, base_patience=50,
     
     torch.save({
         'preprocessing_sha256': file_sha256('Models/protocol_preprocessing.joblib'),
-        'protocol_version': 2,
+        'protocol_version': 3,
         'model_state_dict': cnn_model.state_dict(),
         'input_length': input_length,
         'num_classes': num_classes
@@ -801,7 +799,7 @@ def save_preprocessing(frame, dataset_path, filename, scaler, encoder,
                        class_counts, train_ids, val_ids, test_ids):
     source = Path(dataset_path) / filename
     artifact = dict(
-        protocol_version=2, seed=RUN_SEED, source_sha256=file_sha256(source),
+        protocol_version=3, seed=RUN_SEED, source_sha256=file_sha256(source),
         source_rows=len(frame), feature_names=list(frame.columns[:-1]),
         label_name=frame.columns[-1], scaler=scaler, label_encoder=encoder,
         class_counts=class_counts, train_ids=train_ids, val_ids=val_ids,
@@ -809,7 +807,7 @@ def save_preprocessing(frame, dataset_path, filename, scaler, encoder,
         source_labels=frame.iloc[:, -1].to_numpy())
     Path("Models").mkdir(exist_ok=True)
     joblib.dump(artifact, "Models/protocol_preprocessing.joblib")
-    report = dict(protocol_version=2, seed=RUN_SEED,
+    report = dict(protocol_version=3, seed=RUN_SEED,
         source_sha256=artifact["source_sha256"], source_rows=len(frame),
         split_sizes={k:len(v) for k,v in
                      (("train",train_ids),("validation",val_ids),("test",test_ids))},
@@ -880,8 +878,8 @@ def evaluate_stream(args):
     models = output / "Models"
     artifact_path = models / "protocol_preprocessing.joblib"
     artifact = joblib.load(artifact_path)
-    if artifact.get('protocol_version') != 2:
-        raise ValueError('Preprocessing is not protocol v2; retrain in a fresh directory.')
+    if artifact.get('protocol_version') != 3:
+        raise ValueError('Preprocessing is not protocol v3; retrain in a fresh directory.')
     frame, source_ids, attack_path, alignment = load_evaluation_frame(
         args.data_dir, args.attack_file, artifact, args.row_map, args.assume_row_aligned)
     if args.max_samples is not None:
@@ -898,8 +896,8 @@ def evaluate_stream(args):
     digest = file_sha256(artifact_path)
     def checkpoint(name):
         saved = torch.load(models / name, map_location=device, weights_only=True)
-        if saved.get("protocol_version") != 2:
-            raise ValueError("Checkpoint is not protocol v2; retrain in a fresh output directory.")
+        if saved.get("protocol_version") != 3:
+            raise ValueError("Checkpoint is not protocol v3; retrain in a fresh output directory.")
         if saved.get("preprocessing_sha256") != digest:
             raise ValueError("Checkpoint/preprocessing mismatch; train with this protocol runner.")
         if saved["input_length"] != input_length or saved["num_classes"] != num_classes:
@@ -1021,12 +1019,12 @@ def evaluate_stream(args):
         query_rule='selector action 1 and remaining unique-label budget',
         online_lr=args.lr, attack_sha256=file_sha256(attack_path),
         preprocessing_sha256=digest, device=str(device),
-        protocol_version=2, selector_target="DDQN gamma=0.95; same-input local transitions",
+        protocol_version=3, selector_target="DDQN gamma=0.95; same-input local transitions",
         uncertainty="1 - max modulated softmax", target_sync_steps=15,
         train_seed=artifact["seed"], torch_version=str(torch.__version__),
         numpy_version=np.__version__, pandas_version=pd.__version__)
     name = "clean" if args.attack_file is None else Path(args.attack_file).stem
-    tag = f"{name}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v2"
+    tag = f"{name}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
     results_dir = output / "Results"
     results_dir.mkdir(exist_ok=True)
     pd.DataFrame(trace).to_csv(results_dir / (tag+"_trace.csv"), index=False)
@@ -1098,7 +1096,7 @@ def cli():
     parser=argparse.ArgumentParser(description="IUST AMCAL revision protocol; original architectures, corrected evaluation.")
     parser.add_argument("command",choices=("audit","train","evaluate"))
     parser.add_argument("--data-dir",default=str(Path(__file__).resolve().parent/"Dataset"))
-    parser.add_argument("--output",default=str(Path(__file__).resolve().parent/"protocol_runs"/"seed42_v2"))
+    parser.add_argument("--output",default=str(Path(__file__).resolve().parent/"protocol_runs"/"seed42_v3"))
     parser.add_argument("--seed",type=int,default=42)
     parser.add_argument("--device",choices=("auto","cpu","cuda"),default="auto")
     parser.add_argument("--base-epochs",type=int,default=200)
