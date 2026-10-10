@@ -4,6 +4,8 @@ Not the corrected evaluation protocol.
 """
 from pathlib import Path
 BURST_DATA_DIR = Path(__file__).resolve().parent / "Dataset"
+LEGACY_PER_LEVELS = None
+LEGACY_DIAGNOSTIC_SEED = None
 
 import numpy as np
 import pandas as pd
@@ -798,6 +800,11 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         print(f"Error: Unknown labels in {test_file}. Skipping.")
         return [], cumulative_accuracy_df
     
+    # Observer only: compare the frozen CNN under a train-fitted scaler.
+    # This never replaces the scaler or input used by legacy learning.
+    train_frame = pd.read_csv(BURST_DATA_DIR / "oversampled_train_dataset.csv")
+    train_scaler = StandardScaler().fit(train_frame.iloc[:, :-1].to_numpy())
+    train_scaled_inputs = torch.FloatTensor(train_scaler.transform(X_test)).unsqueeze(1).to(device)
     X_test = scaler.transform(X_test)
     X_test = torch.FloatTensor(X_test).unsqueeze(1).to(device)
     y_test = torch.LongTensor(y_test).to(device)
@@ -821,11 +828,14 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     actions = []
     target_update_counter = 0
     TARGET_UPDATE_FREQ = 10
+    diagnostic_trace, before_predictions, base_predictions, train_base_predictions = [], [], [], []
     
     for inputs, labels in test_loader:
         inputs, labels = inputs.to(device), labels.to(device)
         sample_idx += 1
         
+        updates_before = updates_used
+        observed_reward, observed_loss = None, None
         # Compute CNN outputs and state
         with torch.no_grad():
             cnn_outputs = cnn_model(inputs)
@@ -849,6 +859,17 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             weighted_probs_before = softmax(cnn_outputs_weighted_before)
             _, weighted_pred_before = torch.max(cnn_outputs_weighted_before, 1)
         
+        # Observe the learned policy without dropout; do not alter legacy actions/RNG.
+        previous_policy_mode = dqn_agent.policy_net.training
+        dqn_agent.policy_net.eval()
+        with torch.no_grad():
+            diagnostic_q = dqn_agent.policy_net(state)
+            train_scaled_prediction = cnn_model(train_scaled_inputs[sample_idx-1:sample_idx]).argmax(1).item()
+        dqn_agent.policy_net.train(previous_policy_mode)
+        before_predictions.append(int(weighted_pred_before.item()))
+        base_predictions.append(int(cnn_pred.item()))
+        train_base_predictions.append(int(train_scaled_prediction))
+
         # Update ContextAwareNetwork only when action=1
         if action == 1:
             _, weighted_pred = torch.max(cnn_outputs_weighted_before, 1)
@@ -872,6 +893,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 # Compute reward for action=1
                 reward = compute_reward(action, cnn_pred.item(), weighted_pred.item(), labels.item())
                 rewards.append(reward)
+                observed_reward = float(reward)
+                observed_loss = float(total_context_loss.item())
                 
                 # Compute next state with updated context
                 with torch.no_grad():
@@ -928,6 +951,17 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             sample_accuracies.append(current_accuracy)
             y_pred.extend(predicted.cpu().numpy())
             y_true.extend(labels.cpu().numpy())
+            diagnostic_trace.append(dict(step=sample_idx, true_label=int(labels.item()),
+                base_prediction=int(cnn_pred.item()),
+                base_prediction_train_scaler=int(train_scaled_prediction),
+                prediction_before_update=int(weighted_pred_before.item()),
+                prediction_after_update=int(predicted.item()),
+                action=int(action), greedy_action=int(diagnostic_q.argmax(1).item()),
+                q_skip=float(diagnostic_q[0,0].item()), q_apply=float(diagnostic_q[0,1].item()),
+                epsilon=float(dqn_agent.epsilon),
+                confidence_gap=float(abs(weighted_probs_before.max().item()-max_prob.item())),
+                updated=updates_used>updates_before, labels_used=updates_used,
+                context_loss=observed_loss, reward=observed_reward))
             cumulative_accuracy_df.loc[cumulative_accuracy_df['Sample Index'] == sample_idx, f'Perturbation {perturb_level}'] = current_accuracy
     
     test_accuracy = correct / total
@@ -935,6 +969,27 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     recall = recall_score(y_true, y_pred, average='weighted', zero_division=0)
     f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
     
+    from sklearn.metrics import accuracy_score, classification_report
+    os.makedirs("Results", exist_ok=True)
+    import json
+    diagnostics = dict(per=perturb_level, seed=LEGACY_DIAGNOSTIC_SEED,
+        base_accuracy_legacy_scaler=float(accuracy_score(y_true,base_predictions)),
+        base_accuracy_train_scaler=float(accuracy_score(y_true,train_base_predictions)),
+        amcal_accuracy_before_update=float(accuracy_score(y_true,before_predictions)),
+        amcal_accuracy_after_update=float(test_accuracy),
+        before_weighted_f1=float(f1_score(y_true,before_predictions,average="weighted",zero_division=0)),
+        after_weighted_f1=float(f1), labels_used=updates_used,
+        epsilon=float(dqn_agent.epsilon), learned_policy_used_for_actions=dqn_agent.epsilon<1,
+        classes_before=classification_report(y_true,before_predictions,output_dict=True,zero_division=0),
+        classes_after=classification_report(y_true,y_pred,output_dict=True,zero_division=0))
+    pd.DataFrame(diagnostic_trace).to_csv(f"Results/legacy_PER_{perturb_level}_trace.csv",index=False)
+    Path(f"Results/legacy_PER_{perturb_level}_diagnostics.json").write_text(
+        json.dumps(diagnostics,indent=2),encoding="utf-8")
+    print("Diagnostic frozen CNN / pre-update AMCAL / post-update AMCAL:",
+          diagnostics["base_accuracy_legacy_scaler"],
+          diagnostics["amcal_accuracy_before_update"],
+          diagnostics["amcal_accuracy_after_update"])
+
     results.append({
         'Perturbation Level': perturb_level,
         'Test Accuracy': test_accuracy,
@@ -981,7 +1036,7 @@ def plot_accuracies(combined_accuracy_df, test_perturb_levels):
 
 def evaluate_main():
     fine_tune_lr = 0.25
-    test_perturb_levels = [0, 1, 3, 5, 7, 10, 12, 15, 17, 20]
+    test_perturb_levels = LEGACY_PER_LEVELS or [0, 1, 3, 5, 7, 10, 12, 15, 17, 20]
     cnn_perturb_level = 0
     base_path = str(BURST_DATA_DIR / 'AdvBurst_FTSC-IAT')
     context_budget_test = 214
@@ -1161,14 +1216,26 @@ def evaluate_main():
 
 
 def cli():
-    global BURST_DATA_DIR
+    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED
     import argparse
     import json
     parser=argparse.ArgumentParser(description="Original Burst notebook reproduction, 20% configuration.")
     parser.add_argument("command",choices=("train","evaluate"))
     parser.add_argument("--data-dir",default=str(BURST_DATA_DIR))
     parser.add_argument("--output",default=str(Path(__file__).resolve().parent/"protocol_runs"/"notebook_original"))
+    parser.add_argument("--per",type=int,choices=(0,1,3,5,7,10,12,15,17,20))
+    parser.add_argument("--seed",type=int,help="Optional fixed random seed; legacy default stays unseeded.")
     args=parser.parse_args()
+    if args.per is not None and args.command!="evaluate":
+        parser.error("--per is only for evaluate.")
+    LEGACY_PER_LEVELS = [args.per] if args.per is not None else None
+    LEGACY_DIAGNOSTIC_SEED = args.seed
+    if args.seed is not None:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(args.seed)
     BURST_DATA_DIR=Path(args.data_dir).resolve()
     output=Path(args.output).resolve()
     if args.command=="train" and (output/"Models").exists():
@@ -1178,7 +1245,7 @@ def cli():
     output.mkdir(parents=True,exist_ok=True)
     import sys
     (output/("reproduction_"+args.command+".json")).write_text(json.dumps(dict(
-        mode="legacy notebook diagnostic",source_cells=[2,7,9],random_seed="not fixed in original",
+        mode="legacy notebook diagnostic",source_cells=[2,7,9],random_seed=args.seed if args.seed is not None else "not fixed in original",
         scoring="post-update",online_epsilon=1.0,torch_version=str(torch.__version__),
         data_dir=str(BURST_DATA_DIR)),indent=2),encoding="utf-8")
     previous=Path.cwd()
