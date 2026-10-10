@@ -838,7 +838,7 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 def load_evaluation_frame(data_dir, attack_file, artifact, row_map=None,
-                          assume_row_aligned=False):
+                          assume_row_aligned=False, attack_as_stream=False):
     source_path = Path(data_dir) / "IUST_MSCN_original.csv"
     if file_sha256(source_path) != artifact["source_sha256"]:
         raise ValueError("Original CSV differs from the training source.")
@@ -847,6 +847,11 @@ def load_evaluation_frame(data_dir, attack_file, artifact, row_map=None,
     expected = artifact["feature_names"] + [artifact["label_name"]]
     if list(frame.columns) != expected:
         raise ValueError("Feature/label schema or column order differs from training.")
+    if attack_as_stream:
+        if attack_file is None or row_map is not None or assume_row_aligned:
+            raise ValueError("--attack-as-stream requires an attack file and no row mapping options.")
+        # Local stream IDs are not original-source identities. Do not claim held-out provenance.
+        return frame, np.arange(len(frame)), path, "attack-file local row IDs; source overlap unverified"
     if attack_file is None:
         source_ids = np.arange(len(frame))
         alignment = "original CSV row IDs"
@@ -885,7 +890,8 @@ def evaluate_stream(args):
     if artifact.get('protocol_version') != 2:
         raise ValueError('Preprocessing is not protocol v2; retrain in a fresh directory.')
     frame, source_ids, attack_path, alignment = load_evaluation_frame(
-        args.data_dir, args.attack_file, artifact, args.row_map, args.assume_row_aligned)
+        args.data_dir, args.attack_file, artifact, args.row_map, args.assume_row_aligned,
+        args.attack_as_stream)
     if args.max_samples is not None:
         frame, source_ids = frame.iloc[:args.max_samples], source_ids[:args.max_samples]
     if frame.empty:
@@ -1019,7 +1025,9 @@ def evaluate_stream(args):
         first_selector_update_step=first_selector_update_step,
         classifier_unchanged=True, protocol="predict-score-query-update",
         selector_freeze_rule="freeze at zero budget or after budget exhaustion",
-        alignment=alignment, seed=args.seed, budget_fraction=args.budget_fraction,
+        alignment=alignment,
+        evaluation_scope="diagnostic attack stream" if args.attack_as_stream else "mapped held-out test",
+        source_identity_verified=not args.attack_as_stream and not args.assume_row_aligned, seed=args.seed, budget_fraction=args.budget_fraction,
         query_rule='selector action 1 and remaining unique-label budget',
         online_lr=args.lr, attack_sha256=file_sha256(attack_path),
         preprocessing_sha256=digest, device=str(device),
@@ -1028,6 +1036,7 @@ def evaluate_stream(args):
         train_seed=artifact["seed"], torch_version=str(torch.__version__),
         numpy_version=np.__version__, pandas_version=pd.__version__)
     name = "clean" if args.attack_file is None else Path(args.attack_file).stem
+    name = name + ("_unmapped_stream" if args.attack_as_stream else "")
     tag = f"{name}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v2"
     results_dir = output / "Results"
     results_dir.mkdir(exist_ok=True)
@@ -1109,6 +1118,8 @@ def cli():
     parser.add_argument("--base-patience",type=int,default=50)
     parser.add_argument("--context-patience",type=int,default=20)
     parser.add_argument("--attack-file")
+    parser.add_argument("--attack-as-stream", action="store_true",
+                        help="Diagnostic evaluation of the entire existing attack CSV; source overlap unverified.")
     parser.add_argument("--row-map")
     parser.add_argument("--assume-row-aligned",action="store_true")
     parser.add_argument("--max-samples",type=int)
