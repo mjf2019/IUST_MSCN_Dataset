@@ -188,3 +188,51 @@ Diagnostics record query_gate and confidence_gap_threshold (null when disabled).
 Evaluation manifests now include mode, seed and gate in the filename to avoid
 overwriting the other evaluation's settings. No training or evaluation was run
 by the assistant; changes were reviewed statically.
+
+
+## Align Context training and online objectives
+
+The opt-in --context-loss-mode aligned corrects two Context loss inconsistencies:
+both train and online use Lo/(Le+1e-8), and the training loss is no longer
+clamped to max=1. One shared helper computes:
+
+    0.8*Le + 0.2/(1 + Lo/(Le+1e-8))
+
+Lo is frozen base-CNN cross-entropy on raw inputs; Le is frozen-CNN
+cross-entropy on Context outputs. The Context optimizer minimizes this loss.
+The pretraining CE-only stage is unchanged. In legacy mode, the helper retains
+the old training cap and the reversed online ratio, exactly as before.
+No gradient clipping or substitute loss saturation is silently added.
+
+In particular, clamping a scalar loss at 1 made its gradient zero when the raw
+loss exceeded 1. Removing that cap permits high-loss selected samples to train
+Context. A lower numerical training-loss value after capping was not evidence
+of successful learning; aligned and capped loss magnitudes are not directly
+comparable. Assess accuracy/F1 and uncapped task performance instead.
+
+The selector reward, DDQN MSE/targets, local transitions, gamma, architecture,
+initialization procedure, Context optimizer/LR, gates and label budget are
+unchanged. This isolates the two Context corrections before adding few-shot
+terms to the RL objective. No sample-efficiency reward terms are added in this
+experiment; the original hardness reward remains intact.
+
+Retrain coupled Context and RL: changing the training objective changes both
+Context trajectories and the rewards/replay seen by the selector. All three
+checkpoints record context_loss_mode. Evaluation rejects a mismatch; untagged
+older checkpoints are legacy. Default output for the trial below is
+protocol_runs/notebook_skip_zero_local_gamma0.95_context_aligned, preserving
+all previous runs. Base CNN uses its original training procedure/seed.
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --seed 42
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --per 20 --seed 42 --selector-mode learned --query-gate no-threshold
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --per 20 --seed 42 --selector-mode random --query-gate no-threshold
+```
+
+Compare pre-update accuracy, weighted F1, labels consumed and query timing
+between modes using the SAME new checkpoint. A single-run improvement would
+not establish convergence or sample efficiency. Original shallow best-weight
+snapshots and validation-mode behavior remain known legacy limitations; these
+are not silently altered in this loss experiment. No training/evaluation was
+run by the assistant; source syntax and call sites were reviewed statically.

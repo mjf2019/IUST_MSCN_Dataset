@@ -11,6 +11,7 @@ LEGACY_QUERY_GATE = 'no-threshold'
 SELECTOR_REWARD_MODE = 'original'
 SELECTOR_TRANSITION_MODE = 'terminal'
 SELECTOR_GAMMA = 0.2
+CONTEXT_LOSS_MODE = 'legacy'
 
 
 def replay_done(terminal=False):
@@ -33,6 +34,19 @@ import os
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
+
+# Shared Context objective: explicitly retain the old reproduction as a control.
+def context_objective(context_loss, base_loss, online=False):
+    epsilon = 1e-8
+    if CONTEXT_LOSS_MODE == "aligned" or not online:
+        loss_ratio = base_loss / (context_loss + epsilon)
+    else:
+        loss_ratio = context_loss / (base_loss + epsilon)
+    loss = 0.8 * context_loss + 0.2 / (1.0 + loss_ratio)
+    if CONTEXT_LOSS_MODE == "legacy" and not online:
+        loss = torch.clamp(loss, max=1.0)
+    return loss
+
 
 # Define 1D-CNN model
 class CNN1D(nn.Module):
@@ -525,10 +539,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 cnn_outputs_weighted = cnn_model(encoded_inputs)
                 context_loss = cnn_criterion(cnn_outputs_weighted, selected_labels)
                 orig_cnn_loss = cnn_criterion(cnn_model(selected_inputs), selected_labels)
-                epsilon = 1e-8
-                loss_ratio = orig_cnn_loss / (context_loss + epsilon)
-                total_context_loss = 0.8 * context_loss + 0.2 / (1 + loss_ratio)
-                total_context_loss = torch.clamp(total_context_loss, max=1.0)
+                total_context_loss = context_objective(context_loss, orig_cnn_loss)
                 total_context_loss.backward()
                 context_optimizer.step()
                 running_context_loss += total_context_loss.item() * len(action_indices)
@@ -909,9 +920,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 outputs = cnn_model(encoded_inputs)
                 context_loss = cnn_criterion(outputs, labels)
                 orig_cnn_loss = cnn_criterion(cnn_outputs.detach(), labels)
-                epsilon = 1e-8
-                loss_ratio = context_loss / (orig_cnn_loss + epsilon)
-                total_context_loss = 0.8 * context_loss + 0.2 / (1 + loss_ratio)
+                total_context_loss = context_objective(context_loss, orig_cnn_loss, online=True)
                 total_context_loss.backward()
                 context_optimizer.step()
                 
@@ -1012,6 +1021,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         reward_mode=SELECTOR_REWARD_MODE,
         transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
         query_gate=LEGACY_QUERY_GATE, confidence_gap_threshold=threshold,
+        context_loss_mode=CONTEXT_LOSS_MODE,
         bootstrap_optimizer_steps=dqn_agent.bootstrap_optimizer_steps,
         replay_terminal_rows=sum(float(e[4]) == 1.0 for e in dqn_agent.replay_buffer.buffer),
         replay_nonterminal_rows=sum(float(e[4]) == 0.0 for e in dqn_agent.replay_buffer.buffer),
@@ -1255,7 +1265,7 @@ def evaluate_main():
 
 
 def cli():
-    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE
+    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE
     import argparse
     import json
     parser=argparse.ArgumentParser(description="Original Burst notebook reproduction, 20% configuration.")
@@ -1274,16 +1284,21 @@ def cli():
                         help="Discount factor; legacy default 0.2, paper value 0.95.")
     parser.add_argument("--query-gate", choices=("no-threshold","legacy"), default="no-threshold",
                         help="Online only: default removes the confidence-gap threshold; legacy restores 0.005.")
+    parser.add_argument("--context-loss-mode", choices=("legacy","aligned"), default="legacy",
+                        help="aligned uses base/Context CE ratio in train and online, without the training loss cap.")
     args=parser.parse_args()
     if not 0.0 <= args.gamma < 1.0:
         parser.error("--gamma must be in [0, 1).")
     SELECTOR_REWARD_MODE=args.reward_mode
     SELECTOR_TRANSITION_MODE=args.transition_mode
     SELECTOR_GAMMA=args.gamma
+    CONTEXT_LOSS_MODE=args.context_loss_mode
     if args.output is None:
         folder="notebook_original" if args.reward_mode=="original" else "notebook_skip_zero"
         if args.transition_mode != "terminal" or args.gamma != 0.2:
             folder += f"_{args.transition_mode}_gamma{args.gamma:g}"
+        if args.context_loss_mode == "aligned":
+            folder += "_context_aligned"
         args.output=str(Path(__file__).resolve().parent/"protocol_runs"/folder)
     if args.command=="train" and args.selector_mode!="random":
         parser.error("--selector-mode is only for evaluate.")
@@ -1318,6 +1333,8 @@ def cli():
                 parser.error("Checkpoint transition mode mismatch: train in a fresh --output with the requested mode.")
             if checkpoint.get("selector_gamma",0.2) != args.gamma:
                 parser.error("Checkpoint gamma mismatch: use the gamma from training.")
+            if checkpoint.get("context_loss_mode","legacy") != args.context_loss_mode:
+                parser.error("Checkpoint Context loss mismatch: train with the requested --context-loss-mode in a fresh --output.")
     output.mkdir(parents=True,exist_ok=True)
     import sys
     manifest_name="reproduction_"+args.command
@@ -1328,6 +1345,7 @@ def cli():
         scoring="post-update",selector_mode=args.selector_mode,reward_mode=args.reward_mode,
         transition_mode=args.transition_mode,gamma=args.gamma,
         query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate=="no-threshold" else 0.005,
+        context_loss_mode=args.context_loss_mode,
         next_state_scope="same input after Context update; not next traffic row",
         online_epsilon=0.0 if args.selector_mode=="learned" else 1.0,torch_version=str(torch.__version__),
         data_dir=str(BURST_DATA_DIR)),indent=2),encoding="utf-8")
@@ -1336,6 +1354,7 @@ def cli():
         os.chdir(output)
         if args.command=="train":
             print("Selector reward / transitions / gamma:", SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA)
+            print("Context loss mode:", CONTEXT_LOSS_MODE)
             train_main()
             # Tag artifacts without altering the saved weights or replay experiences.
             for checkpoint_name in ("initial_cnn_model.pth","adversarial_best_context.pth","adversarial_best_dqn.pth"):
@@ -1344,6 +1363,7 @@ def cli():
                 checkpoint["selector_reward_mode"]=SELECTOR_REWARD_MODE
                 checkpoint["selector_transition_mode"]=SELECTOR_TRANSITION_MODE
                 checkpoint["selector_gamma"]=SELECTOR_GAMMA
+                checkpoint["context_loss_mode"]=CONTEXT_LOSS_MODE
                 torch.save(checkpoint,checkpoint_path)
         else:
             evaluate_main()
