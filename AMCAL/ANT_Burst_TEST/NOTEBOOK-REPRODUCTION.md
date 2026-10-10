@@ -58,3 +58,25 @@ comparison. The existing post-update result table is also retained. A high
 legacy accuracy with epsilon=1 cannot establish learned selector effectiveness:
 actions then come from random exploration, independently of Q values.
 These observer additions were reviewed statically; no experiments were run.
+
+
+## Random versus learned online selector
+
+No retraining is required. Both modes load the same original checkpoints and
+replay, and preserve scaler, online loss, query gate, budget and online learner
+updates. Only the source of online actions changes. Random uses the original
+epsilon=1 path; learned uses argmax Q in eval mode (no dropout). DDQN replay
+optimization remains active in both modes. Thus random is not a frozen-selector
+ablation: its learned Q values are updated but do not choose actions.
+
+```powershell
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --per 20 --seed 42 --selector-mode random
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --per 20 --seed 42 --selector-mode learned
+```
+
+Results are separated in Results/random_seed42 and Results/learned_seed42.
+Compare amcal_accuracy_before_update and before_weighted_f1 in diagnostics.json.
+Different actions change later replay and RNG history despite a common initial
+seed; this is a pilot comparison, not a multi-seed effectiveness claim. Selecting
+only PER20 has a different draw history from running all ten levels.
+No training or evaluation was run by the assistant.

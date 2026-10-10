@@ -6,6 +6,8 @@ from pathlib import Path
 BURST_DATA_DIR = Path(__file__).resolve().parent / "Dataset"
 LEGACY_PER_LEVELS = None
 LEGACY_DIAGNOSTIC_SEED = None
+LEGACY_SELECTOR_MODE = 'random'
+LEGACY_RESULTS_DIR = 'Results'
 
 import numpy as np
 import pandas as pd
@@ -828,6 +830,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     actions = []
     target_update_counter = 0
     TARGET_UPDATE_FREQ = 10
+    if LEGACY_SELECTOR_MODE == "learned":
+        dqn_agent.epsilon = 0.0
     diagnostic_trace, before_predictions, base_predictions, train_base_predictions = [], [], [], []
     
     for inputs, labels in test_loader:
@@ -848,7 +852,16 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         
         # Select action
         # select_action returns a tensor or int. We need int for appending to list.
-        action_tensor = dqn_agent.select_action(state)
+        if LEGACY_SELECTOR_MODE == "learned":
+            # Greedy inference uses the learned Q values, with dropout disabled.
+            previous_mode = dqn_agent.policy_net.training
+            dqn_agent.policy_net.eval()
+            with torch.no_grad():
+                action_tensor = dqn_agent.policy_net(state).argmax(dim=1)
+            dqn_agent.policy_net.train(previous_mode)
+            dqn_agent.steps_done += 1
+        else:
+            action_tensor = dqn_agent.select_action(state)
         action = action_tensor.item() if isinstance(action_tensor, torch.Tensor) else int(action_tensor)
         actions.append(action)
         
@@ -970,7 +983,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
     
     from sklearn.metrics import accuracy_score, classification_report
-    os.makedirs("Results", exist_ok=True)
+    os.makedirs(LEGACY_RESULTS_DIR, exist_ok=True)
     import json
     diagnostics = dict(per=perturb_level, seed=LEGACY_DIAGNOSTIC_SEED,
         base_accuracy_legacy_scaler=float(accuracy_score(y_true,base_predictions)),
@@ -979,11 +992,12 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         amcal_accuracy_after_update=float(test_accuracy),
         before_weighted_f1=float(f1_score(y_true,before_predictions,average="weighted",zero_division=0)),
         after_weighted_f1=float(f1), labels_used=updates_used,
-        epsilon=float(dqn_agent.epsilon), learned_policy_used_for_actions=dqn_agent.epsilon<1,
+        epsilon=float(dqn_agent.epsilon), selector_mode=LEGACY_SELECTOR_MODE,
+        learned_policy_used_for_actions=LEGACY_SELECTOR_MODE=="learned",
         classes_before=classification_report(y_true,before_predictions,output_dict=True,zero_division=0),
         classes_after=classification_report(y_true,y_pred,output_dict=True,zero_division=0))
-    pd.DataFrame(diagnostic_trace).to_csv(f"Results/legacy_PER_{perturb_level}_trace.csv",index=False)
-    Path(f"Results/legacy_PER_{perturb_level}_diagnostics.json").write_text(
+    pd.DataFrame(diagnostic_trace).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_trace.csv",index=False)
+    Path(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_diagnostics.json").write_text(
         json.dumps(diagnostics,indent=2),encoding="utf-8")
     print("Diagnostic frozen CNN / pre-update AMCAL / post-update AMCAL:",
           diagnostics["base_accuracy_legacy_scaler"],
@@ -1027,10 +1041,10 @@ def plot_accuracies(combined_accuracy_df, test_perturb_levels):
     plt.title('Cumulative Accuracy per Sample Across Perturbation Levels')
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
-    os.makedirs('Results', exist_ok=True)
-    plt.savefig('Results/cumulative_accuracy_per_sample_all_levels.png', dpi=300)
+    os.makedirs(LEGACY_RESULTS_DIR, exist_ok=True)
+    plt.savefig(f'{LEGACY_RESULTS_DIR}/cumulative_accuracy_per_sample_all_levels.png', dpi=300)
     plt.show()
-    print("Plot saved to 'Results/cumulative_accuracy_per_sample_all_levels.png'")
+    print(f"Plot saved to '{LEGACY_RESULTS_DIR}/cumulative_accuracy_per_sample_all_levels.png'")
 
 
 
@@ -1184,17 +1198,17 @@ def evaluate_main():
             ]
         combined_accuracy_df = pd.DataFrame(combined_columns)
         
-        os.makedirs('Results', exist_ok=True)
-        combined_accuracy_df.to_csv('Results/Micfoal_Conf_cumulative_accuracy_all_perturbations_transposed.csv', index=False)
-        print("Combined cumulative accuracy saved to 'Results/Micfoal_Conf_cumulative_accuracy_all_perturbations_transposed.csv'")
+        os.makedirs(LEGACY_RESULTS_DIR, exist_ok=True)
+        combined_accuracy_df.to_csv(f'{LEGACY_RESULTS_DIR}/Micfoal_Conf_cumulative_accuracy_all_perturbations_transposed.csv', index=False)
+        print(f"Combined cumulative accuracy saved to '{LEGACY_RESULTS_DIR}/Micfoal_Conf_cumulative_accuracy_all_perturbations_transposed.csv'")
         
     if all_results:
         results_df = pd.DataFrame(all_results)
-        os.makedirs('Results', exist_ok=True)
-        results_df.to_csv('Results/AMCAL_20_cumulative_accuracy.csv', index=False)
+        os.makedirs(LEGACY_RESULTS_DIR, exist_ok=True)
+        results_df.to_csv(f'{LEGACY_RESULTS_DIR}/AMCAL_20_cumulative_accuracy.csv', index=False)
         print("\nCombined Results Table:")
         print(results_df.to_string(index=False))
-        print("\nCombined results saved to 'Results/AMCAL_20_cumulative_accuracy.csv'.")
+        print(f"\nCombined results saved to '{LEGACY_RESULTS_DIR}/AMCAL_20_cumulative_accuracy.csv'.")
         
     if accuracy_by_perturb:
         plt.figure(figsize=(12, 8))
@@ -1208,15 +1222,15 @@ def evaluate_main():
         plt.title('Cumulative Accuracy per Sample Across Perturbation Levels')
         plt.legend()
         plt.grid(True, linestyle='--', alpha=0.7)
-        os.makedirs('Results', exist_ok=True)
-        plt.savefig('Results/AMCAL_20_cumulative_accuracy.png', dpi=300)
+        os.makedirs(LEGACY_RESULTS_DIR, exist_ok=True)
+        plt.savefig(f'{LEGACY_RESULTS_DIR}/AMCAL_20_cumulative_accuracy.png', dpi=300)
         plt.close()
-        print("Plot saved to 'Results/AMCAL_20_cumulative_accuracy.png'")
+        print(f"Plot saved to '{LEGACY_RESULTS_DIR}/AMCAL_20_cumulative_accuracy.png'")
 
 
 
 def cli():
-    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED
+    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR
     import argparse
     import json
     parser=argparse.ArgumentParser(description="Original Burst notebook reproduction, 20% configuration.")
@@ -1225,7 +1239,14 @@ def cli():
     parser.add_argument("--output",default=str(Path(__file__).resolve().parent/"protocol_runs"/"notebook_original"))
     parser.add_argument("--per",type=int,choices=(0,1,3,5,7,10,12,15,17,20))
     parser.add_argument("--seed",type=int,help="Optional fixed random seed; legacy default stays unseeded.")
+    parser.add_argument("--selector-mode", choices=("random","learned"), default="random",
+                        help="Online action source only; online DDQN learning remains active in both modes.")
     args=parser.parse_args()
+    if args.command=="train" and args.selector_mode!="random":
+        parser.error("--selector-mode is only for evaluate.")
+    LEGACY_SELECTOR_MODE=args.selector_mode
+    seed_tag=str(args.seed) if args.seed is not None else "unseeded"
+    LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")
     LEGACY_PER_LEVELS = [args.per] if args.per is not None else None
@@ -1246,7 +1267,8 @@ def cli():
     import sys
     (output/("reproduction_"+args.command+".json")).write_text(json.dumps(dict(
         mode="legacy notebook diagnostic",source_cells=[2,7,9],random_seed=args.seed if args.seed is not None else "not fixed in original",
-        scoring="post-update",online_epsilon=1.0,torch_version=str(torch.__version__),
+        scoring="post-update",selector_mode=args.selector_mode,
+        online_epsilon=0.0 if args.selector_mode=="learned" else 1.0,torch_version=str(torch.__version__),
         data_dir=str(BURST_DATA_DIR)),indent=2),encoding="utf-8")
     previous=Path.cwd()
     try:
