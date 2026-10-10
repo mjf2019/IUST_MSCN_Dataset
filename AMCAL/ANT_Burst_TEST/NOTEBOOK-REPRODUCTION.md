@@ -236,3 +236,80 @@ not establish convergence or sample efficiency. Original shallow best-weight
 snapshots and validation-mode behavior remain known legacy limitations; these
 are not silently altered in this loss experiment. No training/evaluation was
 run by the assistant; source syntax and call sites were reviewed statically.
+
+
+## User-reported aligned-loss comparison before training-state corrections
+
+For PER20, seed42, paper reward, local gamma0.95 and no confidence threshold,
+the user ran both selector modes on the same aligned-loss checkpoint:
+
+| Selector | Pre-update accuracy | Post-update accuracy | Post-update weighted F1 | Queries |
+| --- | ---: | ---: | ---: | ---: |
+| Learned | 0.580615 | 0.584343 | 0.492903 | 214 |
+| Random | 0.648649 | 0.653308 | 0.607894 | 214 |
+
+Frozen CNN accuracy was 0.383970 in both. Action counts were [124,949] for
+learned and [528,545] for random (skip, apply). Action counts are not query
+counts: disagreement and remaining-budget gates still apply.
+
+Random selection remained ahead by 6.80 percentage points on pre-update
+accuracy. The previous legacy-Context-loss random run reached 0.942218
+pre-update accuracy; the aligned run therefore did not improve adaptation in
+this pilot. Those runs used different coupled Context/selector checkpoints,
+so the observed drop is not proof of a single loss term's causal effect.
+No few-shot reward, budget-aware state or early-convergence objective was
+implemented in these runs. The validation/snapshot defects below also remained
+present in their training; new training is needed to assess the corrections.
+
+## Correct validation mode and best-epoch checkpoints (training state v2)
+
+This is an execution correction, not a new RL reward or a few-shot objective.
+Validation now switches CNN and Context to eval mode inside a context manager,
+then restores every submodule's prior mode. With no_grad already in place,
+validation also leaves BatchNorm running statistics unchanged and disables
+Dropout. Context training resumes normally after validation.
+
+Best CNN, Context and selector state_dicts are deep copies, rather than tensor
+aliases to models that continue training. The CNN always reloads its best
+validation-loss epoch, including when it reaches the epoch limit. Context and
+selector reload the same best validation-accuracy epoch before final clean-test
+evaluation and saving. The selected epoch and metric are printed and saved.
+
+Selector replay, target weights and counters are snapshotted at that same epoch,
+so the checkpoint no longer combines best policy weights with later replay.
+The existing online initialization remains intact: online target weights start
+from loaded policy weights, the replay retains the last 500 saved experiences,
+and online epsilon is set by selector mode. These are evaluation initialization
+rules, not exact training resumption. Optimizer states are not saved.
+
+All new training checkpoints record training_state_version=2. Default output
+folders now append _validated_best; old folders/checkpoints/results are preserved.
+Explicit --output can still evaluate older checkpoints with their matching
+settings; manifests/diagnostics record their actual training-state version and
+the runner prints that corrections require retraining. Mixed-version folders
+are rejected. Old aliased best-epoch tensors cannot be recovered from final
+checkpoints by evaluating them again.
+
+The architecture, Context loss option, reward, transitions, gamma, gates, data,
+scalers, online LR and budget are unchanged by this commit. The CNN checkpoint
+can nevertheless change because its best-epoch restoration is now correct.
+Comparisons to older runs therefore include a changed CNN/Context/selector
+checkpoint; do not attribute their differences solely to RL or Context loss.
+
+Continue the current aligned-loss setting with a NEW training run, then compare
+learned and random selectors using that SAME checkpoint:
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --seed 42
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --per 20 --seed 42 --selector-mode learned --query-gate no-threshold
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --context-loss-mode aligned --per 20 --seed 42 --selector-mode random --query-gate no-threshold
+```
+
+Default output:
+protocol_runs/notebook_skip_zero_local_gamma0.95_context_aligned_validated_best.
+
+Assess pre-update accuracy/F1, query timing and per-class coverage. A fix does
+not guarantee improved performance. No model training/evaluation was run by the
+assistant; source syntax, the diff and validation/snapshot paths were checked
+statically.

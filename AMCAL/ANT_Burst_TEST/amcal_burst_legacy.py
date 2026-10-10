@@ -3,6 +3,8 @@ Preserves legacy numerical logic, including post-update scoring and random onlin
 Not the corrected evaluation protocol.
 """
 from pathlib import Path
+from copy import deepcopy
+from contextlib import contextmanager
 BURST_DATA_DIR = Path(__file__).resolve().parent / "Dataset"
 LEGACY_PER_LEVELS = None
 LEGACY_DIAGNOSTIC_SEED = None
@@ -12,6 +14,8 @@ SELECTOR_REWARD_MODE = 'original'
 SELECTOR_TRANSITION_MODE = 'terminal'
 SELECTOR_GAMMA = 0.2
 CONTEXT_LOSS_MODE = 'legacy'
+TRAINING_STATE_VERSION = 2
+RUN_TRAINING_STATE_VERSION = TRAINING_STATE_VERSION
 
 
 def replay_done(terminal=False):
@@ -34,6 +38,24 @@ import os
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
+
+@contextmanager
+def evaluation_mode(*models):
+    """Evaluate without changing BatchNorm buffers; restore all previous modes."""
+    previous_modes = {
+        module: module.training
+        for model in models if model is not None
+        for module in model.modules()
+    }
+    try:
+        for model in models:
+            if model is not None:
+                model.eval()
+        yield
+    finally:
+        for module, training in previous_modes.items():
+            module.training = training
+
 
 # Shared Context objective: explicitly retain the old reproduction as a control.
 def context_objective(context_loss, base_loss, online=False):
@@ -340,6 +362,7 @@ def train_initial_cnn(cnn_model, train_loader, val_loader, class_counts, epochs=
     best_val_loss = float('inf')
     epochs_no_improve = 0
     best_model_state = None
+    best_epoch = None
     
     for epoch in range(epochs):
         cnn_model.train()
@@ -375,22 +398,27 @@ def train_initial_cnn(cnn_model, train_loader, val_loader, class_counts, epochs=
         
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            best_model_state = cnn_model.state_dict()
+            best_model_state = deepcopy(cnn_model.state_dict())
+            best_epoch = epoch + 1
             epochs_no_improve = 0
         else:
             epochs_no_improve += 1
             if epochs_no_improve >= patience:
                 print(f"Early stopping triggered after {epoch+1} epochs.")
-                cnn_model.load_state_dict(best_model_state)
                 break
         
         scheduler.step()
     
+    # Restore the selected snapshot even when training reaches its epoch limit.
+    if best_model_state is not None:
+        cnn_model.load_state_dict(best_model_state)
+        cnn_model.best_validation_epoch = best_epoch
+        cnn_model.best_validation_loss = best_val_loss
+        print(f"Loaded best CNN snapshot (epoch {best_epoch}, Val Loss: {best_val_loss:.4f})")
     return cnn_model
 
 # Evaluate model
 def evaluate_model(model, test_loader, class_weights, context_model=None, dqn_agent=None, threshold=None):
-    model.eval()
     y_true = []
     y_pred = []
     running_loss = 0.0
@@ -398,7 +426,7 @@ def evaluate_model(model, test_loader, class_weights, context_model=None, dqn_ag
     softmax = nn.Softmax(dim=1)
     criterion = nn.CrossEntropyLoss(weight=class_weights)
     
-    with torch.no_grad():
+    with evaluation_mode(model, context_model), torch.no_grad():
         for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             batch_size = inputs.size(0)
@@ -459,11 +487,15 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     context_optimizer = optim.Adam(context_model.parameters(), lr=5e-4, weight_decay=1e-4)
     context_scheduler = lr_scheduler.CosineAnnealingLR(context_optimizer, T_max=100)
     
-    best_val_accuracy = 0.0
+    best_val_accuracy = -float('inf')
     epochs_no_improve = 0
     softmax = nn.Softmax(dim=1)
     best_context_state = None
     best_dqn_state = None
+    best_target_state = None
+    best_replay = None
+    best_epoch = None
+    best_selector_counters = None
     
     # Pre-train ContextAwareNetwork
     print("Pre-training ContextAwareNetwork...")
@@ -621,19 +653,39 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         if val_results['Accuracy'] > best_val_accuracy:
             best_val_accuracy = val_results['Accuracy']
             epochs_no_improve = 0
-            best_context_state = context_model.state_dict()
-            best_dqn_state = dqn_agent.policy_net.state_dict()
-            print("Updated best adversarial model states")
+            # state_dict tensors otherwise alias the live model and keep changing.
+            best_context_state = deepcopy(context_model.state_dict())
+            best_dqn_state = deepcopy(dqn_agent.policy_net.state_dict())
+            best_target_state = deepcopy(dqn_agent.target_net.state_dict())
+            best_replay = deepcopy(list(dqn_agent.replay_buffer.buffer))
+            best_epoch = epoch + 1
+            best_selector_counters = dict(
+                epsilon=dqn_agent.epsilon, steps_done=dqn_agent.steps_done,
+                bootstrap_optimizer_steps=dqn_agent.bootstrap_optimizer_steps)
+            print(f"Updated best adversarial snapshot (epoch {best_epoch})")
         else:
             epochs_no_improve += 1
             if epochs_no_improve >= patience:
                 print(f"Early stopping triggered after {epoch+1} epochs.")
                 break
     
+    # Restore the SAME selected epoch for the in-memory final evaluation and files.
+    if best_context_state is not None:
+        context_model.load_state_dict(best_context_state)
+        dqn_agent.policy_net.load_state_dict(best_dqn_state)
+        dqn_agent.target_net.load_state_dict(best_target_state)
+        dqn_agent.replay_buffer.buffer = deque(
+            best_replay, maxlen=dqn_agent.replay_buffer.buffer.maxlen)
+        for name, value in best_selector_counters.items():
+            setattr(dqn_agent, name, value)
+        print(f"Loaded best Context/selector snapshot (epoch {best_epoch}, Val Accuracy: {best_val_accuracy:.4f})")
+
     # Save best models
     if best_context_state is not None:
         torch.save({
             'context_model_state_dict': best_context_state,
+            'best_epoch': best_epoch,
+            'best_val_accuracy': best_val_accuracy,
             'input_length': input_length,
             'num_classes': num_classes
         }, 'Models/adversarial_best_context.pth')
@@ -642,9 +694,13 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     if best_dqn_state is not None:
         torch.save({
             'dqn_policy_net_state_dict': best_dqn_state,
+            'dqn_target_net_state_dict': best_target_state,
+            'best_epoch': best_epoch,
+            'best_val_accuracy': best_val_accuracy,
+            'selector_training_counters': best_selector_counters,
             'input_length': input_length,
             'num_classes': num_classes,
-            'replay_buffer': list(dqn_agent.replay_buffer.buffer)
+            'replay_buffer': best_replay
         }, 'Models/adversarial_best_dqn.pth')
         print("Saved best adversarial DQN model with replay buffer")
     
@@ -673,6 +729,8 @@ def train_main():
     
     torch.save({
         'model_state_dict': cnn_model.state_dict(),
+        'best_epoch': cnn_model.best_validation_epoch,
+        'best_val_loss': cnn_model.best_validation_loss,
         'input_length': input_length,
         'num_classes': num_classes
     }, 'Models/initial_cnn_model.pth')
@@ -1022,6 +1080,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
         query_gate=LEGACY_QUERY_GATE, confidence_gap_threshold=threshold,
         context_loss_mode=CONTEXT_LOSS_MODE,
+        training_state_version=RUN_TRAINING_STATE_VERSION,
         bootstrap_optimizer_steps=dqn_agent.bootstrap_optimizer_steps,
         replay_terminal_rows=sum(float(e[4]) == 1.0 for e in dqn_agent.replay_buffer.buffer),
         replay_nonterminal_rows=sum(float(e[4]) == 0.0 for e in dqn_agent.replay_buffer.buffer),
@@ -1265,7 +1324,7 @@ def evaluate_main():
 
 
 def cli():
-    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE
+    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION
     import argparse
     import json
     parser=argparse.ArgumentParser(description="Original Burst notebook reproduction, 20% configuration.")
@@ -1299,6 +1358,7 @@ def cli():
             folder += f"_{args.transition_mode}_gamma{args.gamma:g}"
         if args.context_loss_mode == "aligned":
             folder += "_context_aligned"
+        folder += "_validated_best"
         args.output=str(Path(__file__).resolve().parent/"protocol_runs"/folder)
     if args.command=="train" and args.selector_mode!="random":
         parser.error("--selector-mode is only for evaluate.")
@@ -1323,9 +1383,12 @@ def cli():
         parser.error("Models already exist; choose a fresh --output.")
     if args.command=="evaluate" and not (output/"Models").exists():
         parser.error("Train this reproduction first, or use --output with its Models folder.")
+    RUN_TRAINING_STATE_VERSION = TRAINING_STATE_VERSION
     if args.command=="evaluate":
+        saved_versions = set()
         for checkpoint_name in ("initial_cnn_model.pth","adversarial_best_context.pth","adversarial_best_dqn.pth"):
             checkpoint=torch.load(output/"Models"/checkpoint_name,map_location="cpu",weights_only=False)
+            saved_versions.add(checkpoint.get("training_state_version", 1))
             saved_mode=checkpoint.get("selector_reward_mode","original")
             if saved_mode!=args.reward_mode:
                 parser.error("Checkpoint reward mode mismatch: use the matching --reward-mode and --output.")
@@ -1335,6 +1398,11 @@ def cli():
                 parser.error("Checkpoint gamma mismatch: use the gamma from training.")
             if checkpoint.get("context_loss_mode","legacy") != args.context_loss_mode:
                 parser.error("Checkpoint Context loss mismatch: train with the requested --context-loss-mode in a fresh --output.")
+        if len(saved_versions) != 1:
+            parser.error("Checkpoint training-state versions differ; use one complete Models folder.")
+        RUN_TRAINING_STATE_VERSION = saved_versions.pop()
+        if RUN_TRAINING_STATE_VERSION < TRAINING_STATE_VERSION:
+            print("Using older checkpoints: validation/snapshot corrections require retraining.")
     output.mkdir(parents=True,exist_ok=True)
     import sys
     manifest_name="reproduction_"+args.command
@@ -1346,6 +1414,7 @@ def cli():
         transition_mode=args.transition_mode,gamma=args.gamma,
         query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate=="no-threshold" else 0.005,
         context_loss_mode=args.context_loss_mode,
+        training_state_version=RUN_TRAINING_STATE_VERSION,
         next_state_scope="same input after Context update; not next traffic row",
         online_epsilon=0.0 if args.selector_mode=="learned" else 1.0,torch_version=str(torch.__version__),
         data_dir=str(BURST_DATA_DIR)),indent=2),encoding="utf-8")
@@ -1364,6 +1433,7 @@ def cli():
                 checkpoint["selector_transition_mode"]=SELECTOR_TRANSITION_MODE
                 checkpoint["selector_gamma"]=SELECTOR_GAMMA
                 checkpoint["context_loss_mode"]=CONTEXT_LOSS_MODE
+                checkpoint["training_state_version"]=TRAINING_STATE_VERSION
                 torch.save(checkpoint,checkpoint_path)
         else:
             evaluate_main()
