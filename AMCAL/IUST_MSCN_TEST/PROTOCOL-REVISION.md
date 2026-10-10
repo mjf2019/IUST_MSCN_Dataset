@@ -122,3 +122,20 @@ For each additional seed, specify both `--seed` and a fresh `--output`.
 Share the pilot's `Results/training_clean_metrics.json`, evaluation
 `*_metrics.json`, and `*_trace.csv` (especially queried rows and query counts).
 Do not merge this branch into develop until the pilot has been checked.
+
+## Budget handling correction
+
+Zero-budget evaluation now freezes both context and selector. No online replay
+transitions or optimizer steps are produced in that reference run.
+After exhausting the label budget, both online learners also stop updating.
+A proposed action 1 blocked by budget or a duplicate source ID is not converted
+into a fictitious action-0 replay observation. Natural action-0 transitions may
+still train the selector without labels while budget remains.
+The last permitted queried transition may produce one selector update even when
+that query consumes the final label. Existing v2 checkpoints remain compatible;
+training does not need to be repeated for this evaluator-only correction.
+
+The first max-samples rows are selected in original CSV order after held-out
+filtering, whereas offline clean metrics use the held-out split's stored order.
+Short-prefix and whole-test metrics therefore have different sample compositions.
+Do not compare them as the same evaluation set.

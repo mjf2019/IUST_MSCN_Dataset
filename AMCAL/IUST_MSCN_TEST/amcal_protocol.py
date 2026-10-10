@@ -941,8 +941,8 @@ def evaluate_stream(args):
         # Capture the scored prediction before acquiring a label or changing weights.
         predicted.append(prediction)
         base_predicted.append(base_prediction)
-        query = (action == 1 and len(queried_ids) < budget
-                 and source_id not in queried_ids)
+        adaptation_allowed = budget > 0 and len(queried_ids) < budget
+        query = (action == 1 and adaptation_allowed and source_id not in queried_ids)
         reward, loss_value, selector_loss = None, None, None
         if query:
             queried_ids.add(source_id)
@@ -969,20 +969,25 @@ def evaluate_stream(args):
         else:
             # No label access for an unqueried sample (including exhausted budget).
             effective_action, reward, next_state = 0, 0.0, state
-        agent.replay_buffer.push(state.detach(), effective_action, reward,
-                                 next_state.detach(), 0.0)
-        agent.policy_net.train()
-        selector_loss = agent.optimize()
-        agent.policy_net.eval()
-        if selector_loss is not None:
-            selector_updates += 1
-            if selector_updates % 15 == 0:
-                agent.update_target_network()
+        # A budget-blocked action 1 is not an observed policy action 0.
+        # Freeze both learners at zero budget and after budget exhaustion.
+        transition_stored = adaptation_allowed and (query or action == 0)
+        if transition_stored:
+            agent.replay_buffer.push(state.detach(), effective_action, reward,
+                                     next_state.detach(), 0.0)
+            agent.policy_net.train()
+            selector_loss = agent.optimize()
+            agent.policy_net.eval()
+            if selector_loss is not None:
+                selector_updates += 1
+                if selector_updates % 15 == 0:
+                    agent.update_target_network()
         # The evaluator may score all truths; the learner sees only queried labels.
         trace.append(dict(step=step, source_row=source_id, prediction_before_update=prediction,
             base_prediction=base_prediction, true_label=int(truth), correct=int(prediction == truth),
             action=action, effective_action=effective_action,
             confidence_gap=confidence_gap, queried=query,
+            transition_stored=transition_stored, budget_blocked=not adaptation_allowed,
             unique_labels_used=len(queried_ids), context_updates=context_updates,
             selector_updates=selector_updates, reward=reward,
             context_loss=loss_value, selector_loss=selector_loss))
@@ -1000,6 +1005,7 @@ def evaluate_stream(args):
         actual_label_fraction=len(queried_ids)/unique_source_count,
         context_updates=context_updates, selector_updates=selector_updates,
         classifier_unchanged=True, protocol="predict-score-query-update",
+        selector_freeze_rule="freeze at zero budget or after budget exhaustion",
         alignment=alignment, seed=args.seed, budget_fraction=args.budget_fraction,
         query_rule='selector action 1 and remaining unique-label budget',
         online_lr=args.lr, attack_sha256=file_sha256(attack_path),
