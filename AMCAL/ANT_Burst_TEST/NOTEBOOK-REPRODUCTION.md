@@ -436,3 +436,70 @@ command. It retains both disagreement and 0.005 confidence filters rather than
 uniform fixed-budget sampling. No training/evaluation was run by the assistant;
 syntax, the unchanged online loop, per-level reloads and reporting paths were
 reviewed statically.
+
+
+## Small online RL trial: remove both filters and gradually use learned Q
+
+No architecture, offline training, reward, Context objective, state features,
+transition semantics, gamma, replay logic/capacity, learning rate or budget is
+changed in this trial. Reuse the successful notebook_original checkpoint.
+Only online exploration is scheduled, and both prediction/confidence filters
+are explicitly disabled for the intended random-updater comparison.
+
+--query-gate none now removes BOTH CNN/Context disagreement and confidence-gap
+checks in original/learned mode. A Context query requires action=1 and remaining
+budget only. --query-gate no-threshold retains the disagreement filter, exactly
+as before; --query-gate legacy retains both old filters. These names are distinct.
+
+--selector-mode learned accepts epsilon-greedy exploration controls:
+--epsilon-start, --epsilon-end, --epsilon-decay.
+Defaults remain 0, 0, 1 (the existing greedy learned path).
+The original notebook mode remains epsilon=1 with its original action path;
+random remains a fully no-RL updater. Exploration parameters are rejected for
+training or other selector modes, so they cannot silently alter those controls.
+
+In the initial fixed trial, epsilon starts at 0.9 and is multiplied by 0.99
+AFTER each successful online selector optimizer step, with a floor of 0.1.
+Thus epsilon=max(0.1, 0.9*0.99**K), where K counts optimizer steps, not stream
+rows, epochs or skipped samples. This is the probability of choosing a random
+action, not a queried-label fraction. A random action is still uniformly skip
+or apply; other decisions use argmax Q with policy dropout disabled. At zero
+epsilon the prior deterministic action path consumes no extra random draw.
+
+The original training replay is loaded; online DQN optimization, including the
+original terminal replay and original rewards, remains unchanged. Natural online
+skips still do not create new replay entries; no unqueried labels are used for
+training reward. The unchanged hindsight skip path remains available for queried
+negative-reward rows. No new sample-efficiency reward has been added.
+
+Traces record action_epsilon before selection, action_source (policy,
+exploration or original), labels_before, post-step epsilon and query timing.
+Diagnostics/console distinguish actual policy versus exploration decisions
+WHILE budget remains. Decisions after budget exhaustion do not count towards
+that evidence of active selection. Scheduled runs have their own results and
+manifest suffix so they do not overwrite the previous greedy or original runs.
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_original --per 20 --seed 42 --selector-mode learned --query-gate none --epsilon-start 0.9 --epsilon-end 0.1 --epsilon-decay 0.99
+# The existing pure-random comparator, with BOTH filters also absent:
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_original --per 20 --seed 42 --selector-mode random --query-gate none
+```
+
+User's pure-random PER20 reference: pre-update accuracy 0.905871,
+post-update 0.911463, 214 queried labels. Use pre-update accuracy/F1, actual
+label count, policy decision count and query timing for assessment. The learned
+selector may use less than its ceiling; it is not forced to query all 214.
+The random comparator samples exactly 214 positions uniformly without
+replacement, so query timing also differs. A higher single-run score alone
+does not isolate the contribution of learned Q from exploration/timing; repeat
+controlled comparisons before claiming an RL benefit.
+
+For all ten levels omit --per 20. Every level reloads the original model weights,
+replay, budget and learned epsilon schedule. As before, the original/learned
+runner's random-draw history carries across levels; standalone PER20 is not the
+same RNG trajectory as PER20 last in an all-level run.
+
+No training or evaluation was run by the assistant. Syntax, unchanged model/
+reward/training methods, the no-filter query condition and schedule/trace paths
+were reviewed statically.

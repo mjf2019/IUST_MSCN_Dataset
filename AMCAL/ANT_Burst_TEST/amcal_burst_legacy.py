@@ -16,6 +16,9 @@ SELECTOR_GAMMA = 0.2
 CONTEXT_LOSS_MODE = 'legacy'
 TRAINING_STATE_VERSION = 2
 RUN_TRAINING_STATE_VERSION = TRAINING_STATE_VERSION
+ONLINE_EPSILON_START = 0.0
+ONLINE_EPSILON_END = 0.0
+ONLINE_EPSILON_DECAY = 1.0
 
 
 def replay_done(terminal=False):
@@ -912,7 +915,11 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     target_update_counter = 0
     TARGET_UPDATE_FREQ = 10
     if LEGACY_SELECTOR_MODE == "learned":
-        dqn_agent.epsilon = 0.0
+        dqn_agent.epsilon = ONLINE_EPSILON_START
+        dqn_agent.epsilon_end = ONLINE_EPSILON_END
+        dqn_agent.epsilon_decay = ONLINE_EPSILON_DECAY
+        print(f"Online RL epsilon: {dqn_agent.epsilon:g} -> "
+              f"{dqn_agent.epsilon_end:g}; decay={dqn_agent.epsilon_decay:g} per optimizer step")
     diagnostic_trace, before_predictions, base_predictions, train_base_predictions = [], [], [], []
     
     for inputs, labels in test_loader:
@@ -933,13 +940,23 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         
         # Select action
         # select_action returns a tensor or int. We need int for appending to list.
+        action_epsilon = float(dqn_agent.epsilon)
+        action_source = "original"
         if LEGACY_SELECTOR_MODE == "learned":
-            # Greedy inference uses the learned Q values, with dropout disabled.
+            # Original epsilon-greedy choice, now explicit and observable.
+            # A zero starting epsilon preserves the previous greedy path/RNG.
             previous_mode = dqn_agent.policy_net.training
             dqn_agent.policy_net.eval()
-            with torch.no_grad():
-                action_tensor = dqn_agent.policy_net(state).argmax(dim=1)
-            dqn_agent.policy_net.train(previous_mode)
+            try:
+                with torch.no_grad():
+                    if dqn_agent.epsilon > 0 and random.random() < dqn_agent.epsilon:
+                        action_tensor = torch.randint(0, 2, (state.size(0),), device=device)
+                        action_source = "exploration"
+                    else:
+                        action_tensor = dqn_agent.policy_net(state).argmax(dim=1)
+                        action_source = "policy"
+            finally:
+                dqn_agent.policy_net.train(previous_mode)
             dqn_agent.steps_done += 1
         else:
             action_tensor = dqn_agent.select_action(state)
@@ -970,7 +987,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             max_weighted_prob, _ = torch.max(weighted_probs_before, dim=1, keepdim=True)
             max_prob_diff = torch.max(torch.abs(max_weighted_prob - max_prob)).item()
             
-            if weighted_pred != cnn_pred and (threshold is None or max_prob_diff >= threshold) and updates_used < budget:
+            disagreement_passes = (LEGACY_QUERY_GATE == "none" or weighted_pred != cnn_pred)
+            if disagreement_passes and (threshold is None or max_prob_diff >= threshold) and updates_used < budget:
                 
                 updates_used += 1
                 context_optimizer.zero_grad()
@@ -1018,6 +1036,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                     running_dqn_loss += dqn_loss
                     dqn_loss_count += 1
                     dqn_updates_used += 1
+                    if LEGACY_SELECTOR_MODE == "learned":
+                        dqn_agent.update_epsilon()
                 
                 # Update target network every N steps
                 if target_update_counter >= TARGET_UPDATE_FREQ:
@@ -1055,6 +1075,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 action=int(action), greedy_action=int(diagnostic_q.argmax(1).item()),
                 q_skip=float(diagnostic_q[0,0].item()), q_apply=float(diagnostic_q[0,1].item()),
                 epsilon=float(dqn_agent.epsilon),
+                action_epsilon=action_epsilon, action_source=action_source,
+                labels_before=updates_before,
                 confidence_gap=float(abs(weighted_probs_before.max().item()-max_prob.item())),
                 updated=updates_used>updates_before, labels_used=updates_used,
                 context_loss=observed_loss, reward=observed_reward))
@@ -1076,6 +1098,17 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         before_weighted_f1=float(f1_score(y_true,before_predictions,average="weighted",zero_division=0)),
         after_weighted_f1=float(f1), labels_used=updates_used,
         epsilon=float(dqn_agent.epsilon), selector_mode=LEGACY_SELECTOR_MODE,
+        epsilon_start=ONLINE_EPSILON_START if LEGACY_SELECTOR_MODE=="learned" else 1.0,
+        epsilon_end=ONLINE_EPSILON_END if LEGACY_SELECTOR_MODE=="learned" else 1.0,
+        epsilon_decay=ONLINE_EPSILON_DECAY if LEGACY_SELECTOR_MODE=="learned" else 1.0,
+        epsilon_decay_rule="after successful online selector optimization",
+        label_budget=budget, actual_label_fraction=updates_used / total,
+        first_query_step=next((row["step"] for row in diagnostic_trace if row["updated"]), None),
+        last_query_step=next((row["step"] for row in reversed(diagnostic_trace) if row["updated"]), None),
+        policy_decisions_with_budget=sum(row["action_source"]=="policy" and row["labels_before"]<budget
+                                        for row in diagnostic_trace),
+        exploration_decisions_with_budget=sum(row["action_source"]=="exploration" and row["labels_before"]<budget
+                                             for row in diagnostic_trace),
         reward_mode=SELECTOR_REWARD_MODE,
         transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
         query_gate=LEGACY_QUERY_GATE, confidence_gap_threshold=threshold,
@@ -1115,6 +1148,11 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     print(f"  DQN Updates Used: {dqn_updates_used}/{budget}")
     print(f"  Average DQN Loss: {running_dqn_loss / max(dqn_loss_count, 1):.4f}")
     print(f"  Average Reward: {np.mean(rewards) if rewards else 0.0:.4f}")
+    if LEGACY_SELECTOR_MODE == "learned":
+        print(f"  Final Epsilon: {dqn_agent.epsilon:.4f}")
+        print("  Policy / Exploration Decisions While Budget Remained:",
+              diagnostics["policy_decisions_with_budget"], "/",
+              diagnostics["exploration_decisions_with_budget"])
     # Convert actions list to numpy array for bincount to avoid CUDA errors
     actions_np = np.array(actions)
     print(f"  Action Distribution: {np.bincount(actions_np, minlength=2) if len(actions_np) > 0 else [0, 0]}")
@@ -1263,8 +1301,10 @@ def evaluate_main():
             traceback.print_exc()
             continue
             
-        threshold = None if LEGACY_QUERY_GATE == "no-threshold" else 0.005
-        if threshold is None:
+        threshold = None if LEGACY_QUERY_GATE in ("no-threshold", "none") else 0.005
+        if LEGACY_QUERY_GATE == "none":
+            print("Test - All prediction/confidence filters disabled; selector action and budget only.")
+        elif threshold is None:
             print("Test - Confidence-gap threshold disabled; disagreement and budget gates retained.")
         else:
             print(f"Test - Using DQN threshold: {threshold:.4f}")
@@ -1324,7 +1364,7 @@ def evaluate_main():
 
 
 def cli():
-    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION
+    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
     parser=argparse.ArgumentParser(description="Original Burst notebook reproduction, 20% configuration.")
@@ -1335,19 +1375,35 @@ def cli():
     parser.add_argument("--seed",type=int,help="Optional fixed random seed; legacy default stays unseeded.")
     parser.add_argument("--selector-mode", choices=("original","random","learned"), default="original",
                         help="original: notebook selector with online DQN; random: no-RL random updater; "
-                             "learned: greedy Q actions with online DQN.")
+                             "learned: Q actions with optional epsilon-greedy exploration and online DQN.")
     parser.add_argument("--reward-mode", choices=("original","paper"), default="original",
                         help="paper sets only action-0 reward to zero; other legacy logic is unchanged.")
     parser.add_argument("--transition-mode", choices=("terminal","local"), default="terminal",
                         help="local enables same-input DDQN bootstrap; terminal preserves legacy immediate targets.")
     parser.add_argument("--gamma", type=float, default=0.2,
                         help="Discount factor; legacy default 0.2, paper value 0.95.")
-    parser.add_argument("--query-gate", choices=("no-threshold","legacy"), default="no-threshold",
-                        help="Original/learned: disable confidence threshold only; random: uniform queries. "
-                             "legacy retains disagreement and 0.005 confidence filters in all modes.")
+    parser.add_argument("--query-gate", choices=("none","no-threshold","legacy"), default="no-threshold",
+                        help="none removes BOTH prediction/confidence filters; no-threshold removes confidence "
+                             "only in original/learned (uniform queries in random); legacy retains both.")
+    parser.add_argument("--epsilon-start", type=float, default=0.0,
+                        help="Learned online selector only; 0 preserves greedy inference.")
+    parser.add_argument("--epsilon-end", type=float, default=0.0)
+    parser.add_argument("--epsilon-decay", type=float, default=1.0,
+                        help="Learned online selector only; multiply epsilon after each successful optimizer step.")
     parser.add_argument("--context-loss-mode", choices=("legacy","aligned"), default="legacy",
                         help="aligned uses base/Context CE ratio in train and online, without the training loss cap.")
     args=parser.parse_args()
+    if not 0.0 <= args.epsilon_end <= args.epsilon_start <= 1.0:
+        parser.error("epsilon requires 0 <= end <= start <= 1.")
+    if not 0.0 < args.epsilon_decay <= 1.0:
+        parser.error("epsilon-decay must be in (0, 1].")
+    scheduled_epsilon = (args.epsilon_start != 0.0 or args.epsilon_end != 0.0
+                         or args.epsilon_decay != 1.0)
+    if scheduled_epsilon and (args.command != "evaluate" or args.selector_mode != "learned"):
+        parser.error("epsilon settings apply only to evaluate --selector-mode learned.")
+    ONLINE_EPSILON_START = args.epsilon_start
+    ONLINE_EPSILON_END = args.epsilon_end
+    ONLINE_EPSILON_DECAY = args.epsilon_decay
     if args.selector_mode == "random":
         if args.command != "evaluate":
             parser.error("random is an online-only ablation; use existing CNN/Context checkpoints.")
@@ -1386,7 +1442,10 @@ def cli():
     LEGACY_SELECTOR_MODE=args.selector_mode
     LEGACY_QUERY_GATE=args.query_gate
     seed_tag=str(args.seed) if args.seed is not None else "unseeded"
-    gate_suffix="_no_threshold" if args.query_gate=="no-threshold" else ""
+    gate_suffix = ("_no_filters" if args.query_gate=="none" else
+                   "_no_threshold" if args.query_gate=="no-threshold" else "")
+    if args.selector_mode=="learned" and scheduled_epsilon:
+        gate_suffix += f"_eps{args.epsilon_start:g}to{args.epsilon_end:g}_decay{args.epsilon_decay:g}"
     LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")
@@ -1433,11 +1492,15 @@ def cli():
         mode="legacy notebook diagnostic",source_cells=[2,7,9],random_seed=args.seed if args.seed is not None else "not fixed in original",
         scoring="post-update",selector_mode=args.selector_mode,reward_mode=args.reward_mode,
         transition_mode=args.transition_mode,gamma=args.gamma,
-        query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate=="no-threshold" else 0.005,
+        query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate in ("none","no-threshold") else 0.005,
         context_loss_mode=args.context_loss_mode,
         training_state_version=RUN_TRAINING_STATE_VERSION,
         next_state_scope="same input after Context update; not next traffic row",
-        online_epsilon=0.0 if args.selector_mode=="learned" else 1.0,torch_version=str(torch.__version__),
+        online_epsilon=args.epsilon_start if args.selector_mode=="learned" else 1.0,
+        online_epsilon_end=args.epsilon_end if args.selector_mode=="learned" else 1.0,
+        online_epsilon_decay=args.epsilon_decay if args.selector_mode=="learned" else 1.0,
+        epsilon_decay_rule="after successful online selector optimization",
+        torch_version=str(torch.__version__),
         data_dir=str(BURST_DATA_DIR)),indent=2),encoding="utf-8")
     previous=Path.cwd()
     try:
