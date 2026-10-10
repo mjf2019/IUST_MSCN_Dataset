@@ -108,3 +108,51 @@ would require original-reward training with the same seed/configuration too.
 Zero skip reward does not by itself prove that the learned selector will improve.
 All other legacy limitations documented above remain. No training/evaluation
 was run by the assistant.
+
+
+## Same-input local DDQN transitions
+
+The previous replay used done=1 for every row, so the future term in the DDQN
+target was always zero regardless of gamma. The opt-in --transition-mode local
+stores nonterminal training transitions: apply goes to the existing same-input
+post-Context state, while skip retains its existing self-state. It does not use
+the next traffic row or imply forecasting future traffic.
+
+Online real apply transitions are terminal when the label budget is exhausted
+or the stream ends. Existing counterfactual skip rows are terminal only at the
+stream end: that hypothetical skip would not consume a label. The learner still
+has no remaining-budget feature; this is local bootstrapping with a terminal
+mask, not a complete finite-budget Markov model. Legacy online skip feedback
+and hindsight construction are unchanged in this isolated experiment.
+
+--gamma is explicit, defaults to the original 0.2, and can be set to the paper's
+0.95. The default transition mode is terminal; existing commands/models keep
+their original behavior. With terminal transitions changing gamma has no effect
+on the target. For this new trial use local with gamma 0.95 and skip reward zero.
+All three checkpoints record both settings. Evaluation rejects mismatched
+checkpoints, including old terminal replay. No replay is silently relabeled.
+
+Default new output: protocol_runs/notebook_skip_zero_local_gamma0.95.
+Retraining is required. The old notebook_skip_zero models/results are preserved.
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --reward-mode paper --transition-mode local --gamma 0.95 --seed 42
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --per 20 --seed 42 --selector-mode learned
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --reward-mode paper --transition-mode local --gamma 0.95 --per 20 --seed 42 --selector-mode random
+```
+
+Both evaluations reload the same new checkpoints. Compare pre-update accuracy,
+weighted F1, labels consumed, action counts and query timing. Diagnostics also
+record gamma, transition mode, replay terminal/nonterminal counts and
+bootstrap_optimizer_steps (online optimization batches with at least one
+nonterminal transition and positive gamma). This counter verifies that the
+future term is enabled, not that estimates or selections are accurate.
+
+Context architecture/loss, scalers, threshold 0.005, online LR 0.25, exploration,
+target synchronization, replay capacity, validation and checkpoint selection
+remain unchanged. This is one diagnostic change to replay-target semantics,
+not full paper conformity or a guarantee of improvement. In particular, base
+CNN uncertainty remains the legacy input state, and online natural skips are
+still not inserted into replay. No training or evaluation was run by the
+assistant; the source and transition/checkpoint paths were reviewed statically.

@@ -8,6 +8,13 @@ LEGACY_PER_LEVELS = None
 LEGACY_DIAGNOSTIC_SEED = None
 LEGACY_SELECTOR_MODE = 'random'
 SELECTOR_REWARD_MODE = 'original'
+SELECTOR_TRANSITION_MODE = 'terminal'
+SELECTOR_GAMMA = 0.2
+
+
+def replay_done(terminal=False):
+    """Local continuing transitions; preserve terminal-only legacy by default."""
+    return float(terminal) if SELECTOR_TRANSITION_MODE == "local" else 1.0
 LEGACY_RESULTS_DIR = 'Results'
 
 import numpy as np
@@ -171,7 +178,7 @@ class ReplayBuffer:
 
 # DQN Agent
 class DQNSelectorAgent:
-    def __init__(self, input_size, device, lr=1e-4, gamma=0.2, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_capacity=50000, batch_size=256):
+    def __init__(self, input_size, device, lr=1e-4, gamma=None, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_capacity=50000, batch_size=256):
         self.device = device
         self.policy_net = DQNSelector(input_size).to(device)
         self.target_net = DQNSelector(input_size).to(device)
@@ -180,7 +187,8 @@ class DQNSelectorAgent:
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=lr)
         self.replay_buffer = ReplayBuffer(buffer_capacity)
         self.batch_size = batch_size
-        self.gamma = gamma
+        self.gamma = SELECTOR_GAMMA if gamma is None else gamma
+        self.bootstrap_optimizer_steps = 0
         self.epsilon = epsilon_start
         self.epsilon_end = epsilon_end
         self.epsilon_decay = epsilon_decay
@@ -225,6 +233,8 @@ class DQNSelectorAgent:
             next_actions = self.policy_net(next_states).argmax(1)
             next_q_values = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze(1)
             target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
+            if self.gamma > 0 and (dones < 1).any().item():
+                self.bootstrap_optimizer_steps += 1
         
         loss = nn.MSELoss()(current_q_values, target_q_values)
         self.optimizer.zero_grad()
@@ -557,7 +567,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                     actions_batch[i].item(),
                     rewards[total_samples - batch_size + i],
                     next_state,
-                    1.0
+                    replay_done()
                 )
                 target_update_counter += 1
             
@@ -920,14 +930,18 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                     next_state = torch.cat([features, uncertainty_new], dim=1)
                 
                 # Push action=1 to replay buffer
-                dqn_agent.replay_buffer.push(state, action, reward, next_state, 1.0)
+                dqn_agent.replay_buffer.push(
+                    state, action, reward, next_state,
+                    replay_done(updates_used >= budget or sample_idx >= max_samples))
                 target_update_counter += 1
                 
                 # Hindsight Experience Replay: اگر reward منفی بود، action=0 رو هم اضافه کن
                 if reward < 0:
                     reward_action0 = compute_reward(0, cnn_pred.item(), weighted_pred.item(), labels.item())
                     # Next state for action=0 is the current state (no context update)
-                    dqn_agent.replay_buffer.push(state, 0, reward_action0, state, 1.0)
+                    dqn_agent.replay_buffer.push(
+                        state, 0, reward_action0, state,
+                        replay_done(sample_idx >= max_samples))
                     target_update_counter += 1
                 
                 # Optimize DQN
@@ -995,6 +1009,10 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         after_weighted_f1=float(f1), labels_used=updates_used,
         epsilon=float(dqn_agent.epsilon), selector_mode=LEGACY_SELECTOR_MODE,
         reward_mode=SELECTOR_REWARD_MODE,
+        transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
+        bootstrap_optimizer_steps=dqn_agent.bootstrap_optimizer_steps,
+        replay_terminal_rows=sum(float(e[4]) == 1.0 for e in dqn_agent.replay_buffer.buffer),
+        replay_nonterminal_rows=sum(float(e[4]) == 0.0 for e in dqn_agent.replay_buffer.buffer),
         learned_policy_used_for_actions=LEGACY_SELECTOR_MODE=="learned",
         classes_before=classification_report(y_true,before_predictions,output_dict=True,zero_division=0),
         classes_after=classification_report(y_true,y_pred,output_dict=True,zero_division=0))
@@ -1232,7 +1250,7 @@ def evaluate_main():
 
 
 def cli():
-    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE
+    global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA
     import argparse
     import json
     parser=argparse.ArgumentParser(description="Original Burst notebook reproduction, 20% configuration.")
@@ -1245,10 +1263,20 @@ def cli():
                         help="Online action source only; online DDQN learning remains active in both modes.")
     parser.add_argument("--reward-mode", choices=("original","paper"), default="original",
                         help="paper sets only action-0 reward to zero; other legacy logic is unchanged.")
+    parser.add_argument("--transition-mode", choices=("terminal","local"), default="terminal",
+                        help="local enables same-input DDQN bootstrap; terminal preserves legacy immediate targets.")
+    parser.add_argument("--gamma", type=float, default=0.2,
+                        help="Discount factor; legacy default 0.2, paper value 0.95.")
     args=parser.parse_args()
+    if not 0.0 <= args.gamma < 1.0:
+        parser.error("--gamma must be in [0, 1).")
     SELECTOR_REWARD_MODE=args.reward_mode
+    SELECTOR_TRANSITION_MODE=args.transition_mode
+    SELECTOR_GAMMA=args.gamma
     if args.output is None:
         folder="notebook_original" if args.reward_mode=="original" else "notebook_skip_zero"
+        if args.transition_mode != "terminal" or args.gamma != 0.2:
+            folder += f"_{args.transition_mode}_gamma{args.gamma:g}"
         args.output=str(Path(__file__).resolve().parent/"protocol_runs"/folder)
     if args.command=="train" and args.selector_mode!="random":
         parser.error("--selector-mode is only for evaluate.")
@@ -1277,24 +1305,32 @@ def cli():
             saved_mode=checkpoint.get("selector_reward_mode","original")
             if saved_mode!=args.reward_mode:
                 parser.error("Checkpoint reward mode mismatch: use the matching --reward-mode and --output.")
+            if checkpoint.get("selector_transition_mode","terminal") != args.transition_mode:
+                parser.error("Checkpoint transition mode mismatch: train in a fresh --output with the requested mode.")
+            if checkpoint.get("selector_gamma",0.2) != args.gamma:
+                parser.error("Checkpoint gamma mismatch: use the gamma from training.")
     output.mkdir(parents=True,exist_ok=True)
     import sys
     (output/("reproduction_"+args.command+".json")).write_text(json.dumps(dict(
         mode="legacy notebook diagnostic",source_cells=[2,7,9],random_seed=args.seed if args.seed is not None else "not fixed in original",
         scoring="post-update",selector_mode=args.selector_mode,reward_mode=args.reward_mode,
+        transition_mode=args.transition_mode,gamma=args.gamma,
+        next_state_scope="same input after Context update; not next traffic row",
         online_epsilon=0.0 if args.selector_mode=="learned" else 1.0,torch_version=str(torch.__version__),
         data_dir=str(BURST_DATA_DIR)),indent=2),encoding="utf-8")
     previous=Path.cwd()
     try:
         os.chdir(output)
         if args.command=="train":
-            print("Selector reward mode:", SELECTOR_REWARD_MODE)
+            print("Selector reward / transitions / gamma:", SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA)
             train_main()
             # Tag artifacts without altering the saved weights or replay experiences.
             for checkpoint_name in ("initial_cnn_model.pth","adversarial_best_context.pth","adversarial_best_dqn.pth"):
                 checkpoint_path=Path("Models")/checkpoint_name
                 checkpoint=torch.load(checkpoint_path,map_location="cpu",weights_only=False)
                 checkpoint["selector_reward_mode"]=SELECTOR_REWARD_MODE
+                checkpoint["selector_transition_mode"]=SELECTOR_TRANSITION_MODE
+                checkpoint["selector_gamma"]=SELECTOR_GAMMA
                 torch.save(checkpoint,checkpoint_path)
         else:
             evaluate_main()
