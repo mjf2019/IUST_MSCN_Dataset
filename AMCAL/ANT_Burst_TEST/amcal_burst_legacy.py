@@ -22,6 +22,7 @@ ONLINE_EPSILON_DECAY = 1.0
 TRAINING_SELECTOR_MODE = 'original'
 AGREEMENT_PENALTY = 0.2
 TEST_LABEL_BUDGET = 214
+SELECTION_COST = 0.0
 
 
 def replay_done(terminal=False):
@@ -485,7 +486,7 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
             reward = 0.0
     else:
         reward = 0.0 if SELECTOR_REWARD_MODE == "paper" else (1.5 if cnn_pred == label else -1.0)
-    return reward
+    return reward - SELECTION_COST if action == 1 else reward
 
 def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, val_loader, class_counts, input_length, num_classes, fine_tune_epochs=500, patience=50):
     class_weights = torch.FloatTensor(1.0 / class_counts).to(device)
@@ -833,7 +834,7 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
             reward = 0.0
     else:
         reward = 0.0 if SELECTOR_REWARD_MODE == "paper" else (1.5 if cnn_pred == label else -1.0)
-    return reward
+    return reward - SELECTION_COST if action == 1 else reward
 
 def load_metadata(base_path='AdvBurst_FTSC-IAT', train_perturb_level=0):
     X_all, y_all = [], []
@@ -1131,6 +1132,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         context_loss_mode=CONTEXT_LOSS_MODE,
         training_selector_mode=TRAINING_SELECTOR_MODE,
         agreement_penalty=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=='disagreement' else None,
+        selection_cost=SELECTION_COST,
         training_state_version=RUN_TRAINING_STATE_VERSION,
         bootstrap_optimizer_steps=dqn_agent.bootstrap_optimizer_steps,
         replay_terminal_rows=sum(float(e[4]) == 1.0 for e in dqn_agent.replay_buffer.buffer),
@@ -1382,7 +1384,7 @@ def evaluate_main():
 
 
 def cli():
-    global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET
+    global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1417,7 +1419,16 @@ def cli():
                         help="Positive penalty magnitude for rejected training requests; default 0.2.")
     parser.add_argument("--budget", type=int, default=214,
                         help="Maximum labels/Context updates per test level, from 0 to 1073. Gates may use fewer.")
+    parser.add_argument("--selection-cost", type=float, default=0.0,
+                        help="Subtract this cost from every action-1 reward in training and online replay; skip stays zero in paper mode.")
     args=parser.parse_args()
+    if not np.isfinite(args.selection_cost) or args.selection_cost < 0:
+        parser.error("selection-cost must be finite and nonnegative.")
+    if args.selection_cost > 0 and (args.reward_mode != "paper" or args.training_selector_mode != "original"):
+        parser.error("selection-cost experiments require --reward-mode paper and --training-selector-mode original.")
+    if args.selection_cost > 0 and args.selector_mode == "random":
+        parser.error("random has no reward computation; omit --selection-cost for the no-RL control.")
+    SELECTION_COST = args.selection_cost
     if not np.isfinite(args.agreement_penalty) or args.agreement_penalty <= 0:
         parser.error("agreement-penalty must be finite and positive.")
     if not 0 <= args.budget <= 1073:
@@ -1467,6 +1478,8 @@ def cli():
             folder += f"_{args.transition_mode}_gamma{args.gamma:g}"
         if args.context_loss_mode == "aligned":
             folder += "_context_aligned"
+        if args.selection_cost > 0:
+            folder += f"_selection_cost{args.selection_cost:g}"
         folder += "_validated_best"
         if args.training_selector_mode == "disagreement":
             folder += f"_train_disagreement_penalty{args.agreement_penalty:g}"
@@ -1515,6 +1528,8 @@ def cli():
                 parser.error("Checkpoint gamma mismatch: use the gamma from training.")
             if checkpoint.get("context_loss_mode","legacy") != args.context_loss_mode:
                 parser.error("Checkpoint Context loss mismatch: train with the requested --context-loss-mode in a fresh --output.")
+            if checkpoint.get("selection_cost", 0.0) != args.selection_cost:
+                parser.error("Selection cost mismatch: use the training cost and matching Models folder.")
             if checkpoint.get("training_selector_mode", "original") != args.training_selector_mode:
                 parser.error("Training selector mode mismatch: use the mode from training.")
             if args.training_selector_mode == "disagreement" and checkpoint.get("agreement_penalty") != args.agreement_penalty:
@@ -1538,6 +1553,7 @@ def cli():
         training_selector_mode=args.training_selector_mode,
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
+        selection_cost=args.selection_cost,
         training_state_version=RUN_TRAINING_STATE_VERSION,
         next_state_scope="same input after Context update; not next traffic row",
         online_epsilon=args.epsilon_start if args.selector_mode=="learned" else 1.0,
@@ -1553,6 +1569,7 @@ def cli():
             print("Selector reward / transitions / gamma:", SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA)
             print("Context loss mode:", CONTEXT_LOSS_MODE)
             print("Training selector mode / agreement penalty:", TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY)
+            print("Action-1 reward cost:", SELECTION_COST)
             train_main()
             # Tag artifacts without altering the saved weights or replay experiences.
             for checkpoint_name in ("initial_cnn_model.pth","adversarial_best_context.pth","adversarial_best_dqn.pth"):
@@ -1563,6 +1580,7 @@ def cli():
                 checkpoint["selector_gamma"]=SELECTOR_GAMMA
                 checkpoint["context_loss_mode"]=CONTEXT_LOSS_MODE
                 checkpoint["training_state_version"]=TRAINING_STATE_VERSION
+                checkpoint["selection_cost"]=SELECTION_COST
                 checkpoint["training_selector_mode"]=TRAINING_SELECTOR_MODE
                 checkpoint["agreement_penalty"]=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=="disagreement" else None
                 torch.save(checkpoint,checkpoint_path)

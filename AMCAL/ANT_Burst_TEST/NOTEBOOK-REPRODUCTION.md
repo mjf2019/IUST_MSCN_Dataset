@@ -590,3 +590,36 @@ exact requested number; the disagreement condition remains enforced in these com
 The random control removes ONLINE RL only; its initial Context still comes from
 the same adversarial training. Compare multiple seeds before claiming improvement.
 
+
+## Selection-cost reward experiment (agreement idea disabled)
+
+Use `--reward-mode paper --training-selector-mode original --selection-cost LAMBDA`.
+The ONLY algorithm change is subtracting LAMBDA from action-1 rewards, both offline
+and in the existing queried-action online replay. Skip rewards remain exactly zero.
+The TD/MSE loss, original Context loss/update eligibility, network/state, terminal
+transitions, gamma, dataset and online disagreement gate are unchanged. The earlier
+agreement penalty/training gate is disabled. Natural online skips/gate rejections
+still do not create replay experiences; this experiment does not change that rule.
+
+Default cost 0 preserves earlier runs/checkpoints. Positive cost requires fresh
+training: evaluation verifies checkpoint cost, preventing mixed reward scales in
+loaded replay. Random control does not compute rewards: omit the cost flag and
+reuse the cost-trained CNN/Context. It ablates online RL, not offline RL.
+
+A first diagnostic value is **2.0**, not an established optimum. Original action-1
+rewards [3, 2, -2, 0] then become [1, 0, -4, -2]; skip is 0. This removes the positive
+incentive for many requests without replacing the original hardness categories.
+Both-wrong cases still earn +1, so this alone cannot guarantee sample efficiency.
+Tune any further cost on validation, not the reported attack test performance.
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_skip_zero_cost2_seed42 --seed 42 --reward-mode paper --training-selector-mode original --selection-cost 2
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_skip_zero_cost2_seed42 --seed 42 --reward-mode paper --training-selector-mode original --selection-cost 2 --selector-mode learned --query-gate disagreement --budget 214 --epsilon-start 0.05 --epsilon-end 0.05
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_skip_zero_cost2_seed42 --seed 42 --selector-mode random --query-gate disagreement --budget 214
+```
+
+All levels run by default and reload initial checkpoints independently. Record actual
+queries, query timing, and pre-update accuracy versus both the cost-0 learned control
+and the same-checkpoint random control. Fewer labels alone do not prove improvement.
+Neither a budget-state input nor a convergence-gain/meta-learning reward is added.
