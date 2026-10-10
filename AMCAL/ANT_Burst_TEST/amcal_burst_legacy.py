@@ -1120,14 +1120,14 @@ def evaluate_main():
             
     if accuracy_by_perturb:
         max_samples = max(len(acc) for acc in accuracy_by_perturb.values())
-        combined_accuracy_df = pd.DataFrame({'Size': list(accuracy_by_perturb.keys())})
+        # Build all columns together instead of repeatedly inserting into a DataFrame.
+        combined_columns = {'Size': list(accuracy_by_perturb.keys())}
         for i in range(max_samples):
-            column_data = []
-            for perturb_level in accuracy_by_perturb:
-                acc_list = accuracy_by_perturb[perturb_level]
-                value = acc_list[i] if i < len(acc_list) else np.nan
-                column_data.append(value)
-            combined_accuracy_df[f'{i+1}'] = column_data
+            combined_columns[f'{i+1}'] = [
+                acc_list[i] if i < len(acc_list) else np.nan
+                for acc_list in accuracy_by_perturb.values()
+            ]
+        combined_accuracy_df = pd.DataFrame(combined_columns)
         
         os.makedirs('Results', exist_ok=True)
         combined_accuracy_df.to_csv('Results/Micfoal_Conf_cumulative_accuracy_all_perturbations_transposed.csv', index=False)
