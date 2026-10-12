@@ -195,18 +195,27 @@ def train(args):
         print(f"Episodic round {round_number}/{args.rounds}: 4 episodes; epsilon={agent.epsilon:.3f}; "
               f"MC loss={np.mean([v for v in losses if v is not None]) if any(v is not None for v in losses) else 0:.4f}",flush=True)
         if round_number == 1 or round_number % 5 == 0:
-            validation = []
+            validation, random_validation, frozen_validation = [], [], []
             with core.preserve_random_state():
                 for j in range(3):
                     seed = args.seed+100000+j
                     indices,refs = episode_indices(val_loader.dataset,val_pool,val_refs,args.episode_length,seed)
                     validation.append(rollout(cnn,context,agent,val_loader.dataset,indices,refs,args,
                                               'learned',0.0,seed)[3])
+                    random_validation.append(rollout(cnn,context,None,val_loader.dataset,indices,None,args,
+                                                     'random',1.0,seed)[3])
+                    frozen_validation.append(rollout(cnn,context,None,val_loader.dataset,indices,None,args,
+                                                     'frozen',0.0,seed,budget=0)[3])
             accuracy = float(np.mean([v['accuracy_before_update'] for v in validation]))
             labels = float(np.mean([v['labels_used'] for v in validation]))
             key = (accuracy,-labels)
-            history.append(dict(round=round_number,train=train_results,validation=validation))
+            history.append(dict(round=round_number,train=train_results,validation=validation,
+                                random_validation=random_validation,frozen_validation=frozen_validation))
             print(f"Validation episode pre-update accuracy={accuracy:.4f}; mean labels={labels:.1f}",flush=True)
+            print(f"Validation controls, same episode rows: frozen Context="
+                  f"{np.mean([v['accuracy_before_update'] for v in frozen_validation]):.4f}; "
+                  f"random adaptation={np.mean([v['accuracy_before_update'] for v in random_validation]):.4f}; "
+                  f"random mean labels={np.mean([v['labels_used'] for v in random_validation]):.1f}",flush=True)
             if best is None or key > best['key']:
                 best = dict(key=key,round=round_number,weights=deepcopy(agent.policy_net.state_dict()))
                 stale=0
