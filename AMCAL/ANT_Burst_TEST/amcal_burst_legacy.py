@@ -1412,6 +1412,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         epsilon_decay=ONLINE_EPSILON_DECAY if LEGACY_SELECTOR_MODE=="learned" else 1.0,
         epsilon_decay_rule="after successful online selector optimization",
         label_budget=budget, actual_label_fraction=updates_used / total,
+        online_lr=fine_tune_lr,
         budget_schedule=ONLINE_BUDGET_SCHEDULE,
         reproducibility=reproducibility_settings(),
         checkpoint_sha256=checkpoint_hashes(), attack_sha256=sha256_file(test_file),
@@ -1513,8 +1514,8 @@ def plot_accuracies(combined_accuracy_df, test_perturb_levels):
 
 
 
-def evaluate_main():
-    fine_tune_lr = 0.25
+def evaluate_main(fine_tune_lr=0.25):
+    print(f"Online Context learning rate: {fine_tune_lr:g}")
     test_perturb_levels = LEGACY_PER_LEVELS or [0, 1, 3, 5, 7, 10, 12, 15, 17, 20]
     cnn_perturb_level = 0
     base_path = str(BURST_DATA_DIR / 'AdvBurst_FTSC-IAT')
@@ -1739,6 +1740,8 @@ def cli():
                         help="Positive penalty magnitude for rejected training requests; default 0.2.")
     parser.add_argument("--budget", type=int, default=214,
                         help="Maximum labels/Context updates per test level, from 0 to 1073. Gates may use fewer.")
+    parser.add_argument("--online-lr", type=float, default=0.25,
+                        help="EVALUATE only: Context Adam learning rate in all selector modes; default preserves the notebook.")
     parser.add_argument("--selection-cost", type=float, default=0.0,
                         help="Subtract this cost from every action-1 reward in training and online replay; skip stays zero in paper mode.")
     parser.add_argument("--train-epsilon-start", type=float, default=1.0,
@@ -1768,6 +1771,10 @@ def cli():
     parser.add_argument("--validation-probe-budget-fraction", type=float, default=0.2)
     parser.add_argument("--validation-probe-seed", type=int, default=42)
     args=parser.parse_args()
+    if not np.isfinite(args.online_lr) or args.online_lr <= 0:
+        parser.error("online-lr must be finite and positive.")
+    if args.command != "evaluate" and args.online_lr != 0.25:
+        parser.error("online-lr changes online evaluation only, not training.")
     if args.validation_probe_every < 1 or args.validation_probe_samples < 1:
         parser.error("validation probe interval/sample count must be positive.")
     if not 0 <= args.validation_probe_budget_fraction <= 1:
@@ -1862,7 +1869,7 @@ def cli():
                    Path(__file__).resolve().parent / "protocol_runs" / "notebook_original",
             results_output=None, per=args.per,
             seed=args.seed if args.seed is not None else 42,
-            budget=args.budget, budget_schedule=args.budget_schedule, max_samples=1073, lr=0.25,
+            budget=args.budget, budget_schedule=args.budget_schedule, max_samples=1073, lr=args.online_lr,
             context_loss_mode=args.context_loss_mode,
             deterministic=args.deterministic,
             query_gate=args.query_gate if args.query_gate in ("legacy","disagreement") else "none"))
@@ -1917,6 +1924,8 @@ def cli():
         gate_suffix += "_budget_linear"
     if args.budget != 214:
         gate_suffix += f"_budget{args.budget}"
+    if args.online_lr != 0.25:
+        gate_suffix += f"_lr{args.online_lr:g}"
     LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")
@@ -1979,6 +1988,7 @@ def cli():
         training_selector_mode=args.training_selector_mode,
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
+        online_lr=args.online_lr if args.command=="evaluate" else None,
         budget_schedule=args.budget_schedule,
         online_skip_replay=args.online_skip_replay,
         online_reward_timing=args.online_reward_timing, offline_reward_timing="post",
@@ -2040,10 +2050,11 @@ def cli():
                 checkpoint["agreement_penalty"]=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=="disagreement" else None
                 torch.save(checkpoint,checkpoint_path)
         else:
-            evaluate_main()
+            evaluate_main(fine_tune_lr=args.online_lr)
     finally:
         os.chdir(previous)
 
 if __name__=="__main__":
     cli()
+
 

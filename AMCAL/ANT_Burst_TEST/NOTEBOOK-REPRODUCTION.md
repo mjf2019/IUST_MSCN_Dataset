@@ -992,3 +992,26 @@ match that probe except the larger real stream/budget. Choose hyperparameters on
 validation, not final attack test scores. This is model selection, not training a
 meta-objective or learned budget management. No training, forward pass or probe was
 executed during implementation; source/isolation structure was checked only.
+
+# Controlled online Context learning-rate comparison
+
+`amcal_burst_legacy.py evaluate --online-lr VALUE` now sets the Context Adam
+learning rate for original, learned, and no-RL random selection. The default
+is still 0.25. This option does not change offline training, DQN learning rate,
+architecture, rewards, gates, budget release, preprocessing, or checkpoint
+selection. It does not require retraining. Values must be finite and positive;
+nondefault values are rejected for `train`.
+
+Use the existing `notebook_cost0p42_context_gain1_seed42` checkpoints to compare
+0.25 against 0.01 with identical seeds, budgets, and schedules. Keep learned
+evaluation's reward/state/gain settings matched to those checkpoints. The
+random dispatch forwards the same learning rate without constructing a DQN.
+Nondefault rates add `_lrVALUE` to result directories and learned manifests,
+so these results do not overwrite the 0.25 baseline. Per-level diagnostics
+record `online_lr`; learned evaluation manifests also record it.
+
+Start with levels 0, 7, and 20 as an exploratory diagnostic, using pre-update
+accuracy for both modes. A higher score is not guaranteed, and these attack
+test levels should not be used to select final hyperparameters. Confirm any
+eventual learning-rate choice on validation data and multiple seeds.
+

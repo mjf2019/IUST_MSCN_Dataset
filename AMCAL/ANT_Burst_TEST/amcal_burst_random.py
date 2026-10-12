@@ -145,6 +145,7 @@ def evaluate_level(args):
     print(f"Loaded original CNN and Context from: {model_dir}")
     print("RL removed: no DQN construction/checkpoint, Q values, rewards, replay or optimizer.")
     print(f"Random query rule: {args.query_gate}; label budget: {label_budget}/{n}; schedule: {budget_schedule}")
+    print(f"Online Context learning rate: {args.lr:g}")
     for index in range(n):
         x = inputs[index:index + 1]
         y = labels[index:index + 1]
@@ -263,6 +264,8 @@ def evaluate_level(args):
         budget_suffix += "_deterministic"
     if budget_schedule != "full":
         budget_suffix += "_budget_linear"
+    if args.lr != 0.25:
+        budget_suffix += f"_lr{args.lr:g}"
     results_dir = (args.results_output.resolve() if args.results_output else
                    args.output.resolve() / "Results" / f"random_no_rl_{args.query_gate}_seed{args.seed}{budget_suffix}")
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -360,4 +363,5 @@ def evaluate(args):
 
 if __name__ == "__main__":
     evaluate(parse_args())
+
 
