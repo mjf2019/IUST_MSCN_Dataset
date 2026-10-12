@@ -1115,3 +1115,48 @@ the frozen selector and the SAME saved-model no-RL random control, using
 pre-update scores. Improvements are not guaranteed. All previous defaults and
 offline training, partition, reward formulas, architecture are unchanged.
 
+
+# Isolated competitive reward priority experiment
+
+`--reward-profile improvement` is an optional change to the categorical
+competitive reward. Default `original` preserves every previous reward value.
+It requires `--reward-mode paper` so skip stays zero. Before the selection cost:
+
+| Action/result | original profile | improvement profile |
+| --- | ---: | ---: |
+| select: CNN wrong, Context wrong | 3 | 1 |
+| select: CNN wrong, Context correct | 2 | 3 |
+| select: CNN correct, Context wrong | -2 | -2 |
+| select: both correct | 0 | 0 |
+| skip (paper mode) | 0 | 0 |
+
+Subtract the configured selection cost once from action-1 only. With cost
+0.42 the select values become 0.58, 2.58, -2.42, -0.42 respectively. The original
+implementation has two reward definitions; both have the identical profile
+switch and the same cost/skip semantics. The new numeric values are an initial
+hypothesis, not optimized values or a guarantee of improvement. Prioritizing
+correction changes the method's reward objective and must be documented in the
+revised paper; it should not be described as unchanged original/paper reward.
+
+Keep the original training selection, local/nonlocal gain weights at zero,
+normal Context validation checkpoint criterion, and no paid-history online
+reference reward. Architecture, Context loss, dataset loading, optimizer,
+replay, transitions, and training duration defaults remain unchanged. No
+Context reference partition is enabled. The CNN still trains on the existing
+normal oversampled training file; the standard validation/test files are
+unchanged. Use the previous no-gain context-state/epsilon-floor-0.2
+configuration as the comparator. First review training/normal validation;
+later compare online learned and no-RL random with matched checkpoints,
+budgets, schedules, exploration, and learning rates. Validation accuracy
+selects the synchronized Context/DQN snapshot, not an independently proven
+optimal selection policy.
+
+Fresh training into a separate folder is mandatory. All three artifacts carry
+`selector_reward_profile`; missing tags mean `original`. Learned/original
+evaluation rejects a mismatched profile so old replay/objectives cannot be
+mixed. Repeat the matching `--reward-profile improvement` for learned
+evaluation. For random, omit reward flags: the no-RL runner computes no rewards
+and reuses only this experiment's saved CNN/Context. Nondefault profiles add
+`_reward_improvement` to learned result/manifest names. Normal online RL remains
+available; no freeze or nonlocal online-reference flags are needed.
+

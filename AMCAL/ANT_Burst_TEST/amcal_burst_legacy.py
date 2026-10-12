@@ -17,6 +17,7 @@ LEGACY_DIAGNOSTIC_SEED = None
 LEGACY_SELECTOR_MODE = 'original'
 LEGACY_QUERY_GATE = 'no-threshold'
 SELECTOR_REWARD_MODE = 'original'
+SELECTOR_REWARD_PROFILE = 'original'
 SELECTOR_TRANSITION_MODE = 'terminal'
 SELECTOR_GAMMA = 0.2
 CONTEXT_LOSS_MODE = 'legacy'
@@ -563,9 +564,9 @@ def evaluate_model(model, test_loader, class_weights, context_model=None, dqn_ag
 def compute_reward(action, cnn_pred, weighted_pred, label):
     if action == 1:
         if weighted_pred != label and cnn_pred != label:
-            reward = 3.0
+            reward = 1.0 if SELECTOR_REWARD_PROFILE == "improvement" else 3.0
         elif weighted_pred == label and cnn_pred != label:
-            reward = 2.0
+            reward = 3.0 if SELECTOR_REWARD_PROFILE == "improvement" else 2.0
         elif weighted_pred != label and cnn_pred == label:
             reward = -2.0
         else:
@@ -1153,9 +1154,9 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
     
     if action == 1:
         if weighted_pred != label and cnn_pred != label:
-            reward = 3.0
+            reward = 1.0 if SELECTOR_REWARD_PROFILE == "improvement" else 3.0
         elif weighted_pred == label and cnn_pred != label:
-            reward = 2.0
+            reward = 3.0 if SELECTOR_REWARD_PROFILE == "improvement" else 2.0
         elif weighted_pred != label and cnn_pred == label:
             reward = -2.0
         else:
@@ -1565,6 +1566,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         exploration_decisions_with_budget=sum(row["action_source"]=="exploration" and row["labels_before"]<budget
                                              for row in diagnostic_trace),
         reward_mode=SELECTOR_REWARD_MODE,
+        reward_profile=SELECTOR_REWARD_PROFILE,
         transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
         query_gate=LEGACY_QUERY_GATE, confidence_gap_threshold=threshold,
         context_loss_mode=CONTEXT_LOSS_MODE, selector_state_mode=SELECTOR_STATE_MODE,
@@ -1843,6 +1845,7 @@ def evaluate_main(fine_tune_lr=0.25):
 
 
 def cli():
+    global SELECTOR_REWARD_PROFILE
     global ONLINE_GENERALIZATION_REFERENCE
     global GENERALIZATION_WEIGHT, ADVERSARIAL_EPOCHS, ADVERSARIAL_PATIENCE, ADVERSARIAL_MIN_EPOCHS, FREEZE_ONLINE_SELECTOR
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST, SELECTOR_STATE_MODE, ONLINE_REWARD_TIMING, REWARD_GAIN_WEIGHT
@@ -1862,6 +1865,8 @@ def cli():
                              "learned: Q actions with optional epsilon-greedy exploration and online DQN.")
     parser.add_argument("--reward-mode", choices=("original","paper"), default="original",
                         help="paper sets only action-0 reward to zero; other legacy logic is unchanged.")
+    parser.add_argument("--reward-profile", choices=("original","improvement"), default="original",
+                        help="improvement: corrected CNN error gets 3, both wrong gets 1; requires paper skip-zero reward and fresh matching checkpoints.")
     parser.add_argument("--transition-mode", choices=("terminal","local"), default="terminal",
                         help="local enables same-input DDQN bootstrap; terminal preserves legacy immediate targets.")
     parser.add_argument("--gamma", type=float, default=0.2,
@@ -1923,6 +1928,14 @@ def cli():
     parser.add_argument("--validation-probe-budget-fraction", type=float, default=0.2)
     parser.add_argument("--validation-probe-seed", type=int, default=42)
     args=parser.parse_args()
+    if args.reward_profile == 'improvement':
+        if args.reward_mode != 'paper' or args.training_selector_mode != 'original':
+            parser.error("improvement profile requires paper skip-zero rewards and original training selection.")
+        if args.reward_gain_weight != 0 or args.reward_generalization_weight != 0 or args.online_generalization_reference != 'none' or args.checkpoint_selection != 'context':
+            parser.error("Isolate improvement profile: disable local/nonlocal gain rewards and use normal context validation selection.")
+        if args.selector_mode == 'random':
+            parser.error("No-RL random does not compute rewards; omit reward-profile for random evaluation.")
+    SELECTOR_REWARD_PROFILE = args.reward_profile
     if args.context_epochs < 1 or args.context_patience < 1 or not 0 <= args.context_min_epochs <= args.context_epochs:
         parser.error("context epochs/patience must be positive; min epochs must be between zero and max epochs.")
     if args.command != 'train' and (args.context_epochs, args.context_patience, args.context_min_epochs) != (300,30,0):
@@ -2061,6 +2074,8 @@ def cli():
     CONTEXT_LOSS_MODE=args.context_loss_mode
     if args.output is None:
         folder="notebook_original" if args.reward_mode=="original" else "notebook_skip_zero"
+        if args.reward_profile != 'original':
+            folder += f"_reward_{args.reward_profile}"
         if args.transition_mode != "terminal" or args.gamma != 0.2:
             folder += f"_{args.transition_mode}_gamma{args.gamma:g}"
         if args.context_loss_mode == "aligned":
@@ -2113,6 +2128,8 @@ def cli():
         gate_suffix += f"_generalization{args.reward_generalization_weight:g}"
     if args.online_generalization_reference == 'paid-history':
         gate_suffix += '_reference_paid_history'
+    if args.reward_profile != 'original':
+        gate_suffix += f"_reward_{args.reward_profile}"
     LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")
@@ -2139,6 +2156,8 @@ def cli():
             saved_mode=checkpoint.get("selector_reward_mode","original")
             if saved_mode!=args.reward_mode:
                 parser.error("Checkpoint reward mode mismatch: use the matching --reward-mode and --output.")
+            if checkpoint.get('selector_reward_profile', 'original') != args.reward_profile:
+                parser.error("Reward profile mismatch: use fresh training/checkpoints with matching reward-profile; old replay must not be reused.")
             if checkpoint.get("selector_transition_mode","terminal") != args.transition_mode:
                 parser.error("Checkpoint transition mode mismatch: train in a fresh --output with the requested mode.")
             if checkpoint.get("selector_gamma",0.2) != args.gamma:
@@ -2170,6 +2189,7 @@ def cli():
     (output/(manifest_name+".json")).write_text(json.dumps(dict(
         mode="legacy notebook diagnostic",source_cells=[2,7,9],random_seed=args.seed if args.seed is not None else "not fixed in original",
         scoring="post-update",selector_mode=args.selector_mode,reward_mode=args.reward_mode,
+        reward_profile=args.reward_profile,
         transition_mode=args.transition_mode,gamma=args.gamma,
         query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate in ("none","no-threshold","disagreement") else 0.005,
         context_loss_mode=args.context_loss_mode,
@@ -2215,6 +2235,7 @@ def cli():
         os.chdir(output)
         if args.command=="train":
             print("Selector reward / transitions / gamma:", SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA)
+            print("Selector competitive reward profile:", SELECTOR_REWARD_PROFILE)
             print("Context loss mode:", CONTEXT_LOSS_MODE)
             print("Training selector mode / agreement penalty:", TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY)
             print("Action-1 reward cost:", SELECTION_COST)
@@ -2231,6 +2252,7 @@ def cli():
                 checkpoint_path=Path("Models")/checkpoint_name
                 checkpoint=torch.load(checkpoint_path,map_location="cpu",weights_only=False)
                 checkpoint["selector_reward_mode"]=SELECTOR_REWARD_MODE
+                checkpoint["selector_reward_profile"]=SELECTOR_REWARD_PROFILE
                 checkpoint["selector_transition_mode"]=SELECTOR_TRANSITION_MODE
                 checkpoint["selector_gamma"]=SELECTOR_GAMMA
                 checkpoint["context_loss_mode"]=CONTEXT_LOSS_MODE
@@ -2256,6 +2278,7 @@ def cli():
 
 if __name__=="__main__":
     cli()
+
 
 
 
