@@ -787,3 +787,30 @@ linear budget and epsilon settings, and the matched linear random control. This
 changes both replay coverage AND when online DQN is optimized; it is not an isolated
 fixed-computation ablation of replay composition. Record optimizer counts alongside
 pre-update accuracy and actual queries. No model was executed during this edit.
+
+## Skip replay with query-only optimizer cadence
+
+Add `--online-skip-replay --skip-optimizer-mode queries` to record label-free zero
+rewards for actual skips, but do not optimize DQN or decay epsilon on those skips.
+The existing optimize call after each executed Context/query update is unchanged.
+With the loaded replay of 500 and minibatch 128, 214 executed queries produce 214
+optimizer steps. If fewer labels are used or replay is too small, actual optimizer
+counts may be lower; the console reports them. Default `all` retains the prior skip
+experiment. `queries` requires `--online-skip-replay` (learned/paper evaluation).
+
+Skip entries remain available in mixed replay minibatches at subsequent queries.
+Global exhaustion freeze, state/reward/cost, target-sync replay-insertion counter,
+Context training, architecture and online query filters remain unchanged. No final
+forced optimization is added; late entries may receive no further training. This
+controls optimizer count versus prior runs but is not an identical-RNG ablation:
+replay composition/sampling and target-sync timing can differ. No retraining needed.
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_fast_eps_seed42 --seed 42 --deterministic --reward-mode paper --selection-cost 0.42 --selector-mode learned --query-gate none --budget 214 --budget-schedule linear --epsilon-start 0.05 --epsilon-end 0.05 --online-skip-replay --skip-optimizer-mode queries
+```
+
+All levels run independently. New result folders include
+`_skip_replay_query_optimizer`. Compare pre-update accuracy/label use with no-skip
+learned and same-cap random, plus the prior all-optimizer skip-replay run. Training/
+evaluation was not executed during this edit; only source structure was verified.

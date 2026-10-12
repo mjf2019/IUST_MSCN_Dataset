@@ -31,6 +31,7 @@ TEST_LABEL_BUDGET = 214
 ONLINE_BUDGET_SCHEDULE = 'full'
 DETERMINISTIC_RUN = False
 ONLINE_SKIP_REPLAY = False
+ONLINE_SKIP_OPTIMIZER_MODE = 'all'
 SELECTION_COST = 0.0
 TRAIN_EPSILON_START = 1.0
 TRAIN_EPSILON_END = 0.01
@@ -1149,12 +1150,13 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 skip_replay_added = True
                 observed_reward = 0.0
                 target_update_counter += 1
-                dqn_loss = dqn_agent.optimize()
-                if dqn_loss is not None:
-                    running_dqn_loss += dqn_loss
-                    dqn_loss_count += 1
-                    dqn_updates_used += 1
-                    dqn_agent.update_epsilon()
+                if ONLINE_SKIP_OPTIMIZER_MODE == "all":
+                    dqn_loss = dqn_agent.optimize()
+                    if dqn_loss is not None:
+                        running_dqn_loss += dqn_loss
+                        dqn_loss_count += 1
+                        dqn_updates_used += 1
+                        dqn_agent.update_epsilon()
                 if target_update_counter >= TARGET_UPDATE_FREQ:
                     dqn_agent.update_target_network()
                     target_update_counter = 0
@@ -1232,6 +1234,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         training_state_version=RUN_TRAINING_STATE_VERSION,
         bootstrap_optimizer_steps=dqn_agent.bootstrap_optimizer_steps,
         online_skip_replay=ONLINE_SKIP_REPLAY,
+        skip_optimizer_mode=ONLINE_SKIP_OPTIMIZER_MODE if ONLINE_SKIP_REPLAY else None,
         real_skip_replay_entries=real_skip_replay_entries,
         reward_mean_scope="executed action-1 queries only; real skips have reward 0 in trace",
         replay_terminal_rows=sum(float(e[4]) == 1.0 for e in dqn_agent.replay_buffer.buffer),
@@ -1268,7 +1271,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     print(f"  F1 Score (weighted): {f1:.4f}")
     print(f"  Context Updates Used: {updates_used}/{budget}")
     if ONLINE_SKIP_REPLAY:
-        print(f"  DQN Updates Used: {dqn_updates_used} (queries + real skips; label budget is separate)")
+        scope = "queries only" if ONLINE_SKIP_OPTIMIZER_MODE == "queries" else "queries + real skips"
+        print(f"  DQN Updates Used: {dqn_updates_used} ({scope}; label budget is separate)")
         print(f"  Real skips added to replay: {real_skip_replay_entries}")
     else:
         print(f"  DQN Updates Used: {dqn_updates_used}/{budget}")
@@ -1493,7 +1497,7 @@ def evaluate_main():
 
 def cli():
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
-    global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY, ONLINE_BUDGET_SCHEDULE, DETERMINISTIC_RUN, ONLINE_SKIP_REPLAY
+    global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY, ONLINE_BUDGET_SCHEDULE, DETERMINISTIC_RUN, ONLINE_SKIP_REPLAY, ONLINE_SKIP_OPTIMIZER_MODE
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1542,7 +1546,12 @@ def cli():
                         help="Strict PyTorch/CUDA reproducibility and a fresh evaluation seed per level; requires --seed.")
     parser.add_argument("--online-skip-replay", action="store_true",
                         help="Learned/paper online diagnostic: record real skips with label-free zero reward and optimize while total label budget remains.")
+    parser.add_argument("--skip-optimizer-mode", choices=("all","queries"), default="all",
+                        help="With online-skip-replay: all optimizes after queries/skips; queries records skips without extra optimizer steps.")
     args=parser.parse_args()
+    if args.skip_optimizer_mode != "all" and not args.online_skip_replay:
+        parser.error("skip-optimizer-mode queries requires --online-skip-replay.")
+    ONLINE_SKIP_OPTIMIZER_MODE = args.skip_optimizer_mode
     if args.online_skip_replay and (args.command != "evaluate" or args.selector_mode != "learned" or args.reward_mode != "paper"):
         parser.error("online-skip-replay requires evaluate --selector-mode learned --reward-mode paper.")
     ONLINE_SKIP_REPLAY = args.online_skip_replay
@@ -1643,6 +1652,8 @@ def cli():
         gate_suffix += f"_eps{args.epsilon_start:g}to{args.epsilon_end:g}_decay{args.epsilon_decay:g}"
     if args.online_skip_replay:
         gate_suffix += "_skip_replay"
+        if args.skip_optimizer_mode == "queries":
+            gate_suffix += "_query_optimizer"
     if args.deterministic:
         gate_suffix += "_deterministic"
     if args.budget_schedule != "full":
@@ -1708,6 +1719,7 @@ def cli():
         test_label_budget=args.budget,
         budget_schedule=args.budget_schedule,
         online_skip_replay=args.online_skip_replay,
+        skip_optimizer_mode=args.skip_optimizer_mode if args.online_skip_replay else None,
         reproducibility=reproducibility_settings(),
         seed_reset_each_level=args.deterministic,
         budget_release_rule="ceil(budget * step / stream_rows); unused allowance carries forward",
