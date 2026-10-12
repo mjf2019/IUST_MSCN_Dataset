@@ -1219,3 +1219,61 @@ Online replay size, loading, and optimization remain unchanged. Automatic
 training output names append `_replay_resetN`. Console logs refresh count and
 states retained parameters. No improvement or convergence is guaranteed.
 
+
+# Separate stationary selector diagnostic runner
+
+`amcal_burst_stationary.py` isolates RL reward fitting while holding the source
+CNN and Context weights/buffers fixed. It is a separate experiment; existing
+training/evaluation scripts and runs are not changed. Start from
+`notebook_reward_improvement_seed42` (paper skip zero, improvement reward,
+context state, cost 0.42, legacy Context loss, terminal gamma 0.2, no extra gains).
+All three source artifacts are checked for those matching settings.
+
+For a pilot, choose deterministic class-balanced subsets of up to 1000 normal
+oversampled train rows and 256 normal validation rows. Files/splits are not
+changed. For EACH candidate, create a separate disposable copy of the fixed
+Context and a fresh Adam optimizer; apply ONE legacy-online Context objective
+step at LR 0.25 using only that candidate's label. Copy is in eval mode to match
+online Context updating and keep dropout/BN noise out of the counterfactual.
+Compute action-1 categorical reward minus cost from the resulting prediction;
+skip target is zero. Destroy the copy; no update reaches the source models.
+Duplicate feature/label targets are cached separately within train/validation.
+All offline labels belong to the respective normal train/validation files;
+no attack test rows or labels are used for training/selection.
+
+Cache the resulting stable states/rewards once, then fine-tune ONLY DQN from
+the source policy weights, with empty replay and a new Adam. Existing MLP,
+Dropout/legacy greedy behavior, batch size, optimizer, epsilon schedule,
+competitive improvement reward, and terminal one-step targets are reused.
+No candidate shares a Context optimizer/update with another candidate.
+Source CNN/Context state tensors are checked unchanged before saving them
+into the new experiment folder. Original source files are read-only.
+
+Best Q snapshot maximizes class-balanced immediate GREEDY validation utility,
+breaking ties by lower Q MAE against both known action targets. Report random
+50/50 expected utility, immediate oracle utility, and selection fraction.
+This diagnostic is UNBUDGETED utility, not validation traffic accuracy or the
+20% sequential test protocol. Its purpose is to test whether Q can learn a
+stable immediate target. It does not establish long-horizon RL, meta-learning,
+or that greedy selection is optimal under a finite stream budget. Training
+uses up to 100 selector epochs, patience 15, minimum 20; restore best Q/target/
+replay together. Training/source selection and online adaptation are distinct.
+
+The new folder holds source CNN/Context unchanged, learned Q snapshot, replay,
+`stationary_training.json` (source hashes/subset indices/history/criterion), and
+`stationary_train_targets.npz` / `stationary_validation_targets.npz`. Tags record
+selector-only training and source. Existing legacy evaluation can load these
+artifacts with the same reward/profile/state settings. Test uses existing
+legacy preprocessing and pre-update scoring; attack/source overlap limitations
+remain. Online replay then resumes in a changing Context environment, so
+stationary offline success alone need not yield online improvement.
+
+Commands: `train` builds/fits targets; `evaluate` runs matched learned and random
+on default levels 0,7,20; `run` does BOTH sequentially, so no second instruction
+is needed. Evaluation subprocesses use structured argv with shell disabled,
+the same Python executable, rates/budget/seeds, and fail on errors. All tests
+start from the new saved checkpoints. Later `evaluate --levels ...` needs only
+output, matching selection cost, seed/determinism and desired levels; source is
+not needed. No models were run during implementation; runtime GPU confirmation
+must come from local execution. Target accuracy improvements are not promised.
+
