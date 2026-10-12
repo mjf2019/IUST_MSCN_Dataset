@@ -22,10 +22,20 @@ ONLINE_EPSILON_DECAY = 1.0
 TRAINING_SELECTOR_MODE = 'original'
 AGREEMENT_PENALTY = 0.2
 TEST_LABEL_BUDGET = 214
+ONLINE_BUDGET_SCHEDULE = 'full'
 SELECTION_COST = 0.0
 TRAIN_EPSILON_START = 1.0
 TRAIN_EPSILON_END = 0.01
 TRAIN_EPSILON_DECAY = 0.995
+
+
+def released_label_budget(step, stream_rows, budget):
+    """Cumulative linear allowance; unused labels carry forward. No future labels used."""
+    if ONLINE_BUDGET_SCHEDULE == "full":
+        return budget
+    if stream_rows < 1:
+        return 0
+    return min(budget, (budget * step + stream_rows - 1) // stream_rows)
 
 
 def replay_done(terminal=False):
@@ -946,6 +956,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         dqn_agent.epsilon_decay = ONLINE_EPSILON_DECAY
         print(f"Online RL epsilon: {dqn_agent.epsilon:g} -> "
               f"{dqn_agent.epsilon_end:g}; decay={dqn_agent.epsilon_decay:g} per optimizer step")
+    print(f"Online budget schedule: {ONLINE_BUDGET_SCHEDULE}; total allowance: {budget}/{max_samples}")
     diagnostic_trace, before_predictions, base_predictions, train_base_predictions = [], [], [], []
     
     for inputs, labels in test_loader:
@@ -953,6 +964,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         sample_idx += 1
         
         updates_before = updates_used
+        released_budget = released_label_budget(sample_idx, max_samples, budget)
         observed_reward, observed_loss = None, None
         # Compute CNN outputs and state
         with torch.no_grad():
@@ -1014,7 +1026,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             max_prob_diff = torch.max(torch.abs(max_weighted_prob - max_prob)).item()
             
             disagreement_passes = (LEGACY_QUERY_GATE == "none" or weighted_pred != cnn_pred)
-            if disagreement_passes and (threshold is None or max_prob_diff >= threshold) and updates_used < budget:
+            if disagreement_passes and (threshold is None or max_prob_diff >= threshold) and updates_used < released_budget:
                 
                 updates_used += 1
                 context_optimizer.zero_grad()
@@ -1103,6 +1115,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 epsilon=float(dqn_agent.epsilon),
                 action_epsilon=action_epsilon, action_source=action_source,
                 labels_before=updates_before,
+                budget_schedule=ONLINE_BUDGET_SCHEDULE, released_label_budget=released_budget,
+                budget_release_blocked=(action == 1 and updates_before < budget and
+                                        updates_before >= released_budget),
                 confidence_gap=float(abs(weighted_probs_before.max().item()-max_prob.item())),
                 updated=updates_used>updates_before, labels_used=updates_used,
                 context_loss=observed_loss, reward=observed_reward))
@@ -1129,6 +1144,10 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         epsilon_decay=ONLINE_EPSILON_DECAY if LEGACY_SELECTOR_MODE=="learned" else 1.0,
         epsilon_decay_rule="after successful online selector optimization",
         label_budget=budget, actual_label_fraction=updates_used / total,
+        budget_schedule=ONLINE_BUDGET_SCHEDULE,
+        budget_release_rule=("all budget immediately" if ONLINE_BUDGET_SCHEDULE=="full" else
+                             "ceil(budget * step / stream_rows); unused allowance carries forward"),
+        budget_release_blocked_requests=sum(row["budget_release_blocked"] for row in diagnostic_trace),
         first_query_step=next((row["step"] for row in diagnostic_trace if row["updated"]), None),
         last_query_step=next((row["step"] for row in reversed(diagnostic_trace) if row["updated"]), None),
         policy_decisions_with_budget=sum(row["action_source"]=="policy" and row["labels_before"]<budget
@@ -1394,7 +1413,7 @@ def evaluate_main():
 
 def cli():
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
-    global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
+    global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY, ONLINE_BUDGET_SCHEDULE
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1437,7 +1456,12 @@ def cli():
                         help="Offline exploration floor; historical default 0.01.")
     parser.add_argument("--train-epsilon-decay", type=float, default=0.995,
                         help="Offline multiplicative decay once per epoch; historical default 0.995.")
+    parser.add_argument("--budget-schedule", choices=("full","linear"), default="full",
+                        help="Online diagnostic: full exposes all labels immediately; linear releases them over stream positions.")
     args=parser.parse_args()
+    if args.budget_schedule != "full" and (args.command != "evaluate" or args.selector_mode == "random"):
+        parser.error("linear schedule applies only to evaluate with original/learned; random none already spreads a fixed budget uniformly.")
+    ONLINE_BUDGET_SCHEDULE = args.budget_schedule
     if not 0.0 <= args.train_epsilon_end <= args.train_epsilon_start <= 1.0:
         parser.error("training epsilon requires 0 <= end <= start <= 1.")
     if not 0.0 < args.train_epsilon_decay <= 1.0:
@@ -1523,6 +1547,8 @@ def cli():
                    "_no_threshold" if args.query_gate=="no-threshold" else "")
     if args.selector_mode=="learned" and scheduled_epsilon:
         gate_suffix += f"_eps{args.epsilon_start:g}to{args.epsilon_end:g}_decay{args.epsilon_decay:g}"
+    if args.budget_schedule != "full":
+        gate_suffix += "_budget_linear"
     if args.budget != 214:
         gate_suffix += f"_budget{args.budget}"
     LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
@@ -1582,6 +1608,8 @@ def cli():
         training_selector_mode=args.training_selector_mode,
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
+        budget_schedule=args.budget_schedule,
+        budget_release_rule="ceil(budget * step / stream_rows); unused allowance carries forward",
         training_epsilon_schedule=(dict(start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
                                        decay=TRAIN_EPSILON_DECAY, decay_rule="once per epoch")
                                    if args.command=="train" else

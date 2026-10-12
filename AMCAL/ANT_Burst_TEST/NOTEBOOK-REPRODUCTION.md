@@ -658,3 +658,35 @@ flags, including `--query-gate none`. Earlier cost-0.42/epsilon-0.25 results use
 All ten levels reload initial weights independently. Inspect pre-update accuracy,
 actual queries and query timing. This change does not validate convergence solely
 by a reduced DQN training loss. No models were executed during implementation.
+
+## Diagnostic linear release of ONLINE label budget
+
+`--budget-schedule linear` changes only when the existing budget becomes available.
+At 1-based step t of N known stream rows, the cumulative allowance is
+`ceil(B*t/N)`, capped at B. For B=214,N=1073: step 1 allows 1 label, step 546
+allows 109, and the final step allows 214. Unused released labels carry forward.
+Requests at the current limit get no Context update, label query, reward/replay
+insertion or selector optimizer step. They are not converted to skip rewards.
+Existing action choices, epsilon schedule and overall exhaustion freeze remain.
+This needs only N, not future features, labels or class boundaries. It preserves
+row order and all weights, rewards, loss, query filters, replay/optimizer settings.
+It imposes a diagnostic budget controller, NOT learned budget management or
+proof of a superior RL policy. Full budget remains the default for older commands.
+
+No retraining is needed. Use the SAME fast-epsilon/cost-0.42 models and online
+settings as the supplied learned trace. First compare PER0 directly:
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_fast_eps_seed42 --seed 42 --reward-mode paper --selection-cost 0.42 --selector-mode learned --query-gate none --budget 214 --budget-schedule linear --epsilon-start 0.05 --epsilon-end 0.05 --per 0
+```
+
+Remove `--per 0` to evaluate all ten levels, each independently. Linear-release
+results have a separate `_budget_linear` folder suffix. Trace includes cumulative
+released budget and requests blocked by release; JSON/manifest records the rule.
+The total budget is still a ceiling; RL may skip and use fewer than 214 labels.
+There is no final forcing of updates and no retroactive replay of blocked requests.
+Compare pre-update accuracy, class coverage and query timing with the full-budget
+learned baseline and uniform no-RL random control on the same checkpoints. The
+random runner with `none` is already uniformly spread and does not accept the linear
+flag through the legacy CLI. Model training and evaluation were not run here.
