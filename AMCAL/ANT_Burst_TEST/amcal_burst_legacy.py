@@ -33,6 +33,7 @@ ONLINE_BUDGET_SCHEDULE = 'full'
 DETERMINISTIC_RUN = False
 ONLINE_SKIP_REPLAY = False
 ONLINE_SKIP_OPTIMIZER_MODE = 'all'
+ONLINE_REWARD_TIMING = 'pre'
 SELECTION_COST = 0.0
 TRAIN_EPSILON_START = 1.0
 TRAIN_EPSILON_END = 0.01
@@ -1017,6 +1018,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         print(f"Online RL epsilon: {dqn_agent.epsilon:g} -> "
               f"{dqn_agent.epsilon_end:g}; decay={dqn_agent.epsilon_decay:g} per optimizer step")
     print(f"Online budget schedule: {ONLINE_BUDGET_SCHEDULE}; total allowance: {budget}/{max_samples}")
+    print("Online query reward timing:", ONLINE_REWARD_TIMING)
     diagnostic_trace, before_predictions, base_predictions, train_base_predictions = [], [], [], []
     
     for inputs, labels in test_loader:
@@ -1026,6 +1028,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         updates_before = updates_used
         released_budget = released_label_budget(sample_idx, max_samples, budget)
         observed_reward, observed_loss = None, None
+        observed_reward_prediction = None
         skip_replay_added = False
         # Compute CNN outputs and state
         with torch.no_grad():
@@ -1107,8 +1110,14 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 total_context_loss.backward()
                 context_optimizer.step()
                 
-                # Compute reward for action=1
-                reward = compute_reward(action, cnn_pred.item(), weighted_pred.item(), labels.item())
+                # Reward may observe AFTER the queried update, as in offline training.
+                # Pre-update scoring above remains untouched; no unqueried labels used.
+                reward_context_prediction = int(weighted_pred.item())
+                if ONLINE_REWARD_TIMING == "post":
+                    with torch.no_grad():
+                        reward_context_prediction = int(cnn_model(context_model(inputs)).argmax(dim=1).item())
+                reward = compute_reward(action, cnn_pred.item(), reward_context_prediction, labels.item())
+                observed_reward_prediction = reward_context_prediction
                 rewards.append(reward)
                 observed_reward = float(reward)
                 observed_loss = float(total_context_loss.item())
@@ -1130,7 +1139,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 
                 # Hindsight Experience Replay: اگر reward منفی بود، action=0 رو هم اضافه کن
                 if reward < 0:
-                    reward_action0 = compute_reward(0, cnn_pred.item(), weighted_pred.item(), labels.item())
+                    reward_action0 = compute_reward(0, cnn_pred.item(), reward_context_prediction, labels.item())
                     # Next state for action=0 is the current state (no context update)
                     dqn_agent.replay_buffer.push(
                         state, 0, reward_action0, state,
@@ -1208,7 +1217,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                                         updates_before >= released_budget),
                 confidence_gap=float(abs(weighted_probs_before.max().item()-max_prob.item())),
                 updated=updates_used>updates_before, labels_used=updates_used,
-                context_loss=observed_loss, reward=observed_reward))
+                context_loss=observed_loss, reward=observed_reward,
+                reward_timing=ONLINE_REWARD_TIMING, reward_context_prediction=observed_reward_prediction))
             cumulative_accuracy_df.loc[cumulative_accuracy_df['Sample Index'] == sample_idx, f'Perturbation {perturb_level}'] = current_accuracy
     
     test_accuracy = correct / total
@@ -1255,6 +1265,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         training_state_version=RUN_TRAINING_STATE_VERSION,
         bootstrap_optimizer_steps=dqn_agent.bootstrap_optimizer_steps,
         online_skip_replay=ONLINE_SKIP_REPLAY,
+        online_reward_timing=ONLINE_REWARD_TIMING, offline_reward_timing="post",
         skip_optimizer_mode=ONLINE_SKIP_OPTIMIZER_MODE if ONLINE_SKIP_REPLAY else None,
         real_skip_replay_entries=real_skip_replay_entries,
         reward_mean_scope="executed action-1 queries only; real skips have reward 0 in trace",
@@ -1517,7 +1528,7 @@ def evaluate_main():
 
 
 def cli():
-    global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST, SELECTOR_STATE_MODE
+    global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST, SELECTOR_STATE_MODE, ONLINE_REWARD_TIMING
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY, ONLINE_BUDGET_SCHEDULE, DETERMINISTIC_RUN, ONLINE_SKIP_REPLAY, ONLINE_SKIP_OPTIMIZER_MODE
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
@@ -1571,7 +1582,12 @@ def cli():
                         help="With online-skip-replay: all optimizes after queries/skips; queries records skips without extra optimizer steps.")
     parser.add_argument("--selector-state", choices=("base","context"), default="base",
                         help="context: state uncertainty from CNN(Context(x)), in both offline and online selection; requires matching freshly trained checkpoints.")
+    parser.add_argument("--online-reward-timing", choices=("pre","post"), default="pre",
+                        help="post computes query reward after Context update, matching offline timing; scoring stays pre-update.")
     args=parser.parse_args()
+    if args.online_reward_timing != "pre" and (args.command != "evaluate" or args.selector_mode == "random"):
+        parser.error("online-reward-timing post applies only to original/learned evaluation.")
+    ONLINE_REWARD_TIMING = args.online_reward_timing
     SELECTOR_STATE_MODE = args.selector_state
     if args.skip_optimizer_mode != "all" and not args.online_skip_replay:
         parser.error("skip-optimizer-mode queries requires --online-skip-replay.")
@@ -1676,6 +1692,8 @@ def cli():
                    "_no_threshold" if args.query_gate=="no-threshold" else "")
     if args.selector_mode=="learned" and scheduled_epsilon:
         gate_suffix += f"_eps{args.epsilon_start:g}to{args.epsilon_end:g}_decay{args.epsilon_decay:g}"
+    if args.online_reward_timing != "pre":
+        gate_suffix += "_reward_post"
     if args.online_skip_replay:
         gate_suffix += "_skip_replay"
         if args.skip_optimizer_mode == "queries":
@@ -1748,6 +1766,7 @@ def cli():
         test_label_budget=args.budget,
         budget_schedule=args.budget_schedule,
         online_skip_replay=args.online_skip_replay,
+        online_reward_timing=args.online_reward_timing, offline_reward_timing="post",
         skip_optimizer_mode=args.skip_optimizer_mode if args.online_skip_replay else None,
         reproducibility=reproducibility_settings(),
         seed_reset_each_level=args.deterministic,
@@ -1791,6 +1810,7 @@ def cli():
                     start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
                     decay=TRAIN_EPSILON_DECAY, decay_rule="once per epoch")
                 checkpoint["training_reproducibility"]=reproducibility_settings()
+                checkpoint["offline_reward_timing"]="post"
                 checkpoint["selector_state_mode"]=SELECTOR_STATE_MODE
                 checkpoint["selection_cost"]=SELECTION_COST
                 checkpoint["training_selector_mode"]=TRAINING_SELECTOR_MODE

@@ -862,3 +862,38 @@ python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Bu
 
 Trace logs state source and scalar uncertainty. Use pre-update accuracy/actual label
 use and matched-control results. No training or evaluation was executed here.
+
+## Online reward timing: post-update alignment diagnostic
+
+Offline training computes competitive reward using Context predictions after the
+batch's Context update. Legacy online reward used the BEFORE-update prediction
+although its computation occurred after the optimizer step. New optional flag
+`--online-reward-timing post` observes Context prediction AFTER the queried sample's
+update for action-1 reward, keeping the frozen/raw CNN prediction as comparator.
+The reward categories, cost and skip reward are unchanged. Default `pre` preserves
+previous experiments; output folders include `_reward_post` when enabled.
+
+No label is queried for skipped or budget/gate-blocked requests. Reward uses the
+label already acquired for the actual Context update. Pre-update predictions are
+still appended for primary scoring before that update. Legacy post-update accuracy
+is retained separately; it is not substituted as the main scientific metric.
+Trace records `reward_timing` and `reward_context_prediction`, JSON/manifest records
+both offline and online timing. Skip reward stays label-free zero with the current
+paper/real-skip-replay settings. Negative-query hindsight skip entries are preserved.
+
+No retraining needed: existing checkpoints/replay were trained with post-update
+reward timing. This aligns timing, not all numerical modes: offline Context reward
+observations still use training mode/batch updates, while online Context stays eval
+and updates single samples. Architecture, state, gamma/terminal semantics, costs,
+replay sizing, epsilon and external budget cap remain unchanged.
+
+Test the SAME context-state/train-epsilon-0.2 checkpoint:
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_context_state_train_eps0p2_seed42 --seed 42 --deterministic --reward-mode paper --selection-cost 0.42 --selector-state context --selector-mode learned --query-gate none --budget 214 --budget-schedule linear --epsilon-start 0.05 --epsilon-end 0.05 --online-skip-replay --skip-optimizer-mode queries --online-reward-timing post
+```
+
+All ten levels run independently. Compare with prior pre-timing learned and the
+same-checkpoint matched linear random control. Different rewards alter later action
+and query trajectories, so accuracy need not increase. No model was executed here.
