@@ -52,6 +52,7 @@ TRAIN_EPSILON_START = 1.0
 TRAIN_EPSILON_END = 0.01
 TRAIN_EPSILON_DECAY = 0.995
 TRAIN_GREEDY_MODE = 'legacy'
+TRAIN_REPLAY_RESET_EVERY = 0
 
 
 def seed_run(seed):
@@ -788,6 +789,10 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     TARGET_UPDATE_FREQ = 5
     
     for epoch in range(fine_tune_epochs):
+        if TRAIN_REPLAY_RESET_EVERY > 0 and epoch % TRAIN_REPLAY_RESET_EVERY == 0:
+            removed = len(dqn_agent.replay_buffer)
+            dqn_agent.replay_buffer.buffer.clear()
+            print(f"Training replay refreshed before epoch {epoch+1}: removed {removed} experiences; weights/optimizer/epsilon retained.")
         cnn_model.eval()
         context_model.train()
         dqn_agent.policy_net.train()
@@ -1852,6 +1857,7 @@ def evaluate_main(fine_tune_lr=0.25):
 
 
 def cli():
+    global TRAIN_REPLAY_RESET_EVERY
     global TRAIN_GREEDY_MODE
     global SELECTOR_REWARD_PROFILE
     global ONLINE_GENERALIZATION_REFERENCE
@@ -1907,6 +1913,8 @@ def cli():
                         help="Offline multiplicative decay once per epoch; historical default 0.995.")
     parser.add_argument("--train-greedy-mode", choices=('legacy','eval'), default='legacy',
                         help="TRAIN only: eval disables selector Dropout only for greedy decisions; optimizer behavior is unchanged.")
+    parser.add_argument("--train-replay-reset-every", type=int, default=0,
+                        help="TRAIN only: clear replay every N epochs; 0 preserves history. Keeps Q weights, optimizer, target and epsilon.")
     parser.add_argument("--budget-schedule", choices=("full","linear"), default="full",
                         help="Online diagnostic: full exposes all labels immediately; linear releases them over stream positions.")
     parser.add_argument("--deterministic", action="store_true",
@@ -1938,6 +1946,11 @@ def cli():
     parser.add_argument("--validation-probe-budget-fraction", type=float, default=0.2)
     parser.add_argument("--validation-probe-seed", type=int, default=42)
     args=parser.parse_args()
+    if args.train_replay_reset_every < 0:
+        parser.error("train-replay-reset-every must be nonnegative.")
+    if args.command != 'train' and args.train_replay_reset_every != 0:
+        parser.error("train-replay-reset-every applies only to training; evaluation uses the saved replay.")
+    TRAIN_REPLAY_RESET_EVERY = args.train_replay_reset_every
     if args.command != 'train' and args.train_greedy_mode != 'legacy':
         parser.error("train-greedy-mode changes training only; evaluation already uses eval-mode learned actions.")
     TRAIN_GREEDY_MODE = args.train_greedy_mode
@@ -2107,6 +2120,8 @@ def cli():
             folder += f"_train_eps{args.train_epsilon_start:g}to{args.train_epsilon_end:g}_decay{args.train_epsilon_decay:g}"
         if args.train_greedy_mode != 'legacy':
             folder += f"_train_greedy_{args.train_greedy_mode}"
+        if args.train_replay_reset_every > 0:
+            folder += f"_replay_reset{args.train_replay_reset_every}"
         folder += "_validated_best"
         if args.training_selector_mode == "disagreement":
             folder += f"_train_disagreement_penalty{args.agreement_penalty:g}"
@@ -2206,6 +2221,7 @@ def cli():
         scoring="post-update",selector_mode=args.selector_mode,reward_mode=args.reward_mode,
         reward_profile=args.reward_profile,
         training_greedy_mode=args.train_greedy_mode if args.command=='train' else checkpoint.get('training_greedy_mode', 'legacy'),
+        training_replay_reset_every=args.train_replay_reset_every if args.command=='train' else checkpoint.get('training_replay_reset_every', 0),
         transition_mode=args.transition_mode,gamma=args.gamma,
         query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate in ("none","no-threshold","disagreement") else 0.005,
         context_loss_mode=args.context_loss_mode,
@@ -2253,6 +2269,7 @@ def cli():
             print("Selector reward / transitions / gamma:", SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA)
             print("Selector competitive reward profile:", SELECTOR_REWARD_PROFILE)
             print("Training greedy selector mode:", TRAIN_GREEDY_MODE)
+            print("Training replay refresh interval (0 keeps history):", TRAIN_REPLAY_RESET_EVERY)
             print("Context loss mode:", CONTEXT_LOSS_MODE)
             print("Training selector mode / agreement penalty:", TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY)
             print("Action-1 reward cost:", SELECTION_COST)
@@ -2271,6 +2288,7 @@ def cli():
                 checkpoint["selector_reward_mode"]=SELECTOR_REWARD_MODE
                 checkpoint["selector_reward_profile"]=SELECTOR_REWARD_PROFILE
                 checkpoint["training_greedy_mode"]=TRAIN_GREEDY_MODE
+                checkpoint["training_replay_reset_every"]=TRAIN_REPLAY_RESET_EVERY
                 checkpoint["selector_transition_mode"]=SELECTOR_TRANSITION_MODE
                 checkpoint["selector_gamma"]=SELECTOR_GAMMA
                 checkpoint["context_loss_mode"]=CONTEXT_LOSS_MODE
@@ -2296,6 +2314,7 @@ def cli():
 
 if __name__=="__main__":
     cli()
+
 
 
 

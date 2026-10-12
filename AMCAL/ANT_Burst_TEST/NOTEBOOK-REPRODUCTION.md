@@ -1189,3 +1189,33 @@ configuration (paper skip-zero, cost 0.42, context state, epsilon 1 to 0.2 with
 validation selection. Compare with `notebook_reward_improvement_seed42`; train
 the new experiment into `notebook_reward_improvement_greedy_eval_seed42`.
 
+
+# Isolated offline replay freshness experiment
+
+Optional `train --train-replay-reset-every N` clears only the replay deque before
+epochs 1, 1+N, 1+2N, etc. Default 0 retains the historical replay behavior.
+For N=1, experiences come only from the current epoch instead of accumulating
+across many changing Context states. Within an epoch Context still changes;
+this does not eliminate all nonstationarity or prove old replay caused the
+observed accuracy gap. Clearing also loses experience diversity and may hurt.
+
+Q/policy weights, target weights, Adam state, epsilon schedule, step/target
+counters, architectures, rewards, Context optimizer, duration, and validation
+snapshot selection are unchanged. The ordinary replay warm-up requirement
+still applies after a clear: optimization resumes only after batch_size
+experiences are collected. Both skip/select experiences are collected as
+before. Existing synchronized best-snapshot restoration still saves/restores
+that epoch's Q/Context/replay together. No saved experiment is overwritten.
+
+Use fresh training with the previous improvement reward setup and LEGACY
+greedy mode (omit `--train-greedy-mode eval`). This explicitly sets aside the
+failed greedy-eval experiment and compares against
+`notebook_reward_improvement_seed42`. Suggested new output:
+`notebook_reward_improvement_replay_fresh_seed42`.
+
+Checkpoint/manifest tag `training_replay_reset_every` records provenance;
+missing tags mean 0. It is train-only; do not pass the flag to evaluate.
+Online replay size, loading, and optimization remain unchanged. Automatic
+training output names append `_replay_resetN`. Console logs refresh count and
+states retained parameters. No improvement or convergence is guaranteed.
+
