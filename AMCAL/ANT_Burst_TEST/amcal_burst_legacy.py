@@ -30,6 +30,7 @@ AGREEMENT_PENALTY = 0.2
 TEST_LABEL_BUDGET = 214
 ONLINE_BUDGET_SCHEDULE = 'full'
 DETERMINISTIC_RUN = False
+ONLINE_SKIP_REPLAY = False
 SELECTION_COST = 0.0
 TRAIN_EPSILON_START = 1.0
 TRAIN_EPSILON_END = 0.01
@@ -987,6 +988,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     y_true = []
     sample_accuracies = []
     updates_used = 0
+    real_skip_replay_entries = 0
     dqn_updates_used = 0
     dqn_loss_count = 0
     running_dqn_loss = 0.0
@@ -1011,6 +1013,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         updates_before = updates_used
         released_budget = released_label_budget(sample_idx, max_samples, budget)
         observed_reward, observed_loss = None, None
+        skip_replay_added = False
         # Compute CNN outputs and state
         with torch.no_grad():
             cnn_outputs = cnn_model(inputs)
@@ -1137,7 +1140,24 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                     encoded_inputs_final = context_model(inputs)
                     outputs = cnn_model(encoded_inputs_final)
         else:
-            # Action = 0: no context update, no reward, no replay buffer
+            # A REAL policy skip is distinct from an action-1 request blocked by budget.
+            if ONLINE_SKIP_REPLAY and updates_used < budget:
+                # Paper skip reward is label-free. No Context update or label query.
+                dqn_agent.replay_buffer.push(state, 0, 0.0, state,
+                                             replay_done(sample_idx >= max_samples))
+                real_skip_replay_entries += 1
+                skip_replay_added = True
+                observed_reward = 0.0
+                target_update_counter += 1
+                dqn_loss = dqn_agent.optimize()
+                if dqn_loss is not None:
+                    running_dqn_loss += dqn_loss
+                    dqn_loss_count += 1
+                    dqn_updates_used += 1
+                    dqn_agent.update_epsilon()
+                if target_update_counter >= TARGET_UPDATE_FREQ:
+                    dqn_agent.update_target_network()
+                    target_update_counter = 0
             with torch.no_grad():
                 encoded_inputs_final = context_model(inputs)
                 outputs = cnn_model(encoded_inputs_final)
@@ -1159,7 +1179,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 q_skip=float(diagnostic_q[0,0].item()), q_apply=float(diagnostic_q[0,1].item()),
                 epsilon=float(dqn_agent.epsilon),
                 action_epsilon=action_epsilon, action_source=action_source,
-                labels_before=updates_before,
+                labels_before=updates_before, skip_replay_added=skip_replay_added,
                 budget_schedule=ONLINE_BUDGET_SCHEDULE, released_label_budget=released_budget,
                 budget_release_blocked=(action == 1 and updates_before < budget and
                                         updates_before >= released_budget),
@@ -1211,6 +1231,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         selection_cost=SELECTION_COST,
         training_state_version=RUN_TRAINING_STATE_VERSION,
         bootstrap_optimizer_steps=dqn_agent.bootstrap_optimizer_steps,
+        online_skip_replay=ONLINE_SKIP_REPLAY,
+        real_skip_replay_entries=real_skip_replay_entries,
+        reward_mean_scope="executed action-1 queries only; real skips have reward 0 in trace",
         replay_terminal_rows=sum(float(e[4]) == 1.0 for e in dqn_agent.replay_buffer.buffer),
         replay_nonterminal_rows=sum(float(e[4]) == 0.0 for e in dqn_agent.replay_buffer.buffer),
         learned_policy_used_for_actions=LEGACY_SELECTOR_MODE=="learned",
@@ -1244,7 +1267,11 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     print(f"  Recall (weighted): {recall:.4f}")
     print(f"  F1 Score (weighted): {f1:.4f}")
     print(f"  Context Updates Used: {updates_used}/{budget}")
-    print(f"  DQN Updates Used: {dqn_updates_used}/{budget}")
+    if ONLINE_SKIP_REPLAY:
+        print(f"  DQN Updates Used: {dqn_updates_used} (queries + real skips; label budget is separate)")
+        print(f"  Real skips added to replay: {real_skip_replay_entries}")
+    else:
+        print(f"  DQN Updates Used: {dqn_updates_used}/{budget}")
     print(f"  Average DQN Loss: {running_dqn_loss / max(dqn_loss_count, 1):.4f}")
     print(f"  Average Reward: {np.mean(rewards) if rewards else 0.0:.4f}")
     if LEGACY_SELECTOR_MODE == "learned":
@@ -1466,7 +1493,7 @@ def evaluate_main():
 
 def cli():
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
-    global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY, ONLINE_BUDGET_SCHEDULE, DETERMINISTIC_RUN
+    global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY, ONLINE_BUDGET_SCHEDULE, DETERMINISTIC_RUN, ONLINE_SKIP_REPLAY
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1513,7 +1540,12 @@ def cli():
                         help="Online diagnostic: full exposes all labels immediately; linear releases them over stream positions.")
     parser.add_argument("--deterministic", action="store_true",
                         help="Strict PyTorch/CUDA reproducibility and a fresh evaluation seed per level; requires --seed.")
+    parser.add_argument("--online-skip-replay", action="store_true",
+                        help="Learned/paper online diagnostic: record real skips with label-free zero reward and optimize while total label budget remains.")
     args=parser.parse_args()
+    if args.online_skip_replay and (args.command != "evaluate" or args.selector_mode != "learned" or args.reward_mode != "paper"):
+        parser.error("online-skip-replay requires evaluate --selector-mode learned --reward-mode paper.")
+    ONLINE_SKIP_REPLAY = args.online_skip_replay
     if args.deterministic and args.seed is None:
         parser.error("--deterministic requires an explicit --seed.")
     DETERMINISTIC_RUN = args.deterministic
@@ -1609,6 +1641,8 @@ def cli():
                    "_no_threshold" if args.query_gate=="no-threshold" else "")
     if args.selector_mode=="learned" and scheduled_epsilon:
         gate_suffix += f"_eps{args.epsilon_start:g}to{args.epsilon_end:g}_decay{args.epsilon_decay:g}"
+    if args.online_skip_replay:
+        gate_suffix += "_skip_replay"
     if args.deterministic:
         gate_suffix += "_deterministic"
     if args.budget_schedule != "full":
@@ -1673,6 +1707,7 @@ def cli():
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
         budget_schedule=args.budget_schedule,
+        online_skip_replay=args.online_skip_replay,
         reproducibility=reproducibility_settings(),
         seed_reset_each_level=args.deterministic,
         budget_release_rule="ceil(budget * step / stream_rows); unused allowance carries forward",

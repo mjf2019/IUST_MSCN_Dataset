@@ -755,3 +755,35 @@ Results: `Results/random_no_rl_none_seed42_deterministic_budget_linear`.
 Trace includes release limit, labels before query and release-blocked requests.
 Compare with existing learned deterministic/linear run; use pre-update stream
 metrics for primary reporting. Full-schedule random result folders remain separate.
+
+## Online real-skip replay diagnostic
+
+`--online-skip-replay` is optional and applies only to learned evaluation with paper
+rewards. Fresh training is NOT needed; existing initial replay/weights are reused.
+A real action 0 is inserted with reward exactly 0, current state as local next state,
+and the existing terminal/local done rule. No label is read for this reward, no
+Context optimizer step occurs, and label usage does not increase. Action-1 requests
+blocked by budget release, exhaustion or query gates are NOT converted into skips.
+After total label-budget exhaustion, selector learning remains frozen as before.
+A temporary linear-release cap does not prevent recording an actual action-0 skip.
+
+Each inserted skip triggers the existing selector optimize call, target-sync counter
+and online epsilon-decay-on-success rule. Thus DQN optimizer steps can exceed 214;
+214 still limits queried labels/Context updates, not computation. Epsilon is held
+at 0.05 in this experiment. Existing queried-action replay and hindsight entries,
+MSE loss, reward categories/cost, architecture and Context objective are unchanged.
+Online trace logs `skip_replay_added`; diagnostics/console count real skip entries.
+Average Reward retains its earlier queried-action-only scope; skip-zero rewards
+are visible separately in the trace. Default flag-off behavior is preserved.
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_fast_eps_seed42 --seed 42 --deterministic --reward-mode paper --selection-cost 0.42 --selector-mode learned --query-gate none --budget 214 --budget-schedule linear --epsilon-start 0.05 --epsilon-end 0.05 --online-skip-replay
+```
+
+All levels run independently. New result folders include `_skip_replay`, leaving
+previous runs separate. Compare to learned flag-off under identical deterministic,
+linear budget and epsilon settings, and the matched linear random control. This
+changes both replay coverage AND when online DQN is optimized; it is not an isolated
+fixed-computation ablation of replay composition. Record optimizer counts alongside
+pre-update accuracy and actual queries. No model was executed during this edit.
