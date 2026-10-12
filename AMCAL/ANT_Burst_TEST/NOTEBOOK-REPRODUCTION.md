@@ -941,3 +941,54 @@ CSV/PNG is overwritten by the next invocation. For one aggregate all-level table
 run evaluate without `--per` after the pilot. Do not choose beta/cost based on final
 test scores; use validation. Same-checkpoint matched random control omits the gain
 flag because no RL/reward exists in that runner. No model was executed here.
+
+## Select raw adversarial snapshots using a copy-only validation adaptation episode
+
+Optional TRAIN-only `--checkpoint-selection adaptation` selects a checkpoint by
+budgeted pre-update accuracy on the EXISTING validation CSV. Fewer queried labels
+break exact accuracy ties; no scalar tradeoff coefficient is added. Default
+`context` preserves the original clean Context validation-accuracy criterion.
+The base CNN checkpoint is still selected by its ordinary validation CE.
+
+Defaults: probe at epoch 1 and every 10 epochs, a fixed random subset of at most
+200 validation rows (original row order retained), 20% label cap (40 at N=200), seed
+42. No training/test rows, attack test files, new split or synthetic attacks are used.
+Input tensors have the train-fitted preprocessing from the existing loader.
+This tests adaptation on ordinary validation data, not robustness under a held-out
+adversarial domain. Its suitability for that claim needs separate validation data.
+
+For each candidate, deepcopy the frozen CNN and Context and instantiate a SEPARATE
+DQN initialized from the candidate policy, with target initialized from policy like
+online loading. Load only the last 500 replay entries, minibatch 128, Adam selector
+1e-4, Context Adam 0.25. Use current Context state, post-update competitive+gain reward,
+fixed epsilon 0.05, no filters, linear budget release, natural skip-zero replay and
+query-only DQN optimizer cadence. Policy is eval for actions, train for optimization.
+Observer scores before each query; only queried labels reach adaptation/reward.
+All Python/NumPy/Torch/CUDA RNG states are restored after the probe, including on
+exceptions. Original models/replay/counters/optimizers are not passed to updates.
+
+The SAVED snapshot is the raw training candidate, not its validation-adapted copy.
+History is saved at `Models/adaptation_validation_history.json`, including candidate
+epoch, pre-update accuracy, labels, subset indices and validation-file hash. Context
+and selector checkpoints record the selection criterion and selected probe metrics.
+No checkpoint compatibility guard forces users to repeat training-selection flags
+at inference. Stop patience is still measured in epochs since the last improvement
+of the active selection metric; unscheduled epochs do not create new candidates.
+Changing selection may change early-stop time/final raw snapshots; training update
+formulas themselves remain unchanged. Budget release remains an external controller.
+
+Fresh training is required to compare this checkpoint-selection experiment:
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_context_gain1_adaptation_validated_seed42 --seed 42 --deterministic --reward-mode paper --selection-cost 0.42 --selector-state context --reward-gain-weight 1 --train-epsilon-start 1 --train-epsilon-end 0.2 --train-epsilon-decay 0.9 --checkpoint-selection adaptation --validation-probe-every 10 --validation-probe-samples 200
+foreach ($level in @(0, 7, 20)) {
+    python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_context_gain1_adaptation_validated_seed42 --seed 42 --deterministic --reward-mode paper --selection-cost 0.42 --selector-state context --reward-gain-weight 1 --selector-mode learned --query-gate none --budget 214 --budget-schedule linear --epsilon-start 0.05 --epsilon-end 0.05 --online-skip-replay --skip-optimizer-mode queries --online-reward-timing post --per $level
+}
+```
+
+The probe settings are logged in the training manifest; trial evaluation settings
+match that probe except the larger real stream/budget. Choose hyperparameters on
+validation, not final attack test scores. This is model selection, not training a
+meta-objective or learned budget management. No training, forward pass or probe was
+executed during implementation; source/isolation structure was checked only.

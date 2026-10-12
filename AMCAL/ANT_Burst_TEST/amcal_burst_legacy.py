@@ -35,6 +35,11 @@ ONLINE_SKIP_REPLAY = False
 ONLINE_SKIP_OPTIMIZER_MODE = 'all'
 ONLINE_REWARD_TIMING = 'pre'
 REWARD_GAIN_WEIGHT = 0.0
+CHECKPOINT_SELECTION = 'context'
+VALIDATION_PROBE_EVERY = 10
+VALIDATION_PROBE_SAMPLES = 200
+VALIDATION_PROBE_BUDGET_FRACTION = 0.2
+VALIDATION_PROBE_SEED = 42
 SELECTION_COST = 0.0
 TRAIN_EPSILON_START = 1.0
 TRAIN_EPSILON_END = 0.01
@@ -563,6 +568,115 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
         reward = 0.0 if SELECTOR_REWARD_MODE == "paper" else (1.5 if cnn_pred == label else -1.0)
     return reward - SELECTION_COST if action == 1 else reward
 
+
+@contextmanager
+def preserve_random_state():
+    """Validation must not consume the training RNG stream."""
+    py_state = random.getstate()
+    np_state = np.random.get_state()
+    cpu_state = torch.get_rng_state()
+    cuda_states = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+    try:
+        yield
+    finally:
+        random.setstate(py_state)
+        np.random.set_state(np_state)
+        torch.set_rng_state(cpu_state)
+        if cuda_states is not None:
+            torch.cuda.set_rng_state_all(cuda_states)
+
+
+def adaptation_validation_probe(cnn_model, context_model, dqn_agent, val_loader, class_counts):
+    """Copy-only, predict/query/update episode using existing validation data, never test."""
+    with preserve_random_state():
+        seed_run(VALIDATION_PROBE_SEED)
+        inputs_all, labels_all = val_loader.dataset.tensors
+        n = min(VALIDATION_PROBE_SAMPLES, len(inputs_all))
+        if n == 0:
+            raise ValueError("Validation probe requires a nonempty validation dataset.")
+        generator = torch.Generator().manual_seed(VALIDATION_PROBE_SEED)
+        # Fixed random subset; preserve the CSV row order within that subset.
+        indices = torch.randperm(len(inputs_all), generator=generator)[:n].sort().values
+        budget = int(n * VALIDATION_PROBE_BUDGET_FRACTION)
+        probe_cnn = deepcopy(cnn_model).eval()
+        probe_context = deepcopy(context_model).eval()
+        for parameter in probe_cnn.parameters():
+            parameter.requires_grad_(False)
+        agent = DQNSelectorAgent(
+            inputs_all.shape[-1] + 1, device, gamma=dqn_agent.gamma,
+            epsilon_start=0.05, epsilon_end=0.05, epsilon_decay=1.0,
+            buffer_capacity=500, batch_size=128)
+        agent.policy_net.load_state_dict(dqn_agent.policy_net.state_dict())
+        # Match online loading: target initially equals current policy.
+        agent.target_net.load_state_dict(dqn_agent.policy_net.state_dict())
+        agent.policy_net.train()
+        agent.target_net.eval()
+        for experience in list(dqn_agent.replay_buffer.buffer)[-500:]:
+            agent.replay_buffer.push(*experience)
+        optimizer = optim.Adam(probe_context.parameters(), lr=0.25, weight_decay=1e-4)
+        criterion = nn.CrossEntropyLoss(weight=torch.as_tensor(class_counts, dtype=torch.float32, device=device))
+        used = correct = optimizer_steps = target_counter = 0
+        for step, row_index in enumerate(indices.tolist(), 1):
+            x = inputs_all[row_index:row_index+1].to(device)
+            y = labels_all[row_index:row_index+1].to(device)
+            with torch.no_grad():
+                base_logits = probe_cnn(x)
+                before_logits = probe_cnn(probe_context(x))
+                before_prediction = before_logits.argmax(dim=1)
+                base_prediction = base_logits.argmax(dim=1)
+                uncertainty = 1 - torch.softmax(before_logits, dim=1).max(dim=1, keepdim=True).values
+                state = torch.cat([x.squeeze(1), uncertainty], dim=1)
+                with evaluation_mode(agent.policy_net):
+                    action = int(agent.select_action(state).item())
+            # Observer only: score before revealing a queried label.
+            correct += int((before_prediction == y).item())
+            released = min(budget, (budget * step + n - 1) // n)
+            query = action == 1 and used < released
+            if query:
+                gain_before = reward_ce(before_logits, y) if REWARD_GAIN_WEIGHT > 0 else None
+                optimizer.zero_grad()
+                outputs = probe_cnn(probe_context(x))
+                loss = context_objective(criterion(outputs, y), criterion(base_logits, y), online=True)
+                loss.backward()
+                optimizer.step()
+                used += 1
+                with torch.no_grad():
+                    after_logits = probe_cnn(probe_context(x))
+                    after_prediction = int(after_logits.argmax(dim=1).item())
+                    next_uncertainty = 1 - torch.softmax(after_logits, dim=1).max(dim=1, keepdim=True).values
+                    next_state = torch.cat([x.squeeze(1), next_uncertainty], dim=1)
+                reward = compute_reward(1, int(base_prediction.item()), after_prediction, int(y.item()))
+                if REWARD_GAIN_WEIGHT > 0:
+                    reward += REWARD_GAIN_WEIGHT * float((gain_before - reward_ce(after_logits, y)).item())
+                agent.replay_buffer.push(state, 1, reward, next_state,
+                                         replay_done(used >= budget or step >= n))
+                target_counter += 1
+                if reward < 0:
+                    agent.replay_buffer.push(state, 0, 0.0, state, replay_done(step >= n))
+                    target_counter += 1
+                # Same query-only optimizer cadence as the current learned control.
+                dqn_loss = agent.optimize()
+                if dqn_loss is not None:
+                    optimizer_steps += 1
+                    agent.update_epsilon()
+            elif action == 0 and used < budget:
+                agent.replay_buffer.push(state, 0, 0.0, state, replay_done(step >= n))
+                target_counter += 1
+            # Blocked action-1 requests are not relabeled as skips.
+            if target_counter >= 10:
+                agent.update_target_network()
+                target_counter = 0
+        return dict(
+            accuracy_before_update=correct/n, queried_labels=used, label_budget=budget,
+            evaluated_rows=n, selector_optimizer_steps=optimizer_steps,
+            source="existing validation CSV only; train-fitted preprocessing",
+            validation_sha256=sha256_file(BURST_DATA_DIR / "oversampled_validation_dataset.csv"),
+            subset_indices=indices.tolist(), seed=VALIDATION_PROBE_SEED,
+            online_epsilon=0.05, online_lr=0.25, budget_schedule="linear",
+            query_gate="none", online_reward_timing="post",
+            skip_replay=True, skip_optimizer_mode="queries")
+
+
 def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, val_loader, class_counts, input_length, num_classes, fine_tune_epochs=500, patience=50):
     class_weights = torch.FloatTensor(1.0 / class_counts).to(device)
     cnn_criterion = nn.CrossEntropyLoss(weight=class_weights)
@@ -578,6 +692,9 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     best_replay = None
     best_epoch = None
     best_selector_counters = None
+    best_selection_key = None
+    best_adaptation_validation = None
+    selection_history = []
     
     # Pre-train ContextAwareNetwork
     print("Pre-training ContextAwareNetwork...")
@@ -766,7 +883,19 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         print(f"  Val Recall: {val_results['Recall']:.4f}")
         print(f"  Val F1 Score: {val_results['F1 Score']:.4f}")
         
-        if val_results['Accuracy'] > best_val_accuracy:
+        probe = None
+        candidate_key = None
+        if CHECKPOINT_SELECTION == 'context':
+            candidate_key = (float(val_results['Accuracy']), 0)
+        elif epoch == 0 or (epoch + 1) % VALIDATION_PROBE_EVERY == 0:
+            probe = adaptation_validation_probe(cnn_model, context_model, dqn_agent,
+                                                val_loader, class_counts)
+            candidate_key = (probe['accuracy_before_update'], -probe['queried_labels'])
+            selection_history.append(dict(epoch=epoch+1, clean_val_accuracy=float(val_results['Accuracy']), **probe))
+            print(f"  Adaptation validation pre-update accuracy: {probe['accuracy_before_update']:.4f}; labels: {probe['queried_labels']}/{probe['label_budget']}")
+        if candidate_key is not None and (best_selection_key is None or candidate_key > best_selection_key):
+            best_selection_key = candidate_key
+            best_adaptation_validation = probe
             best_val_accuracy = val_results['Accuracy']
             epochs_no_improve = 0
             # state_dict tensors otherwise alias the live model and keep changing.
@@ -796,6 +925,14 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             setattr(dqn_agent, name, value)
         print(f"Loaded best Context/selector snapshot (epoch {best_epoch}, Val Accuracy: {best_val_accuracy:.4f})")
         print(f"Restored best-snapshot training epsilon: {dqn_agent.epsilon:.4f}")
+        if best_adaptation_validation is not None:
+            print("Selected adaptation validation:", best_adaptation_validation["accuracy_before_update"],
+                  "labels:", best_adaptation_validation["queried_labels"])
+    if CHECKPOINT_SELECTION == "adaptation":
+        import json
+        Path("Models/adaptation_validation_history.json").write_text(
+            json.dumps(dict(criterion="pre-update validation accuracy; fewer labels breaks ties",
+                            selected_epoch=best_epoch, history=selection_history), indent=2), encoding="utf-8")
 
     # Save best models
     if best_context_state is not None:
@@ -803,6 +940,8 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             'context_model_state_dict': best_context_state,
             'best_epoch': best_epoch,
             'best_val_accuracy': best_val_accuracy,
+            'checkpoint_selection': CHECKPOINT_SELECTION,
+            'adaptation_validation': best_adaptation_validation,
             'input_length': input_length,
             'num_classes': num_classes
         }, 'Models/adversarial_best_context.pth')
@@ -814,6 +953,8 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             'dqn_target_net_state_dict': best_target_state,
             'best_epoch': best_epoch,
             'best_val_accuracy': best_val_accuracy,
+            'checkpoint_selection': CHECKPOINT_SELECTION,
+            'adaptation_validation': best_adaptation_validation,
             'selector_training_counters': best_selector_counters,
             'input_length': input_length,
             'num_classes': num_classes,
@@ -1562,6 +1703,7 @@ def evaluate_main():
 
 def cli():
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST, SELECTOR_STATE_MODE, ONLINE_REWARD_TIMING, REWARD_GAIN_WEIGHT
+    global CHECKPOINT_SELECTION, VALIDATION_PROBE_EVERY, VALIDATION_PROBE_SAMPLES, VALIDATION_PROBE_BUDGET_FRACTION, VALIDATION_PROBE_SEED
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY, ONLINE_BUDGET_SCHEDULE, DETERMINISTIC_RUN, ONLINE_SKIP_REPLAY, ONLINE_SKIP_OPTIMIZER_MODE
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
@@ -1619,7 +1761,29 @@ def cli():
                         help="post computes query reward after Context update, matching offline timing; scoring stays pre-update.")
     parser.add_argument("--reward-gain-weight", type=float, default=0.0,
                         help="Add beta*(unweighted Context CE before-after update) to executed action-1 reward, in train and online; fresh training required.")
+    parser.add_argument("--checkpoint-selection", choices=("context","adaptation"), default="context",
+                        help="TRAIN only: adaptation selects raw snapshots by copy-only budgeted validation episodes, never test.")
+    parser.add_argument("--validation-probe-every", type=int, default=10)
+    parser.add_argument("--validation-probe-samples", type=int, default=200)
+    parser.add_argument("--validation-probe-budget-fraction", type=float, default=0.2)
+    parser.add_argument("--validation-probe-seed", type=int, default=42)
     args=parser.parse_args()
+    if args.validation_probe_every < 1 or args.validation_probe_samples < 1:
+        parser.error("validation probe interval/sample count must be positive.")
+    if not 0 <= args.validation_probe_budget_fraction <= 1:
+        parser.error("validation probe budget fraction must be in [0,1].")
+    custom_probe = (args.checkpoint_selection != "context" or args.validation_probe_every != 10 or
+                    args.validation_probe_samples != 200 or args.validation_probe_budget_fraction != 0.2 or
+                    args.validation_probe_seed != 42)
+    if custom_probe and args.command != "train":
+        parser.error("checkpoint-selection and validation-probe settings apply only to train.")
+    if args.checkpoint_selection == "adaptation" and (args.reward_mode != "paper" or args.selector_state != "context"):
+        parser.error("adaptation checkpoint selection requires paper rewards and context selector state.")
+    CHECKPOINT_SELECTION = args.checkpoint_selection
+    VALIDATION_PROBE_EVERY = args.validation_probe_every
+    VALIDATION_PROBE_SAMPLES = args.validation_probe_samples
+    VALIDATION_PROBE_BUDGET_FRACTION = args.validation_probe_budget_fraction
+    VALIDATION_PROBE_SEED = args.validation_probe_seed
     if not np.isfinite(args.reward_gain_weight) or args.reward_gain_weight < 0:
         parser.error("reward-gain-weight must be finite and nonnegative.")
     if args.reward_gain_weight > 0:
@@ -1721,6 +1885,8 @@ def cli():
             folder += "_state_context"
         if args.reward_gain_weight > 0:
             folder += f"_reward_gain{args.reward_gain_weight:g}"
+        if args.checkpoint_selection == "adaptation":
+            folder += "_adaptation_validated"
         if changed_training_schedule:
             folder += f"_train_eps{args.train_epsilon_start:g}to{args.train_epsilon_end:g}_decay{args.train_epsilon_decay:g}"
         folder += "_validated_best"
@@ -1817,6 +1983,10 @@ def cli():
         online_skip_replay=args.online_skip_replay,
         online_reward_timing=args.online_reward_timing, offline_reward_timing="post",
         reward_gain_weight=args.reward_gain_weight,
+        checkpoint_selection=(args.checkpoint_selection if args.command=="train" else checkpoint.get("checkpoint_selection", "context")),
+        validation_probe=(dict(every=args.validation_probe_every, samples=args.validation_probe_samples,
+                               budget_fraction=args.validation_probe_budget_fraction, seed=args.validation_probe_seed,
+                               source="validation only; no attack test data") if args.command=="train" else None),
         skip_optimizer_mode=args.skip_optimizer_mode if args.online_skip_replay else None,
         reproducibility=reproducibility_settings(),
         seed_reset_each_level=args.deterministic,
@@ -1844,6 +2014,7 @@ def cli():
             print("Training selector mode / agreement penalty:", TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY)
             print("Action-1 reward cost:", SELECTION_COST)
             print("Reward CE-gain weight:", REWARD_GAIN_WEIGHT)
+            print("Adversarial checkpoint selection:", CHECKPOINT_SELECTION)
             print("Selector state uncertainty source:", SELECTOR_STATE_MODE)
             print("Training epsilon start / floor / decay per epoch:",
                   TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY)
