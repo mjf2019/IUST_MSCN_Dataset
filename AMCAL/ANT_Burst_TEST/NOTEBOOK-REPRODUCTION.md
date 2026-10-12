@@ -1015,3 +1015,61 @@ accuracy for both modes. A higher score is not guaranteed, and these attack
 test levels should not be used to select final hyperparameters. Confirm any
 eventual learning-rate choice on validation data and multiple seeds.
 
+
+# Experimental nonlocal training reward and longer training
+
+`--reward-generalization-weight BETA` (default 0) enables a separate experiment.
+It replaces the same-selected-sample CE-gain bonus: local `--reward-gain-weight`
+must be 0. Paper skip reward remains zero; original competitive action-1 reward
+and selection cost remain. CNN/Context/DQN architecture and Context objective
+are unchanged. This is a change to the training reward, not just a runtime fix.
+
+After CNN training, reserve approximately 10% of each class's distinct feature
+groups from the existing oversampled TRAIN tensors for reward observations.
+All exact feature duplicates in those groups are excluded from Context
+pretraining and Context adversarial optimizer batches. One representative per
+reserved group supplies reference observations. The CNN has already seen the
+training file, so this is held out from Context gradient updates, not an unseen
+CNN test. Validation/test files, splits, and saved CSVs are untouched. Record
+indices/counts/seed in `Models/generalization_partition.json`. Conflicting labels
+within identical feature groups or insufficient groups fail explicitly.
+
+For each batch containing selected examples, sample up to 16 reference groups
+per class. Observe class-balanced, unweighted CE in eval/no-grad mode on the
+SAME reference mini-batch immediately before and after the Context optimizer
+step. For each executed action-1 in that batch:
+
+`reward = competitive_reward - selection_cost + BETA * (reference_CE_before - reference_CE_after)`
+
+Skips get zero. The bonus is shared batch credit: it measures the selected
+group's effect and does NOT identify each individual's causal contribution.
+It is a one-step nonlocal reward; it does not by itself establish formal
+meta-learning or long-horizon Bellman learning. Reward reference labels are
+used repeatedly during training, so normal validation remains independent
+checkpoint selection. No attacked test labels are used for this reward.
+
+`--context-epochs`, `--context-patience`, and `--context-min-epochs` configure
+adversarial training only. Defaults stay 300/30/0. A pilot may use 600/80/100:
+no early stop before epoch 100, patience 80 since the best validation score,
+maximum 600, always restore the best synchronized validation snapshot. For the
+new reward only, the Context cosine scheduler spans pretraining plus the
+configured maximum, avoiding its historical 100-step oscillation. More epochs
+do not guarantee better validation or convergence.
+
+Fresh training in a new folder is required, with paper reward, context state,
+original training selection, local gain weight 0, and normal (`context`)
+checkpoint selection. Artifacts carry `reward_generalization_weight`; learned
+evaluation rejects mismatches to prevent mixing objectives/replay.
+
+Initially evaluate with `--freeze-online-selector`, `--selector-mode learned`,
+and matching `--reward-generalization-weight`. Keep online skip replay OFF.
+The policy uses learned Q values and any requested epsilon exploration, but
+its Q/target/replay do not update. Context still adapts within the same budget.
+This prevents overwriting the nonlocal objective with a different online
+reward, since unqueried independent labels are unavailable. Any logged online
+competitive reward is diagnostic only. This isolates offline learned
+selection, not online RL adaptation. Random remains an online no-RL ablation
+using the same CNN/Context checkpoints. Compare pre-update scores with matched
+rates, budgets, schedules, and seeds. Do not choose final hyperparameters from
+attack test performance or assume a target accuracy will be reached.
+
