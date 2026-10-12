@@ -23,6 +23,9 @@ TRAINING_SELECTOR_MODE = 'original'
 AGREEMENT_PENALTY = 0.2
 TEST_LABEL_BUDGET = 214
 SELECTION_COST = 0.0
+TRAIN_EPSILON_START = 1.0
+TRAIN_EPSILON_END = 0.01
+TRAIN_EPSILON_DECAY = 0.995
 
 
 def replay_done(terminal=False):
@@ -536,6 +539,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         rewards = []
         actions = []
         context_updated = False
+        epoch_action_epsilon = float(dqn_agent.epsilon)
         
         for inputs, labels in full_loader:
             inputs, labels = inputs.to(device), labels.to(device)
@@ -655,6 +659,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         print(f"Adversarial Epoch {epoch+1}/{fine_tune_epochs}:")
         print(f"  Context Loss: {running_context_loss / max(context_updated_samples, 1):.4f}")
         print(f"  DQN Loss: {running_dqn_loss / max(dqn_loss_count, 1):.4f}")
+        print(f"  Training epsilon used / next epoch: {epoch_action_epsilon:.4f} / {dqn_agent.epsilon:.4f}")
         print(f"  Context Updated Samples: {context_updated_samples}")
         if TRAINING_SELECTOR_MODE == 'disagreement':
             print(f"  Agreement requests rejected/penalized: {rejected_agreement_samples}")
@@ -699,6 +704,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         for name, value in best_selector_counters.items():
             setattr(dqn_agent, name, value)
         print(f"Loaded best Context/selector snapshot (epoch {best_epoch}, Val Accuracy: {best_val_accuracy:.4f})")
+        print(f"Restored best-snapshot training epsilon: {dqn_agent.epsilon:.4f}")
 
     # Save best models
     if best_context_state is not None:
@@ -766,7 +772,10 @@ def train_main():
     print(f"  F1 Score: {initial_results['F1 Score']:.4f}")
     
     # Initialize DQN and Context models
-    dqn_agent = DQNSelectorAgent(input_length + 1, device)
+    dqn_agent = DQNSelectorAgent(input_length + 1, device,
+                                 epsilon_start=TRAIN_EPSILON_START,
+                                 epsilon_end=TRAIN_EPSILON_END,
+                                 epsilon_decay=TRAIN_EPSILON_DECAY)
     context_model = ContextAwareNetwork(input_length).to(device)
     
     # Train adversarial system using full_loader (full dataset)
@@ -1385,6 +1394,7 @@ def evaluate_main():
 
 def cli():
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
+    global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1421,7 +1431,24 @@ def cli():
                         help="Maximum labels/Context updates per test level, from 0 to 1073. Gates may use fewer.")
     parser.add_argument("--selection-cost", type=float, default=0.0,
                         help="Subtract this cost from every action-1 reward in training and online replay; skip stays zero in paper mode.")
+    parser.add_argument("--train-epsilon-start", type=float, default=1.0,
+                        help="Offline DQN training only; historical default 1.")
+    parser.add_argument("--train-epsilon-end", type=float, default=0.01,
+                        help="Offline exploration floor; historical default 0.01.")
+    parser.add_argument("--train-epsilon-decay", type=float, default=0.995,
+                        help="Offline multiplicative decay once per epoch; historical default 0.995.")
     args=parser.parse_args()
+    if not 0.0 <= args.train_epsilon_end <= args.train_epsilon_start <= 1.0:
+        parser.error("training epsilon requires 0 <= end <= start <= 1.")
+    if not 0.0 < args.train_epsilon_decay <= 1.0:
+        parser.error("train-epsilon-decay must be in (0, 1].")
+    changed_training_schedule = (args.train_epsilon_start != 1.0 or
+                                 args.train_epsilon_end != 0.01 or args.train_epsilon_decay != 0.995)
+    if changed_training_schedule and args.command != "train":
+        parser.error("train-epsilon settings apply only to train; online epsilon has separate flags.")
+    TRAIN_EPSILON_START = args.train_epsilon_start
+    TRAIN_EPSILON_END = args.train_epsilon_end
+    TRAIN_EPSILON_DECAY = args.train_epsilon_decay
     if not np.isfinite(args.selection_cost) or args.selection_cost < 0:
         parser.error("selection-cost must be finite and nonnegative.")
     if args.selection_cost > 0 and (args.reward_mode != "paper" or args.training_selector_mode != "original"):
@@ -1480,6 +1507,8 @@ def cli():
             folder += "_context_aligned"
         if args.selection_cost > 0:
             folder += f"_selection_cost{args.selection_cost:g}"
+        if changed_training_schedule:
+            folder += f"_train_eps{args.train_epsilon_start:g}to{args.train_epsilon_end:g}_decay{args.train_epsilon_decay:g}"
         folder += "_validated_best"
         if args.training_selector_mode == "disagreement":
             folder += f"_train_disagreement_penalty{args.agreement_penalty:g}"
@@ -1553,6 +1582,11 @@ def cli():
         training_selector_mode=args.training_selector_mode,
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
+        training_epsilon_schedule=(dict(start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
+                                       decay=TRAIN_EPSILON_DECAY, decay_rule="once per epoch")
+                                   if args.command=="train" else
+                                   checkpoint.get("training_epsilon_schedule",
+                                                  dict(start=1.0, end=0.01, decay=0.995, decay_rule="once per epoch"))),
         selection_cost=args.selection_cost,
         training_state_version=RUN_TRAINING_STATE_VERSION,
         next_state_scope="same input after Context update; not next traffic row",
@@ -1570,6 +1604,8 @@ def cli():
             print("Context loss mode:", CONTEXT_LOSS_MODE)
             print("Training selector mode / agreement penalty:", TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY)
             print("Action-1 reward cost:", SELECTION_COST)
+            print("Training epsilon start / floor / decay per epoch:",
+                  TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY)
             train_main()
             # Tag artifacts without altering the saved weights or replay experiences.
             for checkpoint_name in ("initial_cnn_model.pth","adversarial_best_context.pth","adversarial_best_dqn.pth"):
@@ -1580,6 +1616,9 @@ def cli():
                 checkpoint["selector_gamma"]=SELECTOR_GAMMA
                 checkpoint["context_loss_mode"]=CONTEXT_LOSS_MODE
                 checkpoint["training_state_version"]=TRAINING_STATE_VERSION
+                checkpoint["training_epsilon_schedule"]=dict(
+                    start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
+                    decay=TRAIN_EPSILON_DECAY, decay_rule="once per epoch")
                 checkpoint["selection_cost"]=SELECTION_COST
                 checkpoint["training_selector_mode"]=TRAINING_SELECTOR_MODE
                 checkpoint["agreement_penalty"]=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=="disagreement" else None

@@ -623,3 +623,38 @@ All levels run by default and reload initial checkpoints independently. Record a
 queries, query timing, and pre-update accuracy versus both the cost-0 learned control
 and the same-checkpoint random control. Fewer labels alone do not prove improvement.
 Neither a budget-state input nor a convergence-gain/meta-learning reward is added.
+
+## Offline epsilon schedule: isolated convergence diagnostic
+
+Only the offline exploration schedule changes in this experiment. Historical defaults
+remain start=1, end=0.01, decay=0.995 for existing commands. New TRAIN-only flags
+`--train-epsilon-start 1 --train-epsilon-end 0.05 --train-epsilon-decay 0.9`
+use epsilon `max(0.05, 0.9**completed_epochs)`. Epsilon is constant within an epoch;
+the action function retains its original batch-level exploration draw. The floor is
+reached after 29 completed epochs, so epoch 30 uses 0.05. Epoch 16 uses ~0.2059,
+whereas historical epoch 16 uses ~0.9276. Earlier best snapshots may still have
+larger epsilon: the console reports used/next epsilon and restored snapshot epsilon.
+
+No changes to reward, cost, architecture, TD/MSE loss, terminal/local semantics,
+replay composition/capacity, optimizer, Context training or best-snapshot selection.
+Best snapshots are still chosen by Context validation accuracy, not selector quality.
+A faster schedule is an experimental setting, not a guarantee of better Q learning.
+Training schedule metadata is saved in checkpoints and manifests. Online epsilon
+remains separately specified by `--epsilon-start/end/decay`; do not pass training
+schedule flags to evaluate. Evaluation reads schedule metadata from checkpoints.
+
+For an isolated comparison, rerun an EXISTING cost rather than changing the cost
+as well. This example fixes cost **0.42**, seed **42** and online epsilon **0.25**:
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_fast_eps_seed42 --seed 42 --reward-mode paper --selection-cost 0.42 --train-epsilon-start 1 --train-epsilon-end 0.05 --train-epsilon-decay 0.9
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_fast_eps_seed42 --seed 42 --reward-mode paper --selection-cost 0.42 --selector-mode learned --query-gate none --budget 214 --epsilon-start 0.25 --epsilon-end 0.25
+```
+
+Compare with the OLD cost-0.42 checkpoint evaluated using the identical online
+flags, including `--query-gate none`. Earlier cost-0.42/epsilon-0.25 results used
+`disagreement`; they are not an isolated baseline for the no-filter command above.
+All ten levels reload initial weights independently. Inspect pre-update accuracy,
+actual queries and query timing. This change does not validate convergence solely
+by a reduced DQN training loss. No models were executed during implementation.
