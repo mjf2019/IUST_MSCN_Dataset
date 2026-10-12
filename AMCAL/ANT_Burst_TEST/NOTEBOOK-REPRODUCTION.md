@@ -1073,3 +1073,45 @@ using the same CNN/Context checkpoints. Compare pre-update scores with matched
 rates, budgets, schedules, and seeds. Do not choose final hyperparameters from
 attack test performance or assume a target accuracy will be reached.
 
+
+# Online RL with previously paid reference labels
+
+For generalization-trained checkpoints, an additional diagnostic alternative
+to freezing the online selector is now available:
+`--online-generalization-reference paid-history --online-reward-timing post`.
+Use learned selection and matching positive `--reward-generalization-weight`;
+omit `--freeze-online-selector`. No retraining is needed for the existing
+`notebook_generalization1_long_seed42` checkpoint.
+
+Maintain up to 16 distinct already-queried feature rows per class in a fresh
+per-level cache. After action/gates/budget permit a query, observe eval/no-grad
+class-balanced CE on that prior cache before/after the current Context update.
+The same prior-cache rows are used for both observations; exact duplicates of
+the current feature row are excluded. Add `BETA * (CE_before - CE_after)` to
+the competitive reward minus selection cost. With an empty cache the bonus
+is absent. Only after reward observation is the current paid label admitted
+to the cache. Skips/gate rejections/budget-blocked requests never admit labels;
+paper skip reward remains zero. The global unique-label budget is unchanged.
+
+These references have ALREADY been used for Context optimization. Therefore
+the online bonus measures retention/rehearsal on previous queried examples,
+NOT independent held-out generalization as in offline training. It is related
+to the new objective but not an identical reward distribution. No future or
+unqueried stream labels enter reference reward computations; this cannot
+establish meta-learning or unseen-data generalization by itself.
+
+Online replay/Q optimization resumes with the usual query updates. Optional
+`--online-skip-replay --skip-optimizer-mode queries` records zero-reward real
+skips without extra optimizer steps. Cached-label evaluation adds computation,
+not label queries. CNN remains fixed; Context adapts only on executed queries.
+History is bounded, class-balanced in its loss, and freshly empty each level.
+Diagnostics/trace record `reference_ce_gain`, reference-row counts, source,
+and objective scope. Result directories/manifests have
+`_reference_paid_history`, keeping the frozen-selector experiment separate.
+
+This new test changes online selector updating/reference reward while retaining
+the same saved models, rates, gates, budget schedule, and seed. Compare against
+the frozen selector and the SAME saved-model no-RL random control, using
+pre-update scores. Improvements are not guaranteed. All previous defaults and
+offline training, partition, reward formulas, architecture are unchanged.
+

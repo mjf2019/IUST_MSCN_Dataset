@@ -40,6 +40,7 @@ ADVERSARIAL_EPOCHS = 300
 ADVERSARIAL_PATIENCE = 30
 ADVERSARIAL_MIN_EPOCHS = 0
 FREEZE_ONLINE_SELECTOR = False
+ONLINE_GENERALIZATION_REFERENCE = 'none'
 CHECKPOINT_SELECTION = 'context'
 VALIDATION_PROBE_EVERY = 10
 VALIDATION_PROBE_SAMPLES = 200
@@ -1199,6 +1200,21 @@ def load_metadata(base_path='AdvBurst_FTSC-IAT', train_perturb_level=0):
 
     return num_classes, label_encoder, scaler, X.shape[1], class_counts
 
+def paid_history_reference(history, current_inputs):
+    """Previously QUERIED labels only. Exclude current feature duplicates.
+
+    These examples were already used to update Context: this is a retention
+    reward, not independent unseen-data generalization. At most 16 per class.
+    """
+    current_cpu = current_inputs.detach().cpu()
+    records = [(x, y) for items in history.values() for x, y in items
+               if not torch.equal(x, current_cpu)]
+    if not records:
+        return None, None
+    return (torch.cat([x for x, _ in records], dim=0).to(current_inputs.device),
+            torch.tensor([y for _, y in records], dtype=torch.long, device=current_inputs.device))
+
+
 def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, label_encoder, scaler, device, threshold, class_count, budget=300, fine_tune_lr=0.0001, max_test_samples=100):
     class_weights = torch.FloatTensor(class_count).to(device)
     cnn_criterion = nn.CrossEntropyLoss(weight=class_weights)
@@ -1268,6 +1284,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     print(f"Online budget schedule: {ONLINE_BUDGET_SCHEDULE}; total allowance: {budget}/{max_samples}")
     print("Online query reward timing:", ONLINE_REWARD_TIMING)
     diagnostic_trace, before_predictions, base_predictions, train_base_predictions = [], [], [], []
+    paid_history = {}
+    if ONLINE_GENERALIZATION_REFERENCE == 'paid-history':
+        print("Online reference reward: retention on previously queried labels only; no additional label queries.")
     
     for inputs, labels in test_loader:
         inputs, labels = inputs.to(device), labels.to(device)
@@ -1278,6 +1297,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         observed_reward, observed_loss = None, None
         observed_reward_prediction = None
         observed_update_gain = None
+        observed_reference_gain = None
+        observed_reference_count = 0
         skip_replay_added = False
         # Compute CNN outputs and state
         with torch.no_grad():
@@ -1350,6 +1371,12 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             if disagreement_passes and (threshold is None or max_prob_diff >= threshold) and updates_used < released_budget:
                 
                 updates_used += 1
+                reference_before = None
+                if ONLINE_GENERALIZATION_REFERENCE == 'paid-history':
+                    history_inputs, history_labels = paid_history_reference(paid_history, inputs)
+                    if history_inputs is not None:
+                        observed_reference_count = len(history_labels)
+                        reference_before = reference_loss(cnn_model, context_model, history_inputs, history_labels)
                 gain_before = (reward_ce(cnn_outputs_weighted_before, labels)
                                if REWARD_GAIN_WEIGHT > 0 else None)
                 context_optimizer.zero_grad()
@@ -1360,6 +1387,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 total_context_loss = context_objective(context_loss, orig_cnn_loss, online=True)
                 total_context_loss.backward()
                 context_optimizer.step()
+                if reference_before is not None:
+                    observed_reference_gain = reference_before - reference_loss(
+                        cnn_model, context_model, history_inputs, history_labels)
                 
                 # Reward may observe AFTER the queried update, as in offline training.
                 # Pre-update scoring above remains untouched; no unqueried labels used.
@@ -1372,6 +1402,16 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 if REWARD_GAIN_WEIGHT > 0:
                     observed_update_gain = float((gain_before - reward_ce(reward_after_logits, labels)).item())
                     reward += REWARD_GAIN_WEIGHT * observed_update_gain
+                if observed_reference_gain is not None:
+                    reward += GENERALIZATION_WEIGHT * observed_reference_gain
+                # Admit the current label only AFTER its update/reward. It was
+                # charged to updates_used above. Never cache unqueried labels.
+                if ONLINE_GENERALIZATION_REFERENCE == 'paid-history':
+                    label_key = int(labels.item())
+                    cache = paid_history.setdefault(label_key, deque(maxlen=16))
+                    cached_input = inputs.detach().cpu().clone()
+                    if not any(torch.equal(x, cached_input) for x, _ in cache):
+                        cache.append((cached_input, label_key))
                 observed_reward_prediction = reward_context_prediction
                 rewards.append(reward)
                 observed_reward = float(reward)
@@ -1475,7 +1515,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 updated=updates_used>updates_before, labels_used=updates_used,
                 context_loss=observed_loss, reward=observed_reward,
                 reward_timing=ONLINE_REWARD_TIMING, reward_context_prediction=observed_reward_prediction,
-                update_ce_gain=observed_update_gain))
+                update_ce_gain=observed_update_gain,
+                reference_ce_gain=observed_reference_gain, reference_rows=observed_reference_count))
             cumulative_accuracy_df.loc[cumulative_accuracy_df['Sample Index'] == sample_idx, f'Perturbation {perturb_level}'] = current_accuracy
     
     test_accuracy = correct / total
@@ -1502,7 +1543,14 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         online_lr=fine_tune_lr,
         online_selector_frozen=FREEZE_ONLINE_SELECTOR,
         reward_generalization_weight=GENERALIZATION_WEIGHT,
-        online_reward_scope='competitive diagnostic only' if GENERALIZATION_WEIGHT > 0 else 'training objective',
+        online_reward_scope=('competitive plus paid-history retention' if ONLINE_GENERALIZATION_REFERENCE == 'paid-history'
+                             else 'competitive diagnostic only' if GENERALIZATION_WEIGHT > 0 else 'training objective'),
+        online_generalization_reference=ONLINE_GENERALIZATION_REFERENCE,
+        reference_label_source=('previously queried stream labels; already used for Context updates'
+                                if ONLINE_GENERALIZATION_REFERENCE == 'paid-history' else None),
+        reference_ce_gain_mean=(float(np.mean([row['reference_ce_gain'] for row in diagnostic_trace
+                                             if row['reference_ce_gain'] is not None]))
+                               if any(row['reference_ce_gain'] is not None for row in diagnostic_trace) else None),
         budget_schedule=ONLINE_BUDGET_SCHEDULE,
         reproducibility=reproducibility_settings(),
         checkpoint_sha256=checkpoint_hashes(), attack_sha256=sha256_file(test_file),
@@ -1795,6 +1843,7 @@ def evaluate_main(fine_tune_lr=0.25):
 
 
 def cli():
+    global ONLINE_GENERALIZATION_REFERENCE
     global GENERALIZATION_WEIGHT, ADVERSARIAL_EPOCHS, ADVERSARIAL_PATIENCE, ADVERSARIAL_MIN_EPOCHS, FREEZE_ONLINE_SELECTOR
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST, SELECTOR_STATE_MODE, ONLINE_REWARD_TIMING, REWARD_GAIN_WEIGHT
     global CHECKPOINT_SELECTION, VALIDATION_PROBE_EVERY, VALIDATION_PROBE_SAMPLES, VALIDATION_PROBE_BUDGET_FRACTION, VALIDATION_PROBE_SEED
@@ -1865,6 +1914,8 @@ def cli():
                         help="Do not early-stop before this epoch; still restore the best validation snapshot.")
     parser.add_argument("--freeze-online-selector", action="store_true",
                         help="EVALUATE learned only: preserve trained Q weights; Context still adapts within its label budget.")
+    parser.add_argument("--online-generalization-reference", choices=('none','paid-history'), default='none',
+                        help="EVALUATE learned: add CE retention gain on previous paid labels; no unqueried labels or extra label budget.")
     parser.add_argument("--checkpoint-selection", choices=("context","adaptation"), default="context",
                         help="TRAIN only: adaptation selects raw snapshots by copy-only budgeted validation episodes, never test.")
     parser.add_argument("--validation-probe-every", type=int, default=10)
@@ -1883,8 +1934,13 @@ def cli():
             parser.error("generalization reward requires paper/context/original training selection and reward-gain-weight 0.")
         if args.checkpoint_selection != 'context':
             parser.error("Use normal validation checkpoint selection for the generalization-reward experiment.")
-        if args.command == 'evaluate' and (args.selector_mode != 'learned' or not args.freeze_online_selector):
-            parser.error("generalization-trained learned evaluation requires freeze-online-selector: independent reference labels are unavailable online.")
+        if args.command == 'evaluate' and (args.selector_mode != 'learned' or
+                not (args.freeze_online_selector or args.online_generalization_reference == 'paid-history')):
+            parser.error("generalization-trained learned evaluation requires freeze-online-selector or online-generalization-reference paid-history.")
+    if args.online_generalization_reference == 'paid-history':
+        if args.command != 'evaluate' or args.selector_mode != 'learned' or args.reward_generalization_weight <= 0 or args.freeze_online_selector or args.online_reward_timing != 'post':
+            parser.error("paid-history requires evaluate/learned, matching positive generalization weight, unfrozen selector and post reward timing.")
+    ONLINE_GENERALIZATION_REFERENCE = args.online_generalization_reference
     if args.freeze_online_selector and (args.command != 'evaluate' or args.selector_mode != 'learned' or args.online_skip_replay):
         parser.error("freeze-online-selector requires evaluate/learned and no online-skip-replay.")
     if args.freeze_online_selector and (args.epsilon_end != args.epsilon_start or args.epsilon_decay != 1.0):
@@ -2055,6 +2111,8 @@ def cli():
         gate_suffix += '_selector_frozen'
     if args.reward_generalization_weight > 0:
         gate_suffix += f"_generalization{args.reward_generalization_weight:g}"
+    if args.online_generalization_reference == 'paid-history':
+        gate_suffix += '_reference_paid_history'
     LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")
@@ -2128,6 +2186,8 @@ def cli():
         adversarial_training_duration=dict(max_epochs=args.context_epochs, patience=args.context_patience,
                                            min_epochs=args.context_min_epochs) if args.command=='train' else None,
         online_selector_frozen=args.freeze_online_selector,
+        online_generalization_reference=args.online_generalization_reference,
+        online_reference_is_unseen=False,
         checkpoint_selection=(args.checkpoint_selection if args.command=="train" else checkpoint.get("checkpoint_selection", "context")),
         validation_probe=(dict(every=args.validation_probe_every, samples=args.validation_probe_samples,
                                budget_fraction=args.validation_probe_budget_fraction, seed=args.validation_probe_seed,
@@ -2196,6 +2256,7 @@ def cli():
 
 if __name__=="__main__":
     cli()
+
 
 
 
