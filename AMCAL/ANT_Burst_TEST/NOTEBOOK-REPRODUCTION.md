@@ -688,8 +688,8 @@ The total budget is still a ceiling; RL may skip and use fewer than 214 labels.
 There is no final forcing of updates and no retroactive replay of blocked requests.
 Compare pre-update accuracy, class coverage and query timing with the full-budget
 learned baseline and uniform no-RL random control on the same checkpoints. The
-random runner with `none` is already uniformly spread and does not accept the linear
-flag through the legacy CLI. Model training and evaluation were not run here.
+random runner with `none` and full schedule is uniformly spread. A later matched
+control also accepts the linear flag (see below). Model training and evaluation were not run here.
 
 ## Strict reproducibility diagnostic (same checkpoint; no retraining)
 
@@ -725,3 +725,33 @@ Keep console output and compare trace hashes. Identical accuracy without identic
 traces is weaker evidence. These files overwrite repeated identical configurations;
 copy a trace if both need preserving. If differences remain, check recorded input/
 checkpoint hashes and runtime fields before changing algorithm hyperparameters.
+
+## Matched no-RL random control with linear budget release
+
+The no-RL random control now supports `--budget-schedule linear`. It draws a
+50/50 independent skip/select request at each step and executes a requested update
+only below the SAME cumulative cap as learned: ceil(B*t/N), unused capacity carried
+forward. With `--query-gate none`, no prediction/confidence filters are involved.
+It does not instantiate/read DQN, compute Q/rewards, use replay, or optimize RL.
+CNN/Context checkpoints, input order, online Context loss and optimizer are shared
+with learned. This isolates the selector comparison under a matched external cap;
+the cap itself is not learned. Coin flips are independent of labels/predictions.
+
+Default `full + none` preserves uniform fixed-budget sampling without replacement.
+Linear uses random requests, not preselected uniform positions or forced updates.
+Both learned and linear random have a budget CEILING: a late skip can leave it
+partly unused. Actual query counts must be reported, not assumed to be exactly 214.
+The NumPy random request stream is separate from learned's Python/Torch RNG and
+DQN optimization; matched cap does not mean identical random draws/actions.
+
+Reuse existing weights, no training. Run this control for all ten levels:
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_fast_eps_seed42 --seed 42 --deterministic --selector-mode random --query-gate none --budget 214 --budget-schedule linear
+```
+
+Results: `Results/random_no_rl_none_seed42_deterministic_budget_linear`.
+Trace includes release limit, labels before query and release-blocked requests.
+Compare with existing learned deterministic/linear run; use pre-update stream
+metrics for primary reporting. Full-schedule random result folders remain separate.

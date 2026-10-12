@@ -46,6 +46,8 @@ def parse_args():
                         help="One perturbation level; omit to evaluate all ten levels.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--budget", type=int, default=214)
+    parser.add_argument("--budget-schedule", choices=("full","linear"), default="full",
+                        help="linear: random 50/50 requests under the same released-budget cap as learned.")
     parser.add_argument("--max-samples", type=int, default=1073)
     parser.add_argument("--lr", type=float, default=0.25)
     parser.add_argument("--context-loss-mode", choices=("legacy", "aligned"), default="legacy")
@@ -126,10 +128,12 @@ def evaluate_level(args):
     optimizer = torch.optim.Adam(context.parameters(), lr=args.lr, weight_decay=1e-4)
 
     n = len(attack)
+    budget_schedule = getattr(args, "budget_schedule", "full")
+    original.ONLINE_BUDGET_SCHEDULE = budget_schedule
     label_budget = min(args.budget, n)
     rng = np.random.default_rng(args.seed)
     query_mask = np.zeros(n, dtype=bool)
-    if args.query_gate == "none":
+    if args.query_gate == "none" and budget_schedule == "full":
         # Uniform sample without replacement; depends only on N, B and seed.
         # Predictions/features/labels do not influence the chosen positions.
         query_mask[rng.choice(n, size=label_budget, replace=False)] = True
@@ -140,7 +144,7 @@ def evaluate_level(args):
 
     print(f"Loaded original CNN and Context from: {model_dir}")
     print("RL removed: no DQN construction/checkpoint, Q values, rewards, replay or optimizer.")
-    print(f"Random query rule: {args.query_gate}; label budget: {label_budget}/{n}")
+    print(f"Random query rule: {args.query_gate}; label budget: {label_budget}/{n}; schedule: {budget_schedule}")
     for index in range(n):
         x = inputs[index:index + 1]
         y = labels[index:index + 1]
@@ -153,7 +157,15 @@ def evaluate_level(args):
             before_prediction = int(before_probs.argmax(1).item())
             gap = float(abs(before_probs.max().item() - base_probs.max().item()))
 
-        if args.query_gate == "none":
+        released_budget = original.released_label_budget(index + 1, n, label_budget)
+        updates_before = updates
+        if budget_schedule == "linear":
+            # Draw an independent request; the shared controller limits execution.
+            requested = bool(rng.random() < 0.5)
+            disagreement_passes = (args.query_gate == "none" or before_prediction != base_prediction)
+            chosen = (requested and disagreement_passes and
+                      (threshold is None or gap >= threshold) and updates < released_budget)
+        elif args.query_gate == "none":
             chosen = bool(query_mask[index])
             requested = chosen
         else:
@@ -191,10 +203,14 @@ def evaluate_level(args):
             prediction_before_update=before_prediction,
             prediction_after_update=after_prediction,
             random_requested=requested, updated=chosen, labels_used=updates,
+            labels_before=updates_before, budget_schedule=budget_schedule,
+            released_label_budget=released_budget,
+            budget_release_blocked=(requested and updates_before < label_budget and
+                                    updates_before >= released_budget),
             confidence_gap=gap, context_loss=observed_loss,
             cumulative_accuracy=cumulative_correct / (index + 1)))
 
-    if args.query_gate == "none" and updates != label_budget:
+    if args.query_gate == "none" and budget_schedule == "full" and updates != label_budget:
         raise RuntimeError("Uniform random queries did not consume the requested unique-label budget.")
     classifier_unchanged = all(
         torch.equal(cnn_initial_state[name], tensor.detach().cpu())
@@ -218,6 +234,8 @@ def evaluate_level(args):
         first_query_step=next((row["step"] for row in trace if row["updated"]), None),
         last_query_step=next((row["step"] for row in reversed(trace) if row["updated"]), None),
         selector_mode="random", query_gate=args.query_gate,
+        budget_schedule=budget_schedule,
+        budget_release_blocked_requests=sum(row["budget_release_blocked"] for row in trace),
         confidence_gap_threshold=threshold, online_lr=args.lr,
         context_loss_mode=args.context_loss_mode,
         ablation_scope="online only; initial Context was trained by the original method",
@@ -229,7 +247,9 @@ def evaluate_level(args):
         reproducibility=original.reproducibility_settings(),
         training_selector_mode=context_checkpoint.get("training_selector_mode", "original"),
         training_agreement_penalty=context_checkpoint.get("agreement_penalty"),
-        query_rule=("uniform fixed-budget sample without replacement over stream rows"
+        query_rule=("random 50/50 requests under shared linear released-budget cap; selected query gate retained"
+                    if budget_schedule == "linear" else
+                    "uniform fixed-budget sample without replacement over stream rows"
                     if args.query_gate == "none" else
                     "random 50/50 action, disagreement, budget remaining"
                     if args.query_gate == "disagreement" else
@@ -240,6 +260,8 @@ def evaluate_level(args):
     budget_suffix = f"_budget{args.budget}" if args.budget != 214 else ""
     if getattr(args, "deterministic", False):
         budget_suffix += "_deterministic"
+    if budget_schedule != "full":
+        budget_suffix += "_budget_linear"
     results_dir = (args.results_output.resolve() if args.results_output else
                    args.output.resolve() / "Results" / f"random_no_rl_{args.query_gate}_seed{args.seed}{budget_suffix}")
     results_dir.mkdir(parents=True, exist_ok=True)

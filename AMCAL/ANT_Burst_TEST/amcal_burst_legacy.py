@@ -1520,8 +1520,8 @@ def cli():
     if DETERMINISTIC_RUN:
         configure_deterministic(args.seed)
         print("Strict reproducibility enabled; evaluation seed resets before each level.")
-    if args.budget_schedule != "full" and (args.command != "evaluate" or args.selector_mode == "random"):
-        parser.error("linear schedule applies only to evaluate with original/learned; random none already spreads a fixed budget uniformly.")
+    if args.budget_schedule != "full" and args.command != "evaluate":
+        parser.error("linear budget schedule applies only to evaluate.")
     ONLINE_BUDGET_SCHEDULE = args.budget_schedule
     if not 0.0 <= args.train_epsilon_end <= args.train_epsilon_start <= 1.0:
         parser.error("training epsilon requires 0 <= end <= start <= 1.")
@@ -1574,7 +1574,7 @@ def cli():
                    Path(__file__).resolve().parent / "protocol_runs" / "notebook_original",
             results_output=None, per=args.per,
             seed=args.seed if args.seed is not None else 42,
-            budget=args.budget, max_samples=1073, lr=0.25,
+            budget=args.budget, budget_schedule=args.budget_schedule, max_samples=1073, lr=0.25,
             context_loss_mode=args.context_loss_mode,
             deterministic=args.deterministic,
             query_gate=args.query_gate if args.query_gate in ("legacy","disagreement") else "none"))
