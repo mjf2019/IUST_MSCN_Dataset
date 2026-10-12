@@ -1277,3 +1277,41 @@ output, matching selection cost, seed/determinism and desired levels; source is
 not needed. No models were run during implementation; runtime GPU confirmation
 must come from local execution. Target accuracy improvements are not promised.
 
+
+# Joint CNN/Context probability state
+
+Optional `--selector-state joint` replaces the scalar uncertainty state by
+`[raw features, softmax(base CNN logits), softmax(CNN(Context(x)) logits)]`.
+For Burst, width is 100+6+6=112 instead of 101. Probability order is exactly the
+existing label encoder/class-output order. All components are detached and
+label-free. The common builder is used for offline/online states and post-update
+next states; base probabilities stay from the frozen raw-input CNN, and only
+the Context probability block changes after an update on the same input.
+Skips retain the old state. The pre-update state is built before action choice.
+
+This gives the selector access to both full predictions and their disagreement
+without adding a hard disagreement/confidence filter. No labels, per-class
+losses, future rows or extra label queries are included in state. It does not
+add remaining budget/progress or correct terminal transitions. More state
+information does not guarantee better policy learning or convergence.
+
+DQN input-layer width changes, while hidden layers/output, CNN/Context
+architecture, reward, optimizers, Context loss and budget controller remain
+unchanged. Defaults base/context retain their historical states and widths.
+Fresh training is mandatory; all artifacts are tagged with state mode and
+`selector_input_width`. Evaluation rejects mode/width mismatches to prevent
+mixing old 101-wide weights/replay with 112-wide states. Missing width tags
+infer the old feature-count+1 dimension. Wider DQN initialization can change
+subsequent RNG consumption/initial Context weights, even with the same seed;
+paired learned/random controls must reuse each experiment's own checkpoints,
+and conclusions need repeated seeds rather than assuming identical models.
+
+For the isolated pilot, use paper skip zero, improvement reward, cost 0.42,
+legacy greedy training and retained replay (omit the failed greedy-eval and
+epoch-refresh flags), no local/nonlocal reward gains. Use a new
+`notebook_reward_improvement_joint_state_seed42` output folder. Learned test
+repeats `--selector-state joint`; no-RL random omits state/reward flags and reads
+the same saved CNN/Context. No training file/split or architecture of those
+two models is changed. The separate stationary diagnostic remains compatible
+with its original context-state defaults and source models.
+

@@ -147,6 +147,17 @@ def reward_ce(logits, labels):
         return torch.nn.functional.cross_entropy(logits.detach(), labels, reduction="none")
 
 
+def selector_input_width(input_length, num_classes):
+    return input_length + 2 * num_classes if SELECTOR_STATE_MODE == 'joint' else input_length + 1
+
+
+def joint_selector_state(inputs, base_logits, context_logits):
+    """Label-free state: raw features, all base probabilities, all Context probabilities."""
+    with torch.no_grad():
+        return torch.cat([inputs.squeeze(1).detach(), base_logits.detach().softmax(dim=1),
+                          context_logits.detach().softmax(dim=1)], dim=1).detach()
+
+
 def selector_context_logits(cnn_model, context_model, inputs):
     """Label-free current Context observation; never update BN buffers or apply dropout."""
     with evaluation_mode(cnn_model, context_model), torch.no_grad():
@@ -618,7 +629,7 @@ def adaptation_validation_probe(cnn_model, context_model, dqn_agent, val_loader,
         for parameter in probe_cnn.parameters():
             parameter.requires_grad_(False)
         agent = DQNSelectorAgent(
-            inputs_all.shape[-1] + 1, device, gamma=dqn_agent.gamma,
+            selector_input_width(inputs_all.shape[-1], len(class_counts)), device, gamma=dqn_agent.gamma,
             epsilon_start=0.05, epsilon_end=0.05, epsilon_decay=1.0,
             buffer_capacity=500, batch_size=128)
         agent.policy_net.load_state_dict(dqn_agent.policy_net.state_dict())
@@ -641,6 +652,8 @@ def adaptation_validation_probe(cnn_model, context_model, dqn_agent, val_loader,
                 base_prediction = base_logits.argmax(dim=1)
                 uncertainty = 1 - torch.softmax(before_logits, dim=1).max(dim=1, keepdim=True).values
                 state = torch.cat([x.squeeze(1), uncertainty], dim=1)
+                if SELECTOR_STATE_MODE == 'joint':
+                    state = joint_selector_state(x, base_logits, before_logits)
                 with evaluation_mode(agent.policy_net):
                     action = int(agent.select_action(state).item())
             # Observer only: score before revealing a queried label.
@@ -660,6 +673,8 @@ def adaptation_validation_probe(cnn_model, context_model, dqn_agent, val_loader,
                     after_prediction = int(after_logits.argmax(dim=1).item())
                     next_uncertainty = 1 - torch.softmax(after_logits, dim=1).max(dim=1, keepdim=True).values
                     next_state = torch.cat([x.squeeze(1), next_uncertainty], dim=1)
+                    if SELECTOR_STATE_MODE == 'joint':
+                        next_state = joint_selector_state(x, base_logits, after_logits)
                 reward = compute_reward(1, int(base_prediction.item()), after_prediction, int(y.item()))
                 if REWARD_GAIN_WEIGHT > 0:
                     reward += REWARD_GAIN_WEIGHT * float((gain_before - reward_ce(after_logits, y)).item())
@@ -823,11 +838,13 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 max_prob, _ = torch.max(probs, dim=1, keepdim=True)
                 uncertainty = 1 - max_prob
             
-            if SELECTOR_STATE_MODE == "context":
+            if SELECTOR_STATE_MODE in ("context", "joint"):
                 current_context_logits = selector_context_logits(cnn_model, context_model, inputs)
                 uncertainty = 1 - softmax(current_context_logits).max(dim=1, keepdim=True).values
             features = inputs.squeeze(1).detach()
             state = torch.cat([features, uncertainty], dim=1).detach()
+            if SELECTOR_STATE_MODE == 'joint':
+                state = joint_selector_state(inputs, cnn_outputs, current_context_logits)
             
             gain_before = reward_ce(current_context_logits, labels) if REWARD_GAIN_WEIGHT > 0 else None
 
@@ -915,13 +932,15 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             with torch.no_grad():
                 if len(action_indices) > 0:
                     cnn_outputs_new = (selector_context_logits(cnn_model, context_model, inputs)
-                                       if SELECTOR_STATE_MODE == "context" else
+                                       if SELECTOR_STATE_MODE in ("context", "joint") else
                                        cnn_model(context_model(inputs)).detach())
                     probs_new = softmax(cnn_outputs_new)
                     max_prob_new, _ = torch.max(probs_new, dim=1, keepdim=True)
                     uncertainty_new = 1 - max_prob_new
                     features_new = inputs.squeeze(1).detach()
                     next_state_new = torch.cat([features_new, uncertainty_new], dim=1).detach()
+                    if SELECTOR_STATE_MODE == 'joint':
+                        next_state_new = joint_selector_state(inputs, cnn_outputs, cnn_outputs_new)
                 else:
                     next_state_new = state
             
@@ -1104,10 +1123,12 @@ def train_main():
     print(f"  F1 Score: {initial_results['F1 Score']:.4f}")
     
     # Initialize DQN and Context models
-    dqn_agent = DQNSelectorAgent(input_length + 1, device,
+    dqn_agent = DQNSelectorAgent(selector_input_width(input_length, num_classes), device,
                                  epsilon_start=TRAIN_EPSILON_START,
                                  epsilon_end=TRAIN_EPSILON_END,
                                  epsilon_decay=TRAIN_EPSILON_DECAY)
+    if SELECTOR_STATE_MODE == 'joint':
+        print(f"Joint selector input: {input_length} features + {num_classes} CNN probabilities + {num_classes} Context probabilities = {selector_input_width(input_length, num_classes)}")
     context_model = ContextAwareNetwork(input_length).to(device)
     
     # Train adversarial system using full_loader (full dataset)
@@ -1323,12 +1344,14 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             features = inputs.squeeze(1)
             state = torch.cat([features, uncertainty], dim=1)
         
-        if SELECTOR_STATE_MODE == "context":
+        if SELECTOR_STATE_MODE in ("context", "joint"):
             cnn_outputs_weighted_before = selector_context_logits(cnn_model, context_model, inputs)
             weighted_probs_before = softmax(cnn_outputs_weighted_before)
             weighted_pred_before = cnn_outputs_weighted_before.argmax(dim=1)
             uncertainty = 1 - weighted_probs_before.max(dim=1, keepdim=True).values
             state = torch.cat([features, uncertainty], dim=1)
+            if SELECTOR_STATE_MODE == 'joint':
+                state = joint_selector_state(inputs, cnn_outputs, cnn_outputs_weighted_before)
 
         # Select action
         # select_action returns a tensor or int. We need int for appending to list.
@@ -1438,6 +1461,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                     max_prob_new, _ = torch.max(probs_new, dim=1, keepdim=True)
                     uncertainty_new = 1 - max_prob_new
                     next_state = torch.cat([features, uncertainty_new], dim=1)
+                    if SELECTOR_STATE_MODE == 'joint':
+                        next_state = joint_selector_state(inputs, cnn_outputs, cnn_outputs_new)
                 
                 if not FREEZE_ONLINE_SELECTOR:
                     # Push action=1 to replay buffer
@@ -1582,6 +1607,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
         query_gate=LEGACY_QUERY_GATE, confidence_gap_threshold=threshold,
         context_loss_mode=CONTEXT_LOSS_MODE, selector_state_mode=SELECTOR_STATE_MODE,
+        selector_input_width=int(dqn_agent.policy_net.network[0].in_features),
         training_selector_mode=TRAINING_SELECTOR_MODE,
         agreement_penalty=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=='disagreement' else None,
         selection_cost=SELECTION_COST,
@@ -1748,7 +1774,7 @@ def evaluate_main(fine_tune_lr=0.25):
                 continue
                 
             dqn_agent = DQNSelectorAgent(
-                input_size=input_length + 1,
+                input_size=selector_input_width(input_length, num_classes),
                 device=device,
                 epsilon_decay=0.5,
                 buffer_capacity=5000,
@@ -1923,8 +1949,8 @@ def cli():
                         help="Learned/paper online diagnostic: record real skips with label-free zero reward and optimize while total label budget remains.")
     parser.add_argument("--skip-optimizer-mode", choices=("all","queries"), default="all",
                         help="With online-skip-replay: all optimizes after queries/skips; queries records skips without extra optimizer steps.")
-    parser.add_argument("--selector-state", choices=("base","context"), default="base",
-                        help="context: state uncertainty from CNN(Context(x)), in both offline and online selection; requires matching freshly trained checkpoints.")
+    parser.add_argument("--selector-state", choices=("base","context","joint"), default="base",
+                        help="context: modulated uncertainty; joint: raw features plus full CNN and Context class probabilities; fresh matching checkpoints required.")
     parser.add_argument("--online-reward-timing", choices=("pre","post"), default="pre",
                         help="post computes query reward after Context update, matching offline timing; scoring stays pre-update.")
     parser.add_argument("--reward-gain-weight", type=float, default=0.0,
@@ -2108,8 +2134,8 @@ def cli():
             folder += "_context_aligned"
         if args.selection_cost > 0:
             folder += f"_selection_cost{args.selection_cost:g}"
-        if args.selector_state == "context":
-            folder += "_state_context"
+        if args.selector_state in ("context", "joint"):
+            folder += f"_state_{args.selector_state}"
         if args.reward_gain_weight > 0:
             folder += f"_reward_gain{args.reward_gain_weight:g}"
         if args.reward_generalization_weight > 0:
@@ -2196,6 +2222,9 @@ def cli():
                 parser.error("Checkpoint Context loss mismatch: train with the requested --context-loss-mode in a fresh --output.")
             if checkpoint.get("selector_state_mode", "base") != args.selector_state:
                 parser.error("Selector state mismatch: retrain in a fresh folder; old replay cannot be reused with a new state definition.")
+            expected_width = selector_input_width(checkpoint['input_length'], checkpoint['num_classes'])
+            if checkpoint.get('selector_input_width', checkpoint['input_length'] + 1) != expected_width:
+                parser.error("Selector input width mismatch: use complete freshly trained Models for this state mode.")
             if checkpoint.get("reward_gain_weight", 0.0) != args.reward_gain_weight:
                 parser.error("Reward-gain mismatch: train in a fresh output folder with matching gain weight; do not mix old replay rewards.")
             if checkpoint.get("reward_generalization_weight", 0.0) != args.reward_generalization_weight:
@@ -2303,6 +2332,7 @@ def cli():
                     patience=ADVERSARIAL_PATIENCE, min_epochs=ADVERSARIAL_MIN_EPOCHS)
                 checkpoint["offline_reward_timing"]="post"
                 checkpoint["selector_state_mode"]=SELECTOR_STATE_MODE
+                checkpoint["selector_input_width"]=selector_input_width(checkpoint['input_length'], checkpoint['num_classes'])
                 checkpoint["selection_cost"]=SELECTION_COST
                 checkpoint["training_selector_mode"]=TRAINING_SELECTOR_MODE
                 checkpoint["agreement_penalty"]=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=="disagreement" else None
@@ -2314,6 +2344,7 @@ def cli():
 
 if __name__=="__main__":
     cli()
+
 
 
 
