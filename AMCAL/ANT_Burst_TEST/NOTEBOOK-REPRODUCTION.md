@@ -1315,3 +1315,86 @@ the same saved CNN/Context. No training file/split or architecture of those
 two models is changed. The separate stationary diagnostic remains compatible
 with its original context-state defaults and source models.
 
+
+# Independent budgeted episodic Monte Carlo selector experiment
+
+`amcal_burst_episodic.py` is a NEW algorithmic diagnostic, not a silent change
+to legacy DDQN. CNN/Context architectures and their saved initialization remain
+unchanged. Each rollout resets a disposable Context to the source snapshot;
+only selected labels update that copy, and source Context/CNN never train.
+The selector observes raw features, all base/Context probabilities, remaining
+budget fraction, and stream progress: 114 dimensions for Burst. This partial
+observation does not expose the full Context/optimizer state; no fully Markov
+or convergence guarantee is asserted.
+
+Training derives class-stratified, exact-feature-group-disjoint support and
+reference pools from existing normal TRAIN tensors. VAL gets its own analogous
+pools. Keep one canonical row per group, reserve approximately 10% of each
+class's groups for reference; conflicting duplicate labels fail. Source files
+and train/val/test splits are untouched. Sample training streams of up to 100
+distinct support rows with inverse-class-frequency sampling; stream order is
+synthetic random row order, not session chronology. Use up to 8 reference
+groups per class, never optimized on inside that episode. The SOURCE CNN and
+Context may have seen training reference rows in their earlier training; the
+holdout claim applies to this episode's Context adaptation only.
+
+An episode has a hard 20% unique support-label cap, with the shared linear
+budget-release controller by default. No labels/reference losses enter action
+state. After observing a row, score its pre-update prediction; only action 1
+with released budget updates the disposable eval-mode Context (legacy-online
+objective, Adam 0.25). Immediate skip reward is zero. Selected competitive
+improvement reward minus cost 0.42 is divided by the episode budget, so total
+competitive utility scales comparably across episode lengths/caps.
+
+After the entire episode, compute class-balanced reference CE before/after
+adaptation. Terminal bonus is `beta * clip((CE_before-CE_after)/CE_before,-1,1)`.
+Default beta=1. All reference labels are offline train/validation labels, not
+attack labels or extra target-stream queries. For every executed action:
+
+`G_t = r_t + gamma * G_(t+1)`, with `G_after_last = terminal_bonus`.
+
+Q fits the FULL Monte Carlo return for its executed action, not the original
+immediate/DDQN bootstrap target. Skip's immediate r stays zero but its Q value
+can reflect future selections and terminal outcome. Default gamma=0.99 is a
+new experimental setting for these longer trajectories, not the original
+paper's 0.95; it is configurable. This changes algorithm and objective and
+requires explicit revised-manuscript treatment if adopted. It does not by
+itself prove meta-learning or adaptation to unseen attack distributions.
+
+Four rollout episodes use the current epsilon-greedy policy before each round
+of 10 optimizer steps. Clear replay before each round: no Monte Carlo returns
+from older policies are reused. Keep the existing DQN MLP/Dropout, Adam LR,
+MSE and clipping. Action observation uses eval-mode Q; optimization uses
+training mode. Epsilon 1 to floor 0.2 with 0.96 decay per ROUND. Defaults:
+75 rounds (300 rollouts), validation at round 1/every 5, 3 fixed validation
+episodes, early-stop after 8 unsuccessful validation checks and at least 25
+rounds. Save the policy maximizing mean validation PRE-UPDATE accuracy, breaking
+ties by fewer queried support labels. Validation/reference labels never enter
+policy gradient batches. Initial CNN/Context tensor immutability is checked.
+
+Use the prior improvement experiment as source, not its failed replay-refresh
+or joint-state successor. Save into a new `notebook_episodic_selector_seed42`
+folder. New selector file is `Models/episodic_selector.pth`; existing legacy
+evaluation does NOT load this 114-wide MC policy. The dedicated runner's
+`run` trains and tests both modes on 0,7,20 automatically; `evaluate` repeats
+tests only. Its training JSON records source/data hashes, pool indices,
+objective/configuration and validation history.
+
+INITIAL TEST SCOPE: selector WEIGHTS ARE FROZEN; decisions still change with
+current Context, sample probabilities, budget and position. Context adapts on
+queried target labels, CNN is fixed. There is NO online RL optimizer or test
+terminal-reference bonus: independent target reference labels are not freely
+available. This deliberately tests transfer of an episodically trained policy,
+not online Q learning. Report selector_updates=0 explicitly. Random uses no Q
+decisions/optimizer or reward computation and has the same source CNN/Context,
+rate, budget cap/release, input stream and pre-update scoring. Both restart
+Context from the source each level/mode. Future/unused test labels are used
+only by the scorer, never policy/update/reference feedback.
+
+Existing level-0-fitted legacy scaler/label mapping is reused for comparable
+diagnostic attack files; file-local source identities remain unverified. Test
+trace/diagnostic JSON and `Results/episodic_comparison.csv` clearly report this
+scope. No attack data or results select training hyperparameters/checkpoints.
+Implementation checks are static plus pure arithmetic; local GPU runtime
+confirmation is required and improvements are not guaranteed.
+
