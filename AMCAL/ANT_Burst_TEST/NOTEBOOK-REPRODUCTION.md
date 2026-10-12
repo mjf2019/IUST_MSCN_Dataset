@@ -897,3 +897,47 @@ python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Bu
 All ten levels run independently. Compare with prior pre-timing learned and the
 same-checkpoint matched linear random control. Different rewards alter later action
 and query trajectories, so accuracy need not increase. No model was executed here.
+
+## Add queried-update CE gain to competitive reward
+
+New optional `--reward-gain-weight beta` adds `beta * (CE_before - CE_after)` to
+the EXISTING action-1 competitive reward after its cost. Paper skip remains exactly
+zero. No architecture/state/Context objective changes. Gain uses UNWEIGHTED CE per
+example in both training and online, keeping class-count weighting conventions in
+the Context objective separate. Predictions are detached/no-grad and observed in
+eval mode for this gain, avoiding dropout/extra BatchNorm observation updates.
+The gain is raw, NOT clipped; an update that increases CE receives a negative term.
+Beta=1 is an experimental starting value, not a validated optimum.
+
+Offline, pre-update logits already observed for Context-mode state provide CE_before;
+a post-update eval observation provides CE_after. The gain is added only to actual
+selected training examples, not skips. Online, it uses the pre-score logits and post
+Context-update logits for the queried sample, with its already acquired label. No
+extra labels or future samples are used. Score-before-query-update remains primary.
+Trace/diagnostics log raw CE gain; training console logs mean selected CE gain.
+
+This measures fitting improvement on the queried training example; it does not
+prove improvement on later unseen samples, meta-learning or fast convergence. The
+competitive hardness term remains intact, so this is additive reward shaping, not
+replacement by pure cooperative utility. Default beta=0 preserves prior runs.
+Positive beta requires paper reward, Context-mode state, original training selector,
+and post-timing evaluation. Fresh training is required because old stored replay
+has different reward targets. Checkpoint compatibility guards prevent mixing them.
+
+Keep cost=0.42, offline epsilon floor=0.2, online epsilon=0.05 and all prior controls.
+Train in a NEW directory:
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_context_gain1_seed42 --seed 42 --deterministic --reward-mode paper --selection-cost 0.42 --selector-state context --reward-gain-weight 1 --train-epsilon-start 1 --train-epsilon-end 0.2 --train-epsilon-decay 0.9
+foreach ($level in @(0, 7, 20)) {
+    python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_context_gain1_seed42 --seed 42 --deterministic --reward-mode paper --selection-cost 0.42 --selector-state context --reward-gain-weight 1 --selector-mode learned --query-gate none --budget 214 --budget-schedule linear --epsilon-start 0.05 --epsilon-end 0.05 --online-skip-replay --skip-optimizer-mode queries --online-reward-timing post --per $level
+}
+```
+
+The loop starts independent invocations for pilot levels 0/7/20; retain each console
+result. Each level has distinct trace/diagnostics files, but single-level summary
+CSV/PNG is overwritten by the next invocation. For one aggregate all-level table,
+run evaluate without `--per` after the pilot. Do not choose beta/cost based on final
+test scores; use validation. Same-checkpoint matched random control omits the gain
+flag because no RL/reward exists in that runner. No model was executed here.
