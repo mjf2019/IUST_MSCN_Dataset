@@ -51,6 +51,7 @@ SELECTION_COST = 0.0
 TRAIN_EPSILON_START = 1.0
 TRAIN_EPSILON_END = 0.01
 TRAIN_EPSILON_DECAY = 0.995
+TRAIN_GREEDY_MODE = 'legacy'
 
 
 def seed_run(seed):
@@ -341,7 +342,13 @@ class DQNSelectorAgent:
         else:
             # Greedy action - return tensor
             with torch.no_grad():
-                q_values = self.policy_net(state)
+                if TRAIN_GREEDY_MODE == 'eval':
+                    # Match inference action selection; restore every module's
+                    # mode before optimize(), which retains training Dropout.
+                    with evaluation_mode(self.policy_net):
+                        q_values = self.policy_net(state)
+                else:
+                    q_values = self.policy_net(state)
                 return q_values.argmax(dim=1)
     
     def update_epsilon(self):
@@ -1845,6 +1852,7 @@ def evaluate_main(fine_tune_lr=0.25):
 
 
 def cli():
+    global TRAIN_GREEDY_MODE
     global SELECTOR_REWARD_PROFILE
     global ONLINE_GENERALIZATION_REFERENCE
     global GENERALIZATION_WEIGHT, ADVERSARIAL_EPOCHS, ADVERSARIAL_PATIENCE, ADVERSARIAL_MIN_EPOCHS, FREEZE_ONLINE_SELECTOR
@@ -1897,6 +1905,8 @@ def cli():
                         help="Offline exploration floor; historical default 0.01.")
     parser.add_argument("--train-epsilon-decay", type=float, default=0.995,
                         help="Offline multiplicative decay once per epoch; historical default 0.995.")
+    parser.add_argument("--train-greedy-mode", choices=('legacy','eval'), default='legacy',
+                        help="TRAIN only: eval disables selector Dropout only for greedy decisions; optimizer behavior is unchanged.")
     parser.add_argument("--budget-schedule", choices=("full","linear"), default="full",
                         help="Online diagnostic: full exposes all labels immediately; linear releases them over stream positions.")
     parser.add_argument("--deterministic", action="store_true",
@@ -1928,6 +1938,9 @@ def cli():
     parser.add_argument("--validation-probe-budget-fraction", type=float, default=0.2)
     parser.add_argument("--validation-probe-seed", type=int, default=42)
     args=parser.parse_args()
+    if args.command != 'train' and args.train_greedy_mode != 'legacy':
+        parser.error("train-greedy-mode changes training only; evaluation already uses eval-mode learned actions.")
+    TRAIN_GREEDY_MODE = args.train_greedy_mode
     if args.reward_profile == 'improvement':
         if args.reward_mode != 'paper' or args.training_selector_mode != 'original':
             parser.error("improvement profile requires paper skip-zero rewards and original training selection.")
@@ -2092,6 +2105,8 @@ def cli():
             folder += "_adaptation_validated"
         if changed_training_schedule:
             folder += f"_train_eps{args.train_epsilon_start:g}to{args.train_epsilon_end:g}_decay{args.train_epsilon_decay:g}"
+        if args.train_greedy_mode != 'legacy':
+            folder += f"_train_greedy_{args.train_greedy_mode}"
         folder += "_validated_best"
         if args.training_selector_mode == "disagreement":
             folder += f"_train_disagreement_penalty{args.agreement_penalty:g}"
@@ -2190,6 +2205,7 @@ def cli():
         mode="legacy notebook diagnostic",source_cells=[2,7,9],random_seed=args.seed if args.seed is not None else "not fixed in original",
         scoring="post-update",selector_mode=args.selector_mode,reward_mode=args.reward_mode,
         reward_profile=args.reward_profile,
+        training_greedy_mode=args.train_greedy_mode if args.command=='train' else checkpoint.get('training_greedy_mode', 'legacy'),
         transition_mode=args.transition_mode,gamma=args.gamma,
         query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate in ("none","no-threshold","disagreement") else 0.005,
         context_loss_mode=args.context_loss_mode,
@@ -2236,6 +2252,7 @@ def cli():
         if args.command=="train":
             print("Selector reward / transitions / gamma:", SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA)
             print("Selector competitive reward profile:", SELECTOR_REWARD_PROFILE)
+            print("Training greedy selector mode:", TRAIN_GREEDY_MODE)
             print("Context loss mode:", CONTEXT_LOSS_MODE)
             print("Training selector mode / agreement penalty:", TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY)
             print("Action-1 reward cost:", SELECTION_COST)
@@ -2253,6 +2270,7 @@ def cli():
                 checkpoint=torch.load(checkpoint_path,map_location="cpu",weights_only=False)
                 checkpoint["selector_reward_mode"]=SELECTOR_REWARD_MODE
                 checkpoint["selector_reward_profile"]=SELECTOR_REWARD_PROFILE
+                checkpoint["training_greedy_mode"]=TRAIN_GREEDY_MODE
                 checkpoint["selector_transition_mode"]=SELECTOR_TRANSITION_MODE
                 checkpoint["selector_gamma"]=SELECTOR_GAMMA
                 checkpoint["context_loss_mode"]=CONTEXT_LOSS_MODE
@@ -2278,6 +2296,7 @@ def cli():
 
 if __name__=="__main__":
     cli()
+
 
 
 

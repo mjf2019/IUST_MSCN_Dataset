@@ -1160,3 +1160,32 @@ and reuses only this experiment's saved CNN/Context. Nondefault profiles add
 `_reward_improvement` to learned result/manifest names. Normal online RL remains
 available; no freeze or nonlocal online-reference flags are needed.
 
+
+# Match offline greedy action observation to inference
+
+Optional `train --train-greedy-mode eval` observes selector Q values with the
+policy temporarily in eval mode only when choosing greedy actions. The existing
+`evaluation_mode` context manager restores every submodule's previous training
+flag in `finally`, including exceptions. No gradients are computed for decisions.
+The optimizer still runs in the original training mode with selector Dropout.
+Epsilon-random actions and their probability are unchanged. Random-number
+consumption and hence later exploration/replay samples may change because
+decision-time Dropout is no longer sampled; compare distributions across seeds,
+not identical traces from different modes.
+
+This is an isolated action-selection change, not a reward/architecture/replay
+change. The optimizer's current-Q and DDQN next-action computations, target
+network, Context, CNN, epoch limits, and early stopping are untouched. It does
+not correct terminal transitions or guarantee policy/accuracy improvement.
+Default `legacy` preserves historical behavior. Fresh training in a separate
+folder is needed to measure its training effect; inference already uses eval
+mode for learned actions. Do not pass this training-only option to evaluate.
+Artifacts/manifest record `training_greedy_mode`; no tag means legacy. Automatic
+training output names include `_train_greedy_eval` when this mode is selected.
+
+For a one-change comparison, reuse the immediately preceding improvement reward
+configuration (paper skip-zero, cost 0.42, context state, epsilon 1 to 0.2 with
+0.9 epoch decay), with local/nonlocal gains disabled and normal Context
+validation selection. Compare with `notebook_reward_improvement_seed42`; train
+the new experiment into `notebook_reward_improvement_greedy_eval_seed42`.
+
