@@ -52,6 +52,8 @@ def parse_args():
     parser.add_argument("--query-gate", choices=("none", "disagreement", "legacy"), default="none",
                         help="none: uniform fixed-budget queries; disagreement: random 50%% actions with only "
                              "unequal predictions; legacy additionally requires confidence gap >= 0.005.")
+    parser.add_argument("--deterministic", action="store_true",
+                        help="Strict PyTorch/CUDA determinism, with seed reset per level.")
     args = parser.parse_args()
     if args.budget < 0 or args.max_samples < 1 or not np.isfinite(args.lr) or args.lr <= 0:
         parser.error("budget must be nonnegative, max-samples positive, and lr finite and positive.")
@@ -59,6 +61,8 @@ def parse_args():
 
 
 def evaluate_level(args):
+    if getattr(args, "deterministic", False):
+        original.configure_deterministic(args.seed)
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -222,6 +226,7 @@ def evaluate_level(args):
         attack_sha256=sha256_file(attack_path),
         cnn_checkpoint_sha256=sha256_file(cnn_path),
         context_checkpoint_sha256=sha256_file(context_path),
+        reproducibility=original.reproducibility_settings(),
         training_selector_mode=context_checkpoint.get("training_selector_mode", "original"),
         training_agreement_penalty=context_checkpoint.get("agreement_penalty"),
         query_rule=("uniform fixed-budget sample without replacement over stream rows"
@@ -233,6 +238,8 @@ def evaluate_level(args):
         classes_before=classification_report(labels_array, before_predictions, output_dict=True, zero_division=0),
         classes_after=classification_report(labels_array, after_predictions, output_dict=True, zero_division=0))
     budget_suffix = f"_budget{args.budget}" if args.budget != 214 else ""
+    if getattr(args, "deterministic", False):
+        budget_suffix += "_deterministic"
     results_dir = (args.results_output.resolve() if args.results_output else
                    args.output.resolve() / "Results" / f"random_no_rl_{args.query_gate}_seed{args.seed}{budget_suffix}")
     results_dir.mkdir(parents=True, exist_ok=True)

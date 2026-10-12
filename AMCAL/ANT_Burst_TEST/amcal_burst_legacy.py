@@ -2,6 +2,12 @@
 Preserves legacy numerical logic, including post-update scoring and random online actions.
 Not the corrected evaluation protocol.
 """
+import os
+import sys
+# Set before CUDA context creation, including imports from the random runner.
+if "--deterministic" in sys.argv:
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
 from pathlib import Path
 from copy import deepcopy
 from contextlib import contextmanager
@@ -23,10 +29,49 @@ TRAINING_SELECTOR_MODE = 'original'
 AGREEMENT_PENALTY = 0.2
 TEST_LABEL_BUDGET = 214
 ONLINE_BUDGET_SCHEDULE = 'full'
+DETERMINISTIC_RUN = False
 SELECTION_COST = 0.0
 TRAIN_EPSILON_START = 1.0
 TRAIN_EPSILON_END = 0.01
 TRAIN_EPSILON_DECAY = 0.995
+
+
+def seed_run(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def configure_deterministic(seed):
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    torch.use_deterministic_algorithms(True)
+    seed_run(seed)
+
+
+def reproducibility_settings():
+    return dict(deterministic_algorithms=torch.are_deterministic_algorithms_enabled(),
+                cudnn_deterministic=torch.backends.cudnn.deterministic,
+                cudnn_benchmark=torch.backends.cudnn.benchmark,
+                cublas_workspace_config=os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
+                torch_version=str(torch.__version__), cuda_version=torch.version.cuda,
+                cudnn_version=torch.backends.cudnn.version())
+
+
+def sha256_file(path):
+    import hashlib
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def checkpoint_hashes():
+    return {name: sha256_file(Path("Models") / name)
+            for name in ("initial_cnn_model.pth", "adversarial_best_context.pth", "adversarial_best_dqn.pth")}
 
 
 def released_label_budget(step, stream_rows, budget):
@@ -1145,6 +1190,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         epsilon_decay_rule="after successful online selector optimization",
         label_budget=budget, actual_label_fraction=updates_used / total,
         budget_schedule=ONLINE_BUDGET_SCHEDULE,
+        reproducibility=reproducibility_settings(),
+        checkpoint_sha256=checkpoint_hashes(), attack_sha256=sha256_file(test_file),
+        seed_reset_each_level=DETERMINISTIC_RUN,
         budget_release_rule=("all budget immediately" if ONLINE_BUDGET_SCHEDULE=="full" else
                              "ceil(budget * step / stream_rows); unused allowance carries forward"),
         budget_release_blocked_requests=sum(row["budget_release_blocked"] for row in diagnostic_trace),
@@ -1169,6 +1217,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         classes_before=classification_report(y_true,before_predictions,output_dict=True,zero_division=0),
         classes_after=classification_report(y_true,y_pred,output_dict=True,zero_division=0))
     pd.DataFrame(diagnostic_trace).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_trace.csv",index=False)
+    diagnostics["trace_sha256"] = sha256_file(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_trace.csv")
+    if DETERMINISTIC_RUN:
+        print("Trace SHA256:", diagnostics["trace_sha256"])
     Path(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_diagnostics.json").write_text(
         json.dumps(diagnostics,indent=2),encoding="utf-8")
     print("Diagnostic frozen CNN / pre-update AMCAL / post-update AMCAL:",
@@ -1248,6 +1299,8 @@ def evaluate_main():
     accuracy_by_perturb = {}
     
     for perturb_level in test_perturb_levels:
+        if DETERMINISTIC_RUN:
+            seed_run(LEGACY_DIAGNOSTIC_SEED)
         print(f"\n{'='*50}")
         print(f"Starting processing for perturbation level {perturb_level}")
         print(f"{'='*50}")
@@ -1413,7 +1466,7 @@ def evaluate_main():
 
 def cli():
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
-    global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY, ONLINE_BUDGET_SCHEDULE
+    global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY, ONLINE_BUDGET_SCHEDULE, DETERMINISTIC_RUN
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1458,7 +1511,15 @@ def cli():
                         help="Offline multiplicative decay once per epoch; historical default 0.995.")
     parser.add_argument("--budget-schedule", choices=("full","linear"), default="full",
                         help="Online diagnostic: full exposes all labels immediately; linear releases them over stream positions.")
+    parser.add_argument("--deterministic", action="store_true",
+                        help="Strict PyTorch/CUDA reproducibility and a fresh evaluation seed per level; requires --seed.")
     args=parser.parse_args()
+    if args.deterministic and args.seed is None:
+        parser.error("--deterministic requires an explicit --seed.")
+    DETERMINISTIC_RUN = args.deterministic
+    if DETERMINISTIC_RUN:
+        configure_deterministic(args.seed)
+        print("Strict reproducibility enabled; evaluation seed resets before each level.")
     if args.budget_schedule != "full" and (args.command != "evaluate" or args.selector_mode == "random"):
         parser.error("linear schedule applies only to evaluate with original/learned; random none already spreads a fixed budget uniformly.")
     ONLINE_BUDGET_SCHEDULE = args.budget_schedule
@@ -1515,6 +1576,7 @@ def cli():
             seed=args.seed if args.seed is not None else 42,
             budget=args.budget, max_samples=1073, lr=0.25,
             context_loss_mode=args.context_loss_mode,
+            deterministic=args.deterministic,
             query_gate=args.query_gate if args.query_gate in ("legacy","disagreement") else "none"))
         return
     if not 0.0 <= args.gamma < 1.0:
@@ -1547,6 +1609,8 @@ def cli():
                    "_no_threshold" if args.query_gate=="no-threshold" else "")
     if args.selector_mode=="learned" and scheduled_epsilon:
         gate_suffix += f"_eps{args.epsilon_start:g}to{args.epsilon_end:g}_decay{args.epsilon_decay:g}"
+    if args.deterministic:
+        gate_suffix += "_deterministic"
     if args.budget_schedule != "full":
         gate_suffix += "_budget_linear"
     if args.budget != 214:
@@ -1609,6 +1673,8 @@ def cli():
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
         budget_schedule=args.budget_schedule,
+        reproducibility=reproducibility_settings(),
+        seed_reset_each_level=args.deterministic,
         budget_release_rule="ceil(budget * step / stream_rows); unused allowance carries forward",
         training_epsilon_schedule=(dict(start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
                                        decay=TRAIN_EPSILON_DECAY, decay_rule="once per epoch")
@@ -1647,6 +1713,7 @@ def cli():
                 checkpoint["training_epsilon_schedule"]=dict(
                     start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
                     decay=TRAIN_EPSILON_DECAY, decay_rule="once per epoch")
+                checkpoint["training_reproducibility"]=reproducibility_settings()
                 checkpoint["selection_cost"]=SELECTION_COST
                 checkpoint["training_selector_mode"]=TRAINING_SELECTOR_MODE
                 checkpoint["agreement_penalty"]=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=="disagreement" else None

@@ -690,3 +690,38 @@ Compare pre-update accuracy, class coverage and query timing with the full-budge
 learned baseline and uniform no-RL random control on the same checkpoints. The
 random runner with `none` is already uniformly spread and does not accept the linear
 flag through the legacy CLI. Model training and evaluation were not run here.
+
+## Strict reproducibility diagnostic (same checkpoint; no retraining)
+
+`--deterministic --seed 42` enables strict deterministic algorithms in PyTorch,
+cuDNN deterministic mode, disables cuDNN benchmarking, and sets
+`CUBLAS_WORKSPACE_CONFIG=:4096:8` before CUDA context creation if no setting exists.
+Unsupported nondeterministic operations raise an error rather than silently falling
+back. These controls apply to legacy and random runners. This tests a plausible
+source of variation; it does NOT establish CUDA as the cause of prior differences.
+No changes to losses/rewards, models, action logic, replay, epsilon or budget rule.
+
+In strict mode, evaluation resets Python/NumPy/Torch/CUDA seed BEFORE model
+construction at EVERY level, making a level independent of which levels preceded it.
+Previous default commands preserve their legacy across-level RNG sequence.
+Learned action inference already disables policy dropout; its optimization still
+uses original training dropout, now seeded reproducibly. Context/CNN stay in eval.
+
+New result folders contain `_deterministic`. Per-level diagnostics record runtime
+flags/versions, hashes of the three checkpoints and the input CSV, and a trace hash.
+The console prints `Trace SHA256`; compare it across two fresh-process repeats.
+Same runtime, GPU and input/checkpoint bytes are required; no cross-platform or
+cross-version identity is promised. If CUDA raises an unsupported-operation error,
+report it instead of switching strict mode off. No model was run during this edit.
+
+Run the following command twice in separate Python invocations (no retraining):
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_fast_eps_seed42 --seed 42 --deterministic --reward-mode paper --selection-cost 0.42 --selector-mode learned --query-gate none --budget 214 --budget-schedule linear --epsilon-start 0.05 --epsilon-end 0.05 --per 0
+```
+
+Keep console output and compare trace hashes. Identical accuracy without identical
+traces is weaker evidence. These files overwrite repeated identical configurations;
+copy a trace if both need preserving. If differences remain, check recorded input/
+checkpoint hashes and runtime fields before changing algorithm hyperparameters.
