@@ -814,3 +814,51 @@ All levels run independently. New result folders include
 `_skip_replay_query_optimizer`. Compare pre-update accuracy/label use with no-skip
 learned and same-cap random, plus the prior all-optimizer skip-replay run. Training/
 evaluation was not executed during this edit; only source structure was verified.
+
+## Context-modulated uncertainty in selector state (paper-alignment experiment)
+
+`--selector-state context` makes the scalar state uncertainty label-free
+`1 - max_k softmax(CNN(Context(x)))_k`, both BEFORE offline action selection and
+BEFORE online action selection. Features remain original x: state width is still
+input_length+1 (101 on Burst). Paper Eq.13 and Algorithm1 use the modulated input;
+Eq.13 writes 1-softmax without specifying a scalar reduction. This experiment keeps
+the existing scalar 1-max convention; that reduction needs explicit manuscript
+clarification rather than claiming the vector equation is implemented literally.
+
+Previously the current state used CNN(x), while post-update next state used
+CNN(Context(x)). Context-mode current and post-update states now use the same
+source. Offline state observations use temporary eval/no-grad mode to avoid
+extra BatchNorm updates and dropout-dependent uncertainty, then restore training
+flags. Context updates/reward computation remain in their original modes. Online
+Context-mode pre-update logits are computed once before action choice and reused
+for scoring/gates/reward. CNN(raw x) still provides base predictions and hardness
+reward comparisons. No label enters the state observation.
+
+Default `base` preserves earlier training/evaluation semantics. Context-mode needs
+fresh training: state input meanings differ even though tensor dimensions match.
+All three saved artifacts tag the state source; evaluation checks it and refuses
+old/mixed checkpoints/replay with a different definition. The no-RL random control
+uses the same trained CNN/Context but never constructs a selector or consumes state;
+its diagnostics report the offline state mode from Context checkpoint metadata.
+
+Architecture, reward/selection cost, losses, gamma/terminal semantics, replay sizes,
+epsilon schedules and online external budget controller are unchanged. This fixes
+an implementation mismatch; it does not establish convergence or learned budget
+management. Old checkpoints remain separate. Train strictly reproducibly for the
+new run; old offline training was not strict, so for a fully isolated state ablation
+also train a fresh base-mode control under the same strict settings.
+
+```powershell
+git pull --ff-only origin experiment/amcal-protocol
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py train --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_context_state_seed42 --seed 42 --deterministic --reward-mode paper --selection-cost 0.42 --selector-state context --train-epsilon-start 1 --train-epsilon-end 0.05 --train-epsilon-decay 0.9
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_context_state_seed42 --seed 42 --deterministic --reward-mode paper --selection-cost 0.42 --selector-state context --selector-mode learned --query-gate none --budget 214 --budget-schedule linear --epsilon-start 0.05 --epsilon-end 0.05 --online-skip-replay --skip-optimizer-mode queries
+```
+
+All levels reload initial weights independently. For the matched no-RL control:
+
+```powershell
+python AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py evaluate --output AMCAL/ANT_Burst_TEST/protocol_runs/notebook_cost0p42_context_state_seed42 --seed 42 --deterministic --selector-mode random --query-gate none --budget 214 --budget-schedule linear
+```
+
+Trace logs state source and scalar uncertainty. Use pre-update accuracy/actual label
+use and matched-control results. No training or evaluation was executed here.

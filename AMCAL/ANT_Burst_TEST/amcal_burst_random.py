@@ -246,6 +246,7 @@ def evaluate_level(args):
         context_checkpoint_sha256=sha256_file(context_path),
         reproducibility=original.reproducibility_settings(),
         training_selector_mode=context_checkpoint.get("training_selector_mode", "original"),
+        selector_state_training_mode=context_checkpoint.get("selector_state_mode", "base"),
         training_agreement_penalty=context_checkpoint.get("agreement_penalty"),
         query_rule=("random 50/50 requests under shared linear released-budget cap; selected query gate retained"
                     if budget_schedule == "linear" else

@@ -20,6 +20,7 @@ SELECTOR_REWARD_MODE = 'original'
 SELECTOR_TRANSITION_MODE = 'terminal'
 SELECTOR_GAMMA = 0.2
 CONTEXT_LOSS_MODE = 'legacy'
+SELECTOR_STATE_MODE = 'base'
 TRAINING_STATE_VERSION = 2
 RUN_TRAINING_STATE_VERSION = TRAINING_STATE_VERSION
 ONLINE_EPSILON_START = 0.0
@@ -122,6 +123,12 @@ def evaluation_mode(*models):
     finally:
         for module, training in previous_modes.items():
             module.training = training
+
+
+def selector_context_logits(cnn_model, context_model, inputs):
+    """Label-free current Context observation; never update BN buffers or apply dropout."""
+    with evaluation_mode(cnn_model, context_model), torch.no_grad():
+        return cnn_model(context_model(inputs)).detach()
 
 
 # Shared Context objective: explicitly retain the old reproduction as a control.
@@ -611,6 +618,9 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 max_prob, _ = torch.max(probs, dim=1, keepdim=True)
                 uncertainty = 1 - max_prob
             
+            if SELECTOR_STATE_MODE == "context":
+                current_context_logits = selector_context_logits(cnn_model, context_model, inputs)
+                uncertainty = 1 - softmax(current_context_logits).max(dim=1, keepdim=True).values
             features = inputs.squeeze(1).detach()
             state = torch.cat([features, uncertainty], dim=1).detach()
             
@@ -669,7 +679,9 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             # Compute next states based on action
             with torch.no_grad():
                 if len(action_indices) > 0:
-                    cnn_outputs_new = cnn_model(context_model(inputs)).detach()
+                    cnn_outputs_new = (selector_context_logits(cnn_model, context_model, inputs)
+                                       if SELECTOR_STATE_MODE == "context" else
+                                       cnn_model(context_model(inputs)).detach())
                     probs_new = softmax(cnn_outputs_new)
                     max_prob_new, _ = torch.max(probs_new, dim=1, keepdim=True)
                     uncertainty_new = 1 - max_prob_new
@@ -1025,6 +1037,13 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             features = inputs.squeeze(1)
             state = torch.cat([features, uncertainty], dim=1)
         
+        if SELECTOR_STATE_MODE == "context":
+            cnn_outputs_weighted_before = selector_context_logits(cnn_model, context_model, inputs)
+            weighted_probs_before = softmax(cnn_outputs_weighted_before)
+            weighted_pred_before = cnn_outputs_weighted_before.argmax(dim=1)
+            uncertainty = 1 - weighted_probs_before.max(dim=1, keepdim=True).values
+            state = torch.cat([features, uncertainty], dim=1)
+
         # Select action
         # select_action returns a tensor or int. We need int for appending to list.
         action_epsilon = float(dqn_agent.epsilon)
@@ -1050,12 +1069,13 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         action = action_tensor.item() if isinstance(action_tensor, torch.Tensor) else int(action_tensor)
         actions.append(action)
         
-        # Compute weighted outputs BEFORE any context update
-        with torch.no_grad():
-            encoded_inputs_before = context_model(inputs)
-            cnn_outputs_weighted_before = cnn_model(encoded_inputs_before)
-            weighted_probs_before = softmax(cnn_outputs_weighted_before)
-            _, weighted_pred_before = torch.max(cnn_outputs_weighted_before, 1)
+        # Context-mode logits were observed before action selection; reuse them.
+        if SELECTOR_STATE_MODE == "base":
+            with torch.no_grad():
+                encoded_inputs_before = context_model(inputs)
+                cnn_outputs_weighted_before = cnn_model(encoded_inputs_before)
+                weighted_probs_before = softmax(cnn_outputs_weighted_before)
+                _, weighted_pred_before = torch.max(cnn_outputs_weighted_before, 1)
         
         # Observe the learned policy without dropout; do not alter legacy actions/RNG.
         previous_policy_mode = dqn_agent.policy_net.training
@@ -1178,6 +1198,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 prediction_before_update=int(weighted_pred_before.item()),
                 prediction_after_update=int(predicted.item()),
                 action=int(action), greedy_action=int(diagnostic_q.argmax(1).item()),
+                selector_state_mode=SELECTOR_STATE_MODE, state_uncertainty=float(uncertainty.item()),
                 q_skip=float(diagnostic_q[0,0].item()), q_apply=float(diagnostic_q[0,1].item()),
                 epsilon=float(dqn_agent.epsilon),
                 action_epsilon=action_epsilon, action_source=action_source,
@@ -1227,7 +1248,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         reward_mode=SELECTOR_REWARD_MODE,
         transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
         query_gate=LEGACY_QUERY_GATE, confidence_gap_threshold=threshold,
-        context_loss_mode=CONTEXT_LOSS_MODE,
+        context_loss_mode=CONTEXT_LOSS_MODE, selector_state_mode=SELECTOR_STATE_MODE,
         training_selector_mode=TRAINING_SELECTOR_MODE,
         agreement_penalty=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=='disagreement' else None,
         selection_cost=SELECTION_COST,
@@ -1496,7 +1517,7 @@ def evaluate_main():
 
 
 def cli():
-    global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
+    global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST, SELECTOR_STATE_MODE
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY, ONLINE_BUDGET_SCHEDULE, DETERMINISTIC_RUN, ONLINE_SKIP_REPLAY, ONLINE_SKIP_OPTIMIZER_MODE
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
@@ -1548,7 +1569,10 @@ def cli():
                         help="Learned/paper online diagnostic: record real skips with label-free zero reward and optimize while total label budget remains.")
     parser.add_argument("--skip-optimizer-mode", choices=("all","queries"), default="all",
                         help="With online-skip-replay: all optimizes after queries/skips; queries records skips without extra optimizer steps.")
+    parser.add_argument("--selector-state", choices=("base","context"), default="base",
+                        help="context: state uncertainty from CNN(Context(x)), in both offline and online selection; requires matching freshly trained checkpoints.")
     args=parser.parse_args()
+    SELECTOR_STATE_MODE = args.selector_state
     if args.skip_optimizer_mode != "all" and not args.online_skip_replay:
         parser.error("skip-optimizer-mode queries requires --online-skip-replay.")
     ONLINE_SKIP_OPTIMIZER_MODE = args.skip_optimizer_mode
@@ -1634,6 +1658,8 @@ def cli():
             folder += "_context_aligned"
         if args.selection_cost > 0:
             folder += f"_selection_cost{args.selection_cost:g}"
+        if args.selector_state == "context":
+            folder += "_state_context"
         if changed_training_schedule:
             folder += f"_train_eps{args.train_epsilon_start:g}to{args.train_epsilon_end:g}_decay{args.train_epsilon_decay:g}"
         folder += "_validated_best"
@@ -1692,6 +1718,8 @@ def cli():
                 parser.error("Checkpoint gamma mismatch: use the gamma from training.")
             if checkpoint.get("context_loss_mode","legacy") != args.context_loss_mode:
                 parser.error("Checkpoint Context loss mismatch: train with the requested --context-loss-mode in a fresh --output.")
+            if checkpoint.get("selector_state_mode", "base") != args.selector_state:
+                parser.error("Selector state mismatch: retrain in a fresh folder; old replay cannot be reused with a new state definition.")
             if checkpoint.get("selection_cost", 0.0) != args.selection_cost:
                 parser.error("Selection cost mismatch: use the training cost and matching Models folder.")
             if checkpoint.get("training_selector_mode", "original") != args.training_selector_mode:
@@ -1714,6 +1742,7 @@ def cli():
         transition_mode=args.transition_mode,gamma=args.gamma,
         query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate in ("none","no-threshold","disagreement") else 0.005,
         context_loss_mode=args.context_loss_mode,
+        selector_state_mode=args.selector_state,
         training_selector_mode=args.training_selector_mode,
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
@@ -1745,6 +1774,7 @@ def cli():
             print("Context loss mode:", CONTEXT_LOSS_MODE)
             print("Training selector mode / agreement penalty:", TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY)
             print("Action-1 reward cost:", SELECTION_COST)
+            print("Selector state uncertainty source:", SELECTOR_STATE_MODE)
             print("Training epsilon start / floor / decay per epoch:",
                   TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY)
             train_main()
@@ -1761,6 +1791,7 @@ def cli():
                     start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
                     decay=TRAIN_EPSILON_DECAY, decay_rule="once per epoch")
                 checkpoint["training_reproducibility"]=reproducibility_settings()
+                checkpoint["selector_state_mode"]=SELECTOR_STATE_MODE
                 checkpoint["selection_cost"]=SELECTION_COST
                 checkpoint["training_selector_mode"]=TRAINING_SELECTOR_MODE
                 checkpoint["agreement_penalty"]=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=="disagreement" else None
