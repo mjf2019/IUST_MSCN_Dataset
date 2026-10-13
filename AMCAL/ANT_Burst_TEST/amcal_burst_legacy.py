@@ -1089,7 +1089,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             max_weighted_prob, _ = torch.max(weighted_probs_before, dim=1, keepdim=True)
             max_prob_diff = torch.max(torch.abs(max_weighted_prob - max_prob)).item()
             
-            if updates_used < budget:
+            disagreement_passes = (LEGACY_QUERY_GATE == "none" or weighted_pred != cnn_pred)
+            if disagreement_passes and (threshold is None or max_prob_diff >= threshold) and updates_used < budget:
                 
                 updates_used += 1
                 context_optimizer.zero_grad()
@@ -1495,7 +1496,8 @@ def cli():
     parser.add_argument("--gamma", type=float, default=0.2,
                         help="Discount factor; legacy default 0.2, paper value 0.95.")
     parser.add_argument("--query-gate", choices=("none","disagreement","no-threshold","legacy"), default="none",
-                        help="Online prediction filters removed: all accepted values run action-based queries under the label budget.")
+                        help="none removes both filters; disagreement retains ONLY unequal predictions in all modes; "
+                             "legacy retains both. no-threshold preserves its historical mode-dependent behavior.")
     parser.add_argument("--epsilon-start", type=float, default=0.0,
                         help="Learned online selector only; 0 preserves greedy inference.")
     parser.add_argument("--epsilon-end", type=float, default=0.0)
@@ -1528,9 +1530,6 @@ def cli():
                         default=None,
                         help="Training Context architecture; default feature_tokens_v1. Evaluation auto-detects checkpoint architecture.")
     args=parser.parse_args()
-    if args.query_gate != "none":
-        print("Online prediction filters removed; treating --query-gate as none.")
-    args.query_gate = "none"
     if args.command == "train":
         CONTEXT_ARCHITECTURE = args.context_architecture or "feature_tokens_v1"
     if not np.isfinite(args.online_context_lr) or args.online_context_lr <= 0:
