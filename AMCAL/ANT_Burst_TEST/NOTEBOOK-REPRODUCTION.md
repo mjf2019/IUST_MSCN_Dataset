@@ -1398,3 +1398,27 @@ scope. No attack data or results select training hyperparameters/checkpoints.
 Implementation checks are static plus pure arithmetic; local GPU runtime
 confirmation is required and improvements are not guaranteed.
 
+
+## Separate online DQN learning-rate control
+
+`evaluate --online-selector-lr RATE` changes only the fresh Adam optimizer
+for online DQN updates in original/learned evaluation. Default 0.0001 preserves
+historical behavior. It does not change the saved Q initialization, replay,
+reward, architecture, offline training rate, or Context `--online-lr` (0.25).
+The existing evaluator constructs fresh Adam and does not restore an optimizer
+state from the checkpoint. Nondefault rates require unfrozen original/learned
+evaluation; random has no DQN optimizer. Reject nonpositive/nonfinite values.
+A nondefault rate adds `_selector_lr{RATE}` to the results path and the effective
+rate is printed and recorded in diagnostics/manifest.
+
+Diagnostic pilot: reuse notebook_cost0p42_context_gain1_seed42, seed 42,
+paper skip-zero rewards, cost 0.42, context state, gain 1, no query filters,
+53-label linear budget, epsilon 0.05, post rewards, online skip replay with
+query-only optimizer steps. Compare DQN Adam 0.00001 against existing 0.0001
+and frozen-policy controls; Context Adam remains 0.25. No retraining required.
+A rate change can also change subsequent exploration RNG consumption through
+changed query timing; same seed does not imply identical decision trajectories.
+This pilot is exploratory, not a stable multi-seed performance claim.
+
+Validation: AST and static constructor/optimizer wiring checks only; no model
+training, evaluation, imports, or GPU forward pass performed here.

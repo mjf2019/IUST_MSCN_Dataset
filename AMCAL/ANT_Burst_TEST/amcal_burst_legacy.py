@@ -41,6 +41,7 @@ ADVERSARIAL_EPOCHS = 300
 ADVERSARIAL_PATIENCE = 30
 ADVERSARIAL_MIN_EPOCHS = 0
 FREEZE_ONLINE_SELECTOR = False
+ONLINE_SELECTOR_LR = 1e-4
 ONLINE_GENERALIZATION_REFERENCE = 'none'
 CHECKPOINT_SELECTION = 'context'
 VALIDATION_PROBE_EVERY = 10
@@ -1579,6 +1580,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         epsilon_decay_rule="after successful online selector optimization",
         label_budget=budget, actual_label_fraction=updates_used / total,
         online_lr=fine_tune_lr,
+        online_selector_lr=float(dqn_agent.optimizer.param_groups[0]['lr']),
         online_selector_frozen=FREEZE_ONLINE_SELECTOR,
         reward_generalization_weight=GENERALIZATION_WEIGHT,
         online_reward_scope=('competitive plus paid-history retention' if ONLINE_GENERALIZATION_REFERENCE == 'paid-history'
@@ -1694,6 +1696,7 @@ def plot_accuracies(combined_accuracy_df, test_perturb_levels):
 
 def evaluate_main(fine_tune_lr=0.25):
     print(f"Online Context learning rate: {fine_tune_lr:g}")
+    print(f"Online DQN learning rate: {ONLINE_SELECTOR_LR:g}")
     if FREEZE_ONLINE_SELECTOR:
         print("Online selector frozen: Q weights/replay unchanged; Context still adapts on queried labels.")
     test_perturb_levels = LEGACY_PER_LEVELS or [0, 1, 3, 5, 7, 10, 12, 15, 17, 20]
@@ -1776,6 +1779,7 @@ def evaluate_main(fine_tune_lr=0.25):
             dqn_agent = DQNSelectorAgent(
                 input_size=selector_input_width(input_length, num_classes),
                 device=device,
+                lr=ONLINE_SELECTOR_LR,
                 epsilon_decay=0.5,
                 buffer_capacity=5000,
                 batch_size=128
@@ -1883,6 +1887,7 @@ def evaluate_main(fine_tune_lr=0.25):
 
 
 def cli():
+    global ONLINE_SELECTOR_LR
     global TRAIN_REPLAY_RESET_EVERY
     global TRAIN_GREEDY_MODE
     global SELECTOR_REWARD_PROFILE
@@ -1963,6 +1968,8 @@ def cli():
                         help="Do not early-stop before this epoch; still restore the best validation snapshot.")
     parser.add_argument("--freeze-online-selector", action="store_true",
                         help="EVALUATE learned only: preserve trained Q weights; Context still adapts within its label budget.")
+    parser.add_argument("--online-selector-lr", type=float, default=1e-4,
+                        help="EVALUATE learned/original: online DQN Adam rate; separate from Context --online-lr; default preserves history.")
     parser.add_argument("--online-generalization-reference", choices=('none','paid-history'), default='none',
                         help="EVALUATE learned: add CE retention gain on previous paid labels; no unqueried labels or extra label budget.")
     parser.add_argument("--checkpoint-selection", choices=("context","adaptation"), default="context",
@@ -1972,6 +1979,11 @@ def cli():
     parser.add_argument("--validation-probe-budget-fraction", type=float, default=0.2)
     parser.add_argument("--validation-probe-seed", type=int, default=42)
     args=parser.parse_args()
+    if not np.isfinite(args.online_selector_lr) or args.online_selector_lr <= 0:
+        parser.error("online-selector-lr must be finite and positive.")
+    if args.online_selector_lr != 1e-4 and (args.command != 'evaluate' or args.selector_mode == 'random' or args.freeze_online_selector):
+        parser.error("Custom online-selector-lr requires evaluate learned/original with an unfrozen DQN.")
+    ONLINE_SELECTOR_LR = args.online_selector_lr
     if args.train_replay_reset_every < 0:
         parser.error("train-replay-reset-every must be nonnegative.")
     if args.command != 'train' and args.train_replay_reset_every != 0:
@@ -2178,6 +2190,8 @@ def cli():
         gate_suffix += f"_budget{args.budget}"
     if args.online_lr != 0.25:
         gate_suffix += f"_lr{args.online_lr:g}"
+    if args.online_selector_lr != 1e-4:
+        gate_suffix += f"_selector_lr{args.online_selector_lr:g}"
     if args.freeze_online_selector:
         gate_suffix += '_selector_frozen'
     if args.reward_generalization_weight > 0:
@@ -2259,6 +2273,7 @@ def cli():
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
         online_lr=args.online_lr if args.command=="evaluate" else None,
+        online_selector_lr=args.online_selector_lr if args.command=="evaluate" else None,
         budget_schedule=args.budget_schedule,
         online_skip_replay=args.online_skip_replay,
         online_reward_timing=args.online_reward_timing, offline_reward_timing="post",
