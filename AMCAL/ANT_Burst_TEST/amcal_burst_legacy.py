@@ -14,7 +14,9 @@ SELECTOR_REWARD_MODE = 'original'
 SELECTOR_TRANSITION_MODE = 'terminal'
 SELECTOR_GAMMA = 0.2
 CONTEXT_LOSS_MODE = 'legacy'
-TRAINING_STATE_VERSION = 2
+CONTEXT_ARCHITECTURE = 'feature_tokens_v1'
+SELECTOR_STATE_VERSION = 'context_probability_vector_v1'
+TRAINING_STATE_VERSION = 3
 RUN_TRAINING_STATE_VERSION = TRAINING_STATE_VERSION
 ONLINE_EPSILON_START = 0.0
 ONLINE_EPSILON_END = 0.0
@@ -137,12 +139,21 @@ class ContextAwareNetwork(nn.Module):
     def __init__(self, input_size, num_layers=4, dim_feedforward=1024):
         super(ContextAwareNetwork, self).__init__()
         self.input_size = input_size
-        possible_heads = [8, 4, 2, 1]
-        num_heads = next(h for h in possible_heads if input_size % h == 0)
+        self.architecture = CONTEXT_ARCHITECTURE
+        if self.architecture == "feature_tokens_v1":
+            token_dim = 64
+            self.feature_projection = nn.Linear(1, token_dim)
+            self.feature_identity = nn.Parameter(torch.zeros(1, input_size, token_dim))
+            nn.init.normal_(self.feature_identity, std=0.02)
+            self.weight_projection = nn.Linear(token_dim, 1)
+            num_heads = 8
+        else:
+            token_dim = input_size
+            num_heads = next(h for h in [8, 4, 2, 1] if input_size % h == 0)
         print(f"Selected num_heads={num_heads} for input_size={input_size}")
         
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=input_size,
+            d_model=token_dim,
             nhead=num_heads,
             dim_feedforward=dim_feedforward,
             dropout=0.3,
@@ -175,11 +186,36 @@ class ContextAwareNetwork(nn.Module):
     
     def forward(self, x):
         x_flat = x.squeeze(1)
-        x_transformed = self.transformer(x_flat.unsqueeze(1)).squeeze(1)
-        weights = torch.sigmoid(x_transformed)
+        if self.architecture == "feature_tokens_v1":
+            tokens = self.feature_projection(x_flat.unsqueeze(-1)) + self.feature_identity
+            transformed = self.transformer(tokens)  # [batch, features, token_dim]
+            weights = torch.sigmoid(self.weight_projection(transformed).squeeze(-1))
+        else:
+            x_transformed = self.transformer(x_flat.unsqueeze(1)).squeeze(1)
+            weights = torch.sigmoid(x_transformed)
         combined = torch.stack([x_flat, weights], dim=1)
         encoded = self.encoder(combined)
         return encoded.unsqueeze(1)
+
+def selector_state(inputs, cnn_model, context_model, after_update=False):
+    """Raw x plus 1 - softmax(CNN(Context(x))); labels are never required."""
+    with evaluation_mode(cnn_model, context_model), torch.no_grad():
+        if SELECTOR_STATE_VERSION == "context_probability_vector_v1":
+            probabilities = torch.softmax(cnn_model(context_model(inputs)), dim=1)
+            uncertainty = 1.0 - probabilities
+        elif SELECTOR_STATE_VERSION == "legacy_scalar_v2":
+            source = context_model(inputs) if after_update else inputs
+            probabilities = torch.softmax(cnn_model(source), dim=1)
+            uncertainty = 1.0 - probabilities.max(dim=1, keepdim=True).values
+        else:
+            raise ValueError(f"Unsupported selector state: {SELECTOR_STATE_VERSION}")
+        return torch.cat([inputs.squeeze(1), uncertainty], dim=1).detach()
+
+
+def selector_input_dimension(input_length, num_classes):
+    return input_length + (num_classes if SELECTOR_STATE_VERSION ==
+                           "context_probability_vector_v1" else 1)
+
 
 # Define DQNSelector
 class DQNSelector(nn.Module):
@@ -554,7 +590,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 uncertainty = 1 - max_prob
             
             features = inputs.squeeze(1).detach()
-            state = torch.cat([features, uncertainty], dim=1).detach()
+            state = selector_state(inputs, cnn_model, context_model)
             
             # Select actions for all samples in batch - returns tensor
             actions_batch = dqn_agent.select_action(state)
@@ -611,12 +647,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             # Compute next states based on action
             with torch.no_grad():
                 if len(action_indices) > 0:
-                    cnn_outputs_new = cnn_model(context_model(inputs)).detach()
-                    probs_new = softmax(cnn_outputs_new)
-                    max_prob_new, _ = torch.max(probs_new, dim=1, keepdim=True)
-                    uncertainty_new = 1 - max_prob_new
-                    features_new = inputs.squeeze(1).detach()
-                    next_state_new = torch.cat([features_new, uncertainty_new], dim=1).detach()
+                    next_state_new = selector_state(inputs, cnn_model, context_model, after_update=True)
                 else:
                     next_state_new = state
             
@@ -770,7 +801,7 @@ def train_main():
     
     # Initialize DQN and Context models
     dqn_agent = DQNSelectorAgent(
-        input_length + 1, device,
+        selector_input_dimension(input_length, num_classes), device,
         epsilon_start=TRAIN_EPSILON_START,
         epsilon_end=TRAIN_EPSILON_END,
         epsilon_decay=TRAIN_EPSILON_DECAY,
@@ -961,7 +992,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             max_prob, _ = torch.max(probs, dim=1, keepdim=True)
             uncertainty = 1 - max_prob
             features = inputs.squeeze(1)
-            state = torch.cat([features, uncertainty], dim=1)
+            state = selector_state(inputs, cnn_model, context_model)
         
         # Select action
         # select_action returns a tensor or int. We need int for appending to list.
@@ -1033,12 +1064,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 
                 # Compute next state with updated context
                 with torch.no_grad():
-                    encoded_inputs_new = context_model(inputs)
-                    cnn_outputs_new = cnn_model(encoded_inputs_new)
-                    probs_new = softmax(cnn_outputs_new)
-                    max_prob_new, _ = torch.max(probs_new, dim=1, keepdim=True)
-                    uncertainty_new = 1 - max_prob_new
-                    next_state = torch.cat([features, uncertainty_new], dim=1)
+                    next_state = selector_state(inputs, cnn_model, context_model, after_update=True)
                 
                 # Push action=1 to replay buffer
                 dqn_agent.replay_buffer.push(
@@ -1142,6 +1168,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         agreement_penalty=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=='disagreement' else None,
         selection_cost=SELECTION_COST,
         training_state_version=RUN_TRAINING_STATE_VERSION,
+        context_architecture=CONTEXT_ARCHITECTURE,
+        selector_state_version=SELECTOR_STATE_VERSION,
         bootstrap_optimizer_steps=dqn_agent.bootstrap_optimizer_steps,
         replay_terminal_rows=sum(float(e[4]) == 1.0 for e in dqn_agent.replay_buffer.buffer),
         replay_nonterminal_rows=sum(float(e[4]) == 0.0 for e in dqn_agent.replay_buffer.buffer),
@@ -1283,7 +1311,7 @@ def evaluate_main():
                 continue
                 
             dqn_agent = DQNSelectorAgent(
-                input_size=input_length + 1,
+                input_size=selector_input_dimension(input_length, num_classes),
                 device=device,
                 epsilon_decay=0.5,
                 buffer_capacity=5000,
@@ -1394,6 +1422,7 @@ def evaluate_main():
 def cli():
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
+    global CONTEXT_ARCHITECTURE, SELECTOR_STATE_VERSION
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1505,7 +1534,7 @@ def cli():
             folder += f"_selection_cost{args.selection_cost:g}"
         if training_schedule != (1.0, 0.01, 0.995):
             folder += f"_train_eps{TRAIN_EPSILON_START:g}to{TRAIN_EPSILON_END:g}_decay{TRAIN_EPSILON_DECAY:g}"
-        folder += "_validated_best"
+        folder += "_feature_tokens_context_probabilities_validated_best"
         if args.training_selector_mode == "disagreement":
             folder += f"_train_disagreement_penalty{args.agreement_penalty:g}"
         args.output=str(Path(__file__).resolve().parent/"protocol_runs"/folder)
@@ -1541,9 +1570,12 @@ def cli():
     RUN_TRAINING_STATE_VERSION = TRAINING_STATE_VERSION
     if args.command=="evaluate":
         saved_versions = set()
+        saved_architectures, saved_states = set(), set()
         for checkpoint_name in ("initial_cnn_model.pth","adversarial_best_context.pth","adversarial_best_dqn.pth"):
             checkpoint=torch.load(output/"Models"/checkpoint_name,map_location="cpu",weights_only=False)
             saved_versions.add(checkpoint.get("training_state_version", 1))
+            saved_architectures.add(checkpoint.get("context_architecture", "legacy_single_token"))
+            saved_states.add(checkpoint.get("selector_state_version", "legacy_scalar_v2"))
             saved_mode=checkpoint.get("selector_reward_mode","original")
             if saved_mode!=args.reward_mode:
                 parser.error("Checkpoint reward mode mismatch: use the matching --reward-mode and --output.")
@@ -1561,9 +1593,17 @@ def cli():
                 parser.error("Agreement penalty mismatch: use the penalty from training.")
         if len(saved_versions) != 1:
             parser.error("Checkpoint training-state versions differ; use one complete Models folder.")
+        if len(saved_architectures) != 1 or len(saved_states) != 1:
+            parser.error("Mixed Context architectures or selector states in Models folder.")
+        CONTEXT_ARCHITECTURE = saved_architectures.pop()
+        SELECTOR_STATE_VERSION = saved_states.pop()
+        if CONTEXT_ARCHITECTURE not in ("legacy_single_token", "feature_tokens_v1"):
+            parser.error("Unsupported Context architecture.")
+        if SELECTOR_STATE_VERSION not in ("legacy_scalar_v2", "context_probability_vector_v1"):
+            parser.error("Unsupported selector state version.")
         RUN_TRAINING_STATE_VERSION = saved_versions.pop()
         if RUN_TRAINING_STATE_VERSION < TRAINING_STATE_VERSION:
-            print("Using older checkpoints: validation/snapshot corrections require retraining.")
+            print("Using legacy Context/scalar-state checkpoints; feature-token corrections require fresh training.")
     output.mkdir(parents=True,exist_ok=True)
     import sys
     manifest_name="reproduction_"+args.command
@@ -1580,6 +1620,8 @@ def cli():
         test_label_budget=args.budget,
         selection_cost=args.selection_cost,
         training_state_version=RUN_TRAINING_STATE_VERSION,
+        context_architecture=CONTEXT_ARCHITECTURE,
+        selector_state_version=SELECTOR_STATE_VERSION,
         next_state_scope="same input after Context update; not next traffic row",
         training_epsilon_schedule=dict(start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
                                        decay=TRAIN_EPSILON_DECAY, rule="once per adversarial epoch") if args.command=="train" else None,
@@ -1595,6 +1637,7 @@ def cli():
         if args.command=="train":
             print("Selector reward / transitions / gamma:", SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA)
             print("Context loss mode:", CONTEXT_LOSS_MODE)
+            print("Context architecture / selector state:", CONTEXT_ARCHITECTURE, SELECTOR_STATE_VERSION)
             print("Training selector mode / agreement penalty:", TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY)
             print("Action-1 reward cost:", SELECTION_COST)
             print(f"Offline RL epsilon: {TRAIN_EPSILON_START:g} -> {TRAIN_EPSILON_END:g}; "
@@ -1609,6 +1652,8 @@ def cli():
                 checkpoint["selector_gamma"]=SELECTOR_GAMMA
                 checkpoint["context_loss_mode"]=CONTEXT_LOSS_MODE
                 checkpoint["training_state_version"]=TRAINING_STATE_VERSION
+                checkpoint["context_architecture"]=CONTEXT_ARCHITECTURE
+                checkpoint["selector_state_version"]=SELECTOR_STATE_VERSION
                 checkpoint["selection_cost"]=SELECTION_COST
                 checkpoint["training_epsilon_schedule"] = dict(
                     start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
