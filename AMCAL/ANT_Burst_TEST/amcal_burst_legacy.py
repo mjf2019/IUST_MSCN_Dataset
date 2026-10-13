@@ -144,6 +144,22 @@ class ContextAwareNetwork(nn.Module):
         super(ContextAwareNetwork, self).__init__()
         self.input_size = input_size
         self.architecture = CONTEXT_ARCHITECTURE
+        if self.architecture == "residual_affine_v1":
+            token_dim = 64
+            self.feature_projection = nn.Linear(1, token_dim)
+            self.feature_identity = nn.Parameter(torch.zeros(1, input_size, token_dim))
+            nn.init.normal_(self.feature_identity, std=0.02)
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=token_dim, nhead=8, dim_feedforward=dim_feedforward,
+                dropout=0.0, activation="gelu", batch_first=True, norm_first=True)
+            self.transformer = nn.TransformerEncoder(
+                encoder_layer, num_layers=num_layers, enable_nested_tensor=False)
+            # Normalize hidden tokens only, never the adapted feature vector.
+            self.modulation_head = nn.Sequential(nn.LayerNorm(token_dim), nn.Linear(token_dim, 2))
+            nn.init.zeros_(self.modulation_head[-1].weight)
+            nn.init.zeros_(self.modulation_head[-1].bias)
+            print("Context residual affine: identity initialization, feature tokens, no BatchNorm/dropout")
+            return
         if self.architecture == "feature_tokens_v1":
             token_dim = 64
             self.feature_projection = nn.Linear(1, token_dim)
@@ -190,6 +206,12 @@ class ContextAwareNetwork(nn.Module):
     
     def forward(self, x):
         x_flat = x.squeeze(1)
+        if self.architecture == "residual_affine_v1":
+            tokens = self.feature_projection(x_flat.unsqueeze(-1)) + self.feature_identity
+            modulation = self.modulation_head(self.transformer(tokens))
+            delta_scale = torch.tanh(modulation[..., 0])
+            delta_shift = torch.tanh(modulation[..., 1])
+            return (x_flat * (1.0 + delta_scale) + delta_shift).unsqueeze(1)
         if self.architecture == "feature_tokens_v1":
             tokens = self.feature_projection(x_flat.unsqueeze(-1)) + self.feature_identity
             transformed = self.transformer(tokens)  # [batch, features, token_dim]
@@ -1504,7 +1526,12 @@ def cli():
                         help="Independent reproducible stream order seed; default 42.")
     parser.add_argument("--online-context-lr", type=float, default=0.25,
                         help="Evaluation-only Adam learning rate for Context updates; default 0.25 preserves previous runs.")
+    parser.add_argument("--context-architecture", choices=("feature_tokens_v1", "residual_affine_v1"),
+                        default=None,
+                        help="Training Context architecture; default feature_tokens_v1. Evaluation auto-detects checkpoint architecture.")
     args=parser.parse_args()
+    if args.command == "train":
+        CONTEXT_ARCHITECTURE = args.context_architecture or "feature_tokens_v1"
     if not np.isfinite(args.online_context_lr) or args.online_context_lr <= 0:
         parser.error("online-context-lr must be finite and positive.")
     if args.command != "evaluate" and args.online_context_lr != 0.25:
@@ -1582,7 +1609,7 @@ def cli():
             folder += f"_train_eps{TRAIN_EPSILON_START:g}to{TRAIN_EPSILON_END:g}_decay{TRAIN_EPSILON_DECAY:g}"
         if args.command == "train" and STREAM_ORDER != "input":
             folder += f"_class_interleaved_seed{STREAM_SEED}"
-        folder += "_feature_tokens_context_probabilities_validated_best"
+        folder += f"_{CONTEXT_ARCHITECTURE}_context_probabilities_validated_best"
         if args.training_selector_mode == "disagreement":
             folder += f"_train_disagreement_penalty{args.agreement_penalty:g}"
         args.output=str(Path(__file__).resolve().parent/"protocol_runs"/folder)
@@ -1649,8 +1676,10 @@ def cli():
             parser.error("Mixed Context architectures or selector states in Models folder.")
         CONTEXT_ARCHITECTURE = saved_architectures.pop()
         SELECTOR_STATE_VERSION = saved_states.pop()
-        if CONTEXT_ARCHITECTURE not in ("legacy_single_token", "feature_tokens_v1"):
+        if CONTEXT_ARCHITECTURE not in ("legacy_single_token", "feature_tokens_v1", "residual_affine_v1"):
             parser.error("Unsupported Context architecture.")
+        if args.context_architecture is not None and args.context_architecture != CONTEXT_ARCHITECTURE:
+            parser.error("Requested Context architecture does not match the saved checkpoint.")
         if SELECTOR_STATE_VERSION not in ("legacy_scalar_v2", "context_probability_vector_v1"):
             parser.error("Unsupported selector state version.")
         RUN_TRAINING_STATE_VERSION = saved_versions.pop()

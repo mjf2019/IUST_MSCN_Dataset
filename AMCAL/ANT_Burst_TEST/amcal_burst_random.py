@@ -81,7 +81,7 @@ def evaluate_level(args):
         if checkpoint.get("context_loss_mode", "legacy") != args.context_loss_mode:
             raise ValueError("Context loss setting must match the existing checkpoints.")
     original.CONTEXT_ARCHITECTURE = context_checkpoint.get("context_architecture", "legacy_single_token")
-    if original.CONTEXT_ARCHITECTURE not in ("legacy_single_token", "feature_tokens_v1"):
+    if original.CONTEXT_ARCHITECTURE not in ("legacy_single_token", "feature_tokens_v1", "residual_affine_v1"):
         raise ValueError("Unsupported Context architecture in checkpoint.")
     if cnn_checkpoint.get("context_architecture", "legacy_single_token") != original.CONTEXT_ARCHITECTURE:
         raise ValueError("Mixed CNN/Context architecture metadata.")
