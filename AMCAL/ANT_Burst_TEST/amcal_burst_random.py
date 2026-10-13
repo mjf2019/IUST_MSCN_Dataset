@@ -20,7 +20,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 # legacy classes, but this runner never instantiates a DQN, loads its checkpoint,
 # computes Q/rewards, creates replay, or invokes a selector optimizer.
 import amcal_burst_legacy as original
-from amcal_burst_stream import stream_permutation, permutation_sha256
+from amcal_burst_stream import stream_permutation, permutation_sha256, split_class_budget, class_budget_available, class_budget_report
 
 PER_LEVELS = (0, 1, 3, 5, 7, 10, 12, 15, 17, 20)
 
@@ -55,7 +55,10 @@ def parse_args():
                              "unequal predictions; legacy additionally requires confidence gap >= 0.005.")
     parser.add_argument("--stream-order", choices=("input", "class-interleaved"), default="class-interleaved")
     parser.add_argument("--stream-seed", type=int, default=42)
+    parser.add_argument("--budget-mode", choices=("total", "per-class"), default="total")
     args = parser.parse_args()
+    if args.budget_mode == "per-class":
+        args.stream_order = "input"
     if args.budget < 0 or args.max_samples < 1 or not np.isfinite(args.lr) or args.lr <= 0:
         parser.error("budget must be nonnegative, max-samples positive, and lr finite and positive.")
     return args
@@ -133,12 +136,19 @@ def evaluate_level(args):
 
     n = len(attack)
     label_budget = min(args.budget, n)
+    class_quotas = split_class_budget(args.budget, num_classes)
+    class_used = {c: 0 for c in class_quotas}
     rng = np.random.default_rng(args.seed)
     query_mask = np.zeros(n, dtype=bool)
     if args.query_gate == "none":
         # Uniform sample without replacement; depends only on N, B and seed.
         # Predictions/features/labels do not influence the chosen positions.
-        query_mask[rng.choice(n, size=label_budget, replace=False)] = True
+        if args.budget_mode == "per-class":
+            for c, quota in class_quotas.items():
+                positions = np.flatnonzero(labels_array == c)
+                query_mask[rng.choice(positions, size=min(quota, len(positions)), replace=False)] = True
+        else:
+            query_mask[rng.choice(n, size=label_budget, replace=False)] = True
     threshold = 0.005 if args.query_gate == "legacy" else None
     updates = 0
     trace, before_predictions, after_predictions, base_predictions = [], [], [], []
@@ -169,6 +179,8 @@ def evaluate_level(args):
             chosen = (requested and before_prediction != base_prediction
                       and (threshold is None or gap >= threshold) and updates < label_budget)
 
+        block_id = int(labels_array[index])  # offline experiment metadata only
+        chosen = chosen and updates < label_budget and class_budget_available(args.budget_mode, block_id, class_used, class_quotas)
         observed_loss = None
         if chosen:
             # Predict first, then query and update: no label is passed to the
@@ -181,6 +193,7 @@ def evaluate_level(args):
             loss.backward()
             optimizer.step()
             updates += 1
+            class_used[block_id] += 1
             observed_loss = float(loss.detach().item())
             with torch.no_grad():
                 after_prediction = int(cnn(context(x)).argmax(1).item())
@@ -200,7 +213,8 @@ def evaluate_level(args):
             confidence_gap=gap, context_loss=observed_loss,
             cumulative_accuracy=cumulative_correct / (index + 1)))
 
-    if args.query_gate == "none" and updates != label_budget:
+    expected_queries = int(query_mask.sum()) if args.query_gate == "none" else None
+    if args.query_gate == "none" and updates != expected_queries:
         raise RuntimeError("Uniform random queries did not consume the requested unique-label budget.")
     classifier_unchanged = all(
         torch.equal(cnn_initial_state[name], tensor.detach().cpu())
@@ -210,7 +224,11 @@ def evaluate_level(args):
 
     if not 0 <= updates <= label_budget:
         raise RuntimeError("Online label budget exceeded.")
+    if args.budget_mode == "per-class" and any(class_used[c] > class_quotas[c] for c in class_quotas):
+        raise RuntimeError("Per-class budget exceeded.")
+    class_summary, class_curve = class_budget_report(trace, class_quotas)
     diagnostics = dict(
+        budget_mode=args.budget_mode, per_class_results=class_summary,
         stream_order=args.stream_order, stream_seed=args.stream_seed,
         within_class_order_preserved=True,
         permutation_sha256=permutation_sha256(source_indices),
@@ -248,6 +266,8 @@ def evaluate_level(args):
         classes_before=classification_report(labels_array, before_predictions, output_dict=True, zero_division=0),
         classes_after=classification_report(labels_array, after_predictions, output_dict=True, zero_division=0))
     budget_suffix = f"_budget{args.budget}" if args.budget != 214 else ""
+    if args.budget_mode == "per-class":
+        budget_suffix += "_budget_per_class"
     if args.stream_order != "input":
         budget_suffix += f"_class_interleaved_seed{args.stream_seed}"
     if args.lr != 0.25:
@@ -256,6 +276,10 @@ def evaluate_level(args):
                    args.output.resolve() / "Results" / f"random_no_rl_{args.query_gate}_seed{args.seed}{budget_suffix}")
     results_dir.mkdir(parents=True, exist_ok=True)
     prefix = f"no_rl_PER_{args.per}"
+    if args.budget_mode == "per-class":
+        pd.DataFrame(class_summary).to_csv(results_dir / f"{prefix}_class_results.csv", index=False)
+        pd.DataFrame(class_curve).to_csv(results_dir / f"{prefix}_class_curve.csv", index=False)
+        print(pd.DataFrame(class_summary).to_string(index=False))
     pd.DataFrame(trace).to_csv(results_dir / f"{prefix}_trace.csv", index=False)
     (results_dir / f"{prefix}_diagnostics.json").write_text(
         json.dumps(diagnostics, indent=2), encoding="utf-8")

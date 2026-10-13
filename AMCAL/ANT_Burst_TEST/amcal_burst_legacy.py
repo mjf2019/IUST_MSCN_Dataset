@@ -2,7 +2,7 @@
 Preserves legacy numerical logic, including post-update scoring and random online actions.
 Not the corrected evaluation protocol.
 """
-from amcal_burst_stream import stream_permutation, permutation_sha256, ClassInterleavedSampler
+from amcal_burst_stream import stream_permutation, permutation_sha256, ClassInterleavedSampler, split_class_budget, class_budget_available, class_budget_report
 from pathlib import Path
 from copy import deepcopy
 from contextlib import contextmanager
@@ -28,6 +28,7 @@ TEST_LABEL_BUDGET = 214
 SELECTION_COST = 0.0
 STREAM_ORDER = 'class-interleaved'
 STREAM_SEED = 42
+BUDGET_MODE = 'total'
 ONLINE_CONTEXT_LR = 0.25
 TRAIN_EPSILON_START = 1.0
 TRAIN_EPSILON_END = 0.01
@@ -987,6 +988,10 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         print(f"Error: Unknown labels in {test_file}. Skipping.")
         return [], cumulative_accuracy_df
     
+    # Offline experiment block IDs; not exposed to RL or prediction features.
+    stream_class_ids = y_test.copy()
+    class_quotas = split_class_budget(budget, len(label_encoder.classes_))
+    class_labels_used = {c: 0 for c in class_quotas}
     # Observer only: compare the frozen CNN under a train-fitted scaler.
     # This never replaces the scaler or input used by legacy learning.
     train_frame = pd.read_csv(BURST_DATA_DIR / "oversampled_train_dataset.csv")
@@ -1029,6 +1034,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         sample_idx += 1
         
         updates_before = updates_used
+        block_id = int(stream_class_ids[sample_idx-1])
+        class_used_before = class_labels_used[block_id]
         observed_reward, observed_loss = None, None
         # Compute CNN outputs and state
         with torch.no_grad():
@@ -1090,9 +1097,10 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             max_prob_diff = torch.max(torch.abs(max_weighted_prob - max_prob)).item()
             
             disagreement_passes = (LEGACY_QUERY_GATE == "none" or weighted_pred != cnn_pred)
-            if disagreement_passes and (threshold is None or max_prob_diff >= threshold) and updates_used < budget:
+            if disagreement_passes and (threshold is None or max_prob_diff >= threshold) and updates_used < budget and class_budget_available(BUDGET_MODE, block_id, class_labels_used, class_quotas):
                 
                 updates_used += 1
+                class_labels_used[block_id] += 1
                 context_optimizer.zero_grad()
                 encoded_inputs = context_model(inputs)
                 outputs = cnn_model(encoded_inputs)
@@ -1175,6 +1183,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 epsilon=float(dqn_agent.epsilon),
                 action_epsilon=action_epsilon, action_source=action_source,
                 labels_before=updates_before,
+                class_budget=class_quotas[block_id] if BUDGET_MODE=='per-class' else None,
+                class_labels_before=class_used_before, class_labels_used=class_labels_used[block_id],
                 confidence_gap=float(abs(weighted_probs_before.max().item()-max_prob.item())),
                 updated=updates_used>updates_before, labels_used=updates_used,
                 context_loss=observed_loss, reward=observed_reward))
@@ -1188,6 +1198,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     from sklearn.metrics import accuracy_score, classification_report
     os.makedirs(LEGACY_RESULTS_DIR, exist_ok=True)
     import json
+    if BUDGET_MODE == "per-class" and any(class_labels_used[c] > class_quotas[c] for c in class_quotas):
+        raise RuntimeError("Per-class label budget exceeded.")
+    class_summary, class_curve = class_budget_report(diagnostic_trace, class_quotas)
     if not 0 <= updates_used <= budget:
         raise RuntimeError("Online label budget exceeded.")
     diagnostics = dict(per=perturb_level, seed=LEGACY_DIAGNOSTIC_SEED,
@@ -1206,6 +1219,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         epsilon_decay=ONLINE_EPSILON_DECAY if LEGACY_SELECTOR_MODE=="learned" else 1.0,
         epsilon_decay_rule="after successful online selector optimization",
         label_budget=budget, actual_label_fraction=updates_used / total,
+        budget_mode=BUDGET_MODE, per_class_results=class_summary,
         online_context_lr=float(fine_tune_lr),
         first_query_step=next((row["step"] for row in diagnostic_trace if row["updated"]), None),
         last_query_step=next((row["step"] for row in reversed(diagnostic_trace) if row["updated"]), None),
@@ -1229,6 +1243,11 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         learned_policy_used_for_actions=LEGACY_SELECTOR_MODE=="learned",
         classes_before=classification_report(y_true,before_predictions,output_dict=True,zero_division=0),
         classes_after=classification_report(y_true,y_pred,output_dict=True,zero_division=0))
+    if BUDGET_MODE == "per-class":
+        pd.DataFrame(class_summary).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_class_results.csv", index=False)
+        pd.DataFrame(class_curve).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_class_curve.csv", index=False)
+        print("Per-class pre-update accuracy and label usage:")
+        print(pd.DataFrame(class_summary).to_string(index=False))
     pd.DataFrame(diagnostic_trace).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_trace.csv",index=False)
     Path(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_diagnostics.json").write_text(
         json.dumps(diagnostics,indent=2),encoding="utf-8")
@@ -1476,7 +1495,7 @@ def cli():
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
     global CONTEXT_ARCHITECTURE, SELECTOR_STATE_VERSION
-    global STREAM_ORDER, STREAM_SEED, ONLINE_CONTEXT_LR
+    global STREAM_ORDER, STREAM_SEED, ONLINE_CONTEXT_LR, BUDGET_MODE
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1529,7 +1548,15 @@ def cli():
     parser.add_argument("--context-architecture", choices=("feature_tokens_v1", "residual_affine_v1"),
                         default=None,
                         help="Training Context architecture; default feature_tokens_v1. Evaluation auto-detects checkpoint architecture.")
+    parser.add_argument("--budget-mode", choices=("total", "per-class"), default="total",
+                        help="Per-class divides the total cap over offline class blocks, no model resets or quota transfer.")
     args=parser.parse_args()
+    BUDGET_MODE = args.budget_mode
+    if BUDGET_MODE == "per-class":
+        if args.command != "evaluate":
+            parser.error("per-class budget is evaluation only.")
+        args.stream_order = "input"
+        print("Per-class budget: original class blocks, one checkpoint per perturbation level.")
     if args.command == "train":
         CONTEXT_ARCHITECTURE = args.context_architecture or "feature_tokens_v1"
     if not np.isfinite(args.online_context_lr) or args.online_context_lr <= 0:
@@ -1587,7 +1614,7 @@ def cli():
             results_output=None, per=args.per,
             stream_order=args.stream_order, stream_seed=args.stream_seed,
             seed=args.seed if args.seed is not None else 42,
-            budget=args.budget, max_samples=1073, lr=ONLINE_CONTEXT_LR,
+            budget=args.budget, budget_mode=args.budget_mode, max_samples=1073, lr=ONLINE_CONTEXT_LR,
             context_loss_mode=args.context_loss_mode,
             query_gate=args.query_gate if args.query_gate in ("legacy","disagreement") else "none"))
         return
@@ -1629,6 +1656,8 @@ def cli():
         gate_suffix += f"_class_interleaved_seed{STREAM_SEED}"
     if args.command == "evaluate" and ONLINE_CONTEXT_LR != 0.25:
         gate_suffix += f"_context_lr{ONLINE_CONTEXT_LR:g}"
+    if BUDGET_MODE == "per-class":
+        gate_suffix += "_budget_per_class"
     LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")
@@ -1699,6 +1728,7 @@ def cli():
         training_selector_mode=args.training_selector_mode,
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
+        budget_mode=BUDGET_MODE,
         selection_cost=args.selection_cost,
         online_context_lr=ONLINE_CONTEXT_LR if args.command=="evaluate" else None,
         training_state_version=RUN_TRAINING_STATE_VERSION,

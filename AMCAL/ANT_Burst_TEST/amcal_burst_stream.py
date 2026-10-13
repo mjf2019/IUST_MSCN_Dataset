@@ -41,3 +41,32 @@ class ClassInterleavedSampler:
         indices = stream_permutation(self.labels, seed=self.seed + self.epoch)
         self.epoch += 1
         return iter(indices)
+
+
+def split_class_budget(total, num_classes):
+    if total < 0 or num_classes < 1:
+        raise ValueError("Invalid class budget.")
+    share, remainder = divmod(total, num_classes)
+    return {c: share + int(c < remainder) for c in range(num_classes)}
+
+
+def class_budget_available(mode, class_id, used, quotas):
+    return mode != "per-class" or used[class_id] < quotas[class_id]
+
+
+def class_budget_report(rows, quotas):
+    """Observer-only pre-update accuracy curves; never feeds the learner."""
+    counts = {c: [0, 0, 0] for c in quotas}
+    curve = []
+    for row in rows:
+        c = int(row["true_label"])
+        counts[c][0] += 1
+        counts[c][1] += int(int(row["prediction_before_update"]) == c)
+        counts[c][2] += int(bool(row["updated"]))
+        n, correct, used = counts[c]
+        curve.append(dict(step=int(row["step"]), class_id=c, class_samples_seen=n,
+                          class_labels_used=used, accuracy_before_update=correct/n))
+    summary = [dict(class_id=c, samples=v[0], labels_used=v[2],
+                    label_budget=quotas[c], accuracy_before_update=v[1]/v[0] if v[0] else None)
+               for c, v in counts.items()]
+    return summary, curve
