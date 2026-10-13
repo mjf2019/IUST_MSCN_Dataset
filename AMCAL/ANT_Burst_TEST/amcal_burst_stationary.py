@@ -139,12 +139,9 @@ def train(args):
                     selector_state_mode='context', context_loss_mode='legacy',
                     reward_gain_weight=args.reward_gain_weight, reward_generalization_weight=0.0,
                     selection_cost=args.selection_cost, selector_transition_mode='terminal', selector_gamma=0.2)
-    # These optional fields were added after the older reference was trained.
-    # Absence means the historical disabled/default setting, never a mismatch.
-    historical_defaults = dict(selector_reward_profile='original', reward_generalization_weight=0.0)
     for name, checkpoint in checkpoints.items():
         for key, expected in required.items():
-            actual = checkpoint.get(key, historical_defaults.get(key))
+            actual = checkpoint.get(key, 'original' if key=='selector_reward_profile' else None)
             if actual != expected:
                 raise ValueError(f'{name}: source {key} must match {expected!r}.')
     cnn_checkpoint = checkpoints[names[0]]
@@ -172,14 +169,7 @@ def train(args):
     agent.target_net.load_state_dict(agent.policy_net.state_dict())
     initial_quality = policy_quality(agent, val_table)
     print('Source-policy validation quality before selector training:', initial_quality, flush=True)
-    # Fine-tuning must compete with the unchanged source initialization.
-    # Epoch 0 is a valid validation-selected snapshot, never attack-selected.
-    best = dict(key=(initial_quality['greedy_utility'], -initial_quality['value_mae']),
-                epoch=0, quality=initial_quality,
-                policy=deepcopy(agent.policy_net.state_dict()), target=deepcopy(agent.target_net.state_dict()),
-                replay=[], counters=dict(epsilon=agent.epsilon, steps_done=agent.steps_done,
-                                         bootstrap_optimizer_steps=agent.bootstrap_optimizer_steps))
-    history, stale = [], 0
+    history, best, stale = [], None, 0
     target_counter = 0
     for epoch in range(1, args.epochs+1):
         agent.policy_net.train()
@@ -235,8 +225,7 @@ def train(args):
                 training_selector_mode='original', agreement_penalty=None,
                 training_greedy_mode='legacy', training_replay_reset_every=0,
                 selector_only_training=True, stationary_probe_lr=args.probe_lr,
-                stationary_source=str(args.source.resolve()), stationary_best_epoch=best['epoch'],
-                stationary_selected_snapshot='source initialization' if best['epoch']==0 else 'fine-tuned selector')
+                stationary_source=str(args.source.resolve()), stationary_best_epoch=best['epoch'])
     for name in names[:2]:
         saved = dict(checkpoints[name])
         saved.update(tags)
@@ -259,7 +248,6 @@ def train(args):
                     policy_initialization='source policy weights; empty replay and new Adam',
                     validation_scope='class-balanced immediate greedy reward; no stream budget; not traffic accuracy',
                     initial_validation=initial_quality,
-                    selected_snapshot='source initialization' if best['epoch']==0 else 'fine-tuned selector',
                     best_epoch=best['epoch'], validation=best['quality'], history=history,
                     reproducibility=core.reproducibility_settings())
     (output/'stationary_training.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
