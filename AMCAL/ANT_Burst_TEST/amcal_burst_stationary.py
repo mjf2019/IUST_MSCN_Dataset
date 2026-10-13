@@ -139,9 +139,12 @@ def train(args):
                     selector_state_mode='context', context_loss_mode='legacy',
                     reward_gain_weight=args.reward_gain_weight, reward_generalization_weight=0.0,
                     selection_cost=args.selection_cost, selector_transition_mode='terminal', selector_gamma=0.2)
+    # These optional fields were added after the older reference was trained.
+    # Absence means the historical disabled/default setting, never a mismatch.
+    historical_defaults = dict(selector_reward_profile='original', reward_generalization_weight=0.0)
     for name, checkpoint in checkpoints.items():
         for key, expected in required.items():
-            actual = checkpoint.get(key, 'original' if key=='selector_reward_profile' else None)
+            actual = checkpoint.get(key, historical_defaults.get(key))
             if actual != expected:
                 raise ValueError(f'{name}: source {key} must match {expected!r}.')
     cnn_checkpoint = checkpoints[names[0]]
