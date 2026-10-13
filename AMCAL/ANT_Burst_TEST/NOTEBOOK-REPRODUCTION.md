@@ -1422,3 +1422,45 @@ This pilot is exploratory, not a stable multi-seed performance claim.
 
 Validation: AST and static constructor/optimizer wiring checks only; no model
 training, evaluation, imports, or GPU forward pass performed here.
+
+## Fixed strong CNN/Context with local DDQN selector diagnostic
+
+Extend the existing stationary diagnostic with optional
+`--transition-mode local --gamma 0.95`. Terminal/improvement/gain-zero remains
+the historical default; this is not the abandoned episodic/Monte Carlo runner.
+Use `--reward-profile original --reward-gain-weight 1` for the strong
+notebook_cost0p42_context_gain1_seed42 source, retaining its cost 0.42,
+context uncertainty state, and legacy Context objective. Missing source
+reward-profile tags mean original; other source settings must match.
+Source checkpoints must have terminal/gamma0.2 provenance. New output metadata
+records the selector's local/gamma0.95 settings and the original source path;
+CNN/Context tensors are copied unchanged, not jointly retrained.
+
+For each labelled normal-training candidate, a disposable Context copy starts
+from the fixed reference and receives one eval-mode online-objective Adam step
+at 0.25. Cache its action-1 reward, including optional CE decrease gain, and
+its post-update uncertainty state. Action 0 has immediate reward zero and
+next state equal to current state. In local mode every training transition
+has done=0 and uses existing DDQN optimization. The target network syncs every
+15 selector epochs. This represents SAME-INPUT local transitions, not future
+traffic. Counterfactual reset per candidate is an isolation diagnostic, not
+the paper's joint training procedure or a proof of an exact stationary MDP.
+
+Validation on normal validation candidates selects by class-balanced greedy
+immediate utility, then value residual. Local residual compares Q against DDQN
+bootstrap targets, not against immediate rewards. This selection metric does
+not measure budgeted adaptation accuracy and can fail to transfer. Validation
+labels never enter selector gradient batches. Source data splits remain
+unchanged; saved sample indices and source hashes preserve provenance.
+The old immediate-reward error output is now named value_mae with its scope
+explicitly recorded.
+
+Short pilot: train-samples 512, val-samples 128, up to 60 selector epochs,
+patience 15, min-epochs 20. run then evaluates learned and no-RL random
+on 0,7,20, seed42, budget53, linear release, no prediction filters,
+Context online LR0.25 and learned epsilon0.05. Original legacy evaluator
+handles both; learned Q updates online with its default Adam0.0001 and
+query-only optimizer steps plus real skip replay. CNN/Context start identically
+for matched modes. The policy dimensions and hidden architecture stay unchanged.
+Do not overwrite existing model folders. Static checks only; GPU runtime
+confirmation and performance improvement remain unverified.

@@ -2,7 +2,8 @@
 
 Run locally; the saved CNN/Context never learn during selector training.
 Each action-1 target uses its own disposable Context copy and fresh Adam.
-This isolates immediate reward fitting, not long-horizon/meta-learning.
+Terminal mode isolates immediate reward fitting. Optional local DDQN mode
+bootstraps from the same sample after a disposable update, not future traffic.
 """
 import argparse
 import json
@@ -33,13 +34,13 @@ def balanced_indices(labels, maximum, seed):
     return np.asarray(sorted(selected), dtype=int)
 
 
-def build_table(cnn, context_seed, dataset, counts, limit, seed, lr, label):
+def build_table(cnn, context_seed, dataset, counts, limit, seed, lr, label, gain_weight=0.0):
     inputs, labels = dataset.tensors
     indices = balanced_indices(labels.detach().cpu().numpy(), limit, seed)
     inputs, labels = inputs[indices], labels[indices]
     weights = torch.as_tensor(counts, dtype=torch.float32, device=core.device)
     criterion = torch.nn.CrossEntropyLoss(weight=weights)
-    states, rewards, base_predictions, before_predictions, after_predictions = [], [], [], [], []
+    states, next_states, rewards, base_predictions, before_predictions, after_predictions = [], [], [], [], [], []
     cache = {}
     for i in range(len(indices)):
         x, y = inputs[i:i+1].to(core.device), labels[i:i+1].to(core.device)
@@ -54,6 +55,7 @@ def build_table(cnn, context_seed, dataset, counts, limit, seed, lr, label):
                 state = torch.cat([x.squeeze(1), uncertainty], dim=1).detach().cpu()
                 base_pred = int(base_logits.argmax(dim=1).item())
                 before_pred = int(before_logits.argmax(dim=1).item())
+                before_ce = float(core.reward_ce(before_logits, y).item())
             # A separate copy per candidate, never shared across candidates.
             probe = deepcopy(context_seed).requires_grad_(True).eval()
             optimizer = torch.optim.Adam(probe.parameters(), lr=lr, weight_decay=1e-4)
@@ -63,19 +65,26 @@ def build_table(cnn, context_seed, dataset, counts, limit, seed, lr, label):
             core.context_objective(loss, base_loss, online=True).backward()
             optimizer.step()
             with torch.no_grad():
-                after_pred = int(cnn(probe(x)).argmax(dim=1).item())
+                after_logits = cnn(probe(x))
+                after_pred = int(after_logits.argmax(dim=1).item())
+                after_uncertainty = 1 - after_logits.softmax(dim=1).max(dim=1, keepdim=True).values
+                next_state = torch.cat([x.squeeze(1), after_uncertainty], dim=1).detach().cpu()
+                after_ce = float(core.reward_ce(after_logits, y).item())
             reward = core.compute_reward(1, base_pred, after_pred, int(y.item()))
-            cache[key] = (state, float(reward), base_pred, before_pred, after_pred)
+            reward += gain_weight * (before_ce - after_ce)
+            cache[key] = (state, next_state, float(reward), base_pred, before_pred, after_pred)
             del optimizer, probe
-        state, reward, base_pred, before_pred, after_pred = cache[key]
+        state, next_state, reward, base_pred, before_pred, after_pred = cache[key]
         states.append(state)
+        next_states.append(next_state)
         rewards.append(reward)
         base_predictions.append(base_pred)
         before_predictions.append(before_pred)
         after_predictions.append(after_pred)
         if (i+1) % 50 == 0 or i+1 == len(indices):
             print(f'{label} counterfactual rewards: {i+1}/{len(indices)}; unique probes={len(cache)}', flush=True)
-    return dict(states=torch.cat(states), apply_rewards=torch.tensor(rewards, dtype=torch.float32),
+    return dict(states=torch.cat(states), apply_next_states=torch.cat(next_states),
+                apply_rewards=torch.tensor(rewards, dtype=torch.float32),
                 labels=labels.detach().cpu(), source_indices=indices.tolist(),
                 base_predictions=base_predictions, before_predictions=before_predictions,
                 after_predictions=after_predictions, unique_probes=len(cache))
@@ -88,9 +97,20 @@ def policy_quality(agent, table):
     actions = q.argmax(dim=1)
     utilities = rewards * (actions == 1).float()
     errors = (q - torch.stack([torch.zeros_like(rewards), rewards], dim=1)).abs().mean(dim=1)
+    if core.SELECTOR_TRANSITION_MODE == 'local':
+        with core.evaluation_mode(agent.policy_net, agent.target_net), torch.no_grad():
+            action1_next = table['apply_next_states'].to(core.device)
+            next_actions = agent.policy_net(action1_next).argmax(dim=1)
+            next_values = agent.target_net(action1_next).gather(1, next_actions[:,None]).squeeze(1).cpu()
+            skip_next = table['states'].to(core.device)
+            skip_actions = agent.policy_net(skip_next).argmax(dim=1)
+            skip_values = agent.target_net(skip_next).gather(1, skip_actions[:,None]).squeeze(1).cpu()
+        targets = torch.stack([agent.gamma*skip_values, rewards+agent.gamma*next_values], dim=1)
+        errors = (q-targets).abs().mean(dim=1)
     classes = torch.unique(labels)
     balanced = lambda values: float(torch.stack([values[labels == c].mean() for c in classes]).mean())
-    return dict(greedy_utility=balanced(utilities), q_mae=balanced(errors),
+    return dict(greedy_utility=balanced(utilities), value_mae=balanced(errors),
+                value_error_scope='DDQN target residual' if core.SELECTOR_TRANSITION_MODE=='local' else 'immediate reward MAE',
                 select_fraction=float((actions == 1).float().mean()),
                 random_50_50_expected_utility=0.5 * balanced(rewards),
                 immediate_oracle_utility=balanced(rewards.clamp(min=0)))
@@ -106,22 +126,23 @@ def train(args):
     else:
         core.seed_run(args.seed)
     core.SELECTOR_REWARD_MODE = 'paper'
-    core.SELECTOR_REWARD_PROFILE = 'improvement'
+    core.SELECTOR_REWARD_PROFILE = args.reward_profile
     core.SELECTOR_STATE_MODE = 'context'
     core.CONTEXT_LOSS_MODE = 'legacy'
     core.SELECTION_COST = args.selection_cost
-    core.SELECTOR_TRANSITION_MODE = 'terminal'
-    core.SELECTOR_GAMMA = 0.2
+    core.SELECTOR_TRANSITION_MODE = args.transition_mode
+    core.SELECTOR_GAMMA = args.gamma
     core.TRAIN_GREEDY_MODE = 'legacy'
     names = ['initial_cnn_model.pth', 'adversarial_best_context.pth', 'adversarial_best_dqn.pth']
     checkpoints = {n: torch.load(source / n, map_location=core.device, weights_only=False) for n in names}
-    required = dict(selector_reward_mode='paper', selector_reward_profile='improvement',
+    required = dict(selector_reward_mode='paper', selector_reward_profile=args.reward_profile,
                     selector_state_mode='context', context_loss_mode='legacy',
-                    reward_gain_weight=0.0, reward_generalization_weight=0.0,
+                    reward_gain_weight=args.reward_gain_weight, reward_generalization_weight=0.0,
                     selection_cost=args.selection_cost, selector_transition_mode='terminal', selector_gamma=0.2)
     for name, checkpoint in checkpoints.items():
         for key, expected in required.items():
-            if checkpoint.get(key) != expected:
+            actual = checkpoint.get(key, 'original' if key=='selector_reward_profile' else None)
+            if actual != expected:
                 raise ValueError(f'{name}: source {key} must match {expected!r}.')
     cnn_checkpoint = checkpoints[names[0]]
     context_checkpoint = checkpoints[names[1]]
@@ -139,8 +160,8 @@ def train(args):
     train_loader, val_loader, _, _, num_classes, input_length, counts = core.load_training_data(str(args.data_dir.resolve()))
     if train_loader is None or input_length != length or num_classes != classes:
         raise ValueError('Training files and source model dimensions do not match.')
-    train_table = build_table(cnn, context, train_loader.dataset, counts, args.train_samples, args.seed, args.probe_lr, 'TRAIN')
-    val_table = build_table(cnn, context, val_loader.dataset, counts, args.val_samples, args.seed+1, args.probe_lr, 'VALIDATION')
+    train_table = build_table(cnn, context, train_loader.dataset, counts, args.train_samples, args.seed, args.probe_lr, 'TRAIN', args.reward_gain_weight)
+    val_table = build_table(cnn, context, val_loader.dataset, counts, args.val_samples, args.seed+1, args.probe_lr, 'VALIDATION', args.reward_gain_weight)
     # Start from the source policy, but no old replay/Adam or counter states.
     agent = core.DQNSelectorAgent(length+1, core.device, epsilon_start=1.0,
                                  epsilon_end=0.2, epsilon_decay=0.9)
@@ -163,22 +184,25 @@ def train(args):
                 action = int(actions[j].item())
                 action_counts[action] += 1
                 reward = float(train_table['apply_rewards'][row]) if action else 0.0
-                # Terminal one-step targets; next state is intentionally unused.
-                agent.replay_buffer.push(states[j:j+1], action, reward, states[j:j+1], 1.0)
+                next_state = train_table['apply_next_states'][row:row+1] if action else states[j:j+1]
+                agent.replay_buffer.push(states[j:j+1], action, reward, next_state,
+                                         0.0 if args.transition_mode=='local' else 1.0)
                 target_counter += 1
-            if target_counter >= 5:
+            if args.transition_mode=='terminal' and target_counter >= 5:
                 agent.update_target_network()
                 target_counter = 0
             loss = agent.optimize()
             if loss is not None:
                 losses.append(loss)
         agent.update_epsilon()
+        if args.transition_mode=='local' and epoch % 15 == 0:
+            agent.update_target_network()
         quality = policy_quality(agent, val_table)
-        key = (quality['greedy_utility'], -quality['q_mae'])
+        key = (quality['greedy_utility'], -quality['value_mae'])
         history.append(dict(epoch=epoch, **quality, dqn_loss=float(np.mean(losses)) if losses else None,
                             actions=action_counts, epsilon=agent.epsilon))
         print(f"Selector epoch {epoch}/{args.epochs}: val utility={quality['greedy_utility']:.4f}; "
-              f"random expected={quality['random_50_50_expected_utility']:.4f}; Q MAE={quality['q_mae']:.4f}; actions={action_counts}", flush=True)
+              f"random expected={quality['random_50_50_expected_utility']:.4f}; value MAE={quality['value_mae']:.4f}; actions={action_counts}", flush=True)
         if best is None or key > best['key']:
             best = dict(key=key, epoch=epoch, quality=quality,
                         policy=deepcopy(agent.policy_net.state_dict()), target=deepcopy(agent.target_net.state_dict()),
@@ -196,7 +220,8 @@ def train(args):
             raise RuntimeError('Source CNN/Context changed; refusing to save.')
     model_dir = output / 'Models'
     model_dir.mkdir(parents=True)
-    tags = dict(required, training_state_version=core.TRAINING_STATE_VERSION,
+    output_settings = dict(required, selector_transition_mode=args.transition_mode, selector_gamma=args.gamma)
+    tags = dict(output_settings, training_state_version=core.TRAINING_STATE_VERSION,
                 training_selector_mode='original', agreement_penalty=None,
                 training_greedy_mode='legacy', training_replay_reset_every=0,
                 selector_only_training=True, stationary_probe_lr=args.probe_lr,
@@ -209,7 +234,10 @@ def train(args):
                     replay_buffer=best['replay'], selector_training_counters=best['counters'],
                     best_epoch=best['epoch'], input_length=length, num_classes=classes,
                     stationary_validation=best['quality']), model_dir / names[2])
-    manifest = dict(experiment='stationary one-step counterfactual selector fine-tuning',
+    manifest = dict(experiment='stationary counterfactual selector fine-tuning',
+                    transition_mode=args.transition_mode, gamma=args.gamma,
+                    reward_profile=args.reward_profile, reward_gain_weight=args.reward_gain_weight,
+                    target_sync_rule='every 15 selector epochs' if args.transition_mode=='local' else 'legacy sample counter',
                     source=str(args.source.resolve()), output=str(output), seed=args.seed,
                     source_checkpoint_sha256={n: core.sha256_file(source/n) for n in names},
                     source_csv_sha256={n: core.sha256_file(args.data_dir/n) for n in
@@ -225,6 +253,7 @@ def train(args):
     (output/'stationary_training.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
     for label, table in [('train',train_table),('validation',val_table)]:
         np.savez_compressed(output/f'stationary_{label}_targets.npz', states=table['states'].numpy(),
+                            apply_next_states=table['apply_next_states'].numpy(),
                             labels=table['labels'].numpy(), action1_rewards=table['apply_rewards'].numpy(),
                             source_indices=np.asarray(table['source_indices']),
                             base_predictions=table['base_predictions'], before_predictions=table['before_predictions'],
@@ -241,7 +270,9 @@ def evaluate(args):
                   '--online-lr',str(args.online_lr),'--per',str(level)]
         if args.deterministic:
             common.append('--deterministic')
-        learned = common + ['--reward-mode','paper','--reward-profile','improvement',
+        learned = common + ['--reward-mode','paper','--reward-profile',args.reward_profile,
+                            '--transition-mode',args.transition_mode,'--gamma',str(args.gamma),
+                            '--reward-gain-weight',str(args.reward_gain_weight),
                             '--selection-cost',str(args.selection_cost),'--selector-state','context',
                             '--selector-mode','learned','--online-reward-timing','post',
                             '--online-skip-replay','--skip-optimizer-mode','queries',
@@ -265,18 +296,24 @@ def main():
     parser.add_argument('--min-epochs', type=int, default=20)
     parser.add_argument('--probe-lr', type=float, default=0.25)
     parser.add_argument('--selection-cost', type=float, default=0.42)
+    parser.add_argument('--reward-profile', choices=['original','improvement'], default='improvement')
+    parser.add_argument('--reward-gain-weight', type=float, default=0.0)
+    parser.add_argument('--transition-mode', choices=['terminal','local'], default='terminal')
+    parser.add_argument('--gamma', type=float, default=0.2)
     parser.add_argument('--online-lr', type=float, default=0.25)
     parser.add_argument('--budget', type=int, default=214)
     parser.add_argument('--levels', type=int, nargs='+', choices=[0,1,3,5,7,10,12,15,17,20], default=[0,7,20])
     args = parser.parse_args()
     if args.command != 'evaluate' and args.source is None:
-        parser.error('train/run requires --source with the existing improvement checkpoint folder.')
+        parser.error('train/run requires --source with matching paper/context checkpoints trained in terminal mode.')
     if min(args.train_samples,args.val_samples,args.epochs,args.patience) < 1 or not 0 <= args.min_epochs <= args.epochs:
         parser.error('Positive sample/epoch/patience limits and valid minimum epochs are required.')
     if not all(np.isfinite(v) and v > 0 for v in [args.probe_lr,args.online_lr]) or not np.isfinite(args.selection_cost) or args.selection_cost < 0:
         parser.error('Learning rates must be finite/positive and cost finite/nonnegative.')
     if not 0 <= args.budget <= 1073:
         parser.error('Budget must be between 0 and 1073.')
+    if not 0 <= args.gamma < 1 or not np.isfinite(args.reward_gain_weight) or args.reward_gain_weight < 0:
+        parser.error('Invalid gamma/gain weight.')
     if args.command in ['train','run']:
         train(args)
     if args.command in ['evaluate','run']:
