@@ -172,7 +172,14 @@ def train(args):
     agent.target_net.load_state_dict(agent.policy_net.state_dict())
     initial_quality = policy_quality(agent, val_table)
     print('Source-policy validation quality before selector training:', initial_quality, flush=True)
-    history, best, stale = [], None, 0
+    # Fine-tuning must compete with the unchanged source initialization.
+    # Epoch 0 is a valid validation-selected snapshot, never attack-selected.
+    best = dict(key=(initial_quality['greedy_utility'], -initial_quality['value_mae']),
+                epoch=0, quality=initial_quality,
+                policy=deepcopy(agent.policy_net.state_dict()), target=deepcopy(agent.target_net.state_dict()),
+                replay=[], counters=dict(epsilon=agent.epsilon, steps_done=agent.steps_done,
+                                         bootstrap_optimizer_steps=agent.bootstrap_optimizer_steps))
+    history, stale = [], 0
     target_counter = 0
     for epoch in range(1, args.epochs+1):
         agent.policy_net.train()
@@ -228,7 +235,8 @@ def train(args):
                 training_selector_mode='original', agreement_penalty=None,
                 training_greedy_mode='legacy', training_replay_reset_every=0,
                 selector_only_training=True, stationary_probe_lr=args.probe_lr,
-                stationary_source=str(args.source.resolve()), stationary_best_epoch=best['epoch'])
+                stationary_source=str(args.source.resolve()), stationary_best_epoch=best['epoch'],
+                stationary_selected_snapshot='source initialization' if best['epoch']==0 else 'fine-tuned selector')
     for name in names[:2]:
         saved = dict(checkpoints[name])
         saved.update(tags)
@@ -251,6 +259,7 @@ def train(args):
                     policy_initialization='source policy weights; empty replay and new Adam',
                     validation_scope='class-balanced immediate greedy reward; no stream budget; not traffic accuracy',
                     initial_validation=initial_quality,
+                    selected_snapshot='source initialization' if best['epoch']==0 else 'fine-tuned selector',
                     best_epoch=best['epoch'], validation=best['quality'], history=history,
                     reproducibility=core.reproducibility_settings())
     (output/'stationary_training.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
