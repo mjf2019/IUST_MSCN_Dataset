@@ -2,12 +2,6 @@
 Preserves legacy numerical logic, including post-update scoring and random online actions.
 Not the corrected evaluation protocol.
 """
-import os
-import sys
-# Set before CUDA context creation, including imports from the random runner.
-if "--deterministic" in sys.argv:
-    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
-
 from pathlib import Path
 from copy import deepcopy
 from contextlib import contextmanager
@@ -17,11 +11,9 @@ LEGACY_DIAGNOSTIC_SEED = None
 LEGACY_SELECTOR_MODE = 'original'
 LEGACY_QUERY_GATE = 'no-threshold'
 SELECTOR_REWARD_MODE = 'original'
-SELECTOR_REWARD_PROFILE = 'original'
 SELECTOR_TRANSITION_MODE = 'terminal'
 SELECTOR_GAMMA = 0.2
 CONTEXT_LOSS_MODE = 'legacy'
-SELECTOR_STATE_MODE = 'base'
 TRAINING_STATE_VERSION = 2
 RUN_TRAINING_STATE_VERSION = TRAINING_STATE_VERSION
 ONLINE_EPSILON_START = 0.0
@@ -30,77 +22,7 @@ ONLINE_EPSILON_DECAY = 1.0
 TRAINING_SELECTOR_MODE = 'original'
 AGREEMENT_PENALTY = 0.2
 TEST_LABEL_BUDGET = 214
-ONLINE_BUDGET_SCHEDULE = 'full'
-DETERMINISTIC_RUN = False
-ONLINE_SKIP_REPLAY = False
-ONLINE_SKIP_OPTIMIZER_MODE = 'all'
-ONLINE_REWARD_TIMING = 'pre'
-REWARD_GAIN_WEIGHT = 0.0
-GENERALIZATION_WEIGHT = 0.0
-ADVERSARIAL_EPOCHS = 300
-ADVERSARIAL_PATIENCE = 30
-ADVERSARIAL_MIN_EPOCHS = 0
-FREEZE_ONLINE_SELECTOR = False
-ONLINE_SELECTOR_LR = 1e-4
-ONLINE_GENERALIZATION_REFERENCE = 'none'
-CHECKPOINT_SELECTION = 'context'
-VALIDATION_PROBE_EVERY = 10
-VALIDATION_PROBE_SAMPLES = 200
-VALIDATION_PROBE_BUDGET_FRACTION = 0.2
-VALIDATION_PROBE_SEED = 42
 SELECTION_COST = 0.0
-TRAIN_EPSILON_START = 1.0
-TRAIN_EPSILON_END = 0.01
-TRAIN_EPSILON_DECAY = 0.995
-TRAIN_GREEDY_MODE = 'legacy'
-TRAIN_REPLAY_RESET_EVERY = 0
-
-
-def seed_run(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-
-def configure_deterministic(seed):
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-    torch.use_deterministic_algorithms(True)
-    seed_run(seed)
-
-
-def reproducibility_settings():
-    return dict(deterministic_algorithms=torch.are_deterministic_algorithms_enabled(),
-                cudnn_deterministic=torch.backends.cudnn.deterministic,
-                cudnn_benchmark=torch.backends.cudnn.benchmark,
-                cublas_workspace_config=os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
-                torch_version=str(torch.__version__), cuda_version=torch.version.cuda,
-                cudnn_version=torch.backends.cudnn.version())
-
-
-def sha256_file(path):
-    import hashlib
-    digest = hashlib.sha256()
-    with open(path, "rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def checkpoint_hashes():
-    return {name: sha256_file(Path("Models") / name)
-            for name in ("initial_cnn_model.pth", "adversarial_best_context.pth", "adversarial_best_dqn.pth")}
-
-
-def released_label_budget(step, stream_rows, budget):
-    """Cumulative linear allowance; unused labels carry forward. No future labels used."""
-    if ONLINE_BUDGET_SCHEDULE == "full":
-        return budget
-    if stream_rows < 1:
-        return 0
-    return min(budget, (budget * step + stream_rows - 1) // stream_rows)
 
 
 def replay_done(terminal=False):
@@ -140,29 +62,6 @@ def evaluation_mode(*models):
     finally:
         for module, training in previous_modes.items():
             module.training = training
-
-
-def reward_ce(logits, labels):
-    """Unweighted per-example CE on detached predictions; independent of Context loss weights."""
-    with torch.no_grad():
-        return torch.nn.functional.cross_entropy(logits.detach(), labels, reduction="none")
-
-
-def selector_input_width(input_length, num_classes):
-    return input_length + 2 * num_classes if SELECTOR_STATE_MODE == 'joint' else input_length + 1
-
-
-def joint_selector_state(inputs, base_logits, context_logits):
-    """Label-free state: raw features, all base probabilities, all Context probabilities."""
-    with torch.no_grad():
-        return torch.cat([inputs.squeeze(1).detach(), base_logits.detach().softmax(dim=1),
-                          context_logits.detach().softmax(dim=1)], dim=1).detach()
-
-
-def selector_context_logits(cnn_model, context_model, inputs):
-    """Label-free current Context observation; never update BN buffers or apply dropout."""
-    with evaluation_mode(cnn_model, context_model), torch.no_grad():
-        return cnn_model(context_model(inputs)).detach()
 
 
 # Shared Context objective: explicitly retain the old reproduction as a control.
@@ -355,13 +254,7 @@ class DQNSelectorAgent:
         else:
             # Greedy action - return tensor
             with torch.no_grad():
-                if TRAIN_GREEDY_MODE == 'eval':
-                    # Match inference action selection; restore every module's
-                    # mode before optimize(), which retains training Dropout.
-                    with evaluation_mode(self.policy_net):
-                        q_values = self.policy_net(state)
-                else:
-                    q_values = self.policy_net(state)
+                q_values = self.policy_net(state)
                 return q_values.argmax(dim=1)
     
     def update_epsilon(self):
@@ -584,9 +477,9 @@ def evaluate_model(model, test_loader, class_weights, context_model=None, dqn_ag
 def compute_reward(action, cnn_pred, weighted_pred, label):
     if action == 1:
         if weighted_pred != label and cnn_pred != label:
-            reward = 1.0 if SELECTOR_REWARD_PROFILE == "improvement" else 3.0
+            reward = 3.0
         elif weighted_pred == label and cnn_pred != label:
-            reward = 3.0 if SELECTOR_REWARD_PROFILE == "improvement" else 2.0
+            reward = 2.0
         elif weighted_pred != label and cnn_pred == label:
             reward = -2.0
         else:
@@ -595,183 +488,11 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
         reward = 0.0 if SELECTOR_REWARD_MODE == "paper" else (1.5 if cnn_pred == label else -1.0)
     return reward - SELECTION_COST if action == 1 else reward
 
-
-@contextmanager
-def preserve_random_state():
-    """Validation must not consume the training RNG stream."""
-    py_state = random.getstate()
-    np_state = np.random.get_state()
-    cpu_state = torch.get_rng_state()
-    cuda_states = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
-    try:
-        yield
-    finally:
-        random.setstate(py_state)
-        np.random.set_state(np_state)
-        torch.set_rng_state(cpu_state)
-        if cuda_states is not None:
-            torch.cuda.set_rng_state_all(cuda_states)
-
-
-def adaptation_validation_probe(cnn_model, context_model, dqn_agent, val_loader, class_counts):
-    """Copy-only, predict/query/update episode using existing validation data, never test."""
-    with preserve_random_state():
-        seed_run(VALIDATION_PROBE_SEED)
-        inputs_all, labels_all = val_loader.dataset.tensors
-        n = min(VALIDATION_PROBE_SAMPLES, len(inputs_all))
-        if n == 0:
-            raise ValueError("Validation probe requires a nonempty validation dataset.")
-        generator = torch.Generator().manual_seed(VALIDATION_PROBE_SEED)
-        # Fixed random subset; preserve the CSV row order within that subset.
-        indices = torch.randperm(len(inputs_all), generator=generator)[:n].sort().values
-        budget = int(n * VALIDATION_PROBE_BUDGET_FRACTION)
-        probe_cnn = deepcopy(cnn_model).eval()
-        probe_context = deepcopy(context_model).eval()
-        for parameter in probe_cnn.parameters():
-            parameter.requires_grad_(False)
-        agent = DQNSelectorAgent(
-            selector_input_width(inputs_all.shape[-1], len(class_counts)), device, gamma=dqn_agent.gamma,
-            epsilon_start=0.05, epsilon_end=0.05, epsilon_decay=1.0,
-            buffer_capacity=500, batch_size=128)
-        agent.policy_net.load_state_dict(dqn_agent.policy_net.state_dict())
-        # Match online loading: target initially equals current policy.
-        agent.target_net.load_state_dict(dqn_agent.policy_net.state_dict())
-        agent.policy_net.train()
-        agent.target_net.eval()
-        for experience in list(dqn_agent.replay_buffer.buffer)[-500:]:
-            agent.replay_buffer.push(*experience)
-        optimizer = optim.Adam(probe_context.parameters(), lr=0.25, weight_decay=1e-4)
-        criterion = nn.CrossEntropyLoss(weight=torch.as_tensor(class_counts, dtype=torch.float32, device=device))
-        used = correct = optimizer_steps = target_counter = 0
-        for step, row_index in enumerate(indices.tolist(), 1):
-            x = inputs_all[row_index:row_index+1].to(device)
-            y = labels_all[row_index:row_index+1].to(device)
-            with torch.no_grad():
-                base_logits = probe_cnn(x)
-                before_logits = probe_cnn(probe_context(x))
-                before_prediction = before_logits.argmax(dim=1)
-                base_prediction = base_logits.argmax(dim=1)
-                uncertainty = 1 - torch.softmax(before_logits, dim=1).max(dim=1, keepdim=True).values
-                state = torch.cat([x.squeeze(1), uncertainty], dim=1)
-                if SELECTOR_STATE_MODE == 'joint':
-                    state = joint_selector_state(x, base_logits, before_logits)
-                with evaluation_mode(agent.policy_net):
-                    action = int(agent.select_action(state).item())
-            # Observer only: score before revealing a queried label.
-            correct += int((before_prediction == y).item())
-            released = min(budget, (budget * step + n - 1) // n)
-            query = action == 1 and used < released
-            if query:
-                gain_before = reward_ce(before_logits, y) if REWARD_GAIN_WEIGHT > 0 else None
-                optimizer.zero_grad()
-                outputs = probe_cnn(probe_context(x))
-                loss = context_objective(criterion(outputs, y), criterion(base_logits, y), online=True)
-                loss.backward()
-                optimizer.step()
-                used += 1
-                with torch.no_grad():
-                    after_logits = probe_cnn(probe_context(x))
-                    after_prediction = int(after_logits.argmax(dim=1).item())
-                    next_uncertainty = 1 - torch.softmax(after_logits, dim=1).max(dim=1, keepdim=True).values
-                    next_state = torch.cat([x.squeeze(1), next_uncertainty], dim=1)
-                    if SELECTOR_STATE_MODE == 'joint':
-                        next_state = joint_selector_state(x, base_logits, after_logits)
-                reward = compute_reward(1, int(base_prediction.item()), after_prediction, int(y.item()))
-                if REWARD_GAIN_WEIGHT > 0:
-                    reward += REWARD_GAIN_WEIGHT * float((gain_before - reward_ce(after_logits, y)).item())
-                agent.replay_buffer.push(state, 1, reward, next_state,
-                                         replay_done(used >= budget or step >= n))
-                target_counter += 1
-                if reward < 0:
-                    agent.replay_buffer.push(state, 0, 0.0, state, replay_done(step >= n))
-                    target_counter += 1
-                # Same query-only optimizer cadence as the current learned control.
-                dqn_loss = agent.optimize()
-                if dqn_loss is not None:
-                    optimizer_steps += 1
-                    agent.update_epsilon()
-            elif action == 0 and used < budget:
-                agent.replay_buffer.push(state, 0, 0.0, state, replay_done(step >= n))
-                target_counter += 1
-            # Blocked action-1 requests are not relabeled as skips.
-            if target_counter >= 10:
-                agent.update_target_network()
-                target_counter = 0
-        return dict(
-            accuracy_before_update=correct/n, queried_labels=used, label_budget=budget,
-            evaluated_rows=n, selector_optimizer_steps=optimizer_steps,
-            source="existing validation CSV only; train-fitted preprocessing",
-            validation_sha256=sha256_file(BURST_DATA_DIR / "oversampled_validation_dataset.csv"),
-            subset_indices=indices.tolist(), seed=VALIDATION_PROBE_SEED,
-            online_epsilon=0.05, online_lr=0.25, budget_schedule="linear",
-            query_gate="none", online_reward_timing="post",
-            skip_replay=True, skip_optimizer_mode="queries")
-
-
-def generalization_training_partition(full_loader, seed=42, fraction=0.1):
-    """Reserve feature groups from TRAIN only; no Context gradients on reference rows.
-
-    CNN was already trained on the normal training file. This is a Context/RL
-    reference partition, not an unseen-CNN test or a new dataset split.
-    Exact feature duplicates must stay in the same partition.
-    """
-    import json
-    inputs, labels = full_loader.dataset.tensors
-    features = inputs.detach().cpu().reshape(len(inputs), -1).numpy()
-    labels_np = labels.detach().cpu().numpy()
-    _, representatives, inverse = np.unique(features, axis=0, return_index=True, return_inverse=True)
-    group_labels = labels_np[representatives]
-    if np.any(group_labels[inverse] != labels_np):
-        raise ValueError("Conflicting labels in exact feature groups; cannot build a disjoint reference partition.")
-    rng = np.random.default_rng(seed)
-    reference_groups = []
-    for label in np.unique(labels_np):
-        groups = np.flatnonzero(group_labels == label)
-        if len(groups) < 2:
-            raise ValueError("Each class needs at least two distinct feature groups.")
-        count = min(len(groups)-1, max(1, int(round(fraction * len(groups)))))
-        reference_groups.extend(rng.permutation(groups)[:count].tolist())
-    reference_groups = np.asarray(sorted(reference_groups), dtype=int)
-    reference_mask = np.isin(inverse, reference_groups)
-    support_rows = np.flatnonzero(~reference_mask)
-    # One representative per feature group prevents oversampling duplicates
-    # from dominating the reference loss.
-    reference_rows = representatives[reference_groups]
-    support_inputs, support_labels = inputs[support_rows], labels[support_rows]
-    counts = np.bincount(support_labels.cpu().numpy(), minlength=len(np.unique(labels_np)))
-    sampler = WeightedRandomSampler(1.0 / counts[support_labels.cpu().numpy()],
-                                    num_samples=len(support_rows), replacement=True)
-    loader = DataLoader(TensorDataset(support_inputs, support_labels), batch_size=128, sampler=sampler)
-    os.makedirs('Models', exist_ok=True)
-    (Path('Models') / 'generalization_partition.json').write_text(json.dumps(dict(
-        source='oversampled training tensors only', seed=seed, fraction_of_groups=fraction,
-        support_rows=support_rows.tolist(), reference_rows=reference_rows.tolist(),
-        excluded_reference_duplicate_rows=int(reference_mask.sum()),
-        support_class_counts=counts.tolist(), exact_feature_group_overlap=0,
-        cnn_has_seen_training_file=True), indent=2), encoding='utf-8')
-    print(f"Generalization reward: Context support rows={len(support_rows)}, reference unique rows={len(reference_rows)}")
-    return loader, inputs[reference_rows], labels[reference_rows], counts
-
-
-def reference_loss(cnn_model, context_model, inputs, labels):
-    """Detached, class-balanced CE; reference labels never enter backprop."""
-    with evaluation_mode(cnn_model, context_model), torch.no_grad():
-        losses = reward_ce(cnn_model(context_model(inputs)), labels)
-        return float(torch.stack([losses[labels == label].mean()
-                                  for label in torch.unique(labels)]).mean().item())
-
-
 def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, val_loader, class_counts, input_length, num_classes, fine_tune_epochs=500, patience=50):
-    reference_inputs = reference_labels = None
-    reference_rng = np.random.default_rng(LEGACY_DIAGNOSTIC_SEED if LEGACY_DIAGNOSTIC_SEED is not None else 42)
-    if GENERALIZATION_WEIGHT > 0:
-        full_loader, reference_inputs, reference_labels, class_counts = generalization_training_partition(
-            full_loader, seed=LEGACY_DIAGNOSTIC_SEED if LEGACY_DIAGNOSTIC_SEED is not None else 42)
     class_weights = torch.FloatTensor(1.0 / class_counts).to(device)
     cnn_criterion = nn.CrossEntropyLoss(weight=class_weights)
     context_optimizer = optim.Adam(context_model.parameters(), lr=5e-4, weight_decay=1e-4)
-    context_scheduler = lr_scheduler.CosineAnnealingLR(
-        context_optimizer, T_max=fine_tune_epochs + 20 if GENERALIZATION_WEIGHT > 0 else 100)
+    context_scheduler = lr_scheduler.CosineAnnealingLR(context_optimizer, T_max=100)
     
     best_val_accuracy = -float('inf')
     epochs_no_improve = 0
@@ -782,9 +503,6 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     best_replay = None
     best_epoch = None
     best_selector_counters = None
-    best_selection_key = None
-    best_adaptation_validation = None
-    selection_history = []
     
     # Pre-train ContextAwareNetwork
     print("Pre-training ContextAwareNetwork...")
@@ -805,10 +523,6 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     TARGET_UPDATE_FREQ = 5
     
     for epoch in range(fine_tune_epochs):
-        if TRAIN_REPLAY_RESET_EVERY > 0 and epoch % TRAIN_REPLAY_RESET_EVERY == 0:
-            removed = len(dqn_agent.replay_buffer)
-            dqn_agent.replay_buffer.buffer.clear()
-            print(f"Training replay refreshed before epoch {epoch+1}: removed {removed} experiences; weights/optimizer/epsilon retained.")
         cnn_model.eval()
         context_model.train()
         dqn_agent.policy_net.train()
@@ -820,11 +534,8 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         context_updated_samples = 0
         rejected_agreement_samples = 0
         rewards = []
-        epoch_selected_gains = []
-        epoch_reference_gains = []
         actions = []
         context_updated = False
-        epoch_action_epsilon = float(dqn_agent.epsilon)
         
         for inputs, labels in full_loader:
             inputs, labels = inputs.to(device), labels.to(device)
@@ -839,16 +550,9 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 max_prob, _ = torch.max(probs, dim=1, keepdim=True)
                 uncertainty = 1 - max_prob
             
-            if SELECTOR_STATE_MODE in ("context", "joint"):
-                current_context_logits = selector_context_logits(cnn_model, context_model, inputs)
-                uncertainty = 1 - softmax(current_context_logits).max(dim=1, keepdim=True).values
             features = inputs.squeeze(1).detach()
             state = torch.cat([features, uncertainty], dim=1).detach()
-            if SELECTOR_STATE_MODE == 'joint':
-                state = joint_selector_state(inputs, cnn_outputs, current_context_logits)
             
-            gain_before = reward_ce(current_context_logits, labels) if REWARD_GAIN_WEIGHT > 0 else None
-
             # Select actions for all samples in batch - returns tensor
             actions_batch = dqn_agent.select_action(state)
             actions.extend(actions_batch.cpu().tolist())
@@ -863,20 +567,6 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 rejected_agreement_samples += int(rejected_agreement.sum().item())
             action_mask = ((actions_batch == 1) & ~rejected_agreement).cpu()
             action_indices = action_mask.nonzero(as_tuple=True)[0]
-            reference_before = None
-            reference_gain = 0.0
-            if GENERALIZATION_WEIGHT > 0 and len(action_indices) > 0:
-                # Same reference mini-batch before/after, up to 16 distinct
-                # feature groups per class. Shared batch credit, not a
-                # counterfactual estimate of each selected sample's effect.
-                reference_index = []
-                reference_labels_np = reference_labels.cpu().numpy()
-                for label in np.unique(reference_labels_np):
-                    candidates = np.flatnonzero(reference_labels_np == label)
-                    reference_index.extend(reference_rng.choice(candidates, min(16, len(candidates)), replace=False).tolist())
-                query_inputs = reference_inputs[reference_index].to(device)
-                query_labels = reference_labels[reference_index].to(device)
-                reference_before = reference_loss(cnn_model, context_model, query_inputs, query_labels)
             
             # Update ContextAwareNetwork only for samples with action=1
             if len(action_indices) > 0:
@@ -900,9 +590,6 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 total_context_loss.backward()
                 context_optimizer.step()
                 running_context_loss += total_context_loss.item() * len(action_indices)
-                if reference_before is not None:
-                    reference_gain = reference_before - reference_loss(cnn_model, context_model, query_inputs, query_labels)
-                    epoch_reference_gains.append(reference_gain)
             
             # Compute rewards and next states
             with torch.no_grad():
@@ -910,20 +597,9 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 cnn_outputs_weighted = cnn_model(encoded_inputs).detach()
                 _, weighted_pred = torch.max(cnn_outputs_weighted, 1)
             
-            # Observe update benefit without training-dropout/BN noise.
-            update_gains = None
-            if REWARD_GAIN_WEIGHT > 0:
-                gain_after_logits = selector_context_logits(cnn_model, context_model, inputs)
-                update_gains = gain_before - reward_ce(gain_after_logits, labels)
-                epoch_selected_gains.extend(update_gains[action_mask.to(device)].cpu().tolist())
-
             # Compute rewards for all samples
             for i in range(batch_size):
                 r = compute_reward(actions_batch[i].item(), cnn_pred[i].item(), weighted_pred[i].item(), labels[i].item())
-                if REWARD_GAIN_WEIGHT > 0 and action_mask[i].item():
-                    r += REWARD_GAIN_WEIGHT * float(update_gains[i].item())
-                if GENERALIZATION_WEIGHT > 0 and action_mask[i].item():
-                    r += GENERALIZATION_WEIGHT * reference_gain
                 if rejected_agreement[i].item():
                     # Keep action=1 in replay so Q learns that this request is wasteful.
                     r = -AGREEMENT_PENALTY
@@ -932,16 +608,12 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             # Compute next states based on action
             with torch.no_grad():
                 if len(action_indices) > 0:
-                    cnn_outputs_new = (selector_context_logits(cnn_model, context_model, inputs)
-                                       if SELECTOR_STATE_MODE in ("context", "joint") else
-                                       cnn_model(context_model(inputs)).detach())
+                    cnn_outputs_new = cnn_model(context_model(inputs)).detach()
                     probs_new = softmax(cnn_outputs_new)
                     max_prob_new, _ = torch.max(probs_new, dim=1, keepdim=True)
                     uncertainty_new = 1 - max_prob_new
                     features_new = inputs.squeeze(1).detach()
                     next_state_new = torch.cat([features_new, uncertainty_new], dim=1).detach()
-                    if SELECTOR_STATE_MODE == 'joint':
-                        next_state_new = joint_selector_state(inputs, cnn_outputs, cnn_outputs_new)
                 else:
                     next_state_new = state
             
@@ -983,15 +655,10 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         print(f"Adversarial Epoch {epoch+1}/{fine_tune_epochs}:")
         print(f"  Context Loss: {running_context_loss / max(context_updated_samples, 1):.4f}")
         print(f"  DQN Loss: {running_dqn_loss / max(dqn_loss_count, 1):.4f}")
-        print(f"  Training epsilon used / next epoch: {epoch_action_epsilon:.4f} / {dqn_agent.epsilon:.4f}")
         print(f"  Context Updated Samples: {context_updated_samples}")
         if TRAINING_SELECTOR_MODE == 'disagreement':
             print(f"  Agreement requests rejected/penalized: {rejected_agreement_samples}")
         print(f"  Average Reward: {np.mean(rewards) if rewards else 0.0:.4f}")
-        if REWARD_GAIN_WEIGHT > 0:
-            print(f"  Average selected CE gain: {np.mean(epoch_selected_gains) if epoch_selected_gains else 0.0:.4f}")
-        if GENERALIZATION_WEIGHT > 0:
-            print(f"  Average reference CE gain (shared batch credit): {np.mean(epoch_reference_gains) if epoch_reference_gains else 0.0:.6f}")
         print(f"  Action Distribution: {np.bincount(actions, minlength=2) if actions else [0, 0]}")
         
         # Validation
@@ -1003,19 +670,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         print(f"  Val Recall: {val_results['Recall']:.4f}")
         print(f"  Val F1 Score: {val_results['F1 Score']:.4f}")
         
-        probe = None
-        candidate_key = None
-        if CHECKPOINT_SELECTION == 'context':
-            candidate_key = (float(val_results['Accuracy']), 0)
-        elif epoch == 0 or (epoch + 1) % VALIDATION_PROBE_EVERY == 0:
-            probe = adaptation_validation_probe(cnn_model, context_model, dqn_agent,
-                                                val_loader, class_counts)
-            candidate_key = (probe['accuracy_before_update'], -probe['queried_labels'])
-            selection_history.append(dict(epoch=epoch+1, clean_val_accuracy=float(val_results['Accuracy']), **probe))
-            print(f"  Adaptation validation pre-update accuracy: {probe['accuracy_before_update']:.4f}; labels: {probe['queried_labels']}/{probe['label_budget']}")
-        if candidate_key is not None and (best_selection_key is None or candidate_key > best_selection_key):
-            best_selection_key = candidate_key
-            best_adaptation_validation = probe
+        if val_results['Accuracy'] > best_val_accuracy:
             best_val_accuracy = val_results['Accuracy']
             epochs_no_improve = 0
             # state_dict tensors otherwise alias the live model and keep changing.
@@ -1030,7 +685,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             print(f"Updated best adversarial snapshot (epoch {best_epoch})")
         else:
             epochs_no_improve += 1
-            if epochs_no_improve >= patience and epoch + 1 >= ADVERSARIAL_MIN_EPOCHS:
+            if epochs_no_improve >= patience:
                 print(f"Early stopping triggered after {epoch+1} epochs.")
                 break
     
@@ -1044,15 +699,6 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         for name, value in best_selector_counters.items():
             setattr(dqn_agent, name, value)
         print(f"Loaded best Context/selector snapshot (epoch {best_epoch}, Val Accuracy: {best_val_accuracy:.4f})")
-        print(f"Restored best-snapshot training epsilon: {dqn_agent.epsilon:.4f}")
-        if best_adaptation_validation is not None:
-            print("Selected adaptation validation:", best_adaptation_validation["accuracy_before_update"],
-                  "labels:", best_adaptation_validation["queried_labels"])
-    if CHECKPOINT_SELECTION == "adaptation":
-        import json
-        Path("Models/adaptation_validation_history.json").write_text(
-            json.dumps(dict(criterion="pre-update validation accuracy; fewer labels breaks ties",
-                            selected_epoch=best_epoch, history=selection_history), indent=2), encoding="utf-8")
 
     # Save best models
     if best_context_state is not None:
@@ -1060,8 +706,6 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             'context_model_state_dict': best_context_state,
             'best_epoch': best_epoch,
             'best_val_accuracy': best_val_accuracy,
-            'checkpoint_selection': CHECKPOINT_SELECTION,
-            'adaptation_validation': best_adaptation_validation,
             'input_length': input_length,
             'num_classes': num_classes
         }, 'Models/adversarial_best_context.pth')
@@ -1073,8 +717,6 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             'dqn_target_net_state_dict': best_target_state,
             'best_epoch': best_epoch,
             'best_val_accuracy': best_val_accuracy,
-            'checkpoint_selection': CHECKPOINT_SELECTION,
-            'adaptation_validation': best_adaptation_validation,
             'selector_training_counters': best_selector_counters,
             'input_length': input_length,
             'num_classes': num_classes,
@@ -1089,8 +731,8 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
 def train_main():
     base_epoch = 200
     base_patience = 30
-    adver_epoch = ADVERSARIAL_EPOCHS
-    adver_patience = ADVERSARIAL_PATIENCE
+    adver_epoch = 300
+    adver_patience = 30
     
     # Load data
     train_loader, val_loader, test_loader, full_loader, num_classes, input_length, class_counts = load_training_data(dataset_path=str(BURST_DATA_DIR))
@@ -1124,12 +766,7 @@ def train_main():
     print(f"  F1 Score: {initial_results['F1 Score']:.4f}")
     
     # Initialize DQN and Context models
-    dqn_agent = DQNSelectorAgent(selector_input_width(input_length, num_classes), device,
-                                 epsilon_start=TRAIN_EPSILON_START,
-                                 epsilon_end=TRAIN_EPSILON_END,
-                                 epsilon_decay=TRAIN_EPSILON_DECAY)
-    if SELECTOR_STATE_MODE == 'joint':
-        print(f"Joint selector input: {input_length} features + {num_classes} CNN probabilities + {num_classes} Context probabilities = {selector_input_width(input_length, num_classes)}")
+    dqn_agent = DQNSelectorAgent(input_length + 1, device)
     context_model = ContextAwareNetwork(input_length).to(device)
     
     # Train adversarial system using full_loader (full dataset)
@@ -1188,9 +825,9 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
     
     if action == 1:
         if weighted_pred != label and cnn_pred != label:
-            reward = 1.0 if SELECTOR_REWARD_PROFILE == "improvement" else 3.0
+            reward = 3.0
         elif weighted_pred == label and cnn_pred != label:
-            reward = 3.0 if SELECTOR_REWARD_PROFILE == "improvement" else 2.0
+            reward = 2.0
         elif weighted_pred != label and cnn_pred == label:
             reward = -2.0
         else:
@@ -1234,21 +871,6 @@ def load_metadata(base_path='AdvBurst_FTSC-IAT', train_perturb_level=0):
     print(f"Input length: {X.shape[1]}")
 
     return num_classes, label_encoder, scaler, X.shape[1], class_counts
-
-def paid_history_reference(history, current_inputs):
-    """Previously QUERIED labels only. Exclude current feature duplicates.
-
-    These examples were already used to update Context: this is a retention
-    reward, not independent unseen-data generalization. At most 16 per class.
-    """
-    current_cpu = current_inputs.detach().cpu()
-    records = [(x, y) for items in history.values() for x, y in items
-               if not torch.equal(x, current_cpu)]
-    if not records:
-        return None, None
-    return (torch.cat([x for x, _ in records], dim=0).to(current_inputs.device),
-            torch.tensor([y for _, y in records], dtype=torch.long, device=current_inputs.device))
-
 
 def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, label_encoder, scaler, device, threshold, class_count, budget=300, fine_tune_lr=0.0001, max_test_samples=100):
     class_weights = torch.FloatTensor(class_count).to(device)
@@ -1301,7 +923,6 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     y_true = []
     sample_accuracies = []
     updates_used = 0
-    real_skip_replay_entries = 0
     dqn_updates_used = 0
     dqn_loss_count = 0
     running_dqn_loss = 0.0
@@ -1316,25 +937,14 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         dqn_agent.epsilon_decay = ONLINE_EPSILON_DECAY
         print(f"Online RL epsilon: {dqn_agent.epsilon:g} -> "
               f"{dqn_agent.epsilon_end:g}; decay={dqn_agent.epsilon_decay:g} per optimizer step")
-    print(f"Online budget schedule: {ONLINE_BUDGET_SCHEDULE}; total allowance: {budget}/{max_samples}")
-    print("Online query reward timing:", ONLINE_REWARD_TIMING)
     diagnostic_trace, before_predictions, base_predictions, train_base_predictions = [], [], [], []
-    paid_history = {}
-    if ONLINE_GENERALIZATION_REFERENCE == 'paid-history':
-        print("Online reference reward: retention on previously queried labels only; no additional label queries.")
     
     for inputs, labels in test_loader:
         inputs, labels = inputs.to(device), labels.to(device)
         sample_idx += 1
         
         updates_before = updates_used
-        released_budget = released_label_budget(sample_idx, max_samples, budget)
         observed_reward, observed_loss = None, None
-        observed_reward_prediction = None
-        observed_update_gain = None
-        observed_reference_gain = None
-        observed_reference_count = 0
-        skip_replay_added = False
         # Compute CNN outputs and state
         with torch.no_grad():
             cnn_outputs = cnn_model(inputs)
@@ -1345,15 +955,6 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             features = inputs.squeeze(1)
             state = torch.cat([features, uncertainty], dim=1)
         
-        if SELECTOR_STATE_MODE in ("context", "joint"):
-            cnn_outputs_weighted_before = selector_context_logits(cnn_model, context_model, inputs)
-            weighted_probs_before = softmax(cnn_outputs_weighted_before)
-            weighted_pred_before = cnn_outputs_weighted_before.argmax(dim=1)
-            uncertainty = 1 - weighted_probs_before.max(dim=1, keepdim=True).values
-            state = torch.cat([features, uncertainty], dim=1)
-            if SELECTOR_STATE_MODE == 'joint':
-                state = joint_selector_state(inputs, cnn_outputs, cnn_outputs_weighted_before)
-
         # Select action
         # select_action returns a tensor or int. We need int for appending to list.
         action_epsilon = float(dqn_agent.epsilon)
@@ -1379,13 +980,12 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         action = action_tensor.item() if isinstance(action_tensor, torch.Tensor) else int(action_tensor)
         actions.append(action)
         
-        # Context-mode logits were observed before action selection; reuse them.
-        if SELECTOR_STATE_MODE == "base":
-            with torch.no_grad():
-                encoded_inputs_before = context_model(inputs)
-                cnn_outputs_weighted_before = cnn_model(encoded_inputs_before)
-                weighted_probs_before = softmax(cnn_outputs_weighted_before)
-                _, weighted_pred_before = torch.max(cnn_outputs_weighted_before, 1)
+        # Compute weighted outputs BEFORE any context update
+        with torch.no_grad():
+            encoded_inputs_before = context_model(inputs)
+            cnn_outputs_weighted_before = cnn_model(encoded_inputs_before)
+            weighted_probs_before = softmax(cnn_outputs_weighted_before)
+            _, weighted_pred_before = torch.max(cnn_outputs_weighted_before, 1)
         
         # Observe the learned policy without dropout; do not alter legacy actions/RNG.
         previous_policy_mode = dqn_agent.policy_net.training
@@ -1405,17 +1005,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             max_prob_diff = torch.max(torch.abs(max_weighted_prob - max_prob)).item()
             
             disagreement_passes = (LEGACY_QUERY_GATE == "none" or weighted_pred != cnn_pred)
-            if disagreement_passes and (threshold is None or max_prob_diff >= threshold) and updates_used < released_budget:
+            if disagreement_passes and (threshold is None or max_prob_diff >= threshold) and updates_used < budget:
                 
                 updates_used += 1
-                reference_before = None
-                if ONLINE_GENERALIZATION_REFERENCE == 'paid-history':
-                    history_inputs, history_labels = paid_history_reference(paid_history, inputs)
-                    if history_inputs is not None:
-                        observed_reference_count = len(history_labels)
-                        reference_before = reference_loss(cnn_model, context_model, history_inputs, history_labels)
-                gain_before = (reward_ce(cnn_outputs_weighted_before, labels)
-                               if REWARD_GAIN_WEIGHT > 0 else None)
                 context_optimizer.zero_grad()
                 encoded_inputs = context_model(inputs)
                 outputs = cnn_model(encoded_inputs)
@@ -1424,32 +1016,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 total_context_loss = context_objective(context_loss, orig_cnn_loss, online=True)
                 total_context_loss.backward()
                 context_optimizer.step()
-                if reference_before is not None:
-                    observed_reference_gain = reference_before - reference_loss(
-                        cnn_model, context_model, history_inputs, history_labels)
                 
-                # Reward may observe AFTER the queried update, as in offline training.
-                # Pre-update scoring above remains untouched; no unqueried labels used.
-                reward_context_prediction = int(weighted_pred.item())
-                if ONLINE_REWARD_TIMING == "post":
-                    with torch.no_grad():
-                        reward_after_logits = cnn_model(context_model(inputs))
-                        reward_context_prediction = int(reward_after_logits.argmax(dim=1).item())
-                reward = compute_reward(action, cnn_pred.item(), reward_context_prediction, labels.item())
-                if REWARD_GAIN_WEIGHT > 0:
-                    observed_update_gain = float((gain_before - reward_ce(reward_after_logits, labels)).item())
-                    reward += REWARD_GAIN_WEIGHT * observed_update_gain
-                if observed_reference_gain is not None:
-                    reward += GENERALIZATION_WEIGHT * observed_reference_gain
-                # Admit the current label only AFTER its update/reward. It was
-                # charged to updates_used above. Never cache unqueried labels.
-                if ONLINE_GENERALIZATION_REFERENCE == 'paid-history':
-                    label_key = int(labels.item())
-                    cache = paid_history.setdefault(label_key, deque(maxlen=16))
-                    cached_input = inputs.detach().cpu().clone()
-                    if not any(torch.equal(x, cached_input) for x, _ in cache):
-                        cache.append((cached_input, label_key))
-                observed_reward_prediction = reward_context_prediction
+                # Compute reward for action=1
+                reward = compute_reward(action, cnn_pred.item(), weighted_pred.item(), labels.item())
                 rewards.append(reward)
                 observed_reward = float(reward)
                 observed_loss = float(total_context_loss.item())
@@ -1462,38 +1031,35 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                     max_prob_new, _ = torch.max(probs_new, dim=1, keepdim=True)
                     uncertainty_new = 1 - max_prob_new
                     next_state = torch.cat([features, uncertainty_new], dim=1)
-                    if SELECTOR_STATE_MODE == 'joint':
-                        next_state = joint_selector_state(inputs, cnn_outputs, cnn_outputs_new)
                 
-                if not FREEZE_ONLINE_SELECTOR:
-                    # Push action=1 to replay buffer
+                # Push action=1 to replay buffer
+                dqn_agent.replay_buffer.push(
+                    state, action, reward, next_state,
+                    replay_done(updates_used >= budget or sample_idx >= max_samples))
+                target_update_counter += 1
+                
+                # Hindsight Experience Replay: اگر reward منفی بود، action=0 رو هم اضافه کن
+                if reward < 0:
+                    reward_action0 = compute_reward(0, cnn_pred.item(), weighted_pred.item(), labels.item())
+                    # Next state for action=0 is the current state (no context update)
                     dqn_agent.replay_buffer.push(
-                        state, action, reward, next_state,
-                        replay_done(updates_used >= budget or sample_idx >= max_samples))
+                        state, 0, reward_action0, state,
+                        replay_done(sample_idx >= max_samples))
                     target_update_counter += 1
                 
-                    # Hindsight Experience Replay: اگر reward منفی بود، action=0 رو هم اضافه کن
-                    if reward < 0:
-                        reward_action0 = compute_reward(0, cnn_pred.item(), reward_context_prediction, labels.item())
-                        # Next state for action=0 is the current state (no context update)
-                        dqn_agent.replay_buffer.push(
-                            state, 0, reward_action0, state,
-                            replay_done(sample_idx >= max_samples))
-                        target_update_counter += 1
+                # Optimize DQN
+                dqn_loss = dqn_agent.optimize()
+                if dqn_loss is not None:
+                    running_dqn_loss += dqn_loss
+                    dqn_loss_count += 1
+                    dqn_updates_used += 1
+                    if LEGACY_SELECTOR_MODE == "learned":
+                        dqn_agent.update_epsilon()
                 
-                    # Optimize DQN
-                    dqn_loss = dqn_agent.optimize()
-                    if dqn_loss is not None:
-                        running_dqn_loss += dqn_loss
-                        dqn_loss_count += 1
-                        dqn_updates_used += 1
-                        if LEGACY_SELECTOR_MODE == "learned":
-                            dqn_agent.update_epsilon()
-                
-                    # Update target network every N steps
-                    if target_update_counter >= TARGET_UPDATE_FREQ:
-                        dqn_agent.update_target_network()
-                        target_update_counter = 0
+                # Update target network every N steps
+                if target_update_counter >= TARGET_UPDATE_FREQ:
+                    dqn_agent.update_target_network()
+                    target_update_counter = 0
                 
                 # Final output with updated context
                 with torch.no_grad():
@@ -1505,25 +1071,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                     encoded_inputs_final = context_model(inputs)
                     outputs = cnn_model(encoded_inputs_final)
         else:
-            # A REAL policy skip is distinct from an action-1 request blocked by budget.
-            if ONLINE_SKIP_REPLAY and updates_used < budget:
-                # Paper skip reward is label-free. No Context update or label query.
-                dqn_agent.replay_buffer.push(state, 0, 0.0, state,
-                                             replay_done(sample_idx >= max_samples))
-                real_skip_replay_entries += 1
-                skip_replay_added = True
-                observed_reward = 0.0
-                target_update_counter += 1
-                if ONLINE_SKIP_OPTIMIZER_MODE == "all":
-                    dqn_loss = dqn_agent.optimize()
-                    if dqn_loss is not None:
-                        running_dqn_loss += dqn_loss
-                        dqn_loss_count += 1
-                        dqn_updates_used += 1
-                        dqn_agent.update_epsilon()
-                if target_update_counter >= TARGET_UPDATE_FREQ:
-                    dqn_agent.update_target_network()
-                    target_update_counter = 0
+            # Action = 0: no context update, no reward, no replay buffer
             with torch.no_grad():
                 encoded_inputs_final = context_model(inputs)
                 outputs = cnn_model(encoded_inputs_final)
@@ -1542,20 +1090,13 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 prediction_before_update=int(weighted_pred_before.item()),
                 prediction_after_update=int(predicted.item()),
                 action=int(action), greedy_action=int(diagnostic_q.argmax(1).item()),
-                selector_state_mode=SELECTOR_STATE_MODE, state_uncertainty=float(uncertainty.item()),
                 q_skip=float(diagnostic_q[0,0].item()), q_apply=float(diagnostic_q[0,1].item()),
                 epsilon=float(dqn_agent.epsilon),
                 action_epsilon=action_epsilon, action_source=action_source,
-                labels_before=updates_before, skip_replay_added=skip_replay_added,
-                budget_schedule=ONLINE_BUDGET_SCHEDULE, released_label_budget=released_budget,
-                budget_release_blocked=(action == 1 and updates_before < budget and
-                                        updates_before >= released_budget),
+                labels_before=updates_before,
                 confidence_gap=float(abs(weighted_probs_before.max().item()-max_prob.item())),
                 updated=updates_used>updates_before, labels_used=updates_used,
-                context_loss=observed_loss, reward=observed_reward,
-                reward_timing=ONLINE_REWARD_TIMING, reward_context_prediction=observed_reward_prediction,
-                update_ce_gain=observed_update_gain,
-                reference_ce_gain=observed_reference_gain, reference_rows=observed_reference_count))
+                context_loss=observed_loss, reward=observed_reward))
             cumulative_accuracy_df.loc[cumulative_accuracy_df['Sample Index'] == sample_idx, f'Perturbation {perturb_level}'] = current_accuracy
     
     test_accuracy = correct / total
@@ -1579,25 +1120,6 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         epsilon_decay=ONLINE_EPSILON_DECAY if LEGACY_SELECTOR_MODE=="learned" else 1.0,
         epsilon_decay_rule="after successful online selector optimization",
         label_budget=budget, actual_label_fraction=updates_used / total,
-        online_lr=fine_tune_lr,
-        online_selector_lr=float(dqn_agent.optimizer.param_groups[0]['lr']),
-        online_selector_frozen=FREEZE_ONLINE_SELECTOR,
-        reward_generalization_weight=GENERALIZATION_WEIGHT,
-        online_reward_scope=('competitive plus paid-history retention' if ONLINE_GENERALIZATION_REFERENCE == 'paid-history'
-                             else 'competitive diagnostic only' if GENERALIZATION_WEIGHT > 0 else 'training objective'),
-        online_generalization_reference=ONLINE_GENERALIZATION_REFERENCE,
-        reference_label_source=('previously queried stream labels; already used for Context updates'
-                                if ONLINE_GENERALIZATION_REFERENCE == 'paid-history' else None),
-        reference_ce_gain_mean=(float(np.mean([row['reference_ce_gain'] for row in diagnostic_trace
-                                             if row['reference_ce_gain'] is not None]))
-                               if any(row['reference_ce_gain'] is not None for row in diagnostic_trace) else None),
-        budget_schedule=ONLINE_BUDGET_SCHEDULE,
-        reproducibility=reproducibility_settings(),
-        checkpoint_sha256=checkpoint_hashes(), attack_sha256=sha256_file(test_file),
-        seed_reset_each_level=DETERMINISTIC_RUN,
-        budget_release_rule=("all budget immediately" if ONLINE_BUDGET_SCHEDULE=="full" else
-                             "ceil(budget * step / stream_rows); unused allowance carries forward"),
-        budget_release_blocked_requests=sum(row["budget_release_blocked"] for row in diagnostic_trace),
         first_query_step=next((row["step"] for row in diagnostic_trace if row["updated"]), None),
         last_query_step=next((row["step"] for row in reversed(diagnostic_trace) if row["updated"]), None),
         policy_decisions_with_budget=sum(row["action_source"]=="policy" and row["labels_before"]<budget
@@ -1605,34 +1127,20 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         exploration_decisions_with_budget=sum(row["action_source"]=="exploration" and row["labels_before"]<budget
                                              for row in diagnostic_trace),
         reward_mode=SELECTOR_REWARD_MODE,
-        reward_profile=SELECTOR_REWARD_PROFILE,
         transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
         query_gate=LEGACY_QUERY_GATE, confidence_gap_threshold=threshold,
-        context_loss_mode=CONTEXT_LOSS_MODE, selector_state_mode=SELECTOR_STATE_MODE,
-        selector_input_width=int(dqn_agent.policy_net.network[0].in_features),
+        context_loss_mode=CONTEXT_LOSS_MODE,
         training_selector_mode=TRAINING_SELECTOR_MODE,
         agreement_penalty=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=='disagreement' else None,
         selection_cost=SELECTION_COST,
         training_state_version=RUN_TRAINING_STATE_VERSION,
         bootstrap_optimizer_steps=dqn_agent.bootstrap_optimizer_steps,
-        online_skip_replay=ONLINE_SKIP_REPLAY,
-        online_reward_timing=ONLINE_REWARD_TIMING, offline_reward_timing="post",
-        reward_gain_weight=REWARD_GAIN_WEIGHT,
-        update_ce_gain_mean=(float(np.mean([row["update_ce_gain"] for row in diagnostic_trace
-                                           if row["update_ce_gain"] is not None]))
-                            if any(row["update_ce_gain"] is not None for row in diagnostic_trace) else None),
-        skip_optimizer_mode=ONLINE_SKIP_OPTIMIZER_MODE if ONLINE_SKIP_REPLAY else None,
-        real_skip_replay_entries=real_skip_replay_entries,
-        reward_mean_scope="executed action-1 queries only; real skips have reward 0 in trace",
         replay_terminal_rows=sum(float(e[4]) == 1.0 for e in dqn_agent.replay_buffer.buffer),
         replay_nonterminal_rows=sum(float(e[4]) == 0.0 for e in dqn_agent.replay_buffer.buffer),
         learned_policy_used_for_actions=LEGACY_SELECTOR_MODE=="learned",
         classes_before=classification_report(y_true,before_predictions,output_dict=True,zero_division=0),
         classes_after=classification_report(y_true,y_pred,output_dict=True,zero_division=0))
     pd.DataFrame(diagnostic_trace).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_trace.csv",index=False)
-    diagnostics["trace_sha256"] = sha256_file(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_trace.csv")
-    if DETERMINISTIC_RUN:
-        print("Trace SHA256:", diagnostics["trace_sha256"])
     Path(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_diagnostics.json").write_text(
         json.dumps(diagnostics,indent=2),encoding="utf-8")
     print("Diagnostic frozen CNN / pre-update AMCAL / post-update AMCAL:",
@@ -1657,12 +1165,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     print(f"  Recall (weighted): {recall:.4f}")
     print(f"  F1 Score (weighted): {f1:.4f}")
     print(f"  Context Updates Used: {updates_used}/{budget}")
-    if ONLINE_SKIP_REPLAY:
-        scope = "queries only" if ONLINE_SKIP_OPTIMIZER_MODE == "queries" else "queries + real skips"
-        print(f"  DQN Updates Used: {dqn_updates_used} ({scope}; label budget is separate)")
-        print(f"  Real skips added to replay: {real_skip_replay_entries}")
-    else:
-        print(f"  DQN Updates Used: {dqn_updates_used}/{budget}")
+    print(f"  DQN Updates Used: {dqn_updates_used}/{budget}")
     print(f"  Average DQN Loss: {running_dqn_loss / max(dqn_loss_count, 1):.4f}")
     print(f"  Average Reward: {np.mean(rewards) if rewards else 0.0:.4f}")
     if LEGACY_SELECTOR_MODE == "learned":
@@ -1694,11 +1197,8 @@ def plot_accuracies(combined_accuracy_df, test_perturb_levels):
 
 
 
-def evaluate_main(fine_tune_lr=0.25):
-    print(f"Online Context learning rate: {fine_tune_lr:g}")
-    print(f"Online DQN learning rate: {ONLINE_SELECTOR_LR:g}")
-    if FREEZE_ONLINE_SELECTOR:
-        print("Online selector frozen: Q weights/replay unchanged; Context still adapts on queried labels.")
+def evaluate_main():
+    fine_tune_lr = 0.25
     test_perturb_levels = LEGACY_PER_LEVELS or [0, 1, 3, 5, 7, 10, 12, 15, 17, 20]
     cnn_perturb_level = 0
     base_path = str(BURST_DATA_DIR / 'AdvBurst_FTSC-IAT')
@@ -1720,8 +1220,6 @@ def evaluate_main(fine_tune_lr=0.25):
     accuracy_by_perturb = {}
     
     for perturb_level in test_perturb_levels:
-        if DETERMINISTIC_RUN:
-            seed_run(LEGACY_DIAGNOSTIC_SEED)
         print(f"\n{'='*50}")
         print(f"Starting processing for perturbation level {perturb_level}")
         print(f"{'='*50}")
@@ -1777,9 +1275,8 @@ def evaluate_main(fine_tune_lr=0.25):
                 continue
                 
             dqn_agent = DQNSelectorAgent(
-                input_size=selector_input_width(input_length, num_classes),
+                input_size=input_length + 1,
                 device=device,
-                lr=ONLINE_SELECTOR_LR,
                 epsilon_decay=0.5,
                 buffer_capacity=5000,
                 batch_size=128
@@ -1887,15 +1384,7 @@ def evaluate_main(fine_tune_lr=0.25):
 
 
 def cli():
-    global ONLINE_SELECTOR_LR
-    global TRAIN_REPLAY_RESET_EVERY
-    global TRAIN_GREEDY_MODE
-    global SELECTOR_REWARD_PROFILE
-    global ONLINE_GENERALIZATION_REFERENCE
-    global GENERALIZATION_WEIGHT, ADVERSARIAL_EPOCHS, ADVERSARIAL_PATIENCE, ADVERSARIAL_MIN_EPOCHS, FREEZE_ONLINE_SELECTOR
-    global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST, SELECTOR_STATE_MODE, ONLINE_REWARD_TIMING, REWARD_GAIN_WEIGHT
-    global CHECKPOINT_SELECTION, VALIDATION_PROBE_EVERY, VALIDATION_PROBE_SAMPLES, VALIDATION_PROBE_BUDGET_FRACTION, VALIDATION_PROBE_SEED
-    global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY, ONLINE_BUDGET_SCHEDULE, DETERMINISTIC_RUN, ONLINE_SKIP_REPLAY, ONLINE_SKIP_OPTIMIZER_MODE
+    global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1910,8 +1399,6 @@ def cli():
                              "learned: Q actions with optional epsilon-greedy exploration and online DQN.")
     parser.add_argument("--reward-mode", choices=("original","paper"), default="original",
                         help="paper sets only action-0 reward to zero; other legacy logic is unchanged.")
-    parser.add_argument("--reward-profile", choices=("original","improvement"), default="original",
-                        help="improvement: corrected CNN error gets 3, both wrong gets 1; requires paper skip-zero reward and fresh matching checkpoints.")
     parser.add_argument("--transition-mode", choices=("terminal","local"), default="terminal",
                         help="local enables same-input DDQN bootstrap; terminal preserves legacy immediate targets.")
     parser.add_argument("--gamma", type=float, default=0.2,
@@ -1932,159 +1419,9 @@ def cli():
                         help="Positive penalty magnitude for rejected training requests; default 0.2.")
     parser.add_argument("--budget", type=int, default=214,
                         help="Maximum labels/Context updates per test level, from 0 to 1073. Gates may use fewer.")
-    parser.add_argument("--online-lr", type=float, default=0.25,
-                        help="EVALUATE only: Context Adam learning rate in all selector modes; default preserves the notebook.")
     parser.add_argument("--selection-cost", type=float, default=0.0,
                         help="Subtract this cost from every action-1 reward in training and online replay; skip stays zero in paper mode.")
-    parser.add_argument("--train-epsilon-start", type=float, default=1.0,
-                        help="Offline DQN training only; historical default 1.")
-    parser.add_argument("--train-epsilon-end", type=float, default=0.01,
-                        help="Offline exploration floor; historical default 0.01.")
-    parser.add_argument("--train-epsilon-decay", type=float, default=0.995,
-                        help="Offline multiplicative decay once per epoch; historical default 0.995.")
-    parser.add_argument("--train-greedy-mode", choices=('legacy','eval'), default='legacy',
-                        help="TRAIN only: eval disables selector Dropout only for greedy decisions; optimizer behavior is unchanged.")
-    parser.add_argument("--train-replay-reset-every", type=int, default=0,
-                        help="TRAIN only: clear replay every N epochs; 0 preserves history. Keeps Q weights, optimizer, target and epsilon.")
-    parser.add_argument("--budget-schedule", choices=("full","linear"), default="full",
-                        help="Online diagnostic: full exposes all labels immediately; linear releases them over stream positions.")
-    parser.add_argument("--deterministic", action="store_true",
-                        help="Strict PyTorch/CUDA reproducibility and a fresh evaluation seed per level; requires --seed.")
-    parser.add_argument("--online-skip-replay", action="store_true",
-                        help="Learned/paper online diagnostic: record real skips with label-free zero reward and optimize while total label budget remains.")
-    parser.add_argument("--skip-optimizer-mode", choices=("all","queries"), default="all",
-                        help="With online-skip-replay: all optimizes after queries/skips; queries records skips without extra optimizer steps.")
-    parser.add_argument("--selector-state", choices=("base","context","joint"), default="base",
-                        help="context: modulated uncertainty; joint: raw features plus full CNN and Context class probabilities; fresh matching checkpoints required.")
-    parser.add_argument("--online-reward-timing", choices=("pre","post"), default="pre",
-                        help="post computes query reward after Context update, matching offline timing; scoring stays pre-update.")
-    parser.add_argument("--reward-gain-weight", type=float, default=0.0,
-                        help="Add beta*(unweighted Context CE before-after update) to executed action-1 reward, in train and online; fresh training required.")
-    parser.add_argument("--reward-generalization-weight", type=float, default=0.0,
-                        help="Experimental TRAIN reward: shared selected-batch improvement on separate training reference rows; fresh checkpoints required.")
-    parser.add_argument("--context-epochs", type=int, default=300)
-    parser.add_argument("--context-patience", type=int, default=30)
-    parser.add_argument("--context-min-epochs", type=int, default=0,
-                        help="Do not early-stop before this epoch; still restore the best validation snapshot.")
-    parser.add_argument("--freeze-online-selector", action="store_true",
-                        help="EVALUATE learned only: preserve trained Q weights; Context still adapts within its label budget.")
-    parser.add_argument("--online-selector-lr", type=float, default=1e-4,
-                        help="EVALUATE learned/original: online DQN Adam rate; separate from Context --online-lr; default preserves history.")
-    parser.add_argument("--online-generalization-reference", choices=('none','paid-history'), default='none',
-                        help="EVALUATE learned: add CE retention gain on previous paid labels; no unqueried labels or extra label budget.")
-    parser.add_argument("--checkpoint-selection", choices=("context","adaptation"), default="context",
-                        help="TRAIN only: adaptation selects raw snapshots by copy-only budgeted validation episodes, never test.")
-    parser.add_argument("--validation-probe-every", type=int, default=10)
-    parser.add_argument("--validation-probe-samples", type=int, default=200)
-    parser.add_argument("--validation-probe-budget-fraction", type=float, default=0.2)
-    parser.add_argument("--validation-probe-seed", type=int, default=42)
     args=parser.parse_args()
-    if not np.isfinite(args.online_selector_lr) or args.online_selector_lr <= 0:
-        parser.error("online-selector-lr must be finite and positive.")
-    if args.online_selector_lr != 1e-4 and (args.command != 'evaluate' or args.selector_mode == 'random' or args.freeze_online_selector):
-        parser.error("Custom online-selector-lr requires evaluate learned/original with an unfrozen DQN.")
-    ONLINE_SELECTOR_LR = args.online_selector_lr
-    if args.train_replay_reset_every < 0:
-        parser.error("train-replay-reset-every must be nonnegative.")
-    if args.command != 'train' and args.train_replay_reset_every != 0:
-        parser.error("train-replay-reset-every applies only to training; evaluation uses the saved replay.")
-    TRAIN_REPLAY_RESET_EVERY = args.train_replay_reset_every
-    if args.command != 'train' and args.train_greedy_mode != 'legacy':
-        parser.error("train-greedy-mode changes training only; evaluation already uses eval-mode learned actions.")
-    TRAIN_GREEDY_MODE = args.train_greedy_mode
-    if args.reward_profile == 'improvement':
-        if args.reward_mode != 'paper' or args.training_selector_mode != 'original':
-            parser.error("improvement profile requires paper skip-zero rewards and original training selection.")
-        if args.reward_gain_weight != 0 or args.reward_generalization_weight != 0 or args.online_generalization_reference != 'none' or args.checkpoint_selection != 'context':
-            parser.error("Isolate improvement profile: disable local/nonlocal gain rewards and use normal context validation selection.")
-        if args.selector_mode == 'random':
-            parser.error("No-RL random does not compute rewards; omit reward-profile for random evaluation.")
-    SELECTOR_REWARD_PROFILE = args.reward_profile
-    if args.context_epochs < 1 or args.context_patience < 1 or not 0 <= args.context_min_epochs <= args.context_epochs:
-        parser.error("context epochs/patience must be positive; min epochs must be between zero and max epochs.")
-    if args.command != 'train' and (args.context_epochs, args.context_patience, args.context_min_epochs) != (300,30,0):
-        parser.error("context epoch/patience settings apply only to train.")
-    if not np.isfinite(args.reward_generalization_weight) or args.reward_generalization_weight < 0:
-        parser.error("reward-generalization-weight must be finite and nonnegative.")
-    if args.reward_generalization_weight > 0:
-        if args.reward_mode != 'paper' or args.selector_state != 'context' or args.training_selector_mode != 'original' or args.reward_gain_weight != 0:
-            parser.error("generalization reward requires paper/context/original training selection and reward-gain-weight 0.")
-        if args.checkpoint_selection != 'context':
-            parser.error("Use normal validation checkpoint selection for the generalization-reward experiment.")
-        if args.command == 'evaluate' and (args.selector_mode != 'learned' or
-                not (args.freeze_online_selector or args.online_generalization_reference == 'paid-history')):
-            parser.error("generalization-trained learned evaluation requires freeze-online-selector or online-generalization-reference paid-history.")
-    if args.online_generalization_reference == 'paid-history':
-        if args.command != 'evaluate' or args.selector_mode != 'learned' or args.reward_generalization_weight <= 0 or args.freeze_online_selector or args.online_reward_timing != 'post':
-            parser.error("paid-history requires evaluate/learned, matching positive generalization weight, unfrozen selector and post reward timing.")
-    ONLINE_GENERALIZATION_REFERENCE = args.online_generalization_reference
-    if args.freeze_online_selector and (args.command != 'evaluate' or args.selector_mode != 'learned' or args.online_skip_replay):
-        parser.error("freeze-online-selector requires evaluate/learned and no online-skip-replay.")
-    if args.freeze_online_selector and (args.epsilon_end != args.epsilon_start or args.epsilon_decay != 1.0):
-        parser.error("Frozen selector uses constant exploration; epsilon start/end must match and decay must be 1.")
-    GENERALIZATION_WEIGHT = args.reward_generalization_weight
-    ADVERSARIAL_EPOCHS = args.context_epochs
-    ADVERSARIAL_PATIENCE = args.context_patience
-    ADVERSARIAL_MIN_EPOCHS = args.context_min_epochs
-    FREEZE_ONLINE_SELECTOR = args.freeze_online_selector
-    if not np.isfinite(args.online_lr) or args.online_lr <= 0:
-        parser.error("online-lr must be finite and positive.")
-    if args.command != "evaluate" and args.online_lr != 0.25:
-        parser.error("online-lr changes online evaluation only, not training.")
-    if args.validation_probe_every < 1 or args.validation_probe_samples < 1:
-        parser.error("validation probe interval/sample count must be positive.")
-    if not 0 <= args.validation_probe_budget_fraction <= 1:
-        parser.error("validation probe budget fraction must be in [0,1].")
-    custom_probe = (args.checkpoint_selection != "context" or args.validation_probe_every != 10 or
-                    args.validation_probe_samples != 200 or args.validation_probe_budget_fraction != 0.2 or
-                    args.validation_probe_seed != 42)
-    if custom_probe and args.command != "train":
-        parser.error("checkpoint-selection and validation-probe settings apply only to train.")
-    if args.checkpoint_selection == "adaptation" and (args.reward_mode != "paper" or args.selector_state != "context"):
-        parser.error("adaptation checkpoint selection requires paper rewards and context selector state.")
-    CHECKPOINT_SELECTION = args.checkpoint_selection
-    VALIDATION_PROBE_EVERY = args.validation_probe_every
-    VALIDATION_PROBE_SAMPLES = args.validation_probe_samples
-    VALIDATION_PROBE_BUDGET_FRACTION = args.validation_probe_budget_fraction
-    VALIDATION_PROBE_SEED = args.validation_probe_seed
-    if not np.isfinite(args.reward_gain_weight) or args.reward_gain_weight < 0:
-        parser.error("reward-gain-weight must be finite and nonnegative.")
-    if args.reward_gain_weight > 0:
-        if args.reward_mode != "paper" or args.selector_state != "context" or args.training_selector_mode != "original":
-            parser.error("gain reward requires paper reward, context selector state and original training selector mode.")
-        if args.command == "evaluate" and (args.selector_mode == "random" or args.online_reward_timing != "post"):
-            parser.error("gain reward evaluation requires original/learned and --online-reward-timing post; omit gain flag for no-RL control.")
-    REWARD_GAIN_WEIGHT = args.reward_gain_weight
-    if args.online_reward_timing != "pre" and (args.command != "evaluate" or args.selector_mode == "random"):
-        parser.error("online-reward-timing post applies only to original/learned evaluation.")
-    ONLINE_REWARD_TIMING = args.online_reward_timing
-    SELECTOR_STATE_MODE = args.selector_state
-    if args.skip_optimizer_mode != "all" and not args.online_skip_replay:
-        parser.error("skip-optimizer-mode queries requires --online-skip-replay.")
-    ONLINE_SKIP_OPTIMIZER_MODE = args.skip_optimizer_mode
-    if args.online_skip_replay and (args.command != "evaluate" or args.selector_mode != "learned" or args.reward_mode != "paper"):
-        parser.error("online-skip-replay requires evaluate --selector-mode learned --reward-mode paper.")
-    ONLINE_SKIP_REPLAY = args.online_skip_replay
-    if args.deterministic and args.seed is None:
-        parser.error("--deterministic requires an explicit --seed.")
-    DETERMINISTIC_RUN = args.deterministic
-    if DETERMINISTIC_RUN:
-        configure_deterministic(args.seed)
-        print("Strict reproducibility enabled; evaluation seed resets before each level.")
-    if args.budget_schedule != "full" and args.command != "evaluate":
-        parser.error("linear budget schedule applies only to evaluate.")
-    ONLINE_BUDGET_SCHEDULE = args.budget_schedule
-    if not 0.0 <= args.train_epsilon_end <= args.train_epsilon_start <= 1.0:
-        parser.error("training epsilon requires 0 <= end <= start <= 1.")
-    if not 0.0 < args.train_epsilon_decay <= 1.0:
-        parser.error("train-epsilon-decay must be in (0, 1].")
-    changed_training_schedule = (args.train_epsilon_start != 1.0 or
-                                 args.train_epsilon_end != 0.01 or args.train_epsilon_decay != 0.995)
-    if changed_training_schedule and args.command != "train":
-        parser.error("train-epsilon settings apply only to train; online epsilon has separate flags.")
-    TRAIN_EPSILON_START = args.train_epsilon_start
-    TRAIN_EPSILON_END = args.train_epsilon_end
-    TRAIN_EPSILON_DECAY = args.train_epsilon_decay
     if not np.isfinite(args.selection_cost) or args.selection_cost < 0:
         parser.error("selection-cost must be finite and nonnegative.")
     if args.selection_cost > 0 and (args.reward_mode != "paper" or args.training_selector_mode != "original"):
@@ -2125,9 +1462,8 @@ def cli():
                    Path(__file__).resolve().parent / "protocol_runs" / "notebook_original",
             results_output=None, per=args.per,
             seed=args.seed if args.seed is not None else 42,
-            budget=args.budget, budget_schedule=args.budget_schedule, max_samples=1073, lr=args.online_lr,
+            budget=args.budget, max_samples=1073, lr=0.25,
             context_loss_mode=args.context_loss_mode,
-            deterministic=args.deterministic,
             query_gate=args.query_gate if args.query_gate in ("legacy","disagreement") else "none"))
         return
     if not 0.0 <= args.gamma < 1.0:
@@ -2138,28 +1474,12 @@ def cli():
     CONTEXT_LOSS_MODE=args.context_loss_mode
     if args.output is None:
         folder="notebook_original" if args.reward_mode=="original" else "notebook_skip_zero"
-        if args.reward_profile != 'original':
-            folder += f"_reward_{args.reward_profile}"
         if args.transition_mode != "terminal" or args.gamma != 0.2:
             folder += f"_{args.transition_mode}_gamma{args.gamma:g}"
         if args.context_loss_mode == "aligned":
             folder += "_context_aligned"
         if args.selection_cost > 0:
             folder += f"_selection_cost{args.selection_cost:g}"
-        if args.selector_state in ("context", "joint"):
-            folder += f"_state_{args.selector_state}"
-        if args.reward_gain_weight > 0:
-            folder += f"_reward_gain{args.reward_gain_weight:g}"
-        if args.reward_generalization_weight > 0:
-            folder += f"_generalization{args.reward_generalization_weight:g}"
-        if args.checkpoint_selection == "adaptation":
-            folder += "_adaptation_validated"
-        if changed_training_schedule:
-            folder += f"_train_eps{args.train_epsilon_start:g}to{args.train_epsilon_end:g}_decay{args.train_epsilon_decay:g}"
-        if args.train_greedy_mode != 'legacy':
-            folder += f"_train_greedy_{args.train_greedy_mode}"
-        if args.train_replay_reset_every > 0:
-            folder += f"_replay_reset{args.train_replay_reset_every}"
         folder += "_validated_best"
         if args.training_selector_mode == "disagreement":
             folder += f"_train_disagreement_penalty{args.agreement_penalty:g}"
@@ -2174,32 +1494,8 @@ def cli():
                    "_no_threshold" if args.query_gate=="no-threshold" else "")
     if args.selector_mode=="learned" and scheduled_epsilon:
         gate_suffix += f"_eps{args.epsilon_start:g}to{args.epsilon_end:g}_decay{args.epsilon_decay:g}"
-    if args.reward_gain_weight > 0:
-        gate_suffix += f"_gain{args.reward_gain_weight:g}"
-    if args.online_reward_timing != "pre":
-        gate_suffix += "_reward_post"
-    if args.online_skip_replay:
-        gate_suffix += "_skip_replay"
-        if args.skip_optimizer_mode == "queries":
-            gate_suffix += "_query_optimizer"
-    if args.deterministic:
-        gate_suffix += "_deterministic"
-    if args.budget_schedule != "full":
-        gate_suffix += "_budget_linear"
     if args.budget != 214:
         gate_suffix += f"_budget{args.budget}"
-    if args.online_lr != 0.25:
-        gate_suffix += f"_lr{args.online_lr:g}"
-    if args.online_selector_lr != 1e-4:
-        gate_suffix += f"_selector_lr{args.online_selector_lr:g}"
-    if args.freeze_online_selector:
-        gate_suffix += '_selector_frozen'
-    if args.reward_generalization_weight > 0:
-        gate_suffix += f"_generalization{args.reward_generalization_weight:g}"
-    if args.online_generalization_reference == 'paid-history':
-        gate_suffix += '_reference_paid_history'
-    if args.reward_profile != 'original':
-        gate_suffix += f"_reward_{args.reward_profile}"
     LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")
@@ -2226,23 +1522,12 @@ def cli():
             saved_mode=checkpoint.get("selector_reward_mode","original")
             if saved_mode!=args.reward_mode:
                 parser.error("Checkpoint reward mode mismatch: use the matching --reward-mode and --output.")
-            if checkpoint.get('selector_reward_profile', 'original') != args.reward_profile:
-                parser.error("Reward profile mismatch: use fresh training/checkpoints with matching reward-profile; old replay must not be reused.")
             if checkpoint.get("selector_transition_mode","terminal") != args.transition_mode:
                 parser.error("Checkpoint transition mode mismatch: train in a fresh --output with the requested mode.")
             if checkpoint.get("selector_gamma",0.2) != args.gamma:
                 parser.error("Checkpoint gamma mismatch: use the gamma from training.")
             if checkpoint.get("context_loss_mode","legacy") != args.context_loss_mode:
                 parser.error("Checkpoint Context loss mismatch: train with the requested --context-loss-mode in a fresh --output.")
-            if checkpoint.get("selector_state_mode", "base") != args.selector_state:
-                parser.error("Selector state mismatch: retrain in a fresh folder; old replay cannot be reused with a new state definition.")
-            expected_width = selector_input_width(checkpoint['input_length'], checkpoint['num_classes'])
-            if checkpoint.get('selector_input_width', checkpoint['input_length'] + 1) != expected_width:
-                parser.error("Selector input width mismatch: use complete freshly trained Models for this state mode.")
-            if checkpoint.get("reward_gain_weight", 0.0) != args.reward_gain_weight:
-                parser.error("Reward-gain mismatch: train in a fresh output folder with matching gain weight; do not mix old replay rewards.")
-            if checkpoint.get("reward_generalization_weight", 0.0) != args.reward_generalization_weight:
-                parser.error("Generalization-reward mismatch: use matching fresh checkpoints and reward-generalization-weight.")
             if checkpoint.get("selection_cost", 0.0) != args.selection_cost:
                 parser.error("Selection cost mismatch: use the training cost and matching Models folder.")
             if checkpoint.get("training_selector_mode", "original") != args.training_selector_mode:
@@ -2262,41 +1547,12 @@ def cli():
     (output/(manifest_name+".json")).write_text(json.dumps(dict(
         mode="legacy notebook diagnostic",source_cells=[2,7,9],random_seed=args.seed if args.seed is not None else "not fixed in original",
         scoring="post-update",selector_mode=args.selector_mode,reward_mode=args.reward_mode,
-        reward_profile=args.reward_profile,
-        training_greedy_mode=args.train_greedy_mode if args.command=='train' else checkpoint.get('training_greedy_mode', 'legacy'),
-        training_replay_reset_every=args.train_replay_reset_every if args.command=='train' else checkpoint.get('training_replay_reset_every', 0),
         transition_mode=args.transition_mode,gamma=args.gamma,
         query_gate=args.query_gate,confidence_gap_threshold=None if args.query_gate in ("none","no-threshold","disagreement") else 0.005,
         context_loss_mode=args.context_loss_mode,
-        selector_state_mode=args.selector_state,
         training_selector_mode=args.training_selector_mode,
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
-        online_lr=args.online_lr if args.command=="evaluate" else None,
-        online_selector_lr=args.online_selector_lr if args.command=="evaluate" else None,
-        budget_schedule=args.budget_schedule,
-        online_skip_replay=args.online_skip_replay,
-        online_reward_timing=args.online_reward_timing, offline_reward_timing="post",
-        reward_gain_weight=args.reward_gain_weight,
-        reward_generalization_weight=args.reward_generalization_weight,
-        adversarial_training_duration=dict(max_epochs=args.context_epochs, patience=args.context_patience,
-                                           min_epochs=args.context_min_epochs) if args.command=='train' else None,
-        online_selector_frozen=args.freeze_online_selector,
-        online_generalization_reference=args.online_generalization_reference,
-        online_reference_is_unseen=False,
-        checkpoint_selection=(args.checkpoint_selection if args.command=="train" else checkpoint.get("checkpoint_selection", "context")),
-        validation_probe=(dict(every=args.validation_probe_every, samples=args.validation_probe_samples,
-                               budget_fraction=args.validation_probe_budget_fraction, seed=args.validation_probe_seed,
-                               source="validation only; no attack test data") if args.command=="train" else None),
-        skip_optimizer_mode=args.skip_optimizer_mode if args.online_skip_replay else None,
-        reproducibility=reproducibility_settings(),
-        seed_reset_each_level=args.deterministic,
-        budget_release_rule="ceil(budget * step / stream_rows); unused allowance carries forward",
-        training_epsilon_schedule=(dict(start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
-                                       decay=TRAIN_EPSILON_DECAY, decay_rule="once per epoch")
-                                   if args.command=="train" else
-                                   checkpoint.get("training_epsilon_schedule",
-                                                  dict(start=1.0, end=0.01, decay=0.995, decay_rule="once per epoch"))),
         selection_cost=args.selection_cost,
         training_state_version=RUN_TRAINING_STATE_VERSION,
         next_state_scope="same input after Context update; not next traffic row",
@@ -2311,59 +1567,28 @@ def cli():
         os.chdir(output)
         if args.command=="train":
             print("Selector reward / transitions / gamma:", SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA)
-            print("Selector competitive reward profile:", SELECTOR_REWARD_PROFILE)
-            print("Training greedy selector mode:", TRAIN_GREEDY_MODE)
-            print("Training replay refresh interval (0 keeps history):", TRAIN_REPLAY_RESET_EVERY)
             print("Context loss mode:", CONTEXT_LOSS_MODE)
             print("Training selector mode / agreement penalty:", TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY)
             print("Action-1 reward cost:", SELECTION_COST)
-            print("Reward CE-gain weight:", REWARD_GAIN_WEIGHT)
-            print("Reward generalization weight (shared selected-batch credit):", GENERALIZATION_WEIGHT)
-            print("Context maximum / patience / minimum epochs:", ADVERSARIAL_EPOCHS, ADVERSARIAL_PATIENCE, ADVERSARIAL_MIN_EPOCHS)
-            print("Adversarial checkpoint selection:", CHECKPOINT_SELECTION)
-            print("Selector state uncertainty source:", SELECTOR_STATE_MODE)
-            print("Training epsilon start / floor / decay per epoch:",
-                  TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY)
             train_main()
             # Tag artifacts without altering the saved weights or replay experiences.
             for checkpoint_name in ("initial_cnn_model.pth","adversarial_best_context.pth","adversarial_best_dqn.pth"):
                 checkpoint_path=Path("Models")/checkpoint_name
                 checkpoint=torch.load(checkpoint_path,map_location="cpu",weights_only=False)
                 checkpoint["selector_reward_mode"]=SELECTOR_REWARD_MODE
-                checkpoint["selector_reward_profile"]=SELECTOR_REWARD_PROFILE
-                checkpoint["training_greedy_mode"]=TRAIN_GREEDY_MODE
-                checkpoint["training_replay_reset_every"]=TRAIN_REPLAY_RESET_EVERY
                 checkpoint["selector_transition_mode"]=SELECTOR_TRANSITION_MODE
                 checkpoint["selector_gamma"]=SELECTOR_GAMMA
                 checkpoint["context_loss_mode"]=CONTEXT_LOSS_MODE
                 checkpoint["training_state_version"]=TRAINING_STATE_VERSION
-                checkpoint["training_epsilon_schedule"]=dict(
-                    start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
-                    decay=TRAIN_EPSILON_DECAY, decay_rule="once per epoch")
-                checkpoint["training_reproducibility"]=reproducibility_settings()
-                checkpoint["reward_gain_weight"]=REWARD_GAIN_WEIGHT
-                checkpoint["reward_generalization_weight"]=GENERALIZATION_WEIGHT
-                checkpoint["adversarial_training_duration"]=dict(max_epochs=ADVERSARIAL_EPOCHS,
-                    patience=ADVERSARIAL_PATIENCE, min_epochs=ADVERSARIAL_MIN_EPOCHS)
-                checkpoint["offline_reward_timing"]="post"
-                checkpoint["selector_state_mode"]=SELECTOR_STATE_MODE
-                checkpoint["selector_input_width"]=selector_input_width(checkpoint['input_length'], checkpoint['num_classes'])
                 checkpoint["selection_cost"]=SELECTION_COST
                 checkpoint["training_selector_mode"]=TRAINING_SELECTOR_MODE
                 checkpoint["agreement_penalty"]=AGREEMENT_PENALTY if TRAINING_SELECTOR_MODE=="disagreement" else None
                 torch.save(checkpoint,checkpoint_path)
         else:
-            evaluate_main(fine_tune_lr=args.online_lr)
+            evaluate_main()
     finally:
         os.chdir(previous)
 
 if __name__=="__main__":
     cli()
-
-
-
-
-
-
-
 
