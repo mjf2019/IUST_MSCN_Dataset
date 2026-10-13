@@ -250,6 +250,8 @@ def evaluate_level(args):
     budget_suffix = f"_budget{args.budget}" if args.budget != 214 else ""
     if args.stream_order != "input":
         budget_suffix += f"_class_interleaved_seed{args.stream_seed}"
+    if args.lr != 0.25:
+        budget_suffix += f"_context_lr{args.lr:g}"
     results_dir = (args.results_output.resolve() if args.results_output else
                    args.output.resolve() / "Results" / f"random_no_rl_{args.query_gate}_seed{args.seed}{budget_suffix}")
     results_dir.mkdir(parents=True, exist_ok=True)

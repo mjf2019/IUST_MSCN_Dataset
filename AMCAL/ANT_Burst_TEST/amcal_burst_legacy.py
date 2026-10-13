@@ -28,6 +28,7 @@ TEST_LABEL_BUDGET = 214
 SELECTION_COST = 0.0
 STREAM_ORDER = 'class-interleaved'
 STREAM_SEED = 42
+ONLINE_CONTEXT_LR = 0.25
 TRAIN_EPSILON_START = 1.0
 TRAIN_EPSILON_END = 0.01
 TRAIN_EPSILON_DECAY = 0.995
@@ -975,6 +976,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     test_dataset = TensorDataset(X_test, y_test)
     
     # Optimizer for context_model
+    print(f"Online Context Adam learning rate: {fine_tune_lr:g}")
     context_optimizer = optim.Adam(context_model.parameters(), lr=fine_tune_lr, weight_decay=1e-4)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     
@@ -1182,6 +1184,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         epsilon_decay=ONLINE_EPSILON_DECAY if LEGACY_SELECTOR_MODE=="learned" else 1.0,
         epsilon_decay_rule="after successful online selector optimization",
         label_budget=budget, actual_label_fraction=updates_used / total,
+        online_context_lr=float(fine_tune_lr),
         first_query_step=next((row["step"] for row in diagnostic_trace if row["updated"]), None),
         last_query_step=next((row["step"] for row in reversed(diagnostic_trace) if row["updated"]), None),
         policy_decisions_with_budget=sum(row["action_source"]=="policy" and row["labels_before"]<budget
@@ -1262,7 +1265,7 @@ def plot_accuracies(combined_accuracy_df, test_perturb_levels):
 
 
 def evaluate_main():
-    fine_tune_lr = 0.25
+    fine_tune_lr = ONLINE_CONTEXT_LR
     test_perturb_levels = LEGACY_PER_LEVELS or [0, 1, 3, 5, 7, 10, 12, 15, 17, 20]
     cnn_perturb_level = 0
     base_path = str(BURST_DATA_DIR / 'AdvBurst_FTSC-IAT')
@@ -1451,7 +1454,7 @@ def cli():
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
     global CONTEXT_ARCHITECTURE, SELECTOR_STATE_VERSION
-    global STREAM_ORDER, STREAM_SEED
+    global STREAM_ORDER, STREAM_SEED, ONLINE_CONTEXT_LR
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1499,7 +1502,14 @@ def cli():
                         help="Interleave class slots in oversampled training splits and attack evaluation; preserve within-class order.")
     parser.add_argument("--stream-seed", type=int, default=42,
                         help="Independent reproducible stream order seed; default 42.")
+    parser.add_argument("--online-context-lr", type=float, default=0.25,
+                        help="Evaluation-only Adam learning rate for Context updates; default 0.25 preserves previous runs.")
     args=parser.parse_args()
+    if not np.isfinite(args.online_context_lr) or args.online_context_lr <= 0:
+        parser.error("online-context-lr must be finite and positive.")
+    if args.command != "evaluate" and args.online_context_lr != 0.25:
+        parser.error("online-context-lr applies only to evaluate; training Context LR is unchanged.")
+    ONLINE_CONTEXT_LR = args.online_context_lr
     STREAM_ORDER, STREAM_SEED = args.stream_order, args.stream_seed
     if not 0.0 <= args.train_epsilon_end <= args.train_epsilon_start <= 1.0:
         parser.error("train epsilon requires 0 <= end <= start <= 1.")
@@ -1550,7 +1560,7 @@ def cli():
             results_output=None, per=args.per,
             stream_order=args.stream_order, stream_seed=args.stream_seed,
             seed=args.seed if args.seed is not None else 42,
-            budget=args.budget, max_samples=1073, lr=0.25,
+            budget=args.budget, max_samples=1073, lr=ONLINE_CONTEXT_LR,
             context_loss_mode=args.context_loss_mode,
             query_gate=args.query_gate if args.query_gate in ("legacy","disagreement") else "none"))
         return
@@ -1590,6 +1600,8 @@ def cli():
         gate_suffix += f"_budget{args.budget}"
     if args.command == "evaluate" and STREAM_ORDER != "input":
         gate_suffix += f"_class_interleaved_seed{STREAM_SEED}"
+    if args.command == "evaluate" and ONLINE_CONTEXT_LR != 0.25:
+        gate_suffix += f"_context_lr{ONLINE_CONTEXT_LR:g}"
     LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")
@@ -1659,6 +1671,7 @@ def cli():
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
         selection_cost=args.selection_cost,
+        online_context_lr=ONLINE_CONTEXT_LR if args.command=="evaluate" else None,
         training_state_version=RUN_TRAINING_STATE_VERSION,
         context_architecture=CONTEXT_ARCHITECTURE,
         selector_state_version=SELECTOR_STATE_VERSION,
