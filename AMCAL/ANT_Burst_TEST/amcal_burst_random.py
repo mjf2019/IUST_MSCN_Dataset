@@ -20,6 +20,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 # legacy classes, but this runner never instantiates a DQN, loads its checkpoint,
 # computes Q/rewards, creates replay, or invokes a selector optimizer.
 import amcal_burst_legacy as original
+from amcal_burst_stream import stream_permutation, permutation_sha256
 
 PER_LEVELS = (0, 1, 3, 5, 7, 10, 12, 15, 17, 20)
 
@@ -52,6 +53,8 @@ def parse_args():
     parser.add_argument("--query-gate", choices=("none", "disagreement", "legacy"), default="none",
                         help="none: uniform fixed-budget queries; disagreement: random 50%% actions with only "
                              "unequal predictions; legacy additionally requires confidence gap >= 0.005.")
+    parser.add_argument("--stream-order", choices=("input", "class-interleaved"), default="class-interleaved")
+    parser.add_argument("--stream-seed", type=int, default=42)
     args = parser.parse_args()
     if args.budget < 0 or args.max_samples < 1 or not np.isfinite(args.lr) or args.lr <= 0:
         parser.error("budget must be nonnegative, max-samples positive, and lr finite and positive.")
@@ -103,6 +106,8 @@ def evaluate_level(args):
     attack_path = base_dir / f"AdvBurstTrainedBurst_size_{args.per}_Step_2000.csv"
     reference = pd.read_csv(reference_path)
     attack = pd.read_csv(attack_path).iloc[:args.max_samples]
+    source_indices = stream_permutation(attack.iloc[:, -1].to_numpy(), args.stream_order, args.stream_seed)
+    attack = attack.iloc[source_indices].reset_index(drop=True)
     if len(attack) == 0:
         raise ValueError("Evaluation stream is empty.")
     if reference.shape[1] - 1 != input_length or attack.shape[1] - 1 != input_length:
@@ -188,7 +193,7 @@ def evaluate_level(args):
         after_predictions.append(after_prediction)
         base_predictions.append(base_prediction)
         trace.append(dict(
-            step=index + 1, true_label=true_label, base_prediction=base_prediction,
+            step=index + 1, source_row=source_indices[index]+1, true_label=true_label, base_prediction=base_prediction,
             prediction_before_update=before_prediction,
             prediction_after_update=after_prediction,
             random_requested=requested, updated=chosen, labels_used=updates,
@@ -203,7 +208,12 @@ def evaluate_level(args):
     if not classifier_unchanged:
         raise RuntimeError("Frozen CNN weights or buffers changed.")
 
+    if not 0 <= updates <= label_budget:
+        raise RuntimeError("Online label budget exceeded.")
     diagnostics = dict(
+        stream_order=args.stream_order, stream_seed=args.stream_seed,
+        within_class_order_preserved=True,
+        permutation_sha256=permutation_sha256(source_indices),
         per=args.per, seed=args.seed, evaluated_rows=n,
         base_accuracy_legacy_scaler=float(accuracy_score(labels_array, base_predictions)),
         amcal_accuracy_before_update=float(accuracy_score(labels_array, before_predictions)),
@@ -238,6 +248,8 @@ def evaluate_level(args):
         classes_before=classification_report(labels_array, before_predictions, output_dict=True, zero_division=0),
         classes_after=classification_report(labels_array, after_predictions, output_dict=True, zero_division=0))
     budget_suffix = f"_budget{args.budget}" if args.budget != 214 else ""
+    if args.stream_order != "input":
+        budget_suffix += f"_class_interleaved_seed{args.stream_seed}"
     results_dir = (args.results_output.resolve() if args.results_output else
                    args.output.resolve() / "Results" / f"random_no_rl_{args.query_gate}_seed{args.seed}{budget_suffix}")
     results_dir.mkdir(parents=True, exist_ok=True)
