@@ -30,6 +30,7 @@ SELECTION_COST = 0.0
 STREAM_ORDER = 'class-interleaved'
 STREAM_SEED = 42
 BUDGET_MODE = 'total'
+QUOTA_POLICY = 'optional'
 HOLDOUT_FRACTION = 0.0
 ONLINE_CONTEXT_LR = 0.25
 TRAIN_EPSILON_START = 1.0
@@ -1008,6 +1009,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     stream_class_ids = y_test.copy()
     class_quotas = split_class_budget(budget, len(label_encoder.classes_))
     class_labels_used = {c: 0 for c in class_quotas}
+    class_remaining = np.bincount(stream_class_ids, minlength=len(class_quotas))
+    class_targets = {c: min(class_quotas[c], int(class_remaining[c])) for c in class_quotas}
     # Observer only: compare the frozen CNN under a train-fitted scaler.
     # This never replaces the scaler or input used by legacy learning.
     train_frame = pd.read_csv(BURST_DATA_DIR / "oversampled_train_dataset.csv")
@@ -1086,6 +1089,15 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         else:
             action_tensor = dqn_agent.select_action(state)
         action = action_tensor.item() if isinstance(action_tensor, torch.Tensor) else int(action_tensor)
+        requested_action = action
+        forced_query = (QUOTA_POLICY == "complete" and
+                        class_labels_used[block_id] < class_targets[block_id] and
+                        int(class_remaining[block_id]) <= class_targets[block_id] - class_labels_used[block_id] and
+                        action == 0)
+        if forced_query:
+            action = 1
+            action_source = "quota-completion"
+        class_remaining[block_id] -= 1
         actions.append(action)
         
         # Compute weighted outputs BEFORE any context update
@@ -1194,7 +1206,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 base_prediction_train_scaler=int(train_scaled_prediction),
                 prediction_before_update=int(weighted_pred_before.item()),
                 prediction_after_update=int(predicted.item()),
-                action=int(action), greedy_action=int(diagnostic_q.argmax(1).item()),
+                action=int(action), requested_action=int(requested_action), forced_query=bool(forced_query),
+                greedy_action=int(diagnostic_q.argmax(1).item()),
                 q_skip=float(diagnostic_q[0,0].item()), q_apply=float(diagnostic_q[0,1].item()),
                 epsilon=float(dqn_agent.epsilon),
                 action_epsilon=action_epsilon, action_source=action_source,
@@ -1216,6 +1229,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     import json
     if BUDGET_MODE == "per-class" and any(class_labels_used[c] > class_quotas[c] for c in class_quotas):
         raise RuntimeError("Per-class label budget exceeded.")
+    if QUOTA_POLICY == "complete" and class_labels_used != class_targets:
+        raise RuntimeError("Complete per-class quota was not consumed.")
     class_summary, class_curve = class_budget_report(diagnostic_trace, class_quotas)
     heldout_result, heldout_predictions = None, []
     if heldout_indices:
@@ -1242,8 +1257,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         epsilon_decay=ONLINE_EPSILON_DECAY if LEGACY_SELECTOR_MODE=="learned" else 1.0,
         epsilon_decay_rule="after successful online selector optimization",
         label_budget=budget, actual_label_fraction=updates_used / total,
-        budget_mode=BUDGET_MODE,
+        budget_mode=BUDGET_MODE, quota_policy=QUOTA_POLICY,
         per_class_results=class_summary,
+        forced_queries=sum(row['forced_query'] and row['updated'] for row in diagnostic_trace),
         holdout_fraction=HOLDOUT_FRACTION, final_holdout=heldout_result,
         adaptation_source_rows=[i+1 for i in source_indices], heldout_source_rows=[i+1 for i in heldout_indices],
         online_context_lr=float(fine_tune_lr),
@@ -1302,6 +1318,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     print(f"  Recall (weighted): {recall:.4f}")
     print(f"  F1 Score (weighted): {f1:.4f}")
     print(f"  Context Updates Used: {updates_used}/{budget}")
+    if QUOTA_POLICY == "complete":
+        print("  Forced quota-completion queries:", diagnostics["forced_queries"])
     print(f"  DQN Updates Used: {dqn_updates_used}/{budget}")
     print(f"  Average DQN Loss: {running_dqn_loss / max(dqn_loss_count, 1):.4f}")
     print(f"  Average Reward: {np.mean(rewards) if rewards else 0.0:.4f}")
@@ -1527,7 +1545,7 @@ def cli():
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
     global CONTEXT_ARCHITECTURE, SELECTOR_STATE_VERSION
-    global STREAM_ORDER, STREAM_SEED, ONLINE_CONTEXT_LR, BUDGET_MODE, HOLDOUT_FRACTION
+    global STREAM_ORDER, STREAM_SEED, ONLINE_CONTEXT_LR, BUDGET_MODE, HOLDOUT_FRACTION, QUOTA_POLICY
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1584,7 +1602,12 @@ def cli():
                         help="Per-class divides the total cap over offline class blocks, no model resets or quota transfer.")
     parser.add_argument("--holdout-fraction", type=float, default=0.0,
                         help="Evaluation only: reserve the final fraction of each class for final frozen inference.")
+    parser.add_argument("--quota-policy", choices=("optional", "complete"), default="optional",
+                        help="Complete: fill each class quota with forced tail queries; requires per-class budget and no gate.")
     args=parser.parse_args()
+    QUOTA_POLICY = args.quota_policy
+    if QUOTA_POLICY == "complete" and (args.command != "evaluate" or args.budget_mode != "per-class" or args.query_gate != "none"):
+        parser.error("quota-policy complete requires evaluate --budget-mode per-class --query-gate none.")
     if not np.isfinite(args.holdout_fraction) or not 0 <= args.holdout_fraction < 1:
         parser.error("holdout-fraction must be finite and in [0,1).")
     if args.command != "evaluate" and args.holdout_fraction != 0:
@@ -1653,7 +1676,7 @@ def cli():
             results_output=None, per=args.per,
             stream_order=args.stream_order, stream_seed=args.stream_seed,
             seed=args.seed if args.seed is not None else 42,
-            budget=args.budget, budget_mode=args.budget_mode, holdout_fraction=args.holdout_fraction, max_samples=1073, lr=ONLINE_CONTEXT_LR,
+            budget=args.budget, budget_mode=args.budget_mode, quota_policy=args.quota_policy, holdout_fraction=args.holdout_fraction, max_samples=1073, lr=ONLINE_CONTEXT_LR,
             context_loss_mode=args.context_loss_mode,
             query_gate=args.query_gate if args.query_gate in ("legacy","disagreement") else "none"))
         return
@@ -1699,6 +1722,8 @@ def cli():
         gate_suffix += "_budget_per_class"
     if HOLDOUT_FRACTION > 0:
         gate_suffix += f"_holdout{HOLDOUT_FRACTION:g}"
+    if QUOTA_POLICY == "complete":
+        gate_suffix += "_quota_complete"
     LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")
@@ -1769,7 +1794,7 @@ def cli():
         training_selector_mode=args.training_selector_mode,
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
-        budget_mode=BUDGET_MODE,
+        budget_mode=BUDGET_MODE, quota_policy=QUOTA_POLICY,
         selection_cost=args.selection_cost,
         online_context_lr=ONLINE_CONTEXT_LR if args.command=="evaluate" else None,
         training_state_version=RUN_TRAINING_STATE_VERSION,

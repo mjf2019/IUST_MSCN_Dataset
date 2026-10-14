@@ -58,7 +58,10 @@ def parse_args():
     parser.add_argument("--stream-seed", type=int, default=42)
     parser.add_argument("--budget-mode", choices=("total", "per-class"), default="total")
     parser.add_argument("--holdout-fraction", type=float, default=0.0)
+    parser.add_argument("--quota-policy", choices=("optional", "complete"), default="optional")
     args = parser.parse_args()
+    if args.quota_policy == "complete" and (args.budget_mode != "per-class" or args.query_gate != "none"):
+        parser.error("quota-policy complete requires per-class budget and query-gate none.")
     if not np.isfinite(args.holdout_fraction) or not 0 <= args.holdout_fraction < 1:
         parser.error("holdout-fraction must be finite and in [0,1).")
     if args.budget_mode == "per-class":
@@ -247,7 +250,7 @@ def evaluate_level(args):
             encoder.transform(heldout.iloc[:, -1].to_numpy()), device, heldout_indices, num_classes)
         print(f"Final unseen holdout accuracy: {heldout_result['accuracy']:.4f}")
     diagnostics = dict(
-        budget_mode=args.budget_mode, per_class_results=class_summary,
+        budget_mode=args.budget_mode, quota_policy=args.quota_policy, per_class_results=class_summary,
         holdout_fraction=args.holdout_fraction, final_holdout=heldout_result,
         adaptation_source_rows=[i+1 for i in source_indices], heldout_source_rows=[i+1 for i in heldout_indices],
         stream_order=args.stream_order, stream_seed=args.stream_seed,
@@ -295,6 +298,8 @@ def evaluate_level(args):
         budget_suffix += f"_context_lr{args.lr:g}"
     if args.holdout_fraction > 0:
         budget_suffix += f"_holdout{args.holdout_fraction:g}"
+    if args.quota_policy == "complete":
+        budget_suffix += "_quota_complete"
     results_dir = (args.results_output.resolve() if args.results_output else
                    args.output.resolve() / "Results" / f"random_no_rl_{args.query_gate}_seed{args.seed}{budget_suffix}")
     results_dir.mkdir(parents=True, exist_ok=True)
