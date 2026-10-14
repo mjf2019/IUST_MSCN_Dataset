@@ -3,6 +3,7 @@ Preserves legacy numerical logic, including post-update scoring and random onlin
 Not the corrected evaluation protocol.
 """
 from amcal_burst_stream import stream_permutation, permutation_sha256, ClassInterleavedSampler, split_class_budget, class_budget_available, class_budget_report
+from amcal_burst_holdout import split_holdout_indices, evaluate_heldout
 from pathlib import Path
 from copy import deepcopy
 from contextlib import contextmanager
@@ -29,6 +30,7 @@ SELECTION_COST = 0.0
 STREAM_ORDER = 'class-interleaved'
 STREAM_SEED = 42
 BUDGET_MODE = 'total'
+HOLDOUT_FRACTION = 0.0
 ONLINE_CONTEXT_LR = 0.25
 TRAIN_EPSILON_START = 1.0
 TRAIN_EPSILON_END = 0.01
@@ -952,6 +954,12 @@ def load_metadata(base_path='AdvBurst_FTSC-IAT', train_perturb_level=0):
     return num_classes, label_encoder, scaler, X.shape[1], class_counts
 
 def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, label_encoder, scaler, device, threshold, class_count, budget=300, fine_tune_lr=0.0001, max_test_samples=100):
+    if HOLDOUT_FRACTION > 0:
+        # Reserved target rows cannot influence preprocessing or class weights.
+        training_reference = pd.read_csv(BURST_DATA_DIR / "oversampled_train_dataset.csv")
+        scaler = StandardScaler().fit(training_reference.iloc[:, :-1].to_numpy())
+        class_count = np.bincount(label_encoder.transform(training_reference.iloc[:, -1].to_numpy()),
+                                 minlength=len(label_encoder.classes_))
     class_weights = torch.FloatTensor(class_count).to(device)
     cnn_criterion = nn.CrossEntropyLoss(weight=class_weights)
     cumulative_accuracy_df = pd.DataFrame(columns=['Sample Index', f'Perturbation {perturb_level}'])
@@ -971,10 +979,18 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         max_samples = min(len(df_test), max_test_samples)
         X_test = X_test[:max_samples]
         y_test = y_test[:max_samples]
-        # Reorder this SAME prefix, preserving FIFO order inside every class.
+        adaptation_indices, heldout_indices = split_holdout_indices(y_test, HOLDOUT_FRACTION)
+        heldout_X, heldout_y = X_test[heldout_indices].copy(), y_test[heldout_indices].copy()
+        if HOLDOUT_FRACTION > 0 and set(heldout_y) != set(label_encoder.classes_):
+            raise ValueError("Heldout set must contain all checkpoint classes.")
+        X_test, y_test = X_test[adaptation_indices], y_test[adaptation_indices]
+        max_samples = len(adaptation_indices)
+        # Interleave only the adaptation part; reserved rows never enter learners.
         source_indices = stream_permutation(y_test, STREAM_ORDER, STREAM_SEED)
         X_test = X_test[source_indices]
         y_test = y_test[source_indices]
+        source_indices = [adaptation_indices[i] for i in source_indices]
+        print(f"Adaptation rows: {max_samples}; heldout rows: {len(heldout_indices)}")
         print(f"Stream order: {STREAM_ORDER}; seed={STREAM_SEED}; "
               f"permutation={permutation_sha256(source_indices)}")
         cumulative_accuracy_df = pd.DataFrame({'Sample Index': range(1, max_samples + 1)})
@@ -1201,6 +1217,13 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     if BUDGET_MODE == "per-class" and any(class_labels_used[c] > class_quotas[c] for c in class_quotas):
         raise RuntimeError("Per-class label budget exceeded.")
     class_summary, class_curve = class_budget_report(diagnostic_trace, class_quotas)
+    heldout_result, heldout_predictions = None, []
+    if heldout_indices:
+        heldout_result, heldout_predictions = evaluate_heldout(
+            cnn_model, context_model, scaler.transform(heldout_X),
+            label_encoder.transform(heldout_y), device, heldout_indices, len(label_encoder.classes_))
+        print(f"Final unseen holdout accuracy: {heldout_result['accuracy']:.4f}")
+        print("Holdout per-class recall:", {c: heldout_result['classes'][str(c)]['recall'] for c in class_quotas})
     if not 0 <= updates_used <= budget:
         raise RuntimeError("Online label budget exceeded.")
     diagnostics = dict(per=perturb_level, seed=LEGACY_DIAGNOSTIC_SEED,
@@ -1219,7 +1242,10 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         epsilon_decay=ONLINE_EPSILON_DECAY if LEGACY_SELECTOR_MODE=="learned" else 1.0,
         epsilon_decay_rule="after successful online selector optimization",
         label_budget=budget, actual_label_fraction=updates_used / total,
-        budget_mode=BUDGET_MODE, per_class_results=class_summary,
+        budget_mode=BUDGET_MODE,
+        per_class_results=class_summary,
+        holdout_fraction=HOLDOUT_FRACTION, final_holdout=heldout_result,
+        adaptation_source_rows=[i+1 for i in source_indices], heldout_source_rows=[i+1 for i in heldout_indices],
         online_context_lr=float(fine_tune_lr),
         first_query_step=next((row["step"] for row in diagnostic_trace if row["updated"]), None),
         last_query_step=next((row["step"] for row in reversed(diagnostic_trace) if row["updated"]), None),
@@ -1248,6 +1274,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         pd.DataFrame(class_curve).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_class_curve.csv", index=False)
         print("Per-class pre-update accuracy and label usage:")
         print(pd.DataFrame(class_summary).to_string(index=False))
+    if heldout_result is not None:
+        pd.DataFrame(heldout_predictions).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_heldout_predictions.csv", index=False)
+        Path(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_heldout_results.json").write_text(json.dumps(heldout_result, indent=2), encoding="utf-8")
     pd.DataFrame(diagnostic_trace).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_trace.csv",index=False)
     Path(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_diagnostics.json").write_text(
         json.dumps(diagnostics,indent=2),encoding="utf-8")
@@ -1285,6 +1314,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     actions_np = np.array(actions)
     print(f"  Action Distribution: {np.bincount(actions_np, minlength=2) if len(actions_np) > 0 else [0, 0]}")
     
+    if heldout_result is not None:
+        results[-1]['Heldout Accuracy'] = heldout_result['accuracy']
+        results[-1]['Heldout Macro F1'] = heldout_result['macro_f1']
     return results, cumulative_accuracy_df
 
 def plot_accuracies(combined_accuracy_df, test_perturb_levels):
@@ -1495,7 +1527,7 @@ def cli():
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
     global CONTEXT_ARCHITECTURE, SELECTOR_STATE_VERSION
-    global STREAM_ORDER, STREAM_SEED, ONLINE_CONTEXT_LR, BUDGET_MODE
+    global STREAM_ORDER, STREAM_SEED, ONLINE_CONTEXT_LR, BUDGET_MODE, HOLDOUT_FRACTION
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1550,7 +1582,14 @@ def cli():
                         help="Training Context architecture; default feature_tokens_v1. Evaluation auto-detects checkpoint architecture.")
     parser.add_argument("--budget-mode", choices=("total", "per-class"), default="total",
                         help="Per-class divides the total cap over offline class blocks, no model resets or quota transfer.")
+    parser.add_argument("--holdout-fraction", type=float, default=0.0,
+                        help="Evaluation only: reserve the final fraction of each class for final frozen inference.")
     args=parser.parse_args()
+    if not np.isfinite(args.holdout_fraction) or not 0 <= args.holdout_fraction < 1:
+        parser.error("holdout-fraction must be finite and in [0,1).")
+    if args.command != "evaluate" and args.holdout_fraction != 0:
+        parser.error("holdout-fraction is evaluation only.")
+    HOLDOUT_FRACTION = args.holdout_fraction
     BUDGET_MODE = args.budget_mode
     if BUDGET_MODE == "per-class":
         if args.command != "evaluate":
@@ -1614,7 +1653,7 @@ def cli():
             results_output=None, per=args.per,
             stream_order=args.stream_order, stream_seed=args.stream_seed,
             seed=args.seed if args.seed is not None else 42,
-            budget=args.budget, budget_mode=args.budget_mode, max_samples=1073, lr=ONLINE_CONTEXT_LR,
+            budget=args.budget, budget_mode=args.budget_mode, holdout_fraction=args.holdout_fraction, max_samples=1073, lr=ONLINE_CONTEXT_LR,
             context_loss_mode=args.context_loss_mode,
             query_gate=args.query_gate if args.query_gate in ("legacy","disagreement") else "none"))
         return
@@ -1658,6 +1697,8 @@ def cli():
         gate_suffix += f"_context_lr{ONLINE_CONTEXT_LR:g}"
     if BUDGET_MODE == "per-class":
         gate_suffix += "_budget_per_class"
+    if HOLDOUT_FRACTION > 0:
+        gate_suffix += f"_holdout{HOLDOUT_FRACTION:g}"
     LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")

@@ -19,6 +19,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 # Reuse the exact original architecture and Context objective. Importing defines
 # legacy classes, but this runner never instantiates a DQN, loads its checkpoint,
 # computes Q/rewards, creates replay, or invokes a selector optimizer.
+from amcal_burst_holdout import split_holdout_indices, evaluate_heldout
 import amcal_burst_legacy as original
 from amcal_burst_stream import stream_permutation, permutation_sha256, split_class_budget, class_budget_available, class_budget_report
 
@@ -56,7 +57,10 @@ def parse_args():
     parser.add_argument("--stream-order", choices=("input", "class-interleaved"), default="class-interleaved")
     parser.add_argument("--stream-seed", type=int, default=42)
     parser.add_argument("--budget-mode", choices=("total", "per-class"), default="total")
+    parser.add_argument("--holdout-fraction", type=float, default=0.0)
     args = parser.parse_args()
+    if not np.isfinite(args.holdout_fraction) or not 0 <= args.holdout_fraction < 1:
+        parser.error("holdout-fraction must be finite and in [0,1).")
     if args.budget_mode == "per-class":
         args.stream_order = "input"
     if args.budget < 0 or args.max_samples < 1 or not np.isfinite(args.lr) or args.lr <= 0:
@@ -109,8 +113,12 @@ def evaluate_level(args):
     attack_path = base_dir / f"AdvBurstTrainedBurst_size_{args.per}_Step_2000.csv"
     reference = pd.read_csv(reference_path)
     attack = pd.read_csv(attack_path).iloc[:args.max_samples]
+    adaptation_indices, heldout_indices = split_holdout_indices(attack.iloc[:, -1].to_numpy(), args.holdout_fraction)
+    heldout = attack.iloc[heldout_indices].copy()
+    attack = attack.iloc[adaptation_indices]
     source_indices = stream_permutation(attack.iloc[:, -1].to_numpy(), args.stream_order, args.stream_seed)
     attack = attack.iloc[source_indices].reset_index(drop=True)
+    source_indices = [adaptation_indices[i] for i in source_indices]
     if len(attack) == 0:
         raise ValueError("Evaluation stream is empty.")
     if reference.shape[1] - 1 != input_length or attack.shape[1] - 1 != input_length:
@@ -120,12 +128,17 @@ def evaluate_level(args):
 
     # Same PER0-fitted scaler, label mapping and online class weights as the
     # original successful runner. No new split, scaling rule or oversampling.
+    if args.holdout_fraction > 0:
+        # Match learned evaluation: use only original training preprocessing/weights.
+        reference = pd.read_csv(data_dir / "oversampled_train_dataset.csv")
     scaler = StandardScaler().fit(reference.iloc[:, :-1].to_numpy())
     encoder = LabelEncoder().fit(reference.iloc[:, -1].to_numpy())
     if len(encoder.classes_) != num_classes:
         raise ValueError("PER0 class count does not match the checkpoints.")
     reference_labels = encoder.transform(reference.iloc[:, -1].to_numpy())
     class_counts = np.bincount(reference_labels, minlength=num_classes)
+    if args.holdout_fraction > 0 and set(heldout.iloc[:, -1]) != set(encoder.classes_):
+        raise ValueError("Heldout set must contain all checkpoint classes.")
     labels_array = encoder.transform(attack.iloc[:, -1].to_numpy())
     inputs = torch.tensor(scaler.transform(attack.iloc[:, :-1].to_numpy()),
                           dtype=torch.float32, device=device).unsqueeze(1)
@@ -227,8 +240,16 @@ def evaluate_level(args):
     if args.budget_mode == "per-class" and any(class_used[c] > class_quotas[c] for c in class_quotas):
         raise RuntimeError("Per-class budget exceeded.")
     class_summary, class_curve = class_budget_report(trace, class_quotas)
+    heldout_result, heldout_predictions = None, []
+    if heldout_indices:
+        heldout_result, heldout_predictions = evaluate_heldout(
+            cnn, context, scaler.transform(heldout.iloc[:, :-1].to_numpy()),
+            encoder.transform(heldout.iloc[:, -1].to_numpy()), device, heldout_indices, num_classes)
+        print(f"Final unseen holdout accuracy: {heldout_result['accuracy']:.4f}")
     diagnostics = dict(
         budget_mode=args.budget_mode, per_class_results=class_summary,
+        holdout_fraction=args.holdout_fraction, final_holdout=heldout_result,
+        adaptation_source_rows=[i+1 for i in source_indices], heldout_source_rows=[i+1 for i in heldout_indices],
         stream_order=args.stream_order, stream_seed=args.stream_seed,
         within_class_order_preserved=True,
         permutation_sha256=permutation_sha256(source_indices),
@@ -272,6 +293,8 @@ def evaluate_level(args):
         budget_suffix += f"_class_interleaved_seed{args.stream_seed}"
     if args.lr != 0.25:
         budget_suffix += f"_context_lr{args.lr:g}"
+    if args.holdout_fraction > 0:
+        budget_suffix += f"_holdout{args.holdout_fraction:g}"
     results_dir = (args.results_output.resolve() if args.results_output else
                    args.output.resolve() / "Results" / f"random_no_rl_{args.query_gate}_seed{args.seed}{budget_suffix}")
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -280,6 +303,9 @@ def evaluate_level(args):
         pd.DataFrame(class_summary).to_csv(results_dir / f"{prefix}_class_results.csv", index=False)
         pd.DataFrame(class_curve).to_csv(results_dir / f"{prefix}_class_curve.csv", index=False)
         print(pd.DataFrame(class_summary).to_string(index=False))
+    if heldout_result is not None:
+        pd.DataFrame(heldout_predictions).to_csv(results_dir / f"{prefix}_heldout_predictions.csv", index=False)
+        (results_dir / f"{prefix}_heldout_results.json").write_text(json.dumps(heldout_result, indent=2), encoding="utf-8")
     pd.DataFrame(trace).to_csv(results_dir / f"{prefix}_trace.csv", index=False)
     (results_dir / f"{prefix}_diagnostics.json").write_text(
         json.dumps(diagnostics, indent=2), encoding="utf-8")
@@ -310,6 +336,9 @@ def evaluate_level(args):
     print(f"  Context Updates Used: {updates}/{label_budget}")
     print("  DQN Updates Used: 0 (RL removed)")
     print("  Average DQN Loss: 0.0000 (RL removed)")
+    if heldout_result is not None:
+        row["Heldout Accuracy"] = heldout_result["accuracy"]
+        row["Heldout Macro F1"] = heldout_result["macro_f1"]
     return row, [item["cumulative_accuracy"] for item in trace], results_dir
 
 
