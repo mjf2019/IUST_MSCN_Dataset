@@ -4,7 +4,7 @@ Not the corrected evaluation protocol.
 """
 from amcal_burst_stream import stream_permutation, permutation_sha256, ClassInterleavedSampler, split_class_budget, class_budget_available, class_budget_report
 from amcal_burst_holdout import split_holdout_indices, evaluate_heldout
-from amcal_burst_context_memory import make_context_memory, with_context_rehearsal
+from amcal_burst_context_memory import make_context_memory, with_context_rehearsal, context_update_probe, final_context_memory_report
 from pathlib import Path
 from copy import deepcopy
 from contextlib import contextmanager
@@ -1072,6 +1072,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         class_used_before = class_labels_used[block_id]
         observed_reward, observed_loss = None, None
         memory_info = dict(memory_loss=0.0, replay_samples=0)
+        update_probe = None
         memory_size_before = len(context_memory) if context_memory is not None else 0
         # Compute CNN outputs and state
         with torch.no_grad():
@@ -1146,6 +1147,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 
                 updates_used += 1
                 class_labels_used[block_id] += 1
+                probe_before = context_update_probe(context_model, cnn_model, inputs, labels, context_memory)
                 context_optimizer.zero_grad()
                 encoded_inputs = context_model(inputs)
                 outputs = cnn_model(encoded_inputs)
@@ -1157,6 +1159,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                     MEMORY_BATCH_SIZE, MEMORY_WEIGHT)
                 total_context_loss.backward()
                 context_optimizer.step()
+                probe_after = context_update_probe(context_model, cnn_model, inputs, labels, context_memory)
+                update_probe = dict(before=probe_before, after=probe_after)
                 
                 if context_memory is not None:
                     context_memory.add_batch(inputs, labels, [source_indices[sample_idx-1]+1])
@@ -1222,7 +1226,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             sample_accuracies.append(current_accuracy)
             y_pred.extend(predicted.cpu().numpy())
             y_true.extend(labels.cpu().numpy())
-            diagnostic_trace.append(dict(step=sample_idx, source_row=source_indices[sample_idx-1]+1,
+            diagnostic_trace.append(dict(update_probe=json.dumps(update_probe), step=sample_idx, source_row=source_indices[sample_idx-1]+1,
                 true_label=int(labels.item()),
                 base_prediction=int(cnn_pred.item()),
                 base_prediction_train_scaler=int(train_scaled_prediction),
@@ -1272,7 +1276,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         print("Holdout per-class recall:", {c: heldout_result['classes'][str(c)]['recall'] for c in class_quotas})
     if not 0 <= updates_used <= budget:
         raise RuntimeError("Online label budget exceeded.")
-    diagnostics = dict(per=perturb_level, seed=LEGACY_DIAGNOSTIC_SEED,
+    final_memory_report = final_context_memory_report(context_model, cnn_model, context_memory)
+    diagnostics = dict(final_context_memory=final_memory_report, per=perturb_level, seed=LEGACY_DIAGNOSTIC_SEED,
         stream_order=STREAM_ORDER, stream_seed=STREAM_SEED,
         within_class_order_preserved=True,
         permutation_sha256=permutation_sha256(source_indices),
