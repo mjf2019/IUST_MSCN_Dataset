@@ -75,3 +75,57 @@ def with_context_rehearsal(current_loss, memory, context, cnn, batch_size=16, we
     replay_loss = functional.cross_entropy(cnn(context(features)), labels)
     return current_loss + weight * replay_loss, dict(
         memory_loss=float(replay_loss.detach().item()), replay_samples=len(items))
+
+def context_update_probe(context, cnn, inputs, labels, memory):
+    """Observer only: all retained paid rows, no sampling or RNG consumption."""
+    import torch
+    import torch.nn.functional as F
+    modules = list(context.modules()) + list(cnn.modules())
+    modes = [m.training for m in modules]
+    context.eval()
+    cnn.eval()
+    try:
+        with torch.no_grad():
+            current = float(F.cross_entropy(cnn(context(inputs)), labels).item())
+            retained = []
+            if memory is not None:
+                retained = [item for bucket in memory.buckets.values() for item in bucket]
+            result = dict(current_ce=current, memory_ce=None, memory_accuracy=None,
+                          memory_per_class={}, memory_samples=len(retained))
+            if retained:
+                device = inputs.device
+                predictions, losses, targets = [], [], []
+                for start in range(0, len(retained), 64):
+                    items = retained[start:start+64]
+                    x = torch.stack([item[0] for item in items]).to(device)
+                    y = torch.tensor([item[1] for item in items], device=device, dtype=torch.long)
+                    logits = cnn(context(x))
+                    predictions.extend(logits.argmax(1).cpu().tolist())
+                    losses.extend(F.cross_entropy(logits, y, reduction="none").cpu().tolist())
+                    targets.extend(y.cpu().tolist())
+                for c in sorted(set(targets)):
+                    indices = [i for i, y in enumerate(targets) if y == c]
+                    result["memory_per_class"][str(c)] = dict(
+                        samples=len(indices),
+                        accuracy=sum(predictions[i] == c for i in indices)/len(indices),
+                        ce=sum(losses[i] for i in indices)/len(indices))
+                result["memory_ce"] = sum(losses)/len(losses)
+                result["memory_accuracy"] = sum(p == y for p,y in zip(predictions,targets))/len(targets)
+            return result
+    finally:
+        for module, mode in zip(modules, modes):
+            module.training = mode
+
+
+def final_context_memory_report(context, cnn, memory):
+    if memory is None or not len(memory):
+        return None
+    first = next(item for bucket in memory.buckets.values() for item in bucket)
+    device = next(context.parameters()).device
+    import torch
+    report = context_update_probe(context, cnn, first[0].unsqueeze(0).to(device),
+                                  torch.tensor([first[1]], device=device), memory)
+    report.pop("current_ce")
+    print("Final Context memory accuracy:", report["memory_accuracy"])
+    print("Final Context memory per class:", report["memory_per_class"])
+    return report
