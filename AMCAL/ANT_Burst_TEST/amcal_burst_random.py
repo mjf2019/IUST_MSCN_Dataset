@@ -20,7 +20,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 # legacy classes, but this runner never instantiates a DQN, loads its checkpoint,
 # computes Q/rewards, creates replay, or invokes a selector optimizer.
 from amcal_burst_holdout import split_holdout_indices, evaluate_heldout
-from amcal_burst_context_memory import make_context_memory, with_context_rehearsal
+from amcal_burst_context_memory import make_context_memory, with_context_rehearsal, context_update_probe, final_context_memory_report
 import amcal_burst_legacy as original
 from amcal_burst_stream import stream_permutation, permutation_sha256, split_class_budget, class_budget_available, class_budget_report
 
@@ -207,11 +207,13 @@ def evaluate_level(args):
         chosen = chosen and updates < label_budget and class_budget_available(args.budget_mode, block_id, class_used, class_quotas)
         observed_loss = None
         memory_info = dict(memory_loss=0.0, replay_samples=0)
+        update_probe = None
         memory_size_before = len(context_memory) if context_memory is not None else 0
         if chosen:
             # Predict first, then query and update: no label is passed to the
             # optimizer for unselected samples. Context stays in eval mode,
             # exactly like the original online loop (fixed BN/Dropout behavior).
+            probe_before = context_update_probe(context, cnn, x, y, context_memory)
             optimizer.zero_grad()
             context_loss = criterion(cnn(context(x)), y)
             base_loss = criterion(base_logits.detach(), y)
@@ -220,6 +222,8 @@ def evaluate_level(args):
                 loss, context_memory, context, cnn, args.memory_batch_size, args.memory_weight)
             loss.backward()
             optimizer.step()
+            probe_after = context_update_probe(context, cnn, x, y, context_memory)
+            update_probe = dict(before=probe_before, after=probe_after)
             if context_memory is not None:
                 context_memory.add_batch(x, y, [source_indices[index]+1])
             updates += 1
@@ -244,7 +248,7 @@ def evaluate_level(args):
             cumulative_accuracy=cumulative_correct / (index + 1),
             memory_size_before=memory_size_before,
             memory_size_after=len(context_memory) if context_memory is not None else 0,
-            **memory_info))
+            update_probe=json.dumps(update_probe), **memory_info))
 
     expected_queries = int(query_mask.sum()) if args.query_gate == "none" else None
     if args.query_gate == "none" and updates != expected_queries:
@@ -272,7 +276,9 @@ def evaluate_level(args):
             cnn, context, scaler.transform(heldout.iloc[:, :-1].to_numpy()),
             encoder.transform(heldout.iloc[:, -1].to_numpy()), device, heldout_indices, num_classes)
         print(f"Final unseen holdout accuracy: {heldout_result['accuracy']:.4f}")
+    final_memory_report = final_context_memory_report(context, cnn, context_memory)
     diagnostics = dict(
+        final_context_memory=final_memory_report,
         budget_mode=args.budget_mode, quota_policy=args.quota_policy, per_class_results=class_summary,
         context_memory_mode=args.context_memory, memory_per_class=args.memory_per_class,
         memory_batch_size=args.memory_batch_size, memory_weight=args.memory_weight,
