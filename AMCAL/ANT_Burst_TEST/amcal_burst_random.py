@@ -20,6 +20,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 # legacy classes, but this runner never instantiates a DQN, loads its checkpoint,
 # computes Q/rewards, creates replay, or invokes a selector optimizer.
 from amcal_burst_holdout import split_holdout_indices, evaluate_heldout
+from amcal_burst_context_memory import make_context_memory, with_context_rehearsal
 import amcal_burst_legacy as original
 from amcal_burst_stream import stream_permutation, permutation_sha256, split_class_budget, class_budget_available, class_budget_report
 
@@ -59,7 +60,13 @@ def parse_args():
     parser.add_argument("--budget-mode", choices=("total", "per-class"), default="total")
     parser.add_argument("--holdout-fraction", type=float, default=0.0)
     parser.add_argument("--quota-policy", choices=("optional", "complete"), default="optional")
+    parser.add_argument("--context-memory", choices=("off", "per-class"), default="off")
+    parser.add_argument("--memory-per-class", type=int, default=32)
+    parser.add_argument("--memory-batch-size", type=int, default=16)
+    parser.add_argument("--memory-weight", type=float, default=1.0)
     args = parser.parse_args()
+    if args.memory_per_class < 1 or args.memory_batch_size < 1 or not np.isfinite(args.memory_weight) or args.memory_weight < 0:
+        parser.error("Invalid Context memory capacity, batch size or loss weight.")
     if args.quota_policy == "complete" and (args.budget_mode != "per-class" or args.query_gate != "none"):
         parser.error("quota-policy complete requires per-class budget and query-gate none.")
     if not np.isfinite(args.holdout_fraction) or not 0 <= args.holdout_fraction < 1:
@@ -149,6 +156,7 @@ def evaluate_level(args):
     criterion = torch.nn.CrossEntropyLoss(
         weight=torch.tensor(class_counts, dtype=torch.float32, device=device))
     optimizer = torch.optim.Adam(context.parameters(), lr=args.lr, weight_decay=1e-4)
+    context_memory = make_context_memory(args.context_memory, args.memory_per_class, args.seed)
 
     n = len(attack)
     label_budget = min(args.budget, n)
@@ -198,6 +206,8 @@ def evaluate_level(args):
         block_id = int(labels_array[index])  # offline experiment metadata only
         chosen = chosen and updates < label_budget and class_budget_available(args.budget_mode, block_id, class_used, class_quotas)
         observed_loss = None
+        memory_info = dict(memory_loss=0.0, replay_samples=0)
+        memory_size_before = len(context_memory) if context_memory is not None else 0
         if chosen:
             # Predict first, then query and update: no label is passed to the
             # optimizer for unselected samples. Context stays in eval mode,
@@ -206,8 +216,12 @@ def evaluate_level(args):
             context_loss = criterion(cnn(context(x)), y)
             base_loss = criterion(base_logits.detach(), y)
             loss = original.context_objective(context_loss, base_loss, online=True)
+            loss, memory_info = with_context_rehearsal(
+                loss, context_memory, context, cnn, args.memory_batch_size, args.memory_weight)
             loss.backward()
             optimizer.step()
+            if context_memory is not None:
+                context_memory.add_batch(x, y, [source_indices[index]+1])
             updates += 1
             class_used[block_id] += 1
             observed_loss = float(loss.detach().item())
@@ -227,7 +241,10 @@ def evaluate_level(args):
             prediction_after_update=after_prediction,
             random_requested=requested, updated=chosen, labels_used=updates,
             confidence_gap=gap, context_loss=observed_loss,
-            cumulative_accuracy=cumulative_correct / (index + 1)))
+            cumulative_accuracy=cumulative_correct / (index + 1),
+            memory_size_before=memory_size_before,
+            memory_size_after=len(context_memory) if context_memory is not None else 0,
+            **memory_info))
 
     expected_queries = int(query_mask.sum()) if args.query_gate == "none" else None
     if args.query_gate == "none" and updates != expected_queries:
@@ -242,6 +259,12 @@ def evaluate_level(args):
         raise RuntimeError("Online label budget exceeded.")
     if args.budget_mode == "per-class" and any(class_used[c] > class_quotas[c] for c in class_quotas):
         raise RuntimeError("Per-class budget exceeded.")
+    if context_memory is not None:
+        if context_memory.total_added != updates:
+            raise RuntimeError("Context memory contains unbudgeted examples.")
+        memory_rows = {item[2] for bucket in context_memory.buckets.values() for item in bucket}
+        if memory_rows.intersection(i+1 for i in heldout_indices):
+            raise RuntimeError("Heldout row entered Context memory.")
     class_summary, class_curve = class_budget_report(trace, class_quotas)
     heldout_result, heldout_predictions = None, []
     if heldout_indices:
@@ -251,6 +274,9 @@ def evaluate_level(args):
         print(f"Final unseen holdout accuracy: {heldout_result['accuracy']:.4f}")
     diagnostics = dict(
         budget_mode=args.budget_mode, quota_policy=args.quota_policy, per_class_results=class_summary,
+        context_memory_mode=args.context_memory, memory_per_class=args.memory_per_class,
+        memory_batch_size=args.memory_batch_size, memory_weight=args.memory_weight,
+        context_memory_stats=context_memory.stats() if context_memory is not None else None,
         holdout_fraction=args.holdout_fraction, final_holdout=heldout_result,
         adaptation_source_rows=[i+1 for i in source_indices], heldout_source_rows=[i+1 for i in heldout_indices],
         stream_order=args.stream_order, stream_seed=args.stream_seed,
@@ -300,6 +326,8 @@ def evaluate_level(args):
         budget_suffix += f"_holdout{args.holdout_fraction:g}"
     if args.quota_policy == "complete":
         budget_suffix += "_quota_complete"
+    if args.context_memory != "off":
+        budget_suffix += f"_context_memory{args.memory_per_class}_batch{args.memory_batch_size}_weight{args.memory_weight:g}"
     results_dir = (args.results_output.resolve() if args.results_output else
                    args.output.resolve() / "Results" / f"random_no_rl_{args.query_gate}_seed{args.seed}{budget_suffix}")
     results_dir.mkdir(parents=True, exist_ok=True)

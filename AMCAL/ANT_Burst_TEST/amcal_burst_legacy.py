@@ -4,6 +4,7 @@ Not the corrected evaluation protocol.
 """
 from amcal_burst_stream import stream_permutation, permutation_sha256, ClassInterleavedSampler, split_class_budget, class_budget_available, class_budget_report
 from amcal_burst_holdout import split_holdout_indices, evaluate_heldout
+from amcal_burst_context_memory import make_context_memory, with_context_rehearsal
 from pathlib import Path
 from copy import deepcopy
 from contextlib import contextmanager
@@ -31,6 +32,10 @@ STREAM_ORDER = 'class-interleaved'
 STREAM_SEED = 42
 BUDGET_MODE = 'total'
 QUOTA_POLICY = 'optional'
+CONTEXT_MEMORY_MODE = 'off'
+MEMORY_PER_CLASS = 32
+MEMORY_BATCH_SIZE = 16
+MEMORY_WEIGHT = 1.0
 HOLDOUT_FRACTION = 0.0
 ONLINE_CONTEXT_LR = 0.25
 TRAIN_EPSILON_START = 1.0
@@ -603,6 +608,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     print("Starting adversarial training on full dataset...")
     target_update_counter = 0
     TARGET_UPDATE_FREQ = 5
+    context_memory = make_context_memory(CONTEXT_MEMORY_MODE, MEMORY_PER_CLASS, LEGACY_DIAGNOSTIC_SEED if LEGACY_DIAGNOSTIC_SEED is not None else 42)
     
     for epoch in range(fine_tune_epochs):
         cnn_model.eval()
@@ -669,8 +675,14 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 context_loss = cnn_criterion(cnn_outputs_weighted, selected_labels)
                 orig_cnn_loss = cnn_criterion(cnn_model(selected_inputs), selected_labels)
                 total_context_loss = context_objective(context_loss, orig_cnn_loss)
+                total_context_loss, memory_info = with_context_rehearsal(
+                    total_context_loss, context_memory, context_model, cnn_model,
+                    MEMORY_BATCH_SIZE, MEMORY_WEIGHT)
                 total_context_loss.backward()
                 context_optimizer.step()
+                if context_memory is not None:
+                    # Store original selected rows, not the singleton duplicate for BN.
+                    context_memory.add_batch(inputs[action_indices], labels[action_indices])
                 running_context_loss += total_context_loss.item() * len(action_indices)
             
             # Compute rewards and next states
@@ -733,6 +745,8 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         print(f"  Context Loss: {running_context_loss / max(context_updated_samples, 1):.4f}")
         print(f"  DQN Loss: {running_dqn_loss / max(dqn_loss_count, 1):.4f}")
         print(f"  Context Updated Samples: {context_updated_samples}")
+        if context_memory is not None:
+            print("  Context memory:", context_memory.stats())
         if TRAINING_SELECTOR_MODE == 'disagreement':
             print(f"  Agreement requests rejected/penalized: {rejected_agreement_samples}")
         print(f"  Average Reward: {np.mean(rewards) if rewards else 0.0:.4f}")
@@ -1024,6 +1038,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     # Optimizer for context_model
     print(f"Online Context Adam learning rate: {fine_tune_lr:g}")
     context_optimizer = optim.Adam(context_model.parameters(), lr=fine_tune_lr, weight_decay=1e-4)
+    context_memory = make_context_memory(CONTEXT_MEMORY_MODE, MEMORY_PER_CLASS, LEGACY_DIAGNOSTIC_SEED if LEGACY_DIAGNOSTIC_SEED is not None else 42)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     
     correct = 0
@@ -1056,6 +1071,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         block_id = int(stream_class_ids[sample_idx-1])
         class_used_before = class_labels_used[block_id]
         observed_reward, observed_loss = None, None
+        memory_info = dict(memory_loss=0.0, replay_samples=0)
+        memory_size_before = len(context_memory) if context_memory is not None else 0
         # Compute CNN outputs and state
         with torch.no_grad():
             cnn_outputs = cnn_model(inputs)
@@ -1135,9 +1152,14 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 context_loss = cnn_criterion(outputs, labels)
                 orig_cnn_loss = cnn_criterion(cnn_outputs.detach(), labels)
                 total_context_loss = context_objective(context_loss, orig_cnn_loss, online=True)
+                total_context_loss, memory_info = with_context_rehearsal(
+                    total_context_loss, context_memory, context_model, cnn_model,
+                    MEMORY_BATCH_SIZE, MEMORY_WEIGHT)
                 total_context_loss.backward()
                 context_optimizer.step()
                 
+                if context_memory is not None:
+                    context_memory.add_batch(inputs, labels, [source_indices[sample_idx-1]+1])
                 # Compute reward for action=1
                 reward = compute_reward(action, cnn_pred.item(), weighted_pred.item(), labels.item())
                 rewards.append(reward)
@@ -1216,7 +1238,10 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 class_labels_before=class_used_before, class_labels_used=class_labels_used[block_id],
                 confidence_gap=float(abs(weighted_probs_before.max().item()-max_prob.item())),
                 updated=updates_used>updates_before, labels_used=updates_used,
-                context_loss=observed_loss, reward=observed_reward))
+                context_loss=observed_loss, reward=observed_reward,
+                memory_size_before=memory_size_before,
+                memory_size_after=len(context_memory) if context_memory is not None else 0,
+                **memory_info))
             cumulative_accuracy_df.loc[cumulative_accuracy_df['Sample Index'] == sample_idx, f'Perturbation {perturb_level}'] = current_accuracy
     
     test_accuracy = correct / total
@@ -1231,6 +1256,12 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         raise RuntimeError("Per-class label budget exceeded.")
     if QUOTA_POLICY == "complete" and class_labels_used != class_targets:
         raise RuntimeError("Complete per-class quota was not consumed.")
+    if context_memory is not None:
+        if context_memory.total_added != updates_used:
+            raise RuntimeError("Context memory contains unbudgeted examples.")
+        memory_rows = {item[2] for bucket in context_memory.buckets.values() for item in bucket}
+        if memory_rows.intersection(i+1 for i in heldout_indices):
+            raise RuntimeError("Heldout row entered Context memory.")
     class_summary, class_curve = class_budget_report(diagnostic_trace, class_quotas)
     heldout_result, heldout_predictions = None, []
     if heldout_indices:
@@ -1258,7 +1289,10 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         epsilon_decay_rule="after successful online selector optimization",
         label_budget=budget, actual_label_fraction=updates_used / total,
         budget_mode=BUDGET_MODE, quota_policy=QUOTA_POLICY,
+        context_memory_mode=CONTEXT_MEMORY_MODE, memory_per_class=MEMORY_PER_CLASS,
+        memory_batch_size=MEMORY_BATCH_SIZE, memory_weight=MEMORY_WEIGHT,
         per_class_results=class_summary,
+        context_memory_stats=context_memory.stats() if context_memory is not None else None,
         forced_queries=sum(row['forced_query'] and row['updated'] for row in diagnostic_trace),
         holdout_fraction=HOLDOUT_FRACTION, final_holdout=heldout_result,
         adaptation_source_rows=[i+1 for i in source_indices], heldout_source_rows=[i+1 for i in heldout_indices],
@@ -1545,6 +1579,7 @@ def cli():
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
     global CONTEXT_ARCHITECTURE, SELECTOR_STATE_VERSION
+    global CONTEXT_MEMORY_MODE, MEMORY_PER_CLASS, MEMORY_BATCH_SIZE, MEMORY_WEIGHT
     global STREAM_ORDER, STREAM_SEED, ONLINE_CONTEXT_LR, BUDGET_MODE, HOLDOUT_FRACTION, QUOTA_POLICY
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
@@ -1604,7 +1639,18 @@ def cli():
                         help="Evaluation only: reserve the final fraction of each class for final frozen inference.")
     parser.add_argument("--quota-policy", choices=("optional", "complete"), default="optional",
                         help="Complete: fill each class quota with forced tail queries; requires per-class budget and no gate.")
+    parser.add_argument("--context-memory", choices=("off", "per-class"), default="off",
+                        help="Context-only rehearsal using previously labeled samples; DQN replay is separate.")
+    parser.add_argument("--memory-per-class", type=int, default=32)
+    parser.add_argument("--memory-batch-size", type=int, default=16)
+    parser.add_argument("--memory-weight", type=float, default=1.0)
     args=parser.parse_args()
+    if args.memory_per_class < 1 or args.memory_batch_size < 1:
+        parser.error("memory capacities and batch size must be positive.")
+    if not np.isfinite(args.memory_weight) or args.memory_weight < 0:
+        parser.error("memory-weight must be finite and nonnegative.")
+    CONTEXT_MEMORY_MODE = args.context_memory
+    MEMORY_PER_CLASS, MEMORY_BATCH_SIZE, MEMORY_WEIGHT = args.memory_per_class, args.memory_batch_size, args.memory_weight
     QUOTA_POLICY = args.quota_policy
     if QUOTA_POLICY == "complete" and (args.command != "evaluate" or args.budget_mode != "per-class" or args.query_gate != "none"):
         parser.error("quota-policy complete requires evaluate --budget-mode per-class --query-gate none.")
@@ -1676,7 +1722,9 @@ def cli():
             results_output=None, per=args.per,
             stream_order=args.stream_order, stream_seed=args.stream_seed,
             seed=args.seed if args.seed is not None else 42,
-            budget=args.budget, budget_mode=args.budget_mode, quota_policy=args.quota_policy, holdout_fraction=args.holdout_fraction, max_samples=1073, lr=ONLINE_CONTEXT_LR,
+            budget=args.budget, budget_mode=args.budget_mode, quota_policy=args.quota_policy,
+            context_memory=args.context_memory, memory_per_class=args.memory_per_class,
+            memory_batch_size=args.memory_batch_size, memory_weight=args.memory_weight, holdout_fraction=args.holdout_fraction, max_samples=1073, lr=ONLINE_CONTEXT_LR,
             context_loss_mode=args.context_loss_mode,
             query_gate=args.query_gate if args.query_gate in ("legacy","disagreement") else "none"))
         return
@@ -1698,6 +1746,8 @@ def cli():
             folder += f"_train_eps{TRAIN_EPSILON_START:g}to{TRAIN_EPSILON_END:g}_decay{TRAIN_EPSILON_DECAY:g}"
         if args.command == "train" and STREAM_ORDER != "input":
             folder += f"_class_interleaved_seed{STREAM_SEED}"
+        if CONTEXT_MEMORY_MODE != "off":
+            folder += f"_context_memory{MEMORY_PER_CLASS}_batch{MEMORY_BATCH_SIZE}_weight{MEMORY_WEIGHT:g}"
         folder += f"_{CONTEXT_ARCHITECTURE}_context_probabilities_validated_best"
         if args.training_selector_mode == "disagreement":
             folder += f"_train_disagreement_penalty{args.agreement_penalty:g}"
@@ -1724,6 +1774,8 @@ def cli():
         gate_suffix += f"_holdout{HOLDOUT_FRACTION:g}"
     if QUOTA_POLICY == "complete":
         gate_suffix += "_quota_complete"
+    if CONTEXT_MEMORY_MODE != "off":
+        gate_suffix += f"_context_memory{MEMORY_PER_CLASS}_batch{MEMORY_BATCH_SIZE}_weight{MEMORY_WEIGHT:g}"
     LEGACY_RESULTS_DIR=str(Path("Results") / f"{args.selector_mode}_seed{seed_tag}{gate_suffix}")
     if args.per is not None and args.command!="evaluate":
         parser.error("--per is only for evaluate.")
@@ -1795,6 +1847,8 @@ def cli():
         agreement_penalty=args.agreement_penalty if args.training_selector_mode=="disagreement" else None,
         test_label_budget=args.budget,
         budget_mode=BUDGET_MODE, quota_policy=QUOTA_POLICY,
+        context_memory_mode=CONTEXT_MEMORY_MODE, memory_per_class=MEMORY_PER_CLASS,
+        memory_batch_size=MEMORY_BATCH_SIZE, memory_weight=MEMORY_WEIGHT,
         selection_cost=args.selection_cost,
         online_context_lr=ONLINE_CONTEXT_LR if args.command=="evaluate" else None,
         training_state_version=RUN_TRAINING_STATE_VERSION,
@@ -1837,6 +1891,8 @@ def cli():
                 checkpoint["selector_state_version"]=SELECTOR_STATE_VERSION
                 checkpoint["training_stream_order"]=STREAM_ORDER
                 checkpoint["training_stream_seed"]=STREAM_SEED
+                checkpoint["training_context_memory"] = dict(mode=CONTEXT_MEMORY_MODE,
+                    per_class=MEMORY_PER_CLASS, batch_size=MEMORY_BATCH_SIZE, weight=MEMORY_WEIGHT)
                 checkpoint["selection_cost"]=SELECTION_COST
                 checkpoint["training_epsilon_schedule"] = dict(
                     start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
