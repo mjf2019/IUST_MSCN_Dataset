@@ -177,6 +177,10 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     routing_rng = random.Random(args.seed + 1000003)
     rows, losses = [], []
     context_window = deque(maxlen=args.context_window)
+    exact_budget = getattr(args, "consume_full_budget", False)
+    forced_queries = 0
+    if exact_budget and (training or not global_budget or matched_caps is not None):
+        raise ValueError("consume-full-budget requires evaluation with a global budget and no matched reference.")
     epsilon = args.epsilon_start if training else args.eval_epsilon
     initial_cnn = {k: v.detach().cpu().clone() for k,v in cnn.state_dict().items()}
     for pos, index in enumerate(order):
@@ -208,6 +212,15 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
             action = agent.action(state, allowed, epsilon)
         else:
             action = 2 if index in query_positions else routing_rng.choice((0, 1))
+        preferred_action = action
+        forced_query = False
+        if exact_budget and action != 2 and sum(used.values()) < total_cap:
+            # Causal completion: query only when all remaining positions are needed.
+            needed = total_cap - sum(used.values())
+            if needed >= len(order)-pos:
+                action = 2
+                forced_query = True
+                forced_queries += 1
         prediction = frozen_pred if action == 0 else context_pred
         paid = action == 2
         before = after = None
@@ -272,7 +285,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                     epsilon = max(args.epsilon_end, epsilon * args.epsilon_decay)
         # Observer labels below never drive routing, Context loss or replay.
         rows.append(dict(step=pos+1, source_row=index+1, true_label=class_id,
-                         action=action, route=prediction_route(action), queried=paid,
+                         action=action, preferred_action=preferred_action,
+                         forced_query=forced_query, route=prediction_route(action), queried=paid,
                          frozen_prediction=frozen_pred, context_prediction=context_pred,
                          prediction_before_feedback=prediction, labels_used=sum(used.values()),
                          class_labels_used=used[class_id], class_budget=None if no_class_quota else quotas[class_id],
@@ -284,6 +298,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     if not learn_ddqn:
         assert agent.steps == steps_before
         assert all(torch.equal(router_initial[k],v.detach().cpu()) for k,v in agent.q.state_dict().items())
+    if exact_budget:
+        assert sum(used.values()) == total_cap, "Exact global label budget was not consumed."
     assert sum(used.values()) <= total_cap
     assert all(used[c] <= quotas[c] for c in quotas)
     if matched_caps is not None:
@@ -303,6 +319,9 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                    replay_warmup=agent.warmup,
                    context_window=args.context_window,
                    policy_mode=policy_mode,
+                   consume_full_budget=exact_budget,
+                   forced_queries=forced_queries,
+                   budget_completion="causal forced tail" if exact_budget else "none",
                    policy_protocol=("rolling entropy queries; frozen DDQN non-query routes" if policy_mode == "uncertainty"
                                     else "frozen three-action DDQN" if policy_mode == "frozen"
                                     else "adaptive three-action DDQN"),
@@ -393,6 +412,8 @@ def main():
     p.add_argument("--stream-order",choices=("input","class-interleaved","shuffle"),default="input")
     p.add_argument("--class-context-proxy", action="store_true",
                    help="Evaluation-only oracle: true class substitutes for Flow ID; independent Context/Adam, shared CNN/router; default per-class quotas, optional global budget.")
+    p.add_argument("--consume-full-budget",action="store_true",
+                   help="Evaluation with global budget: force paid action only when remaining positions equal unused budget.")
     p.add_argument("--policy-mode", choices=("adaptive","frozen","uncertainty"),default="adaptive",
                    help="Evaluation policy; uncertainty uses rolling entropy queries and frozen DDQN non-query routing.")
     p.add_argument("--uncertainty-window",type=int,default=200)
@@ -402,6 +423,8 @@ def main():
     p.add_argument("--match-budget-from", type=Path,
                    help="RL summary.json; random routes and uniformly sampled queries matching each class count.")
     args=p.parse_args()
+    if args.consume_full_budget and (args.command != "evaluate" or not args.global_label_budget or args.match_budget_from is not None):
+        p.error("--consume-full-budget requires evaluate --global-label-budget without --match-budget-from.")
     if args.policy_mode != "adaptive" and args.command != "evaluate":
         p.error("Frozen and uncertainty modes are evaluation-only.")
     if args.policy_mode != "adaptive" and args.match_budget_from is not None:
@@ -514,6 +537,8 @@ def main():
             tag += f"_policy{args.policy_mode}"
         if args.policy_mode == "uncertainty":
             tag += f"_entropywindow{args.uncertainty_window}_initial{args.uncertainty_initial_threshold:g}"
+        if args.consume_full_budget:
+            tag += "_fullbudget"
         references = {}
         if args.match_budget_from is not None:
             raw = args.match_budget_from.read_bytes()
