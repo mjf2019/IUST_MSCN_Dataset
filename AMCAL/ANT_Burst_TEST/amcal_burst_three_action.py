@@ -125,7 +125,12 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     steps_before = agent.steps
     first_update_at_labels = None
     x, labels = tensors(frame, bundle["scaler"], bundle["encoder"], bundle["columns"], device)
-    quotas = fractional_class_budget(labels, bundle["num_classes"], args.budget_fraction)
+    unlimited = getattr(args, "no_label_quota", False)
+    quotas = (dict(Counter(int(y) for y in labels)) if unlimited else
+              fractional_class_budget(labels, bundle["num_classes"], args.budget_fraction))
+    # These counts track observations only in unlimited mode; no label-based mask.
+    if unlimited:
+        quotas = {c: quotas.get(c, 0) for c in range(bundle["num_classes"])}
     matched_caps = getattr(args, "matched_class_caps", None)
     if matched_caps is not None:
         matched_caps = {int(k): v for k,v in matched_caps.items()}
@@ -137,7 +142,9 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     total_cap = sum(quotas.values())
     optimizer = torch.optim.Adam(context.parameters(), lr=args.context_lr, weight_decay=1e-4)
     legacy.CONTEXT_LOSS_MODE = bundle["context_loss_mode"]
-    order = stream_permutation(labels, args.stream_order, args.seed)
+    order = (np.random.default_rng(args.seed).permutation(len(labels))
+             if args.stream_order == "shuffle"
+             else stream_permutation(labels, args.stream_order, args.seed))
     query_positions = (matched_query_positions(labels, quotas, args.seed)
                        if matched_caps is not None else None)
     # Independent routing RNG: DDQN replay sampling cannot change random routes.
@@ -148,8 +155,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     for pos, index in enumerate(order):
         sample = x[index:index+1]
         class_id = int(labels[index])  # quota controller only; never exposed to policy
-        allowed = used[class_id] < quotas[class_id]
-        remaining = (total_cap - sum(used.values())) / max(total_cap, 1)
+        allowed = unlimited or used[class_id] < quotas[class_id]
+        remaining = 1.0 if unlimited else (total_cap - sum(used.values())) / max(total_cap, 1)
         state, frozen, adapted = observe(sample, cnn, context, remaining)
         frozen_pred, context_pred = int(frozen.argmax(1)), int(adapted.argmax(1))
         if query_positions is None:
@@ -168,7 +175,7 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
             else:
                 next_index = order[pos+1]
                 next_class = int(labels[next_index])
-                no_query_allowed = used[next_class] < quotas[next_class]
+                no_query_allowed = unlimited or used[next_class] < quotas[next_class]
                 no_query_next = observe(x[next_index:next_index+1], cnn, context, remaining)[0]
         # Only this branch reveals a test label to the learner.
         if paid:
@@ -191,9 +198,9 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
             else:
                 next_index = order[pos+1]
                 next_class = int(labels[next_index])  # controller mask, not a state feature
-                next_allowed = used[next_class] < quotas[next_class]
+                next_allowed = unlimited or used[next_class] < quotas[next_class]
                 next_state = observe(x[next_index:next_index+1], cnn, context,
-                                     (total_cap-sum(used.values()))/max(total_cap,1))[0]
+                                     1.0 if unlimited else (total_cap-sum(used.values()))/max(total_cap,1))[0]
             # In offline training all labels are available. At test these
             # counterfactual route rewards are computed ONLY for paid labels.
             for candidate in (0, 1):
@@ -213,7 +220,7 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                          action=action, route=prediction_route(action), queried=paid,
                          frozen_prediction=frozen_pred, context_prediction=context_pred,
                          prediction_before_feedback=prediction, labels_used=sum(used.values()),
-                         class_labels_used=used[class_id], class_budget=quotas[class_id],
+                         class_labels_used=used[class_id], class_budget=None if unlimited else quotas[class_id],
                          reward=reward, loss_before=before, loss_after=after))
     assert all(used[c] <= quotas[c] for c in quotas)
     if matched_caps is not None:
@@ -224,15 +231,16 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     summary = dict(accuracy=float(accuracy_score(truth,pred)),
                    weighted_f1=float(f1_score(truth,pred,average="weighted",zero_division=0)),
                    macro_f1=float(f1_score(truth,pred,average="macro",zero_division=0)),
-                   labels_used=sum(used.values()), label_cap=total_cap,
-                   per_class_used=used, per_class_caps=quotas,
+                   labels_used=sum(used.values()), label_cap=None if unlimited else total_cap,
+                   per_class_used=used, per_class_caps=None if unlimited else quotas,
                    actions=dict(Counter(r["action"] for r in rows)),
                    dqn_loss=float(np.mean(losses)) if losses else None,
                    dqn_updates=agent.steps-steps_before,
                    first_dqn_update_at_labels=first_update_at_labels,
                    replay_warmup=agent.warmup,
                    classifier_unchanged=True, scoring="before feedback",
-                   budget_protocol="offline true-class quota controller",
+                   budget_protocol=("unlimited; cost-controlled queries" if unlimited else
+                                    "offline true-class quota controller"),
                    reward_version=VERSION,
                    query_protocol=("uniform random positions with exact reference class counts"
                                    if matched_caps is not None else "epsilon-greedy"))
@@ -259,7 +267,7 @@ def validation(frame, bundle, cnn, context, agent, device, args):
         # Empty replay and fresh optimizers, exactly as at evaluation start.
         summary, _ = run_stream(frame, args, bundle, validation_cnn,
                                 validation_context, validation_agent, training=False)
-        summary["protocol"] = "online budgeted; predictions before feedback; isolated copies"
+        summary["protocol"] = ("online unlimited" if getattr(args, "no_label_quota", False) else "online budgeted") + "; predictions before feedback; isolated copies"
         return summary
     finally:
         legacy.CONTEXT_LOSS_MODE = previous_loss_mode
@@ -297,15 +305,19 @@ def main():
     p.add_argument("--online-warmup",type=int,default=6,
                    help="Minimum replay experiences before online DDQN updates; default 6 = two paid labels.")
     p.add_argument("--budget-fraction",type=float,default=0.2)
+    p.add_argument("--no-label-quota", action="store_true",
+                   help="Disable all query quotas; selection cost alone controls feedback requests.")
     p.add_argument("--epsilon-start",type=float,default=0.3)
     p.add_argument("--epsilon-end",type=float,default=0.05)
     p.add_argument("--epsilon-decay",type=float,default=0.995)
     p.add_argument("--eval-epsilon",type=float,default=0.0)
-    p.add_argument("--stream-order",choices=("input","class-interleaved"),default="input")
+    p.add_argument("--stream-order",choices=("input","class-interleaved","shuffle"),default="input")
     p.add_argument("--per",type=int,choices=LEVELS)
     p.add_argument("--match-budget-from", type=Path,
                    help="RL summary.json; random routes and uniformly sampled queries matching each class count.")
     args=p.parse_args()
+    if args.no_label_quota and args.match_budget_from is not None:
+        p.error("--no-label-quota cannot be combined with --match-budget-from.")
     if args.match_budget_from is not None and (args.command != "evaluate" or args.eval_epsilon != 1):
         p.error("--match-budget-from requires evaluate --eval-epsilon 1.")
     if not 0<=args.epsilon_end<=args.epsilon_start<=1 or not 0<=args.eval_epsilon<=1 or not 0<args.epsilon_decay<=1:
@@ -386,6 +398,8 @@ def main():
         print("Saved:",checkpoint_path)
     else:
         tag=f"three_action_seed{args.seed}_budget{args.budget_fraction:g}_lr{args.context_lr:g}_eps{args.eval_epsilon:g}_{args.stream_order}_warmup{args.online_warmup}"
+        if args.no_label_quota:
+            tag += "_no_label_quota"
         references = {}
         if args.match_budget_from is not None:
             raw = args.match_budget_from.read_bytes()
