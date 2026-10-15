@@ -46,6 +46,7 @@ class Agent:
         self.buffer = deque(maxlen=5000)
         self.device, self.gamma, self.batch = device, args.gamma, args.batch_size
         self.steps = 0
+        self.warmup = self.batch
 
     def action(self, state, allowed, epsilon):
         if random.random() < epsilon:
@@ -61,9 +62,9 @@ class Agent:
                             next_state.detach().cpu(), done, next_allowed))
 
     def optimize(self):
-        if len(self.buffer) < self.batch:
+        if len(self.buffer) < self.warmup:
             return None
-        entries = random.sample(self.buffer, self.batch)
+        entries = random.sample(self.buffer, min(self.batch, len(self.buffer)))
         s, a, r, ns, done, allowed = zip(*entries)
         s, ns = torch.cat(s).to(self.device), torch.cat(ns).to(self.device)
         actions = torch.tensor(a, device=self.device).unsqueeze(1)
@@ -118,6 +119,9 @@ def tensors(frame, scaler, encoder, columns, device):
 
 def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     device = next(cnn.parameters()).device
+    agent.warmup = args.batch_size if training else args.online_warmup
+    steps_before = agent.steps
+    first_update_at_labels = None
     x, labels = tensors(frame, bundle["scaler"], bundle["encoder"], bundle["columns"], device)
     quotas = fractional_class_budget(labels, bundle["num_classes"], args.budget_fraction)
     used = {c: 0 for c in quotas}
@@ -183,6 +187,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                 agent.remember(state, 2, reward, next_state, done, next_allowed)
             value = agent.optimize()
             if value is not None:
+                if first_update_at_labels is None:
+                    first_update_at_labels = sum(used.values())
                 losses.append(value)
                 if training:
                     epsilon = max(args.epsilon_end, epsilon * args.epsilon_decay)
@@ -204,20 +210,44 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                    per_class_used=used, per_class_caps=quotas,
                    actions=dict(Counter(r["action"] for r in rows)),
                    dqn_loss=float(np.mean(losses)) if losses else None,
+                   dqn_updates=agent.steps-steps_before,
+                   first_dqn_update_at_labels=first_update_at_labels,
+                   replay_warmup=agent.warmup,
                    classifier_unchanged=True, scoring="before feedback",
                    budget_protocol="offline true-class quota controller",
                    reward_version=VERSION)
     return summary, rows
 
 
-def validation(frame, bundle, cnn, context, agent, device):
-    x,y = tensors(frame,bundle["scaler"],bundle["encoder"],bundle["columns"],device)
-    predictions=[]
-    for i in range(len(y)):
-        state,f,c = observe(x[i:i+1],cnn,context,0.0)
-        action = agent.action(state,False,0.0)
-        predictions.append(int((f if action==0 else c).argmax(1)))
-    return float(accuracy_score(y,predictions))
+def validation(frame, bundle, cnn, context, agent, device, args):
+    """Budgeted online validation, isolated from training and checkpoint state."""
+    previous_loss_mode = legacy.CONTEXT_LOSS_MODE
+    python_rng, numpy_rng = random.getstate(), np.random.get_state()
+    torch_rng = torch.get_rng_state()
+    cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+    try:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(args.seed)
+        validation_cnn = copy.deepcopy(cnn)
+        validation_context = copy.deepcopy(context)
+        validation_agent = Agent(agent.q.network[0].in_features, args, device)
+        validation_agent.q.load_state_dict(agent.q.state_dict())
+        validation_agent.target.load_state_dict(agent.q.state_dict())
+        # Empty replay and fresh optimizers, exactly as at evaluation start.
+        summary, _ = run_stream(frame, args, bundle, validation_cnn,
+                                validation_context, validation_agent, training=False)
+        summary["protocol"] = "online budgeted; predictions before feedback; isolated copies"
+        return summary
+    finally:
+        legacy.CONTEXT_LOSS_MODE = previous_loss_mode
+        random.setstate(python_rng)
+        np.random.set_state(numpy_rng)
+        torch.set_rng_state(torch_rng)
+        if cuda_rng is not None:
+            torch.cuda.set_rng_state_all(cuda_rng)
 
 
 def main():
@@ -235,6 +265,8 @@ def main():
     p.add_argument("--context-lr",type=float,default=0.25)
     p.add_argument("--dqn-lr",type=float,default=0.0001)
     p.add_argument("--batch-size",type=int,default=128)
+    p.add_argument("--online-warmup",type=int,default=6,
+                   help="Minimum replay experiences before online DDQN updates; default 6 = two paid labels.")
     p.add_argument("--budget-fraction",type=float,default=0.2)
     p.add_argument("--epsilon-start",type=float,default=0.3)
     p.add_argument("--epsilon-end",type=float,default=0.05)
@@ -245,6 +277,8 @@ def main():
     args=p.parse_args()
     if not 0<=args.epsilon_end<=args.epsilon_start<=1 or not 0<=args.eval_epsilon<=1 or not 0<args.epsilon_decay<=1:
         p.error("Invalid exploration parameters.")
+    if args.online_warmup < 1:
+        p.error("online-warmup must be positive.")
     if not 0<=args.budget_fraction<=1 or not 0<=args.gamma<=1 or args.batch_size<1 or args.epochs<1:
         p.error("Invalid budget, gamma, batch size or epochs.")
     if any(not np.isfinite(v) or v<=0 for v in (args.context_lr,args.dqn_lr)):
@@ -286,8 +320,10 @@ def main():
             # Reset Context at episode boundary; the three-action policy persists.
             cnn,context=build_models(bundle["cnn_checkpoint"],bundle["context_checkpoint"],device)
             summary,_=run_stream(train,args,bundle,cnn,context,agent,training=True)
-            score=validation(val,bundle,cnn,context,agent,device)
-            summary.update(epoch=epoch+1,validation_routing_accuracy=score);history.append(summary)
+            validation_summary=validation(val,bundle,cnn,context,agent,device,args)
+            score=validation_summary["accuracy"]
+            summary.update(epoch=epoch+1,validation_routing_accuracy=score,
+                           validation_online=validation_summary);history.append(summary)
             print(json.dumps(summary))
             if score>best:
                 best=score
@@ -295,13 +331,15 @@ def main():
                 saved["context_checkpoint"]["context_model_state_dict"]={k:v.detach().cpu().clone() for k,v in context.state_dict().items()}
                 saved.update(router_state={k:v.detach().cpu().clone() for k,v in agent.q.state_dict().items()},
                              selection_cost=args.selection_cost,gain_weight=args.gain_weight,
-                             training_args=vars(args),best_epoch=epoch+1)
+                             training_args=vars(args),best_epoch=epoch+1,
+                             validation_protocol="online_budgeted_before_feedback_v2",
+                             checkpoint_validation=validation_summary)
                 checkpoint_path.parent.mkdir(parents=True,exist_ok=True)
                 torch.save(saved,checkpoint_path)
         (args.output/"training_history.json").write_text(json.dumps(history,indent=2))
         print("Saved:",checkpoint_path)
     else:
-        tag=f"three_action_seed{args.seed}_budget{args.budget_fraction:g}_lr{args.context_lr:g}_eps{args.eval_epsilon:g}_{args.stream_order}"
+        tag=f"three_action_seed{args.seed}_budget{args.budget_fraction:g}_lr{args.context_lr:g}_eps{args.eval_epsilon:g}_{args.stream_order}_warmup{args.online_warmup}"
         results=args.output/"Results"/tag;results.mkdir(parents=True,exist_ok=True)
         summaries=[]
         for level in ([args.per] if args.per is not None else LEVELS):
