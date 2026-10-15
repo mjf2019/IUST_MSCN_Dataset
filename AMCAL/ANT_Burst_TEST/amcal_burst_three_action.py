@@ -153,6 +153,7 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     # Independent routing RNG: DDQN replay sampling cannot change random routes.
     routing_rng = random.Random(args.seed + 1000003)
     rows, losses = [], []
+    context_window = deque(maxlen=args.context_window)
     epsilon = args.epsilon_start if training else args.eval_epsilon
     initial_cnn = {k: v.detach().cpu().clone() for k,v in cnn.state_dict().items()}
     for pos, index in enumerate(order):
@@ -188,8 +189,13 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
             target = torch.tensor([class_id], device=device)
             before = float(nn.functional.cross_entropy(adapted, target).item())
             optimizer.zero_grad()
-            ce = nn.functional.cross_entropy(cnn(context(sample)), target)
-            base_ce = nn.functional.cross_entropy(frozen, target)
+            # Append only after paying for the current label; replay is free.
+            context_window.append((sample.detach().clone(), class_id))
+            window_x = torch.cat([item[0] for item in context_window], dim=0)
+            window_y = torch.tensor([item[1] for item in context_window], device=device)
+            ce = nn.functional.cross_entropy(cnn(context(window_x)), window_y)
+            with torch.no_grad():
+                base_ce = nn.functional.cross_entropy(cnn(window_x), window_y)
             loss = legacy.context_objective(ce, base_ce, online=True)
             loss.backward()
             optimizer.step()
@@ -227,7 +233,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                          frozen_prediction=frozen_pred, context_prediction=context_pred,
                          prediction_before_feedback=prediction, labels_used=sum(used.values()),
                          class_labels_used=used[class_id], class_budget=None if no_class_quota else quotas[class_id],
-                         reward=reward, loss_before=before, loss_after=after))
+                         reward=reward, loss_before=before, loss_after=after,
+                         context_window_used=len(context_window)))
     assert sum(used.values()) <= total_cap
     assert all(used[c] <= quotas[c] for c in quotas)
     if matched_caps is not None:
@@ -245,6 +252,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                    dqn_updates=agent.steps-steps_before,
                    first_dqn_update_at_labels=first_update_at_labels,
                    replay_warmup=agent.warmup,
+                   context_window=args.context_window,
+                   context_update_protocol="FIFO of queried samples; mean batch loss",
                    classifier_unchanged=True, scoring="before feedback",
                    budget_protocol=("global label budget; no class quotas" if global_budget else
                                     "unlimited; cost-controlled queries" if unlimited else
@@ -308,6 +317,8 @@ def main():
     p.add_argument("--gain-weight",type=float,default=None)
     p.add_argument("--gamma",type=float,default=0.98)
     p.add_argument("--context-lr",type=float,default=0.25)
+    p.add_argument("--context-window", type=int, default=None,
+                   help="FIFO size of paid labelled samples per Context update; default 1 for training, checkpoint value for evaluation.")
     p.add_argument("--dqn-lr",type=float,default=0.0001)
     p.add_argument("--batch-size",type=int,default=128)
     p.add_argument("--online-warmup",type=int,default=6,
@@ -336,6 +347,8 @@ def main():
         p.error("--match-budget-from requires evaluate --eval-epsilon 1.")
     if not 0<=args.epsilon_end<=args.epsilon_start<=1 or not 0<=args.eval_epsilon<=1 or not 0<args.epsilon_decay<=1:
         p.error("Invalid exploration parameters.")
+    if args.context_window is not None and args.context_window < 1:
+        p.error("context-window must be positive.")
     if args.patience < 1:
         p.error("patience must be positive.")
     if args.online_warmup < 1:
@@ -362,11 +375,14 @@ def main():
                     context_loss_mode=context_ck.get("context_loss_mode","legacy"))
         if train.shape[1]-1 != cnn_ck["input_length"] or len(bundle["encoder"].classes_) != bundle["num_classes"]:
             p.error("Training data and checkpoint dimensions differ.")
+        args.context_window = 1 if args.context_window is None else args.context_window
         args.selection_cost=0.2 if args.selection_cost is None else args.selection_cost
         args.gain_weight=1.0 if args.gain_weight is None else args.gain_weight
     else:
         bundle=torch.load(checkpoint_path,map_location="cpu",weights_only=False)
         if bundle.get("version")!=VERSION: p.error("A trained three-action checkpoint is required.")
+        trained_window = bundle.get("training_args", {}).get("context_window", 1)
+        args.context_window = trained_window if args.context_window is None else args.context_window
         for key in ("selection_cost","gain_weight"):
             if getattr(args,key) is not None and getattr(args,key)!=bundle[key]:
                 p.error(f"{key} differs from training; retrain for a new reward.")
@@ -412,6 +428,7 @@ def main():
         print("Saved:",checkpoint_path)
     else:
         tag=f"three_action_seed{args.seed}_budget{args.budget_fraction:g}_lr{args.context_lr:g}_eps{args.eval_epsilon:g}_{args.stream_order}_warmup{args.online_warmup}"
+        tag += f"_contextwindow{args.context_window}"
         if args.no_label_quota:
             tag += "_no_label_quota"
         if args.global_label_budget:
