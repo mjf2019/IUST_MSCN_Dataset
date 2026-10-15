@@ -31,7 +31,10 @@ the router persists. Source training labels provide rewards for actions 0 and 1.
 Only performed action-2 updates provide action-2 rewards. Counterfactual action
 0/1 transitions preserve Context and budget. DDQN transitions use the next stream
 sample. The best joint Context/router snapshot is selected using the separate
-source validation set, evaluated without adaptation. No attack test files are
+source validation set evaluated ONLINE with its own per-class budget. CNN,
+Context and router are independent copies; replay and optimizers start fresh.
+Python, NumPy, CPU and CUDA RNG states are restored after validation. No
+validation-adapted weights, replay or optimizer state enter the saved checkpoint. No attack test files are
 used for training or checkpoint selection. This is source-domain training, not
 meta-training on adversarial episodes; out-of-domain routing remains empirical.
 
@@ -57,3 +60,22 @@ Cost and gain weight are checkpoint settings; changing either requires retrainin
 Run `python AMCAL/ANT_Burst_TEST/test_three_action_reward.py` first. These tests
 cover the reward formula and exhausted-budget action mask without PyTorch.
 They do not substitute for a real model/gradient integration test.
+
+
+## Online adaptation repair (v2 validation protocol)
+
+The offline training batch remains 128. Online validation and evaluation use
+--online-warmup 6 replay experiences (two paid labels, three experiences each).
+After warmup, each DDQN step draws min(batch_size, available_replay) distinct
+experiences. Only paid feedback adds evaluation replay; no unqueried labels are
+used. Logs now include dqn_updates and first_dqn_update_at_labels. This addresses
+late learning; it does not guarantee a query under a fully greedy policy.
+
+Reward and selection cost are unchanged. Retrain to select checkpoints using
+online validation. Existing checkpoints can still be evaluated with the new
+warmup, but retain their original static-validation selection history. The new
+checkpoint field validation_protocol is online_budgeted_before_feedback_v2.
+
+Run test_three_action_learning.py on a PyTorch installation for actual small
+network warmup and validation-isolation checks, including unchanged training
+weights, replay, optimizer and RNG states. These tests skip when torch is absent.
