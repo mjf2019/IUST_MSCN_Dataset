@@ -129,3 +129,42 @@ def final_context_memory_report(context, cnn, memory):
     print("Final Context memory accuracy:", report["memory_accuracy"])
     print("Final Context memory per class:", report["memory_per_class"])
     return report
+
+
+def retention_guard_step(optimizer, context, cnn, inputs, labels, memory,
+                         before, tolerance=0.02, retries=4, factor=0.5):
+    """Retry the already-computed gradient; restore parameters AND Adam state.
+
+    Compare each previously observed class except the current queried class.
+    No memory sampling, label query, backward pass, or holdout access here.
+    """
+    import copy
+    import math
+    snapshot = copy.deepcopy(context.state_dict())
+    optimizer_snapshot = copy.deepcopy(optimizer.state_dict())
+    rates = [group["lr"] for group in optimizer.param_groups]
+    protected = {key: value["ce"] for key, value in before["memory_per_class"].items()
+                 if int(key) not in set(labels.detach().cpu().tolist())}
+    after = before
+    for attempt in range(retries + 1):
+        if attempt:
+            context.load_state_dict(snapshot)
+            optimizer.load_state_dict(copy.deepcopy(optimizer_snapshot))
+        for group, rate in zip(optimizer.param_groups, rates):
+            group["lr"] = rate * factor ** attempt
+        optimizer.step()
+        after = context_update_probe(context, cnn, inputs, labels, memory)
+        finite = math.isfinite(after["current_ce"]) and all(
+            math.isfinite(v["ce"]) for v in after["memory_per_class"].values())
+        safe = finite and all(after["memory_per_class"][key]["ce"] <= value + tolerance
+                              for key, value in protected.items())
+        if safe:
+            used_lr = [group["lr"] for group in optimizer.param_groups]
+            for group, rate in zip(optimizer.param_groups, rates):
+                group["lr"] = rate
+            return after, dict(accepted=True, attempts=attempt+1,
+                               protected_classes=list(protected), used_lr=used_lr)
+    context.load_state_dict(snapshot)
+    optimizer.load_state_dict(optimizer_snapshot)
+    return before, dict(accepted=False, attempts=retries+1,
+                        protected_classes=list(protected), used_lr=[])
