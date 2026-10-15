@@ -119,6 +119,21 @@ def tensors(frame, scaler, encoder, columns, device):
     return x, y
 
 
+class ClassContextBank:
+    """Oracle class-as-flow proxy; never a deployable Flow ID resolver."""
+    def __init__(self, template, lr):
+        self.template = template
+        self.lr = lr
+        self.entries = {}
+
+    def get(self, key):
+        if key not in self.entries:
+            model = copy.deepcopy(self.template)
+            optimizer = torch.optim.Adam(model.parameters(), lr=self.lr, weight_decay=1e-4)
+            self.entries[key] = (model, optimizer)
+        return self.entries[key]
+
+
 def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     device = next(cnn.parameters()).device
     agent.warmup = args.batch_size if training else args.online_warmup
@@ -143,6 +158,10 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     used = {c: 0 for c in quotas}
     total_cap = (int(len(labels) * args.budget_fraction) if global_budget
                  else sum(quotas.values()))
+    proxy = getattr(args, "class_context_proxy", False)
+    if proxy and (training or not global_budget or args.context_window != 1):
+        raise ValueError("Class-context proxy requires evaluation, global budget and context-window 1.")
+    bank = ClassContextBank(context, args.context_lr) if proxy else None
     optimizer = torch.optim.Adam(context.parameters(), lr=args.context_lr, weight_decay=1e-4)
     legacy.CONTEXT_LOSS_MODE = bundle["context_loss_mode"]
     order = (np.random.default_rng(args.seed).permutation(len(labels))
@@ -158,7 +177,10 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     initial_cnn = {k: v.detach().cpu().clone() for k,v in cnn.state_dict().items()}
     for pos, index in enumerate(order):
         sample = x[index:index+1]
-        class_id = int(labels[index])  # quota controller only; never exposed to policy
+        class_id = int(labels[index])
+        # Explicit oracle ablation: true class substitutes for unavailable Flow ID.
+        if proxy:
+            context, optimizer = bank.get(class_id)
         allowed = (sum(used.values()) < total_cap if global_budget else
                    unlimited or used[class_id] < quotas[class_id])
         remaining = 1.0 if unlimited else (total_cap - sum(used.values())) / max(total_cap, 1)
@@ -182,8 +204,10 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                 next_class = int(labels[next_index])
                 no_query_allowed = (sum(used.values()) < total_cap if global_budget else
                                     unlimited or used[next_class] < quotas[next_class])
-                no_query_next = observe(x[next_index:next_index+1], cnn, context, remaining)[0]
-        # Only this branch reveals a test label to the learner.
+                next_context = bank.get(next_class)[0] if proxy else context
+                no_query_next = observe(x[next_index:next_index+1], cnn, next_context, remaining)[0]
+        # Supervised loss/reward labels are revealed only for paid feedback.
+        # Proxy mode separately uses true class as an oracle context routing key.
         if paid:
             used[class_id] += 1
             target = torch.tensor([class_id], device=device)
@@ -211,7 +235,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                 next_class = int(labels[next_index])  # controller mask, not a state feature
                 next_allowed = (sum(used.values()) < total_cap if global_budget else
                                     unlimited or used[next_class] < quotas[next_class])
-                next_state = observe(x[next_index:next_index+1], cnn, context,
+                next_context = bank.get(next_class)[0] if proxy else context
+                next_state = observe(x[next_index:next_index+1], cnn, next_context,
                                      1.0 if unlimited else (total_cap-sum(used.values()))/max(total_cap,1))[0]
             # In offline training all labels are available. At test these
             # counterfactual route rewards are computed ONLY for paid labels.
@@ -234,7 +259,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                          prediction_before_feedback=prediction, labels_used=sum(used.values()),
                          class_labels_used=used[class_id], class_budget=None if no_class_quota else quotas[class_id],
                          reward=reward, loss_before=before, loss_after=after,
-                         context_window_used=len(context_window)))
+                         context_window_used=len(context_window),
+                         context_key=class_id if proxy else "shared"))
     assert sum(used.values()) <= total_cap
     assert all(used[c] <= quotas[c] for c in quotas)
     if matched_caps is not None:
@@ -253,6 +279,9 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                    first_dqn_update_at_labels=first_update_at_labels,
                    replay_warmup=agent.warmup,
                    context_window=args.context_window,
+                   context_scope="oracle_class_as_flow_proxy" if proxy else "shared",
+                   context_instances=len(bank.entries) if proxy else 1,
+                   oracle_context_routing=proxy,
                    context_update_protocol="FIFO of queried samples; mean batch loss",
                    classifier_unchanged=True, scoring="before feedback",
                    budget_protocol=("global label budget; no class quotas" if global_budget else
@@ -333,10 +362,14 @@ def main():
     p.add_argument("--epsilon-decay",type=float,default=0.995)
     p.add_argument("--eval-epsilon",type=float,default=0.0)
     p.add_argument("--stream-order",choices=("input","class-interleaved","shuffle"),default="input")
+    p.add_argument("--class-context-proxy", action="store_true",
+                   help="Evaluation-only oracle: true class substitutes for Flow ID; independent Context/Adam, shared CNN/router/global budget.")
     p.add_argument("--per",type=int,choices=LEVELS)
     p.add_argument("--match-budget-from", type=Path,
                    help="RL summary.json; random routes and uniformly sampled queries matching each class count.")
     args=p.parse_args()
+    if args.class_context_proxy and (args.command != "evaluate" or not args.global_label_budget):
+        p.error("--class-context-proxy requires evaluate --global-label-budget.")
     if args.global_label_budget and args.no_label_quota:
         p.error("Choose --global-label-budget or --no-label-quota, not both.")
     if args.global_label_budget and args.match_budget_from is not None:
@@ -387,6 +420,8 @@ def main():
             if getattr(args,key) is not None and getattr(args,key)!=bundle[key]:
                 p.error(f"{key} differs from training; retrain for a new reward.")
             setattr(args,key,bundle[key])
+    if args.class_context_proxy and args.context_window != 1:
+        p.error("--class-context-proxy requires --context-window 1.")
     if any(not np.isfinite(v) or v<0 for v in (args.selection_cost,args.gain_weight)):
         p.error("Reward cost and gain weight must be finite and nonnegative.")
     print("Three-action routing; device:",device,"cost:",args.selection_cost,"lambda:",args.gain_weight)
@@ -433,6 +468,8 @@ def main():
             tag += "_no_label_quota"
         if args.global_label_budget:
             tag += "_global_label_budget"
+        if args.class_context_proxy:
+            tag += "_oracle_class_context_proxy"
         references = {}
         if args.match_budget_from is not None:
             raw = args.match_budget_from.read_bytes()
