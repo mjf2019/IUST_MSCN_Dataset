@@ -22,7 +22,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from amcal_burst_holdout import split_holdout_indices, evaluate_heldout
 from amcal_burst_context_memory import make_context_memory, with_context_rehearsal, context_update_probe, final_context_memory_report, retention_guard_step
 import amcal_burst_legacy as original
-from amcal_burst_stream import stream_permutation, permutation_sha256, split_class_budget, class_budget_available, class_budget_report
+from amcal_burst_stream import stream_permutation, permutation_sha256, split_class_budget, fractional_class_budget, class_budget_available, class_budget_report
 
 PER_LEVELS = (0, 1, 3, 5, 7, 10, 12, 15, 17, 20)
 
@@ -58,6 +58,7 @@ def parse_args():
     parser.add_argument("--stream-order", choices=("input", "class-interleaved"), default="class-interleaved")
     parser.add_argument("--stream-seed", type=int, default=42)
     parser.add_argument("--budget-mode", choices=("total", "per-class"), default="total")
+    parser.add_argument("--class-budget-fraction", type=float, default=None)
     parser.add_argument("--holdout-fraction", type=float, default=0.0)
     parser.add_argument("--quota-policy", choices=("optional", "complete"), default="optional")
     parser.add_argument("--context-memory", choices=("off", "per-class"), default="off")
@@ -170,6 +171,12 @@ def evaluate_level(args):
     n = len(attack)
     label_budget = min(args.budget, n)
     class_quotas = split_class_budget(args.budget, num_classes)
+    fraction = getattr(args, "class_budget_fraction", None)
+    if fraction is not None:
+        if args.budget_mode != "per-class":
+            raise ValueError("class-budget-fraction requires per-class budget.")
+        class_quotas = fractional_class_budget(labels_array, num_classes, fraction)
+        label_budget = sum(class_quotas.values())
     class_used = {c: 0 for c in class_quotas}
     rng = np.random.default_rng(args.seed)
     query_mask = np.zeros(n, dtype=bool)
@@ -297,7 +304,7 @@ def evaluate_level(args):
         context_guard=args.context_guard,
         accepted_context_steps=sum(json.loads(t['guard_info'])['accepted'] for t in trace if t['guard_info'] != 'null') if args.context_guard != 'off' else updates,
         rejected_context_steps=sum(not json.loads(t['guard_info'])['accepted'] for t in trace if t['guard_info'] != 'null'),
-        budget_mode=args.budget_mode, quota_policy=args.quota_policy, per_class_results=class_summary,
+        budget_mode=args.budget_mode, class_budget_fraction=fraction, quota_policy=args.quota_policy, per_class_results=class_summary,
         context_memory_mode=args.context_memory, memory_per_class=args.memory_per_class,
         memory_batch_size=args.memory_batch_size, memory_weight=args.memory_weight,
         context_memory_stats=context_memory.stats() if context_memory is not None else None,
@@ -342,6 +349,8 @@ def evaluate_level(args):
     budget_suffix = f"_budget{args.budget}" if args.budget != 214 else ""
     if args.budget_mode == "per-class":
         budget_suffix += "_budget_per_class"
+        if fraction is not None:
+            budget_suffix += f"_fraction{fraction:g}"
     if args.stream_order != "input":
         budget_suffix += f"_class_interleaved_seed{args.stream_seed}"
     if args.lr != 0.25:
