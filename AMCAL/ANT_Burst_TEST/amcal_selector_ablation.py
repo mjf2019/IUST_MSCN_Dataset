@@ -2,6 +2,7 @@
 Uses existing three-action policy as a query policy; not a retrained binary selector.
 No class labels are used for routing or query decisions.
 """
+from collections import deque
 from pathlib import Path
 import argparse
 import hashlib
@@ -53,7 +54,21 @@ def calibrate_entropy(bundle, args, device):
     threshold=float(np.quantile(values,1-args.budget_fraction))
     return threshold, dict(source=str(path),sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
                            samples=len(values),quantile=1-args.budget_fraction,
-                           threshold=threshold,protocol="frozen initial Context; validation features only")
+                           threshold=threshold,initial_scores=values,
+                           protocol="frozen initial Context; validation features only")
+
+
+class RollingEntropy:
+    """Threshold uses only past observed scores; no test labels or future scores."""
+    def __init__(self, initial_scores, window, fraction):
+        self.history = deque(initial_scores, maxlen=window)
+        self.fraction = fraction
+
+    def decide(self, score):
+        threshold = float(np.quantile(list(self.history), 1-self.fraction))
+        preferred = score >= threshold
+        self.history.append(float(score))
+        return bool(preferred), threshold
 
 
 def evaluate(frame, bundle, args, seed, method, device):
@@ -88,6 +103,8 @@ def evaluate(frame, bundle, args, seed, method, device):
     cnn_initial = {k:v.detach().cpu().clone() for k,v in cnn.state_dict().items()}
     router_initial = {k:v.detach().cpu().clone() for k,v in agent.q.state_dict().items()}
     rows, used, forced_count, losses = [], 0, 0, []
+    entropy_selector = RollingEntropy(args.entropy_initial_scores,args.entropy_window,
+                                      args.budget_fraction)
     for pos, idx in enumerate(order):
         block_id = pos//args.budget_block_size
         block_start,block_end,block_cap = schedule[block_id]
@@ -100,10 +117,14 @@ def evaluate(frame, bundle, args, seed, method, device):
         with torch.no_grad():
             q = agent.q(state).squeeze(0)
             advantage = float((q[2]-q[:2].max()).item())
+        threshold_used = args.entropy_threshold
         if method == "random":
             preferred = pos in random_positions
         elif method == "uncertainty":
-            preferred = entropy >= args.entropy_threshold
+            if args.uncertainty_mode == "rolling-quantile":
+                preferred, threshold_used = entropy_selector.decide(entropy)
+            else:
+                preferred = entropy >= threshold_used
         elif rng.random() < args.eval_epsilon:
             preferred = rng.randrange(3) == 2
         else:
@@ -159,7 +180,8 @@ def evaluate(frame, bundle, args, seed, method, device):
                          forced_query=forced,preferred_query=preferred,labels_used=used,
                          budget_block=block_id,block_labels_used=block_used[block_id],
                          block_cap=block_cap,
-                         normalized_entropy=entropy,query_advantage=advantage,
+                         normalized_entropy=entropy,entropy_threshold_used=threshold_used,
+                         query_advantage=advantage,
                          loss_before=before,loss_after=after))
     assert used == cap
     assert block_used == [block[2] for block in schedule]
@@ -179,7 +201,9 @@ def evaluate(frame, bundle, args, seed, method, device):
                 budget_block_size=args.budget_block_size,
                 per_class_queried={str(c):sum(r["queried"] for r in rows if r["true_label"]==c)
                                    for c in range(bundle["num_classes"])},
-                entropy_threshold=args.entropy_threshold),rows
+                entropy_threshold=args.entropy_threshold,
+                uncertainty_mode=args.uncertainty_mode,
+                entropy_window=args.entropy_window),rows
 
 
 def main():
@@ -203,6 +227,9 @@ def main():
                    help="Explicit validation-tuned threshold; default calibrates validation entropy quantile.")
     p.add_argument("--budget-block-size",type=int,default=50,
                    help="Label-blind online allocation interval; Context persists across blocks.")
+    p.add_argument("--uncertainty-mode",choices=["fixed","rolling-quantile"],default="rolling-quantile")
+    p.add_argument("--entropy-window",type=int,default=200,
+                   help="Number of past uncertainty scores; initialized from validation entropy.")
     p.add_argument("--stream-order",choices=["input","shuffle"],default="input")
     args=p.parse_args()
     if not all(np.isfinite(v) and 0<=v<=1 for v in
@@ -212,6 +239,7 @@ def main():
         p.error("Learning rates must be positive and finite.")
     if args.entropy_threshold is not None and (not np.isfinite(args.entropy_threshold) or not 0<=args.entropy_threshold<=1):
         p.error("entropy-threshold must be finite in [0,1].")
+    if args.entropy_window<1:p.error("entropy-window must be positive.")
     if args.budget_block_size<1:p.error("budget-block-size must be positive.")
     if args.online_warmup<1 or args.batch_size<1:p.error("Replay settings must be positive.")
     if args.output.exists():p.error("Choose a new output directory to preserve previous runs.")
@@ -222,11 +250,18 @@ def main():
         p.error("Use a single-sample Context checkpoint.")
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
     calibration = {"source":"explicit threshold; user must tune on validation"}
-    if args.entropy_threshold is None:
-        args.entropy_threshold, calibration = calibrate_entropy(bundle,args,device)
+    if args.entropy_threshold is None or args.uncertainty_mode == "rolling-quantile":
+        calibrated_threshold, calibration = calibrate_entropy(bundle,args,device)
+        if args.entropy_threshold is None:
+            args.entropy_threshold = calibrated_threshold
+    args.entropy_initial_scores = calibration.pop("initial_scores", [args.entropy_threshold])
+    calibration["initial_scores_count"] = len(args.entropy_initial_scores)
+    calibration["initial_scores_sha256"] = hashlib.sha256(
+        json.dumps(args.entropy_initial_scores).encode()).hexdigest()
     print("Entropy calibration:",json.dumps(calibration),flush=True)
     args.output.mkdir(parents=True)
-    manifest=dict(vars(args),entropy_calibration=calibration,protocol_version="selection_blocks_v2",checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
+    manifest=dict({k:v for k,v in vars(args).items() if k != "entropy_initial_scores"},
+                  entropy_calibration=calibration,protocol_version="selection_blocks_v3",checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
                   torch_version=torch.__version__,numpy_version=np.__version__,
                   device=str(device),training_seed=bundle.get("training_args",{}).get("seed"),
                   note="Seeds repeat online evaluation, not checkpoint training. Selection-only diagnostic; no oracle routing.")
