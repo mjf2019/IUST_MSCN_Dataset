@@ -137,6 +137,10 @@ class ClassContextBank:
 def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     device = next(cnn.parameters()).device
     agent.warmup = args.batch_size if training else args.online_warmup
+    policy_mode = getattr(args, "policy_mode", "adaptive")
+    learn_ddqn = training or policy_mode == "adaptive"
+    router_initial = {k:v.detach().cpu().clone() for k,v in agent.q.state_dict().items()}
+    entropy_history = deque(maxlen=getattr(args, "uncertainty_window", 200))
     steps_before = agent.steps
     first_update_at_labels = None
     x, labels = tensors(frame, bundle["scaler"], bundle["encoder"], bundle["columns"], device)
@@ -186,7 +190,21 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
         remaining = 1.0 if unlimited else (total_cap - sum(used.values())) / max(total_cap, 1)
         state, frozen, adapted = observe(sample, cnn, context, remaining)
         frozen_pred, context_pred = int(frozen.argmax(1)), int(adapted.argmax(1))
-        if query_positions is None:
+        uncertainty_score = uncertainty_threshold = None
+        if query_positions is None and policy_mode == "uncertainty":
+            probs = adapted.softmax(1).squeeze(0)
+            uncertainty_score = float((-(probs * probs.clamp_min(1e-12).log()).sum()
+                                       / max(np.log(bundle["num_classes"]), 1e-12)).item())
+            uncertainty_threshold = (float(np.quantile(list(entropy_history), 1-args.budget_fraction))
+                                     if entropy_history else args.uncertainty_initial_threshold)
+            # Only previous prediction scores set the threshold; no label/future access.
+            entropy_history.append(uncertainty_score)
+            if allowed and uncertainty_score >= uncertainty_threshold:
+                action = 2
+            else:
+                # Retain the pretrained non-query routing rule, without DDQN updates.
+                action = agent.action(state, False, 0.0)
+        elif query_positions is None:
             action = agent.action(state, allowed, epsilon)
         else:
             action = 2 if index in query_positions else routing_rng.choice((0, 1))
@@ -196,7 +214,7 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
         reward = None
         done = pos == len(order)-1
         # Counterfactual non-query actions preserve both Context and budget.
-        if training or paid:
+        if learn_ddqn and (training or paid):
             if done:
                 no_query_next, no_query_allowed = state, False
             else:
@@ -227,7 +245,7 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                 after = float(nn.functional.cross_entropy(cnn(context(sample)), target).item())
             reward = routing_reward(2, frozen_pred, context_pred, class_id, before, after,
                                     args.selection_cost, args.gain_weight)
-        if training or paid:
+        if learn_ddqn and (training or paid):
             if done:
                 next_state, next_allowed = state, False
             else:
@@ -260,7 +278,12 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                          class_labels_used=used[class_id], class_budget=None if no_class_quota else quotas[class_id],
                          reward=reward, loss_before=before, loss_after=after,
                          context_window_used=len(context_window),
-                         context_key=class_id if proxy else "shared"))
+                         context_key=class_id if proxy else "shared",
+                         uncertainty_score=uncertainty_score,
+                         uncertainty_threshold=uncertainty_threshold))
+    if not learn_ddqn:
+        assert agent.steps == steps_before
+        assert all(torch.equal(router_initial[k],v.detach().cpu()) for k,v in agent.q.state_dict().items())
     assert sum(used.values()) <= total_cap
     assert all(used[c] <= quotas[c] for c in quotas)
     if matched_caps is not None:
@@ -279,6 +302,10 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                    first_dqn_update_at_labels=first_update_at_labels,
                    replay_warmup=agent.warmup,
                    context_window=args.context_window,
+                   policy_mode=policy_mode,
+                   policy_protocol=("rolling entropy queries; frozen DDQN non-query routes" if policy_mode == "uncertainty"
+                                    else "frozen three-action DDQN" if policy_mode == "frozen"
+                                    else "adaptive three-action DDQN"),
                    context_scope="oracle_class_as_flow_proxy" if proxy else "shared",
                    context_instances=len(bank.entries) if proxy else 1,
                    oracle_context_routing=proxy,
@@ -289,7 +316,9 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                                     "offline true-class quota controller"),
                    reward_version=VERSION,
                    query_protocol=("uniform random positions with exact reference class counts"
-                                   if matched_caps is not None else "epsilon-greedy"))
+                                   if matched_caps is not None else
+                                   "rolling entropy queries; frozen DDQN non-query routes" if policy_mode == "uncertainty"
+                                   else "epsilon-greedy"))
     return summary, rows
 
 
@@ -364,10 +393,21 @@ def main():
     p.add_argument("--stream-order",choices=("input","class-interleaved","shuffle"),default="input")
     p.add_argument("--class-context-proxy", action="store_true",
                    help="Evaluation-only oracle: true class substitutes for Flow ID; independent Context/Adam, shared CNN/router; default per-class quotas, optional global budget.")
+    p.add_argument("--policy-mode", choices=("adaptive","frozen","uncertainty"),default="adaptive",
+                   help="Evaluation policy; uncertainty uses rolling entropy queries and frozen DDQN non-query routing.")
+    p.add_argument("--uncertainty-window",type=int,default=200)
+    p.add_argument("--uncertainty-initial-threshold",type=float,default=0.5,
+                   help="First-sample normalized entropy threshold; subsequent thresholds use past scores.")
     p.add_argument("--per",type=int,choices=LEVELS)
     p.add_argument("--match-budget-from", type=Path,
                    help="RL summary.json; random routes and uniformly sampled queries matching each class count.")
     args=p.parse_args()
+    if args.policy_mode != "adaptive" and args.command != "evaluate":
+        p.error("Frozen and uncertainty modes are evaluation-only.")
+    if args.policy_mode != "adaptive" and args.match_budget_from is not None:
+        p.error("Baseline policy modes cannot be combined with --match-budget-from.")
+    if args.uncertainty_window < 1 or not np.isfinite(args.uncertainty_initial_threshold) or not 0<=args.uncertainty_initial_threshold<=1:
+        p.error("Invalid uncertainty window or initial threshold.")
     if args.class_context_proxy and args.command != "evaluate":
         p.error("--class-context-proxy requires evaluate.")
     if args.global_label_budget and args.no_label_quota:
@@ -470,6 +510,10 @@ def main():
             tag += "_global_label_budget"
         if args.class_context_proxy:
             tag += "_oracle_class_context_proxy"
+        if args.policy_mode != "adaptive":
+            tag += f"_policy{args.policy_mode}"
+        if args.policy_mode == "uncertainty":
+            tag += f"_entropywindow{args.uncertainty_window}_initial{args.uncertainty_initial_threshold:g}"
         references = {}
         if args.match_budget_from is not None:
             raw = args.match_budget_from.read_bytes()
