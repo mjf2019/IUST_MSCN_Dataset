@@ -12,6 +12,7 @@ import copy
 import csv
 import json
 import random
+import hashlib
 
 import numpy as np
 import pandas as pd
@@ -22,6 +23,7 @@ from sklearn.metrics import accuracy_score, f1_score
 
 import amcal_burst_legacy as legacy
 from amcal_burst_stream import fractional_class_budget, stream_permutation
+from amcal_matched_budget import matched_query_positions
 from amcal_three_action_reward import routing_reward, prediction_route, available_actions
 
 VERSION = "three_action_routing_v1"
@@ -124,11 +126,22 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     first_update_at_labels = None
     x, labels = tensors(frame, bundle["scaler"], bundle["encoder"], bundle["columns"], device)
     quotas = fractional_class_budget(labels, bundle["num_classes"], args.budget_fraction)
+    matched_caps = getattr(args, "matched_class_caps", None)
+    if matched_caps is not None:
+        matched_caps = {int(k): v for k,v in matched_caps.items()}
+        if set(matched_caps) != set(quotas) or any(
+                type(n) is not int or n < 0 or n > quotas[c] for c,n in matched_caps.items()):
+            raise ValueError("Reference counts exceed this run's class budget or differ in classes.")
+        quotas = matched_caps
     used = {c: 0 for c in quotas}
     total_cap = sum(quotas.values())
     optimizer = torch.optim.Adam(context.parameters(), lr=args.context_lr, weight_decay=1e-4)
     legacy.CONTEXT_LOSS_MODE = bundle["context_loss_mode"]
     order = stream_permutation(labels, args.stream_order, args.seed)
+    query_positions = (matched_query_positions(labels, quotas, args.seed)
+                       if matched_caps is not None else None)
+    # Independent routing RNG: DDQN replay sampling cannot change random routes.
+    routing_rng = random.Random(args.seed + 1000003)
     rows, losses = [], []
     epsilon = args.epsilon_start if training else args.eval_epsilon
     initial_cnn = {k: v.detach().cpu().clone() for k,v in cnn.state_dict().items()}
@@ -139,7 +152,10 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
         remaining = (total_cap - sum(used.values())) / max(total_cap, 1)
         state, frozen, adapted = observe(sample, cnn, context, remaining)
         frozen_pred, context_pred = int(frozen.argmax(1)), int(adapted.argmax(1))
-        action = agent.action(state, allowed, epsilon)
+        if query_positions is None:
+            action = agent.action(state, allowed, epsilon)
+        else:
+            action = 2 if index in query_positions else routing_rng.choice((0, 1))
         prediction = frozen_pred if action == 0 else context_pred
         paid = action == 2
         before = after = None
@@ -200,6 +216,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                          class_labels_used=used[class_id], class_budget=quotas[class_id],
                          reward=reward, loss_before=before, loss_after=after))
     assert all(used[c] <= quotas[c] for c in quotas)
+    if matched_caps is not None:
+        assert used == quotas, "Matched random baseline did not consume exact reference counts."
     assert all(torch.equal(initial_cnn[k],v.detach().cpu()) for k,v in cnn.state_dict().items())
     truth = [r["true_label"] for r in rows]
     pred = [r["prediction_before_feedback"] for r in rows]
@@ -215,7 +233,9 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                    replay_warmup=agent.warmup,
                    classifier_unchanged=True, scoring="before feedback",
                    budget_protocol="offline true-class quota controller",
-                   reward_version=VERSION)
+                   reward_version=VERSION,
+                   query_protocol=("uniform random positions with exact reference class counts"
+                                   if matched_caps is not None else "epsilon-greedy"))
     return summary, rows
 
 
@@ -274,7 +294,11 @@ def main():
     p.add_argument("--eval-epsilon",type=float,default=0.0)
     p.add_argument("--stream-order",choices=("input","class-interleaved"),default="input")
     p.add_argument("--per",type=int,choices=LEVELS)
+    p.add_argument("--match-budget-from", type=Path,
+                   help="RL summary.json; random routes and uniformly sampled queries matching each class count.")
     args=p.parse_args()
+    if args.match_budget_from is not None and (args.command != "evaluate" or args.eval_epsilon != 1):
+        p.error("--match-budget-from requires evaluate --eval-epsilon 1.")
     if not 0<=args.epsilon_end<=args.epsilon_start<=1 or not 0<=args.eval_epsilon<=1 or not 0<args.epsilon_decay<=1:
         p.error("Invalid exploration parameters.")
     if args.online_warmup < 1:
@@ -340,6 +364,22 @@ def main():
         print("Saved:",checkpoint_path)
     else:
         tag=f"three_action_seed{args.seed}_budget{args.budget_fraction:g}_lr{args.context_lr:g}_eps{args.eval_epsilon:g}_{args.stream_order}_warmup{args.online_warmup}"
+        references = {}
+        if args.match_budget_from is not None:
+            raw = args.match_budget_from.read_bytes()
+            entries = json.loads(raw)
+            if not isinstance(entries, list):
+                p.error("Reference summary must be a list of per-level results.")
+            for entry in entries:
+                if entry.get("reward_version") != VERSION:
+                    p.error("Reference reward version differs.")
+                level = int(entry["perturbation_level"])
+                if level in references:
+                    p.error("Duplicate perturbation level in reference.")
+                if sum(entry["per_class_used"].values()) != entry["labels_used"]:
+                    p.error("Invalid reference label counts.")
+                references[level] = entry
+            tag += "_matched_random_uniform_" + hashlib.sha256(raw).hexdigest()[:8]
         results=args.output/"Results"/tag;results.mkdir(parents=True,exist_ok=True)
         summaries=[]
         for level in ([args.per] if args.per is not None else LEVELS):
@@ -348,7 +388,15 @@ def main():
             cnn,context=build_models(bundle["cnn_checkpoint"],bundle["context_checkpoint"],device)
             agent=Agent(size,args,device);agent.q.load_state_dict(bundle["router_state"]);agent.target.load_state_dict(bundle["router_state"])
             frame=pd.read_csv(args.data_dir/"AdvBurst_FTSC-IAT"/f"AdvBurstTrainedBurst_size_{level}_Step_2000.csv").iloc[:1073]
+            if args.match_budget_from is not None:
+                if level not in references:
+                    p.error(f"Reference lacks perturbation level {level}.")
+                args.matched_class_caps = references[level]["per_class_used"]
             summary,rows=run_stream(frame,args,bundle,cnn,context,agent)
+            if args.match_budget_from is not None:
+                summary["reference_rl_accuracy"] = references[level]["accuracy"]
+                summary["reference_rl_labels_used"] = references[level]["labels_used"]
+                summary["accuracy_delta_vs_rl"] = summary["accuracy"] - references[level]["accuracy"]
             summary["perturbation_level"]=level;summaries.append(summary)
             pd.DataFrame(rows).to_csv(results/f"PER_{level}_trace.csv",index=False)
             print(json.dumps(summary))
