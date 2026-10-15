@@ -159,8 +159,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     total_cap = (int(len(labels) * args.budget_fraction) if global_budget
                  else sum(quotas.values()))
     proxy = getattr(args, "class_context_proxy", False)
-    if proxy and (training or not global_budget or args.context_window != 1):
-        raise ValueError("Class-context proxy requires evaluation, global budget and context-window 1.")
+    if proxy and (training or args.context_window != 1):
+        raise ValueError("Class-context proxy requires evaluation and context-window 1.")
     bank = ClassContextBank(context, args.context_lr) if proxy else None
     optimizer = torch.optim.Adam(context.parameters(), lr=args.context_lr, weight_decay=1e-4)
     legacy.CONTEXT_LOSS_MODE = bundle["context_loss_mode"]
@@ -363,13 +363,13 @@ def main():
     p.add_argument("--eval-epsilon",type=float,default=0.0)
     p.add_argument("--stream-order",choices=("input","class-interleaved","shuffle"),default="input")
     p.add_argument("--class-context-proxy", action="store_true",
-                   help="Evaluation-only oracle: true class substitutes for Flow ID; independent Context/Adam, shared CNN/router/global budget.")
+                   help="Evaluation-only oracle: true class substitutes for Flow ID; independent Context/Adam, shared CNN/router; default per-class quotas, optional global budget.")
     p.add_argument("--per",type=int,choices=LEVELS)
     p.add_argument("--match-budget-from", type=Path,
                    help="RL summary.json; random routes and uniformly sampled queries matching each class count.")
     args=p.parse_args()
-    if args.class_context_proxy and (args.command != "evaluate" or not args.global_label_budget):
-        p.error("--class-context-proxy requires evaluate --global-label-budget.")
+    if args.class_context_proxy and args.command != "evaluate":
+        p.error("--class-context-proxy requires evaluate.")
     if args.global_label_budget and args.no_label_quota:
         p.error("Choose --global-label-budget or --no-label-quota, not both.")
     if args.global_label_budget and args.match_budget_from is not None:
