@@ -20,7 +20,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 # legacy classes, but this runner never instantiates a DQN, loads its checkpoint,
 # computes Q/rewards, creates replay, or invokes a selector optimizer.
 from amcal_burst_holdout import split_holdout_indices, evaluate_heldout
-from amcal_burst_context_memory import make_context_memory, with_context_rehearsal, context_update_probe, final_context_memory_report
+from amcal_burst_context_memory import make_context_memory, with_context_rehearsal, context_update_probe, final_context_memory_report, retention_guard_step
 import amcal_burst_legacy as original
 from amcal_burst_stream import stream_permutation, permutation_sha256, split_class_budget, class_budget_available, class_budget_report
 
@@ -64,6 +64,10 @@ def parse_args():
     parser.add_argument("--memory-per-class", type=int, default=32)
     parser.add_argument("--memory-batch-size", type=int, default=16)
     parser.add_argument("--memory-weight", type=float, default=1.0)
+    parser.add_argument("--context-guard", choices=("off", "per-class"), default="off")
+    parser.add_argument("--guard-tolerance", type=float, default=0.02)
+    parser.add_argument("--guard-retries", type=int, default=4)
+    parser.add_argument("--guard-lr-factor", type=float, default=0.5)
     args = parser.parse_args()
     if args.memory_per_class < 1 or args.memory_batch_size < 1 or not np.isfinite(args.memory_weight) or args.memory_weight < 0:
         parser.error("Invalid Context memory capacity, batch size or loss weight.")
@@ -79,6 +83,11 @@ def parse_args():
 
 
 def evaluate_level(args):
+    if args.context_guard != "off" and args.context_memory == "off":
+        raise ValueError("Context guard requires paid Context memory.")
+    if not np.isfinite(args.guard_tolerance) or args.guard_tolerance < 0 or args.guard_retries < 0 or not 0 < args.guard_lr_factor < 1:
+        raise ValueError("Invalid guard tolerance, retries or LR factor.")
+
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -208,6 +217,7 @@ def evaluate_level(args):
         observed_loss = None
         memory_info = dict(memory_loss=0.0, replay_samples=0)
         update_probe = None
+        guard_info = None
         memory_size_before = len(context_memory) if context_memory is not None else 0
         if chosen:
             # Predict first, then query and update: no label is passed to the
@@ -221,8 +231,13 @@ def evaluate_level(args):
             loss, memory_info = with_context_rehearsal(
                 loss, context_memory, context, cnn, args.memory_batch_size, args.memory_weight)
             loss.backward()
-            optimizer.step()
-            probe_after = context_update_probe(context, cnn, x, y, context_memory)
+            if args.context_guard == "per-class":
+                probe_after, guard_info = retention_guard_step(
+                    optimizer, context, cnn, x, y, context_memory, probe_before,
+                    args.guard_tolerance, args.guard_retries, args.guard_lr_factor)
+            else:
+                optimizer.step()
+                probe_after = context_update_probe(context, cnn, x, y, context_memory)
             update_probe = dict(before=probe_before, after=probe_after)
             if context_memory is not None:
                 context_memory.add_batch(x, y, [source_indices[index]+1])
@@ -248,7 +263,7 @@ def evaluate_level(args):
             cumulative_accuracy=cumulative_correct / (index + 1),
             memory_size_before=memory_size_before,
             memory_size_after=len(context_memory) if context_memory is not None else 0,
-            update_probe=json.dumps(update_probe), **memory_info))
+            guard_info=json.dumps(guard_info), update_probe=json.dumps(update_probe), **memory_info))
 
     expected_queries = int(query_mask.sum()) if args.query_gate == "none" else None
     if args.query_gate == "none" and updates != expected_queries:
@@ -279,6 +294,9 @@ def evaluate_level(args):
     final_memory_report = final_context_memory_report(context, cnn, context_memory)
     diagnostics = dict(
         final_context_memory=final_memory_report,
+        context_guard=args.context_guard,
+        accepted_context_steps=sum(json.loads(t['guard_info'])['accepted'] for t in trace if t['guard_info'] != 'null') if args.context_guard != 'off' else updates,
+        rejected_context_steps=sum(not json.loads(t['guard_info'])['accepted'] for t in trace if t['guard_info'] != 'null'),
         budget_mode=args.budget_mode, quota_policy=args.quota_policy, per_class_results=class_summary,
         context_memory_mode=args.context_memory, memory_per_class=args.memory_per_class,
         memory_batch_size=args.memory_batch_size, memory_weight=args.memory_weight,
@@ -334,6 +352,8 @@ def evaluate_level(args):
         budget_suffix += "_quota_complete"
     if args.context_memory != "off":
         budget_suffix += f"_context_memory{args.memory_per_class}_batch{args.memory_batch_size}_weight{args.memory_weight:g}"
+    if args.context_guard != "off":
+        budget_suffix += f"_guard_tol{args.guard_tolerance:g}_retry{args.guard_retries}_factor{args.guard_lr_factor:g}"
     results_dir = (args.results_output.resolve() if args.results_output else
                    args.output.resolve() / "Results" / f"random_no_rl_{args.query_gate}_seed{args.seed}{budget_suffix}")
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -373,6 +393,7 @@ def evaluate_level(args):
     print(f"  Recall (weighted): {row['Recall']:.4f}")
     print(f"  F1 Score (weighted): {row['F1 Score']:.4f}")
     print(f"  Context Updates Used: {updates}/{label_budget}")
+    print("  Accepted / rejected Context steps:", diagnostics["accepted_context_steps"], "/", diagnostics["rejected_context_steps"])
     print("  DQN Updates Used: 0 (RL removed)")
     print("  Average DQN Loss: 0.0000 (RL removed)")
     if heldout_result is not None:
