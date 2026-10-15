@@ -70,3 +70,14 @@ def class_budget_report(rows, quotas):
                     label_budget=quotas[c], accuracy_before_update=v[1]/v[0] if v[0] else None)
                for c, v in counts.items()]
     return summary, curve
+
+
+def fractional_class_budget(labels, num_classes, fraction):
+    """Hard cap floor(fraction * class count), computed on adaptation rows only."""
+    import math
+    if not math.isfinite(fraction) or not 0 <= fraction <= 1 or num_classes < 1:
+        raise ValueError("Invalid per-class budget fraction.")
+    counts = {c: 0 for c in range(num_classes)}
+    for label in labels:
+        counts[int(label)] += 1
+    return {c: math.floor(fraction * count) for c, count in counts.items()}
