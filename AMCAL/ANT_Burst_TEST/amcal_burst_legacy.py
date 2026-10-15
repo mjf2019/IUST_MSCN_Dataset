@@ -970,6 +970,7 @@ def load_metadata(base_path='AdvBurst_FTSC-IAT', train_perturb_level=0):
     return num_classes, label_encoder, scaler, X.shape[1], class_counts
 
 def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, label_encoder, scaler, device, threshold, class_count, budget=300, fine_tune_lr=0.0001, max_test_samples=100):
+    import json
     if HOLDOUT_FRACTION > 0:
         # Reserved target rows cannot influence preprocessing or class weights.
         training_reference = pd.read_csv(BURST_DATA_DIR / "oversampled_train_dataset.csv")
