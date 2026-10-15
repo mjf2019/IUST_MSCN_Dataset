@@ -270,6 +270,13 @@ def validation(frame, bundle, cnn, context, agent, device, args):
             torch.cuda.set_rng_state_all(cuda_rng)
 
 
+def early_stopping_step(score, best, stale):
+    """Strict validation improvement resets the patience counter."""
+    if score > best:
+        return score, 0, True
+    return best, stale + 1, False
+
+
 def main():
     root = Path(__file__).resolve().parent
     p=argparse.ArgumentParser(description=__doc__)
@@ -279,6 +286,8 @@ def main():
     p.add_argument("--data-dir",type=Path,default=root/"Dataset")
     p.add_argument("--seed",type=int,default=42)
     p.add_argument("--epochs",type=int,default=20)
+    p.add_argument("--patience",type=int,default=15,
+                   help="Stop after this many consecutive epochs without a new best online validation accuracy.")
     p.add_argument("--selection-cost",type=float,default=None)
     p.add_argument("--gain-weight",type=float,default=None)
     p.add_argument("--gamma",type=float,default=0.98)
@@ -301,6 +310,8 @@ def main():
         p.error("--match-budget-from requires evaluate --eval-epsilon 1.")
     if not 0<=args.epsilon_end<=args.epsilon_start<=1 or not 0<=args.eval_epsilon<=1 or not 0<args.epsilon_decay<=1:
         p.error("Invalid exploration parameters.")
+    if args.patience < 1:
+        p.error("patience must be positive.")
     if args.online_warmup < 1:
         p.error("online-warmup must be positive.")
     if not 0<=args.budget_fraction<=1 or not 0<=args.gamma<=1 or args.batch_size<1 or args.epochs<1:
@@ -339,18 +350,20 @@ def main():
     print("Three-action routing; device:",device,"cost:",args.selection_cost,"lambda:",args.gain_weight)
     size=bundle["cnn_checkpoint"]["input_length"]+2*bundle["num_classes"]+1
     if args.command=="train":
-        agent=Agent(size,args,device);best=-1.;history=[]
+        agent=Agent(size,args,device);best=-1.;history=[];stale=0;best_epoch=None
         for epoch in range(args.epochs):
             # Reset Context at episode boundary; the three-action policy persists.
             cnn,context=build_models(bundle["cnn_checkpoint"],bundle["context_checkpoint"],device)
             summary,_=run_stream(train,args,bundle,cnn,context,agent,training=True)
             validation_summary=validation(val,bundle,cnn,context,agent,device,args)
             score=validation_summary["accuracy"]
+            best, stale, improved = early_stopping_step(score, best, stale)
             summary.update(epoch=epoch+1,validation_routing_accuracy=score,
-                           validation_online=validation_summary);history.append(summary)
+                           validation_online=validation_summary,
+                           epochs_without_improvement=stale);history.append(summary)
             print(json.dumps(summary))
-            if score>best:
-                best=score
+            if improved:
+                best_epoch=epoch+1
                 saved=copy.deepcopy(bundle)
                 saved["context_checkpoint"]["context_model_state_dict"]={k:v.detach().cpu().clone() for k,v in context.state_dict().items()}
                 saved.update(router_state={k:v.detach().cpu().clone() for k,v in agent.q.state_dict().items()},
@@ -360,6 +373,15 @@ def main():
                              checkpoint_validation=validation_summary)
                 checkpoint_path.parent.mkdir(parents=True,exist_ok=True)
                 torch.save(saved,checkpoint_path)
+            (args.output/"training_history.json").write_text(json.dumps(history,indent=2))
+            print(f"Best online validation: {best:.6f} (epoch {best_epoch}); patience {stale}/{args.patience}")
+            if stale >= args.patience:
+                print(f"Early stopping after epoch {epoch+1}.")
+                break
+        (args.output/"training_status.json").write_text(json.dumps(dict(
+            completed_epochs=len(history), best_epoch=best_epoch,
+            best_online_validation_accuracy=best, patience=args.patience,
+            stopped_early=stale >= args.patience),indent=2))
         (args.output/"training_history.json").write_text(json.dumps(history,indent=2))
         print("Saved:",checkpoint_path)
     else:
