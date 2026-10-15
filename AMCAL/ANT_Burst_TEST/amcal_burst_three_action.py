@@ -126,10 +126,12 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     first_update_at_labels = None
     x, labels = tensors(frame, bundle["scaler"], bundle["encoder"], bundle["columns"], device)
     unlimited = getattr(args, "no_label_quota", False)
-    quotas = (dict(Counter(int(y) for y in labels)) if unlimited else
+    global_budget = getattr(args, "global_label_budget", False)
+    no_class_quota = unlimited or global_budget
+    quotas = (dict(Counter(int(y) for y in labels)) if no_class_quota else
               fractional_class_budget(labels, bundle["num_classes"], args.budget_fraction))
     # These counts track observations only in unlimited mode; no label-based mask.
-    if unlimited:
+    if no_class_quota:
         quotas = {c: quotas.get(c, 0) for c in range(bundle["num_classes"])}
     matched_caps = getattr(args, "matched_class_caps", None)
     if matched_caps is not None:
@@ -139,7 +141,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
             raise ValueError("Reference counts exceed this run's class budget or differ in classes.")
         quotas = matched_caps
     used = {c: 0 for c in quotas}
-    total_cap = sum(quotas.values())
+    total_cap = (int(len(labels) * args.budget_fraction) if global_budget
+                 else sum(quotas.values()))
     optimizer = torch.optim.Adam(context.parameters(), lr=args.context_lr, weight_decay=1e-4)
     legacy.CONTEXT_LOSS_MODE = bundle["context_loss_mode"]
     order = (np.random.default_rng(args.seed).permutation(len(labels))
@@ -155,7 +158,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     for pos, index in enumerate(order):
         sample = x[index:index+1]
         class_id = int(labels[index])  # quota controller only; never exposed to policy
-        allowed = unlimited or used[class_id] < quotas[class_id]
+        allowed = (sum(used.values()) < total_cap if global_budget else
+                   unlimited or used[class_id] < quotas[class_id])
         remaining = 1.0 if unlimited else (total_cap - sum(used.values())) / max(total_cap, 1)
         state, frozen, adapted = observe(sample, cnn, context, remaining)
         frozen_pred, context_pred = int(frozen.argmax(1)), int(adapted.argmax(1))
@@ -175,7 +179,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
             else:
                 next_index = order[pos+1]
                 next_class = int(labels[next_index])
-                no_query_allowed = unlimited or used[next_class] < quotas[next_class]
+                no_query_allowed = (sum(used.values()) < total_cap if global_budget else
+                                    unlimited or used[next_class] < quotas[next_class])
                 no_query_next = observe(x[next_index:next_index+1], cnn, context, remaining)[0]
         # Only this branch reveals a test label to the learner.
         if paid:
@@ -198,7 +203,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
             else:
                 next_index = order[pos+1]
                 next_class = int(labels[next_index])  # controller mask, not a state feature
-                next_allowed = unlimited or used[next_class] < quotas[next_class]
+                next_allowed = (sum(used.values()) < total_cap if global_budget else
+                                    unlimited or used[next_class] < quotas[next_class])
                 next_state = observe(x[next_index:next_index+1], cnn, context,
                                      1.0 if unlimited else (total_cap-sum(used.values()))/max(total_cap,1))[0]
             # In offline training all labels are available. At test these
@@ -220,8 +226,9 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                          action=action, route=prediction_route(action), queried=paid,
                          frozen_prediction=frozen_pred, context_prediction=context_pred,
                          prediction_before_feedback=prediction, labels_used=sum(used.values()),
-                         class_labels_used=used[class_id], class_budget=None if unlimited else quotas[class_id],
+                         class_labels_used=used[class_id], class_budget=None if no_class_quota else quotas[class_id],
                          reward=reward, loss_before=before, loss_after=after))
+    assert sum(used.values()) <= total_cap
     assert all(used[c] <= quotas[c] for c in quotas)
     if matched_caps is not None:
         assert used == quotas, "Matched random baseline did not consume exact reference counts."
@@ -232,14 +239,15 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                    weighted_f1=float(f1_score(truth,pred,average="weighted",zero_division=0)),
                    macro_f1=float(f1_score(truth,pred,average="macro",zero_division=0)),
                    labels_used=sum(used.values()), label_cap=None if unlimited else total_cap,
-                   per_class_used=used, per_class_caps=None if unlimited else quotas,
+                   per_class_used=used, per_class_caps=None if no_class_quota else quotas,
                    actions=dict(Counter(r["action"] for r in rows)),
                    dqn_loss=float(np.mean(losses)) if losses else None,
                    dqn_updates=agent.steps-steps_before,
                    first_dqn_update_at_labels=first_update_at_labels,
                    replay_warmup=agent.warmup,
                    classifier_unchanged=True, scoring="before feedback",
-                   budget_protocol=("unlimited; cost-controlled queries" if unlimited else
+                   budget_protocol=("global label budget; no class quotas" if global_budget else
+                                    "unlimited; cost-controlled queries" if unlimited else
                                     "offline true-class quota controller"),
                    reward_version=VERSION,
                    query_protocol=("uniform random positions with exact reference class counts"
@@ -307,6 +315,8 @@ def main():
     p.add_argument("--budget-fraction",type=float,default=0.2)
     p.add_argument("--no-label-quota", action="store_true",
                    help="Disable all query quotas; selection cost alone controls feedback requests.")
+    p.add_argument("--global-label-budget", action="store_true",
+                   help="Remove class quotas; enforce only the global --budget-fraction cap.")
     p.add_argument("--epsilon-start",type=float,default=0.3)
     p.add_argument("--epsilon-end",type=float,default=0.05)
     p.add_argument("--epsilon-decay",type=float,default=0.995)
@@ -316,6 +326,10 @@ def main():
     p.add_argument("--match-budget-from", type=Path,
                    help="RL summary.json; random routes and uniformly sampled queries matching each class count.")
     args=p.parse_args()
+    if args.global_label_budget and args.no_label_quota:
+        p.error("Choose --global-label-budget or --no-label-quota, not both.")
+    if args.global_label_budget and args.match_budget_from is not None:
+        p.error("--global-label-budget cannot be combined with --match-budget-from.")
     if args.no_label_quota and args.match_budget_from is not None:
         p.error("--no-label-quota cannot be combined with --match-budget-from.")
     if args.match_budget_from is not None and (args.command != "evaluate" or args.eval_epsilon != 1):
@@ -400,6 +414,8 @@ def main():
         tag=f"three_action_seed{args.seed}_budget{args.budget_fraction:g}_lr{args.context_lr:g}_eps{args.eval_epsilon:g}_{args.stream_order}_warmup{args.online_warmup}"
         if args.no_label_quota:
             tag += "_no_label_quota"
+        if args.global_label_budget:
+            tag += "_global_label_budget"
         references = {}
         if args.match_budget_from is not None:
             raw = args.match_budget_from.read_bytes()
