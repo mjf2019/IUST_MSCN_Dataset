@@ -1649,11 +1649,18 @@ def cli():
     parser.add_argument("--memory-per-class", type=int, default=32)
     parser.add_argument("--memory-batch-size", type=int, default=16)
     parser.add_argument("--memory-weight", type=float, default=1.0)
+    parser.add_argument("--context-guard", choices=("off", "per-class"), default="off",
+                        help="Retention guard for the random online Context diagnostic.")
+    parser.add_argument("--guard-tolerance", type=float, default=0.02)
+    parser.add_argument("--guard-retries", type=int, default=4)
+    parser.add_argument("--guard-lr-factor", type=float, default=0.5)
     args=parser.parse_args()
     if args.memory_per_class < 1 or args.memory_batch_size < 1:
         parser.error("memory capacities and batch size must be positive.")
     if not np.isfinite(args.memory_weight) or args.memory_weight < 0:
         parser.error("memory-weight must be finite and nonnegative.")
+    if args.context_guard != "off" and (args.command != "evaluate" or args.selector_mode != "random"):
+        parser.error("This first retention-guard experiment requires evaluate --selector-mode random.")
     CONTEXT_MEMORY_MODE = args.context_memory
     MEMORY_PER_CLASS, MEMORY_BATCH_SIZE, MEMORY_WEIGHT = args.memory_per_class, args.memory_batch_size, args.memory_weight
     QUOTA_POLICY = args.quota_policy
@@ -1728,6 +1735,8 @@ def cli():
             stream_order=args.stream_order, stream_seed=args.stream_seed,
             seed=args.seed if args.seed is not None else 42,
             budget=args.budget, budget_mode=args.budget_mode, quota_policy=args.quota_policy,
+            context_guard=args.context_guard, guard_tolerance=args.guard_tolerance,
+            guard_retries=args.guard_retries, guard_lr_factor=args.guard_lr_factor,
             context_memory=args.context_memory, memory_per_class=args.memory_per_class,
             memory_batch_size=args.memory_batch_size, memory_weight=args.memory_weight, holdout_fraction=args.holdout_fraction, max_samples=1073, lr=ONLINE_CONTEXT_LR,
             context_loss_mode=args.context_loss_mode,
