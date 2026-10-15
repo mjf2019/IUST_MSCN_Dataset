@@ -2,7 +2,7 @@
 Preserves legacy numerical logic, including post-update scoring and random online actions.
 Not the corrected evaluation protocol.
 """
-from amcal_burst_stream import stream_permutation, permutation_sha256, ClassInterleavedSampler, split_class_budget, class_budget_available, class_budget_report
+from amcal_burst_stream import stream_permutation, permutation_sha256, ClassInterleavedSampler, split_class_budget, fractional_class_budget, class_budget_available, class_budget_report
 from amcal_burst_holdout import split_holdout_indices, evaluate_heldout
 from amcal_burst_context_memory import make_context_memory, with_context_rehearsal, context_update_probe, final_context_memory_report
 from pathlib import Path
@@ -31,6 +31,7 @@ SELECTION_COST = 0.0
 STREAM_ORDER = 'class-interleaved'
 STREAM_SEED = 42
 BUDGET_MODE = 'total'
+CLASS_BUDGET_FRACTION = None
 QUOTA_POLICY = 'optional'
 CONTEXT_MEMORY_MODE = 'off'
 MEMORY_PER_CLASS = 32
@@ -1022,6 +1023,10 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     # Offline experiment block IDs; not exposed to RL or prediction features.
     stream_class_ids = y_test.copy()
     class_quotas = split_class_budget(budget, len(label_encoder.classes_))
+    if CLASS_BUDGET_FRACTION is not None:
+        class_quotas = fractional_class_budget(stream_class_ids, len(label_encoder.classes_), CLASS_BUDGET_FRACTION)
+        budget = sum(class_quotas.values())
+        print("Fractional per-class label caps:", class_quotas, "; total:", budget)
     class_labels_used = {c: 0 for c in class_quotas}
     class_remaining = np.bincount(stream_class_ids, minlength=len(class_quotas))
     class_targets = {c: min(class_quotas[c], int(class_remaining[c])) for c in class_quotas}
@@ -1293,7 +1298,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         epsilon_decay=ONLINE_EPSILON_DECAY if LEGACY_SELECTOR_MODE=="learned" else 1.0,
         epsilon_decay_rule="after successful online selector optimization",
         label_budget=budget, actual_label_fraction=updates_used / total,
-        budget_mode=BUDGET_MODE, quota_policy=QUOTA_POLICY,
+        budget_mode=BUDGET_MODE, class_budget_fraction=CLASS_BUDGET_FRACTION, quota_policy=QUOTA_POLICY,
         context_memory_mode=CONTEXT_MEMORY_MODE, memory_per_class=MEMORY_PER_CLASS,
         memory_batch_size=MEMORY_BATCH_SIZE, memory_weight=MEMORY_WEIGHT,
         per_class_results=class_summary,
@@ -1585,7 +1590,7 @@ def cli():
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
     global CONTEXT_ARCHITECTURE, SELECTOR_STATE_VERSION
     global CONTEXT_MEMORY_MODE, MEMORY_PER_CLASS, MEMORY_BATCH_SIZE, MEMORY_WEIGHT
-    global STREAM_ORDER, STREAM_SEED, ONLINE_CONTEXT_LR, BUDGET_MODE, HOLDOUT_FRACTION, QUOTA_POLICY
+    global STREAM_ORDER, STREAM_SEED, ONLINE_CONTEXT_LR, BUDGET_MODE, HOLDOUT_FRACTION, QUOTA_POLICY, CLASS_BUDGET_FRACTION
     global BURST_DATA_DIR, LEGACY_PER_LEVELS, LEGACY_DIAGNOSTIC_SEED, LEGACY_SELECTOR_MODE, LEGACY_RESULTS_DIR, SELECTOR_REWARD_MODE, SELECTOR_TRANSITION_MODE, SELECTOR_GAMMA, LEGACY_QUERY_GATE, CONTEXT_LOSS_MODE, RUN_TRAINING_STATE_VERSION, ONLINE_EPSILON_START, ONLINE_EPSILON_END, ONLINE_EPSILON_DECAY
     import argparse
     import json
@@ -1640,6 +1645,8 @@ def cli():
                         help="Training Context architecture; default feature_tokens_v1. Evaluation auto-detects checkpoint architecture.")
     parser.add_argument("--budget-mode", choices=("total", "per-class"), default="total",
                         help="Per-class divides the total cap over offline class blocks, no model resets or quota transfer.")
+    parser.add_argument("--class-budget-fraction", type=float, default=None,
+                        help="Per-class cap floor(fraction * class samples); replaces --budget.")
     parser.add_argument("--holdout-fraction", type=float, default=0.0,
                         help="Evaluation only: reserve the final fraction of each class for final frozen inference.")
     parser.add_argument("--quota-policy", choices=("optional", "complete"), default="optional",
@@ -1671,6 +1678,10 @@ def cli():
     if args.command != "evaluate" and args.holdout_fraction != 0:
         parser.error("holdout-fraction is evaluation only.")
     HOLDOUT_FRACTION = args.holdout_fraction
+    CLASS_BUDGET_FRACTION = args.class_budget_fraction
+    if CLASS_BUDGET_FRACTION is not None:
+        if args.command != "evaluate" or args.budget_mode != "per-class" or not np.isfinite(CLASS_BUDGET_FRACTION) or not 0 <= CLASS_BUDGET_FRACTION <= 1:
+            parser.error("class-budget-fraction requires evaluate, per-class budget, and a finite fraction in [0,1].")
     BUDGET_MODE = args.budget_mode
     if BUDGET_MODE == "per-class":
         if args.command != "evaluate":
@@ -1735,6 +1746,7 @@ def cli():
             stream_order=args.stream_order, stream_seed=args.stream_seed,
             seed=args.seed if args.seed is not None else 42,
             budget=args.budget, budget_mode=args.budget_mode, quota_policy=args.quota_policy,
+            class_budget_fraction=args.class_budget_fraction,
             context_guard=args.context_guard, guard_tolerance=args.guard_tolerance,
             guard_retries=args.guard_retries, guard_lr_factor=args.guard_lr_factor,
             context_memory=args.context_memory, memory_per_class=args.memory_per_class,
@@ -1784,6 +1796,8 @@ def cli():
         gate_suffix += f"_context_lr{ONLINE_CONTEXT_LR:g}"
     if BUDGET_MODE == "per-class":
         gate_suffix += "_budget_per_class"
+        if CLASS_BUDGET_FRACTION is not None:
+            gate_suffix += f"_fraction{CLASS_BUDGET_FRACTION:g}"
     if HOLDOUT_FRACTION > 0:
         gate_suffix += f"_holdout{HOLDOUT_FRACTION:g}"
     if QUOTA_POLICY == "complete":
