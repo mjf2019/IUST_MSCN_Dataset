@@ -79,3 +79,22 @@ checkpoint field validation_protocol is online_budgeted_before_feedback_v2.
 Run test_three_action_learning.py on a PyTorch installation for actual small
 network warmup and validation-isolation checks, including unchanged training
 weights, replay, optimizer and RNG states. These tests skip when torch is absent.
+
+
+## Matched-consumption random baseline
+
+Evaluate with --eval-epsilon 1 --match-budget-from PATH/summary.json, where PATH
+is the learned (epsilon=0) run's Results folder for the same checkpoint. For each
+level the baseline consumes exactly the RL run's observed number of paid labels
+in each class, including zeros. It draws those positions uniformly without
+replacement across the class using an independent seed; non-query routes are
+random 0/1. It does NOT use the learned query positions, features or correctness
+to schedule labels. This is a retrospective oracle class-budget comparison, not
+a deployable schedule. Its timing differs from ordinary epsilon=1, which tends
+to spend its quota early. Repeated seeds are needed for a stable comparison.
+Both label selection and routing are randomized; this does not isolate their
+individual contributions. Context adaptation and the unused DDQN update routine
+are retained, with route RNG isolated from replay sampling. Results include
+reference_rl_accuracy, reference_rl_labels_used and accuracy_delta_vs_rl.
+New folders carry a matched_random_uniform suffix and reference-content hash.
+Training and the normal evaluation path are unchanged.
