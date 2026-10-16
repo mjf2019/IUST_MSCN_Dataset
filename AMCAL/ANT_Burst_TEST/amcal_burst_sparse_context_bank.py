@@ -131,16 +131,28 @@ def tensors(frame, scaler, encoder, columns, device):
     return x, y
 
 
-def diagnostic_accuracy(x, labels, cnn, model=None):
+def context_training_loss(ce, base_ce, objective):
+    """Context objective only; DDQN reward is unchanged."""
+    if objective == 'ce':
+        return ce
+    if objective == 'source':
+        return legacy.context_objective(ce, base_ce, online=True)
+    raise ValueError("Unknown Context objective.")
+
+
+def diagnostic_accuracy(x, labels, cnn, model=None, detailed=False):
     """Observer-only accuracy, in small batches; never updates model state."""
     correct = 0
+    counts = Counter()
     with torch.no_grad():
         for start in range(0, len(labels), 128):
             batch = x[start:start+128]
             logits = cnn(batch if model is None else model(batch))
             pred = logits.argmax(1).detach().cpu().numpy()
             correct += int((pred == labels[start:start+128]).sum())
-    return correct / max(len(labels), 1)
+            counts.update(int(p) for p in pred)
+    accuracy = correct / max(len(labels), 1)
+    return dict(accuracy=accuracy, prediction_counts=dict(counts)) if detailed else accuracy
 
 
 def run_stream(frame, args, bundle, cnn, context, agent, training=False,
@@ -160,11 +172,14 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False,
         # online adaptation, are assessed independently of the RL policy.
         template = copy.deepcopy(context.models[0])
         template.load_state_dict(bundle['context_checkpoint']['context_model_state_dict'])
+        source_stats = diagnostic_accuracy(x, labels, cnn, template, detailed=True)
+        saved_stats = [diagnostic_accuracy(x, labels, cnn, model, detailed=True) for model in context.models]
         initial_diagnostics = dict(
             frozen_accuracy=diagnostic_accuracy(x, labels, cnn),
-            source_context_accuracy=diagnostic_accuracy(x, labels, cnn, template),
-            saved_context_accuracies=[diagnostic_accuracy(x, labels, cnn, model)
-                                      for model in context.models])
+            source_context_accuracy=source_stats['accuracy'],
+            source_context_prediction_counts=source_stats['prediction_counts'],
+            saved_context_accuracies=[item['accuracy'] for item in saved_stats],
+            saved_context_prediction_counts=[item['prediction_counts'] for item in saved_stats])
         del template
     cap = int(total * args.budget_fraction)
     used = Counter({c: 0 for c in range(bundle['num_classes'])})
@@ -240,7 +255,7 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False,
             ce = nn.functional.cross_entropy(cnn(model(wx)), wy)
             with torch.no_grad():
                 base_ce = nn.functional.cross_entropy(cnn(wx), wy)
-            loss = legacy.context_objective(ce, base_ce, online=True)
+            loss = context_training_loss(ce, base_ce, args.context_objective)
             loss.backward()
             optimizer.step()
             with torch.no_grad():
@@ -304,7 +319,10 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False,
             frozen_accuracy_same_samples=sum(r['frozen_prediction'] == r['true_label'] for r in subset)/n if n else None,
             queries=sum(r['queried'] for r in subset))
     frozen_accuracy = sum(r['frozen_prediction'] == r['true_label'] for r in rows)/max(len(rows),1)
-    summary = dict(frozen_cnn_accuracy=frozen_accuracy,
+    summary = dict(context_objective=args.context_objective,
+                   source_context_loss_mode=bundle['context_loss_mode'],
+                   selected_context_prediction_counts={str(key): dict(Counter(r['context_prediction'] for r in rows if r['context_key'] == key)) for key in range(args.num_contexts)},
+                   frozen_cnn_accuracy=frozen_accuracy,
                    accuracy_delta_vs_frozen=float(accuracy_score(truth,pred))-frozen_accuracy,
                    selected_route_diagnostics=route_diagnostics,
                    accuracy=float(accuracy_score(truth,pred)),
@@ -443,6 +461,8 @@ def main():
                    help="RL summary.json; random routes and uniformly sampled queries matching each class count.")
     p.add_argument("--context-diagnostics", action="store_true",
                    help="Evaluation only: initial Context accuracy and current/next-sample update probes; extra forwards, observer labels only.")
+    p.add_argument("--context-objective", choices=("source", "ce"), default=None,
+                   help="Context training loss; source preserves checkpoint objective, ce uses cross entropy only. Evaluation inherits checkpoint.")
     args=p.parse_args()
     if args.context_diagnostics and args.command != 'evaluate':
         p.error("--context-diagnostics is evaluation-only.")
@@ -488,6 +508,7 @@ def main():
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint_path=args.output/"Models"/"sparse_context_bank_best.pth"
     if args.command=="train":
+        args.context_objective = args.context_objective or "source"
         args.num_contexts = 3 if args.num_contexts is None else args.num_contexts
         if checkpoint_path.exists(): p.error("Three-action checkpoint exists; choose a fresh output.")
         if args.source_output is None: p.error("Training requires --source-output.")
@@ -508,6 +529,10 @@ def main():
     else:
         bundle=torch.load(checkpoint_path,map_location="cpu",weights_only=False)
         if bundle.get("version")!=VERSION: p.error("A trained three-action checkpoint is required.")
+        trained_objective = bundle.get("training_args", {}).get("context_objective", "source")
+        if args.context_objective is not None and args.context_objective != trained_objective:
+            p.error("Context objective differs from training; train a new checkpoint.")
+        args.context_objective = trained_objective
         trained_count = bundle["num_contexts"]
         if args.num_contexts is not None and args.num_contexts != trained_count:
             p.error("num-contexts differs from training; train a separate bank.")
@@ -570,6 +595,8 @@ def main():
     else:
         tag=f"sparsebank{args.num_contexts}_seed{args.seed}_budget{args.budget_fraction:g}_lr{args.context_lr:g}_eps{args.eval_epsilon:g}_{args.stream_order}_warmup{args.online_warmup}"
         tag += f"_contextwindow{args.context_window}"
+        if args.context_objective != "source":
+            tag += f"_objective{args.context_objective}"
         if args.context_diagnostics:
             tag += "_contextdiagnostics"
         if args.no_label_quota:
