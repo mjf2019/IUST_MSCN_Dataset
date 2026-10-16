@@ -119,6 +119,36 @@ def tensors(frame, scaler, encoder, columns, device):
     return x, y
 
 
+class PaidContextMemory:
+    """Uniform reservoir of paid feedback, separate from the DDQN replay.
+
+    Draw historical samples before adding the current one; never query labels.
+    Independent RNGs keep memory operations out of routing/replay randomness.
+    """
+    def __init__(self, capacity, seed):
+        self.capacity = capacity
+        self.items = []
+        self.seen = 0
+        self.draw_rng = random.Random(seed + 2000003)
+        self.replace_rng = random.Random(seed + 3000017)
+
+    def batch(self, current, label, history_count):
+        old = self.draw_rng.sample(self.items, min(history_count, len(self.items)))
+        return [(current.detach().clone(), label)] + old
+
+    def add(self, sample, label):
+        if self.capacity <= 0:
+            return
+        self.seen += 1
+        item = (sample.detach().clone(), label)
+        if len(self.items) < self.capacity:
+            self.items.append(item)
+        else:
+            index = self.replace_rng.randrange(self.seen)
+            if index < self.capacity:
+                self.items[index] = item
+
+
 class ClassContextBank:
     """Oracle class-as-flow proxy; never a deployable Flow ID resolver."""
     def __init__(self, template, lr):
@@ -177,6 +207,13 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     routing_rng = random.Random(args.seed + 1000003)
     rows, losses = [], []
     context_window = deque(maxlen=args.context_window)
+    memory_size = getattr(args, "context_memory_size", 0)
+    replay_samples = getattr(args, "context_replay_samples", 4)
+    update_steps = getattr(args, "context_update_steps", 1)
+    if memory_size and (proxy or args.context_window != 1):
+        raise ValueError("Context memory requires shared Context and context-window 1.")
+    memory = PaidContextMemory(memory_size, args.seed)
+    context_optimizer_steps = 0
     exact_budget = getattr(args, "consume_full_budget", False)
     forced_queries = 0
     if exact_budget and (training or not global_budget or matched_caps is not None):
@@ -243,17 +280,26 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
             used[class_id] += 1
             target = torch.tensor([class_id], device=device)
             before = float(nn.functional.cross_entropy(adapted, target).item())
-            optimizer.zero_grad()
-            # Append only after paying for the current label; replay is free.
-            context_window.append((sample.detach().clone(), class_id))
-            window_x = torch.cat([item[0] for item in context_window], dim=0)
-            window_y = torch.tensor([item[1] for item in context_window], device=device)
-            ce = nn.functional.cross_entropy(cnn(context(window_x)), window_y)
+            # Only paid labels enter either the FIFO or rehearsal memory.
+            if memory_size:
+                batch = memory.batch(sample, class_id, replay_samples)
+            else:
+                context_window.append((sample.detach().clone(), class_id))
+                batch = list(context_window)
+            window_x = torch.cat([item[0] for item in batch], dim=0)
+            window_y = torch.tensor([item[1] for item in batch], device=device)
             with torch.no_grad():
                 base_ce = nn.functional.cross_entropy(cnn(window_x), window_y)
-            loss = legacy.context_objective(ce, base_ce, online=True)
-            loss.backward()
-            optimizer.step()
+            # Same batch for all small steps, same objective and one paid label.
+            for _ in range(update_steps):
+                optimizer.zero_grad()
+                ce = nn.functional.cross_entropy(cnn(context(window_x)), window_y)
+                loss = legacy.context_objective(ce, base_ce, online=True)
+                loss.backward()
+                optimizer.step()
+                context_optimizer_steps += 1
+            if memory_size:
+                memory.add(sample, class_id)
             with torch.no_grad():
                 after = float(nn.functional.cross_entropy(cnn(context(sample)), target).item())
             reward = routing_reward(2, frozen_pred, context_pred, class_id, before, after,
@@ -291,7 +337,9 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                          prediction_before_feedback=prediction, labels_used=sum(used.values()),
                          class_labels_used=used[class_id], class_budget=None if no_class_quota else quotas[class_id],
                          reward=reward, loss_before=before, loss_after=after,
-                         context_window_used=len(context_window),
+                         context_window_used=len(batch) if paid else 0,
+                         context_memory_used=len(memory.items),
+                         context_optimizer_steps=context_optimizer_steps,
                          context_key=class_id if proxy else "shared",
                          uncertainty_score=uncertainty_score,
                          uncertainty_threshold=uncertainty_threshold))
@@ -318,6 +366,11 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                    first_dqn_update_at_labels=first_update_at_labels,
                    replay_warmup=agent.warmup,
                    context_window=args.context_window,
+                   context_memory_size=memory_size,
+                   context_memory_used=len(memory.items),
+                   context_replay_samples=replay_samples if memory_size else 0,
+                   context_update_steps=update_steps,
+                   context_optimizer_steps=context_optimizer_steps,
                    policy_mode=policy_mode,
                    consume_full_budget=exact_budget,
                    forced_queries=forced_queries,
@@ -328,7 +381,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                    context_scope="oracle_class_as_flow_proxy" if proxy else "shared",
                    context_instances=len(bank.entries) if proxy else 1,
                    oracle_context_routing=proxy,
-                   context_update_protocol="FIFO of queried samples; mean batch loss",
+                   context_update_protocol=("current paid sample plus random paid reservoir history; repeated mean batch loss"
+                                            if memory_size else "FIFO of queried samples; mean batch loss"),
                    classifier_unchanged=True, scoring="before feedback",
                    budget_protocol=("global label budget; no class quotas" if global_budget else
                                     "unlimited; cost-controlled queries" if unlimited else
@@ -396,6 +450,12 @@ def main():
     p.add_argument("--context-lr",type=float,default=0.25)
     p.add_argument("--context-window", type=int, default=None,
                    help="FIFO size of paid labelled samples per Context update; default 1 for training, checkpoint value for evaluation.")
+    p.add_argument("--context-memory-size",type=int,default=None,
+                   help="Paid-feedback reservoir capacity; train default 0, evaluation inherits checkpoint. Shared Context only.")
+    p.add_argument("--context-replay-samples",type=int,default=None,
+                   help="Historical paid samples per update, in addition to current sample; train default 4.")
+    p.add_argument("--context-update-steps",type=int,default=None,
+                   help="Optimizer steps per paid label using the same batch; train default 1.")
     p.add_argument("--dqn-lr",type=float,default=0.0001)
     p.add_argument("--batch-size",type=int,default=128)
     p.add_argument("--online-warmup",type=int,default=6,
@@ -443,6 +503,12 @@ def main():
         p.error("--match-budget-from requires evaluate --eval-epsilon 1.")
     if not 0<=args.epsilon_end<=args.epsilon_start<=1 or not 0<=args.eval_epsilon<=1 or not 0<args.epsilon_decay<=1:
         p.error("Invalid exploration parameters.")
+    if args.context_memory_size is not None and args.context_memory_size < 0:
+        p.error("context-memory-size must be nonnegative.")
+    if args.context_replay_samples is not None and args.context_replay_samples < 0:
+        p.error("context-replay-samples must be nonnegative.")
+    if args.context_update_steps is not None and args.context_update_steps < 1:
+        p.error("context-update-steps must be positive.")
     if args.context_window is not None and args.context_window < 1:
         p.error("context-window must be positive.")
     if args.patience < 1:
@@ -483,6 +549,13 @@ def main():
             if getattr(args,key) is not None and getattr(args,key)!=bundle[key]:
                 p.error(f"{key} differs from training; retrain for a new reward.")
             setattr(args,key,bundle[key])
+    # Preserve old checkpoints/default behavior; explicit evaluation overrides
+    # are allowed and recorded as online adaptation settings.
+    for key, default in (("context_memory_size", 0), ("context_replay_samples", 4), ("context_update_steps", 1)):
+        if getattr(args, key) is None:
+            setattr(args, key, bundle.get("training_args", {}).get(key, default))
+    if args.context_memory_size and (args.class_context_proxy or args.context_window != 1):
+        p.error("Context memory requires a shared Context and --context-window 1.")
     if args.class_context_proxy and args.context_window != 1:
         p.error("--class-context-proxy requires --context-window 1.")
     if any(not np.isfinite(v) or v<0 for v in (args.selection_cost,args.gain_weight)):
@@ -527,6 +600,10 @@ def main():
     else:
         tag=f"three_action_seed{args.seed}_budget{args.budget_fraction:g}_lr{args.context_lr:g}_eps{args.eval_epsilon:g}_{args.stream_order}_warmup{args.online_warmup}"
         tag += f"_contextwindow{args.context_window}"
+        if args.context_memory_size:
+            tag += f"_memory{args.context_memory_size}_replay{args.context_replay_samples}"
+        if args.context_update_steps != 1:
+            tag += f"_contextsteps{args.context_update_steps}"
         if args.no_label_quota:
             tag += "_no_label_quota"
         if args.global_label_budget:
