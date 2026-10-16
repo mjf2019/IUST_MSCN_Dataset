@@ -131,6 +131,18 @@ def tensors(frame, scaler, encoder, columns, device):
     return x, y
 
 
+def diagnostic_accuracy(x, labels, cnn, model=None):
+    """Observer-only accuracy, in small batches; never updates model state."""
+    correct = 0
+    with torch.no_grad():
+        for start in range(0, len(labels), 128):
+            batch = x[start:start+128]
+            logits = cnn(batch if model is None else model(batch))
+            pred = logits.argmax(1).detach().cpu().numpy()
+            correct += int((pred == labels[start:start+128]).sum())
+    return correct / max(len(labels), 1)
+
+
 def run_stream(frame, args, bundle, cnn, context, agent, training=False,
                context_optimizers=None, episode_epsilon=None):
     device = next(cnn.parameters()).device
@@ -139,6 +151,21 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False,
     steps_before = agent.steps
     x, labels = tensors(frame, bundle['scaler'], bundle['encoder'], bundle['columns'], device)
     total = len(labels)
+    diagnostics = getattr(args, 'context_diagnostics', False)
+    if diagnostics and training:
+        raise ValueError("Context diagnostics are evaluation-only.")
+    initial_diagnostics = None
+    if diagnostics:
+        # The source Context before bank training, and each saved slot before
+        # online adaptation, are assessed independently of the RL policy.
+        template = copy.deepcopy(context.models[0])
+        template.load_state_dict(bundle['context_checkpoint']['context_model_state_dict'])
+        initial_diagnostics = dict(
+            frozen_accuracy=diagnostic_accuracy(x, labels, cnn),
+            source_context_accuracy=diagnostic_accuracy(x, labels, cnn, template),
+            saved_context_accuracies=[diagnostic_accuracy(x, labels, cnn, model)
+                                      for model in context.models])
+        del template
     cap = int(total * args.budget_fraction)
     used = Counter({c: 0 for c in range(bundle['num_classes'])})
     if context_optimizers is not None and not training:
@@ -188,6 +215,7 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False,
         class_id = int(labels[index])
         done = pos == total-1
         before = after = reward = None
+        post_prediction = next_pre_prediction = next_post_prediction = next_truth = None
         no_query_next = state
         no_query_allowed = False
         if learn_ddqn and (training or paid) and not done:
@@ -202,6 +230,12 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False,
             window.append((sample.detach().clone(), class_id))
             wx = torch.cat([item[0] for item in window])
             wy = torch.tensor([item[1] for item in window], device=device)
+            if diagnostics and not done:
+                probe_index = order[pos+1]
+                probe = x[probe_index:probe_index+1]
+                with torch.no_grad():
+                    next_pre_prediction = int(cnn(model(probe)).argmax(1))
+                next_truth = int(labels[probe_index])  # observer only
             optimizer.zero_grad()
             ce = nn.functional.cross_entropy(cnn(model(wx)), wy)
             with torch.no_grad():
@@ -210,7 +244,12 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False,
             loss.backward()
             optimizer.step()
             with torch.no_grad():
-                after = float(nn.functional.cross_entropy(cnn(model(sample)), target).item())
+                post_logits = cnn(model(sample))
+                after = float(nn.functional.cross_entropy(post_logits, target).item())
+                if diagnostics:
+                    post_prediction = int(post_logits.argmax(1))
+                    if not done:
+                        next_post_prediction = int(cnn(model(probe)).argmax(1))
             reward = routing_reward(2, frozen_pred, context_pred, class_id, before, after,
                                     args.selection_cost, args.gain_weight)
             gain = (before-after)/(before+after+1e-8)
@@ -240,7 +279,11 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False,
                          action=action,preferred_action=preferred,forced_query=forced,
                          context_key=slot,queried=paid,frozen_prediction=frozen_pred,
                          context_prediction=context_pred,prediction_before_feedback=prediction,
-                         labels_used=sum(used.values()),reward=reward,loss_before=before,loss_after=after))
+                         labels_used=sum(used.values()),reward=reward,loss_before=before,loss_after=after,
+                         diagnostic_current_post_prediction=post_prediction,
+                         diagnostic_next_before=next_pre_prediction,
+                         diagnostic_next_after=next_post_prediction,
+                         diagnostic_next_truth=next_truth))
     assert sum(used.values()) <= cap
     if args.consume_full_budget:
         assert sum(used.values()) == cap
@@ -282,6 +325,25 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False,
                    state_protocol='features; frozen CNN probabilities; per-slot paid history; remaining budget',
                    context_forward_protocol='selected slot only; additional forwards for paid update',
                    reward_version=VERSION,query_protocol='epsilon-greedy',final_epsilon=epsilon)
+    if diagnostics:
+        paid_rows = [r for r in rows if r['queried']]
+        probes = [r for r in paid_rows if r['diagnostic_next_truth'] is not None]
+        def mean_correct(items, prediction_key, truth_key):
+            return (sum(r[prediction_key] == r[truth_key] for r in items)/len(items)
+                    if items else None)
+        summary['context_diagnostics'] = dict(
+            initial=initial_diagnostics,
+            paid_samples=len(paid_rows),
+            paid_accuracy_before=mean_correct(paid_rows, 'context_prediction', 'true_label'),
+            paid_accuracy_after=mean_correct(paid_rows, 'diagnostic_current_post_prediction', 'true_label'),
+            next_sample_probes=len(probes),
+            next_accuracy_before=mean_correct(probes, 'diagnostic_next_before', 'diagnostic_next_truth'),
+            next_accuracy_after=mean_correct(probes, 'diagnostic_next_after', 'diagnostic_next_truth'),
+            next_fixed=sum(r['diagnostic_next_before'] != r['diagnostic_next_truth'] and
+                           r['diagnostic_next_after'] == r['diagnostic_next_truth'] for r in probes),
+            next_broken=sum(r['diagnostic_next_before'] == r['diagnostic_next_truth'] and
+                            r['diagnostic_next_after'] != r['diagnostic_next_truth'] for r in probes),
+            protocol='observer only; next sample uses same selected Context before/after update; not necessarily its eventual RL route')
     return summary, rows
 
 
@@ -379,7 +441,11 @@ def main():
     p.add_argument("--per",type=int,choices=LEVELS)
     p.add_argument("--match-budget-from", type=Path,
                    help="RL summary.json; random routes and uniformly sampled queries matching each class count.")
+    p.add_argument("--context-diagnostics", action="store_true",
+                   help="Evaluation only: initial Context accuracy and current/next-sample update probes; extra forwards, observer labels only.")
     args=p.parse_args()
+    if args.context_diagnostics and args.command != 'evaluate':
+        p.error("--context-diagnostics is evaluation-only.")
     if args.num_contexts is not None and args.num_contexts < 1:
         p.error("num-contexts must be positive.")
     if args.class_context_proxy or args.match_budget_from or args.no_label_quota:
@@ -504,6 +570,8 @@ def main():
     else:
         tag=f"sparsebank{args.num_contexts}_seed{args.seed}_budget{args.budget_fraction:g}_lr{args.context_lr:g}_eps{args.eval_epsilon:g}_{args.stream_order}_warmup{args.online_warmup}"
         tag += f"_contextwindow{args.context_window}"
+        if args.context_diagnostics:
+            tag += "_contextdiagnostics"
         if args.no_label_quota:
             tag += "_no_label_quota"
         if args.global_label_budget:
