@@ -249,7 +249,22 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False,
     assert all(torch.equal(initial_cnn[k],v.detach().cpu()) for k,v in cnn.state_dict().items())
     truth = [r['true_label'] for r in rows]
     pred = [r['prediction_before_feedback'] for r in rows]
-    summary = dict(accuracy=float(accuracy_score(truth,pred)),
+    # Observer-only diagnostics: no new Context forwards or routing inputs.
+    route_diagnostics = {}
+    for key in [None] + list(range(args.num_contexts)):
+        subset = [r for r in rows if r['context_key'] == key]
+        name = 'direct_cnn' if key is None else f'context_{key}'
+        n = len(subset)
+        route_diagnostics[name] = dict(
+            samples=n,
+            accuracy=sum(r['prediction_before_feedback'] == r['true_label'] for r in subset)/n if n else None,
+            frozen_accuracy_same_samples=sum(r['frozen_prediction'] == r['true_label'] for r in subset)/n if n else None,
+            queries=sum(r['queried'] for r in subset))
+    frozen_accuracy = sum(r['frozen_prediction'] == r['true_label'] for r in rows)/max(len(rows),1)
+    summary = dict(frozen_cnn_accuracy=frozen_accuracy,
+                   accuracy_delta_vs_frozen=float(accuracy_score(truth,pred))-frozen_accuracy,
+                   selected_route_diagnostics=route_diagnostics,
+                   accuracy=float(accuracy_score(truth,pred)),
                    weighted_f1=float(f1_score(truth,pred,average='weighted',zero_division=0)),
                    macro_f1=float(f1_score(truth,pred,average='macro',zero_division=0)),
                    labels_used=sum(used.values()),label_cap=cap,per_class_used=dict(used),per_class_caps=None,
