@@ -41,6 +41,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--checkpoint-output', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--source-context-output',type=Path,
+                   help='Use the pre-RL adversarial_best_context.pth from this source run; CNN and preprocessing stay from checkpoint-output.')
     p.add_argument('--data-dir',type=Path,default=root/'Dataset')
     p.add_argument('--seed',type=int,default=42)
     p.add_argument('--windows',type=int,nargs='+',default=[1,5])
@@ -58,6 +60,14 @@ def main():
     bundle=torch.load(args.checkpoint_output/'Models'/'three_action_best.pth',map_location='cpu',weights_only=False)
     if bundle.get('version') != core.VERSION:
         p.error('Expected a trained three-action checkpoint.')
+    initialization = 'trained_three_action_context'
+    if args.source_context_output is not None:
+        source_path=args.source_context_output/'Models'/'adversarial_best_context.pth'
+        source_context=torch.load(source_path,map_location='cpu',weights_only=False)
+        if source_context.get('context_architecture','legacy_single_token') != bundle['cnn_checkpoint'].get('context_architecture','legacy_single_token'):
+            p.error('Source Context and CNN architectures differ.')
+        bundle['context_checkpoint']=source_context
+        initialization='pre_rl_source_context'
     device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     args.output.mkdir(parents=True,exist_ok=True)
     summaries=[]
@@ -115,6 +125,7 @@ def main():
             truth=[r['true_label'] for r in trace]
             result=metrics(truth,[r['prediction_before_feedback'] for r in trace])
             result.update(perturbation_level=level,seed=args.seed,context_window=window_size,
+                          context_initialization=initialization,
                           context_lr=args.context_lr,labels_used=len(positions),label_cap=len(positions),
                           frozen_cnn=frozen,initial_context=initial,
                           final_context_retrospective=score(x,y,cnn,context),
