@@ -131,7 +131,8 @@ def tensors(frame, scaler, encoder, columns, device):
     return x, y
 
 
-def run_stream(frame, args, bundle, cnn, context, agent, training=False):
+def run_stream(frame, args, bundle, cnn, context, agent, training=False,
+               context_optimizers=None, episode_epsilon=None):
     device = next(cnn.parameters()).device
     agent.warmup = args.batch_size if training else args.online_warmup
     learn_ddqn = training or args.policy_mode == 'adaptive'
@@ -140,15 +141,21 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     total = len(labels)
     cap = int(total * args.budget_fraction)
     used = Counter({c: 0 for c in range(bundle['num_classes'])})
-    optimizers = [torch.optim.Adam(m.parameters(), lr=args.context_lr, weight_decay=1e-4)
-                  for m in context.models]
+    if context_optimizers is not None and not training:
+        raise ValueError("Validation/evaluation must use fresh Context optimizers.")
+    optimizers = context_optimizers
+    if optimizers is None:
+        optimizers = [torch.optim.Adam(m.parameters(), lr=args.context_lr, weight_decay=1e-4)
+                      for m in context.models]
+    if len(optimizers) != len(context.models):
+        raise ValueError("One optimizer is required per Context.")
     windows = [deque(maxlen=args.context_window) for _ in context.models]
     # Count, last paid update position, EMA of gain, EMA of pre-feedback correctness.
     stats = [[0, 0, 0.0, 0.0] for _ in context.models]
     legacy.CONTEXT_LOSS_MODE = bundle['context_loss_mode']
     order = (np.random.default_rng(args.seed).permutation(total) if args.stream_order == 'shuffle'
              else stream_permutation(labels, args.stream_order, args.seed))
-    epsilon = args.epsilon_start if training else args.eval_epsilon
+    epsilon = (args.epsilon_start if episode_epsilon is None else episode_epsilon) if training else args.eval_epsilon
     rows, losses = [], []
     first_update = None
     initial_cnn = {k: v.detach().cpu().clone() for k,v in cnn.state_dict().items()}
@@ -229,8 +236,6 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                 if first_update is None:
                     first_update = sum(used.values())
                 losses.append(value)
-                if training:
-                    epsilon = max(args.epsilon_end, epsilon*args.epsilon_decay)
         rows.append(dict(step=pos+1,source_row=int(index)+1,true_label=class_id,
                          action=action,preferred_action=preferred,forced_query=forced,
                          context_key=slot,queried=paid,frozen_prediction=frozen_pred,
@@ -296,6 +301,16 @@ def validation(frame, bundle, cnn, context, agent, device, args):
             torch.cuda.set_rng_state_all(cuda_rng)
 
 
+def prepare_training_epoch(agent, args, epoch):
+    """Discard stale replay, retain learned Q/target weights and optimizer state.
+
+    Epsilon is fixed within the epoch and decays once per epoch, without restart.
+    Context parameters and Adam states are owned by the outer training loop.
+    """
+    agent.buffer.clear()
+    return max(args.epsilon_end, args.epsilon_start * args.epsilon_decay ** epoch)
+
+
 def early_stopping_step(score, best, stale):
     """Strict validation improvement resets the patience counter."""
     if score > best:
@@ -333,7 +348,8 @@ def main():
                    help="Remove class quotas; enforce only the global --budget-fraction cap.")
     p.add_argument("--epsilon-start",type=float,default=0.3)
     p.add_argument("--epsilon-end",type=float,default=0.05)
-    p.add_argument("--epsilon-decay",type=float,default=0.995)
+    p.add_argument("--epsilon-decay",type=float,default=0.95,
+                   help="Per-epoch epsilon multiplier; epsilon remains constant within each training epoch.")
     p.add_argument("--eval-epsilon",type=float,default=0.0)
     p.add_argument("--stream-order",choices=("input","class-interleaved","shuffle"),default="input")
     p.add_argument("--class-context-proxy", action="store_true",
@@ -427,11 +443,18 @@ def main():
     size=bundle["cnn_checkpoint"]["input_length"]+bundle["num_classes"]+4*args.num_contexts+1
     if args.command=="train":
         agent=Agent(size,args,device);best=-1.;history=[];stale=0;best_epoch=None
+        # Persistent bank and independent Adam states across training epochs.
+        cnn,context=build_models(bundle["cnn_checkpoint"],bundle["context_checkpoint"],device,args.num_contexts)
+        context_optimizers = [torch.optim.Adam(model.parameters(), lr=args.context_lr, weight_decay=1e-4)
+                              for model in context.models]
         for epoch in range(args.epochs):
-            # Reset Context at episode boundary; the three-action policy persists.
-            cnn,context=build_models(bundle["cnn_checkpoint"],bundle["context_checkpoint"],device,args.num_contexts,
-                                     None if args.command=="train" else bundle["bank_state"])
-            summary,_=run_stream(train,args,bundle,cnn,context,agent,training=True)
+            epoch_epsilon = prepare_training_epoch(agent, args, epoch)
+            # Feedback histories/windows and label budget are per-stream; model
+            # parameters and optimizer momentum continue across epochs.
+            summary,_=run_stream(train,args,bundle,cnn,context,agent,training=True,
+                                 context_optimizers=context_optimizers,episode_epsilon=epoch_epsilon)
+            summary.update(epoch_epsilon=epoch_epsilon,
+                           training_protocol="persistent_context_adam; fresh_epoch_replay; epoch_epsilon_v2")
             validation_summary=validation(val,bundle,cnn,context,agent,device,args)
             score=validation_summary["accuracy"]
             best, stale, improved = early_stopping_step(score, best, stale)
@@ -447,6 +470,7 @@ def main():
                 saved.update(router_state={k:v.detach().cpu().clone() for k,v in agent.q.state_dict().items()},
                              selection_cost=args.selection_cost,gain_weight=args.gain_weight,
                              training_args=vars(args),best_epoch=epoch+1,
+                             training_protocol="persistent_context_adam; fresh_epoch_replay; epoch_epsilon_v2",
                              validation_protocol="online_budgeted_before_feedback_v2",
                              checkpoint_validation=validation_summary)
                 checkpoint_path.parent.mkdir(parents=True,exist_ok=True)
