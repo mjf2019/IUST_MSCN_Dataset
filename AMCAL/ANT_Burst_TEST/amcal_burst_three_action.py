@@ -164,6 +164,12 @@ class ClassContextBank:
         return self.entries[key]
 
 
+def retention_reward(before, after, reference_before, reference_after, alpha, beta, cost):
+    gain = before - after
+    forgetting = max(0.0, reference_after - reference_before)
+    return alpha * gain - beta * forgetting - cost
+
+
 def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     device = next(cnn.parameters()).device
     agent.warmup = args.batch_size if training else args.online_warmup
@@ -228,6 +234,17 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
         forgetting_initial = (
             legacy.forgetting_predictions(cnn, forgetting_template, bank.entries if proxy else None, x, labels),
             legacy.forgetting_predictions(cnn, forgetting_template, bank.entries if proxy else None, reference_x, reference_y))
+    retention = args.reward_mode == "retention"
+    paid_history = []
+    reference_rng = np.random.default_rng(args.seed + 810023)
+    if retention:
+        if proxy:
+            raise ValueError("Retention reward currently requires shared Context")
+        reference_path = args.data_dir / "oversampled_train_dataset.csv"
+        reference_frame = pd.read_csv(reference_path)
+        reference_x, reference_labels = tensors(reference_frame, bundle["scaler"], bundle["encoder"], bundle["columns"], device)
+        reference_by_class = [np.flatnonzero(reference_labels == c) for c in np.unique(reference_labels)]
+        reference_hash = hashlib.sha256(reference_path.read_bytes()).hexdigest()
     initial_cnn = {k: v.detach().cpu().clone() for k,v in cnn.state_dict().items()}
     for pos, index in enumerate(order):
         sample = x[index:index+1]
@@ -270,6 +287,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
         prediction = frozen_pred if action == 0 else context_pred
         paid = action == 2
         before = after = None
+        reference_before = reference_after = None
+        reward_gain = forgetting_penalty = None
         reward = None
         done = pos == len(order)-1
         # Counterfactual non-query actions preserve both Context and budget.
@@ -289,6 +308,21 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
             used[class_id] += 1
             target = torch.tensor([class_id], device=device)
             before = float(nn.functional.cross_entropy(adapted, target).item())
+            if retention:
+                history_count = min(len(paid_history), args.reference_batch_size // 2)
+                train_count = args.reference_batch_size - history_count
+                reference_indices = [int(reference_rng.choice(reference_by_class[int(reference_rng.integers(len(reference_by_class)))]))
+                                     for _ in range(train_count)]
+                ref_x = [reference_x[i:i+1] for i in reference_indices]
+                ref_y = [int(reference_labels[i]) for i in reference_indices]
+                if history_count:
+                    for j in reference_rng.choice(len(paid_history), history_count, replace=False):
+                        old_x, old_y = paid_history[int(j)]
+                        ref_x.append(old_x.to(device)); ref_y.append(old_y)
+                ref_x = torch.cat(ref_x)
+                ref_y = torch.tensor(ref_y, device=device)
+                with torch.no_grad():
+                    reference_before = float(nn.functional.cross_entropy(cnn(context(ref_x)), ref_y).item())
             # Only paid labels enter either the FIFO or rehearsal memory.
             if memory_size:
                 batch = memory.batch(sample, class_id, replay_samples)
@@ -313,6 +347,22 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                 after = float(nn.functional.cross_entropy(cnn(context(sample)), target).item())
             reward = routing_reward(2, frozen_pred, context_pred, class_id, before, after,
                                     args.selection_cost, args.gain_weight)
+            if retention:
+                with torch.no_grad():
+                    reference_after = float(nn.functional.cross_entropy(cnn(context(ref_x)), ref_y).item())
+                reward_gain = before - after
+                forgetting_penalty = max(0.0, reference_after - reference_before)
+                reward = retention_reward(before, after, reference_before, reference_after,
+                                          args.gain_weight, args.retention_weight, args.selection_cost)
+                # Add current feedback only AFTER measuring on previous knowledge.
+                entry = (sample.detach().cpu().clone(), class_id)
+                if len(paid_history) < args.reference_history_size:
+                    paid_history.append(entry)
+                else:
+                    replacement = int(reference_rng.integers(sum(used.values())))
+                    if replacement < args.reference_history_size:
+                        paid_history[replacement] = entry
+
         if learn_ddqn and (training or paid):
             if done:
                 next_state, next_allowed = state, False
@@ -327,7 +377,7 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
             # In offline training all labels are available. At test these
             # counterfactual route rewards are computed ONLY for paid labels.
             for candidate in (0, 1):
-                route_reward = routing_reward(candidate, frozen_pred, context_pred, class_id)
+                route_reward = (0.0 if retention else routing_reward(candidate, frozen_pred, context_pred, class_id))
                 agent.remember(state, candidate, route_reward, no_query_next, done, no_query_allowed)
             if paid:
                 agent.remember(state, 2, reward, next_state, done, next_allowed)
@@ -346,6 +396,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                          prediction_before_feedback=prediction, labels_used=sum(used.values()),
                          class_labels_used=used[class_id], class_budget=None if no_class_quota else quotas[class_id],
                          reward=reward, loss_before=before, loss_after=after,
+                         reference_loss_before=reference_before, reference_loss_after=reference_after,
+                         adaptation_gain=reward_gain, forgetting_penalty=forgetting_penalty,
                          context_window_used=len(batch) if paid else 0,
                          context_memory_used=len(memory.items),
                          context_optimizer_steps=context_optimizer_steps,
@@ -396,7 +448,12 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                    budget_protocol=("global label budget; no class quotas" if global_budget else
                                     "unlimited; cost-controlled queries" if unlimited else
                                     "offline true-class quota controller"),
-                   reward_version=VERSION,
+                   reward_version="retention_gain_v1" if retention else VERSION,
+                   retention_weight=args.retention_weight if retention else None,
+                   reference_batch_size=args.reference_batch_size if retention else None,
+                   reference_history_size=args.reference_history_size if retention else None,
+                   reference_training_sha256=reference_hash if retention else None,
+                   reference_protocol="balanced training draws plus previous paid reservoir; identical batch before/after; no reference gradients" if retention else None,
                    query_protocol=("uniform random positions with exact reference class counts"
                                    if matched_caps is not None else
                                    "rolling entropy queries; frozen DDQN non-query routes" if policy_mode == "uncertainty"
@@ -504,6 +561,10 @@ def main():
     p.add_argument("--match-budget-from", type=Path,
                    help="RL summary.json; random routes and uniformly sampled queries matching each class count.")
     p.add_argument("--forgetting-diagnostics",action="store_true",help="Observer-only initial/final same-level and oversampled validation retention.")
+    p.add_argument("--reward-mode", choices=("routing", "retention"), default=None)
+    p.add_argument("--retention-weight", type=float, default=None)
+    p.add_argument("--reference-batch-size", type=int, default=None)
+    p.add_argument("--reference-history-size", type=int, default=None)
     args=p.parse_args()
     if args.forgetting_diagnostics and args.command != "evaluate":
         p.error("forgetting-diagnostics is evaluation only")
@@ -573,6 +634,17 @@ def main():
             if getattr(args,key) is not None and getattr(args,key)!=bundle[key]:
                 p.error(f"{key} differs from training; retrain for a new reward.")
             setattr(args,key,bundle[key])
+    for key, default in (("reward_mode", "routing"), ("retention_weight", 1.0),
+                         ("reference_batch_size", 32), ("reference_history_size", 256)):
+        trained = bundle.get("training_args", {}).get(key, default)
+        requested = getattr(args, key)
+        if args.command == "evaluate" and requested is not None and requested != trained:
+            p.error(f"{key} differs from checkpoint; retrain for a new reward")
+        setattr(args, key, trained if requested is None else requested)
+    if not np.isfinite(args.retention_weight) or args.retention_weight < 0 or args.reference_batch_size < 1 or args.reference_history_size < 1:
+        p.error("Invalid retention reward parameters")
+    if args.reward_mode == "retention" and args.class_context_proxy:
+        p.error("Retention reward requires shared Context")
     # Preserve old checkpoints/default behavior; explicit evaluation overrides
     # are allowed and recorded as online adaptation settings.
     for key, default in (("context_memory_size", 0), ("context_replay_samples", 4), ("context_update_steps", 1)):
@@ -658,6 +730,8 @@ def main():
             tag += "_matched_random_uniform_" + hashlib.sha256(raw).hexdigest()[:8]
         if args.forgetting_diagnostics:
             tag += "_forgetting"
+        if args.reward_mode == "retention":
+            tag += f"_retention_beta{args.retention_weight:g}_ref{args.reference_batch_size}"
         results=args.output/"Results"/tag;results.mkdir(parents=True,exist_ok=True)
         summaries=[]
         for level in ([args.per] if args.per is not None else LEVELS):
@@ -686,4 +760,5 @@ def main():
 
 if __name__=="__main__":
     main()
+
 
