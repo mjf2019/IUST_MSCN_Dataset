@@ -41,6 +41,7 @@ HOLDOUT_FRACTION = 0.0
 ONLINE_CONTEXT_LR = 0.25
 CLASS_CONTEXT_PROXY = False
 SYNTHETIC_CONTEXT_GROUPS = 0
+FLOW_CONTEXT_COUNTS = None
 FORGETTING_DIAGNOSTICS = False
 BASE_TRAIN_EPOCHS = 200
 ADVERSARIAL_TRAIN_EPOCHS = 300
@@ -1018,6 +1019,21 @@ def forgetting_comparison(y, before, after, queried=None):
     return report
 
 
+def assign_synthetic_flows(labels, counts, seed):
+    """Offline generator only. Opaque IDs; no class-derived numeric prefix."""
+    rng = np.random.default_rng(seed + 610013)
+    pool = rng.choice(2**40, size=sum(counts), replace=False)
+    pools, ids, offset = {}, np.empty(len(labels), dtype=np.int64), 0
+    for c, count in enumerate(counts):
+        positions = np.flatnonzero(np.asarray(labels) == c)
+        if len(positions) < count:
+            raise ValueError("Each class must have at least as many samples as requested flows")
+        pools[c] = pool[offset:offset+count]
+        offset += count
+        ids[positions] = rng.permutation(np.resize(pools[c], len(positions)))
+    return ids, pools
+
+
 def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, label_encoder, scaler, device, threshold, class_count, budget=300, fine_tune_lr=0.0001, max_test_samples=100):
     import json
     if HOLDOUT_FRACTION > 0:
@@ -1073,10 +1089,16 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     
     # Offline experiment block IDs; not exposed to RL or prediction features.
     stream_class_ids = y_test.copy()
-    bank_enabled = CLASS_CONTEXT_PROXY or SYNTHETIC_CONTEXT_GROUPS > 0
+    bank_enabled = CLASS_CONTEXT_PROXY or SYNTHETIC_CONTEXT_GROUPS > 0 or FLOW_CONTEXT_COUNTS is not None
     synthetic_ids = (np.random.default_rng(STREAM_SEED + 410003).integers(
         0, SYNTHETIC_CONTEXT_GROUPS, size=len(df_test))[source_indices]
         if SYNTHETIC_CONTEXT_GROUPS else None)
+    if FLOW_CONTEXT_COUNTS is not None:
+        if len(FLOW_CONTEXT_COUNTS) != len(label_encoder.classes_):
+            raise ValueError("flow-context-counts requires one count per encoded class")
+        synthetic_ids, flow_pools = assign_synthetic_flows(stream_class_ids, FLOW_CONTEXT_COUNTS, STREAM_SEED)
+        flow_last = {int(key): i+1 for i, key in enumerate(synthetic_ids)}
+        created_flows, expired_flows, peak_active = 0, 0, 0
     class_quotas = split_class_budget(budget, len(label_encoder.classes_))
     if CLASS_BUDGET_FRACTION is not None:
         class_quotas = fractional_class_budget(stream_class_ids, len(label_encoder.classes_), CLASS_BUDGET_FRACTION)
@@ -1103,18 +1125,23 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     context_memory = make_context_memory(CONTEXT_MEMORY_MODE, MEMORY_PER_CLASS, LEGACY_DIAGNOSTIC_SEED if LEGACY_DIAGNOSTIC_SEED is not None else 42)
     forgetting_initial = None
     if FORGETTING_DIAGNOSTICS:
-        import hashlib
         reference_path = BURST_DATA_DIR / "oversampled_validation_dataset.csv"
         reference = pd.read_csv(reference_path)
         reference_x = torch.FloatTensor(scaler.transform(reference.iloc[:, :-1].values)).unsqueeze(1).to(device)
         reference_y = torch.LongTensor(label_encoder.transform(reference.iloc[:, -1].values)).to(device)
         reference_ids = (np.random.default_rng(STREAM_SEED + 510007).integers(
             0, SYNTHETIC_CONTEXT_GROUPS, size=len(reference_y)) if SYNTHETIC_CONTEXT_GROUPS else None)
+        if FLOW_CONTEXT_COUNTS is not None:
+            ref_rng = np.random.default_rng(STREAM_SEED + 710021)
+            reference_ids = np.asarray([ref_rng.choice(flow_pools[int(c)]) for c in reference_y.cpu().numpy()])
         observer_template = context_template if bank_enabled else context_model
         observer_bank = context_bank if bank_enabled else None
         forgetting_initial = (
             forgetting_predictions(cnn_model, observer_template, observer_bank, X_test, y_test, synthetic_ids),
             forgetting_predictions(cnn_model, observer_template, observer_bank, reference_x, reference_y, reference_ids))
+    if FLOW_CONTEXT_COUNTS is not None and forgetting_initial is not None:
+        flow_final_target = forgetting_initial[0].copy()
+        flow_final_reference = forgetting_initial[1].copy()
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     
     correct = 0
@@ -1146,13 +1173,15 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         updates_before = updates_used
         block_id = int(stream_class_ids[sample_idx-1])
         context_key = int(synthetic_ids[sample_idx-1]) if synthetic_ids is not None else block_id
-        if bank_enabled:
+        if bank_enabled and FLOW_CONTEXT_COUNTS is None:
             # Separate Context and optimizer per routing group.
             if context_key not in context_bank:
                 group_context = deepcopy(context_template)
                 context_bank[context_key] = (group_context,
                     optim.Adam(group_context.parameters(), lr=fine_tune_lr, weight_decay=1e-4))
             context_model, context_optimizer = context_bank[context_key]
+        if FLOW_CONTEXT_COUNTS is not None:
+            context_model, context_optimizer = context_bank.get(context_key, (context_template, None))
         class_used_before = class_labels_used[block_id]
         observed_reward, observed_loss = None, None
         memory_info = dict(memory_loss=0.0, replay_samples=0)
@@ -1209,6 +1238,10 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             weighted_probs_before = softmax(cnn_outputs_weighted_before)
             _, weighted_pred_before = torch.max(cnn_outputs_weighted_before, 1)
         
+        if FLOW_CONTEXT_COUNTS is not None and context_key not in context_bank:
+            cnn_outputs_weighted_before = cnn_outputs
+            weighted_probs_before = probs
+            weighted_pred_before = cnn_pred
         # Observe the learned policy without dropout; do not alter legacy actions/RNG.
         previous_policy_mode = dqn_agent.policy_net.training
         dqn_agent.policy_net.eval()
@@ -1229,6 +1262,12 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             disagreement_passes = (LEGACY_QUERY_GATE == "none" or weighted_pred != cnn_pred)
             if disagreement_passes and (threshold is None or max_prob_diff >= threshold) and updates_used < budget and class_budget_available(BUDGET_MODE, block_id, class_labels_used, class_quotas):
                 
+                if FLOW_CONTEXT_COUNTS is not None and context_key not in context_bank:
+                    context_model = deepcopy(context_template)
+                    context_optimizer = optim.Adam(context_model.parameters(), lr=fine_tune_lr, weight_decay=1e-4)
+                    context_bank[context_key] = (context_model, context_optimizer)
+                    created_flows += 1
+                    peak_active = max(peak_active, len(context_bank))
                 updates_used += 1
                 class_labels_used[block_id] += 1
                 probe_before = context_update_probe(context_model, cnn_model, inputs, labels, context_memory)
@@ -1302,6 +1341,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 encoded_inputs_final = context_model(inputs)
                 outputs = cnn_model(encoded_inputs_final)
         
+        if FLOW_CONTEXT_COUNTS is not None and context_key not in context_bank:
+            outputs = cnn_outputs
         with torch.no_grad():
             _, predicted = torch.max(outputs, 1)
             total += labels.size(0)
@@ -1332,6 +1373,21 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                 **memory_info))
             cumulative_accuracy_df.loc[cumulative_accuracy_df['Sample Index'] == sample_idx, f'Perturbation {perturb_level}'] = current_accuracy
     
+        if FLOW_CONTEXT_COUNTS is not None and sample_idx == flow_last[context_key]:
+            if forgetting_initial is not None:
+                mask = synthetic_ids == context_key
+                ref_mask = reference_ids == context_key
+                # Observer at retirement; no snapshots remain in the active bank.
+                flow_final_target[mask] = forgetting_predictions(cnn_model, context_template, context_bank,
+                    X_test[mask], y_test[mask], synthetic_ids[mask])
+                if np.any(ref_mask):
+                    flow_final_reference[ref_mask] = forgetting_predictions(cnn_model, context_template, context_bank,
+                        reference_x[ref_mask], reference_y[ref_mask], reference_ids[ref_mask])
+            if context_key in context_bank:
+                del context_bank[context_key]
+                expired_flows += 1
+            context_model, context_optimizer = context_template, None
+
     test_accuracy = correct / total
     precision = precision_score(y_true, y_pred, average='weighted', zero_division=0)
     recall = recall_score(y_true, y_pred, average='weighted', zero_division=0)
@@ -1394,7 +1450,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                                         for row in diagnostic_trace),
         exploration_decisions_with_budget=sum(row["action_source"]=="exploration" and row["labels_before"]<budget
                                              for row in diagnostic_trace),
-        context_scope=("synthetic_label_independent_groups" if SYNTHETIC_CONTEXT_GROUPS else "oracle_class_as_flow_proxy" if CLASS_CONTEXT_PROXY else "shared"),
+        context_scope=("temporary_synthetic_flows" if FLOW_CONTEXT_COUNTS is not None else "synthetic_label_independent_groups" if SYNTHETIC_CONTEXT_GROUPS else "oracle_class_as_flow_proxy" if CLASS_CONTEXT_PROXY else "shared"),
         synthetic_context_groups=SYNTHETIC_CONTEXT_GROUPS,
         grouping_protocol="seeded uniform assignment independent of labels; separate reference RNG",
         oracle_context_routing=CLASS_CONTEXT_PROXY,
@@ -1420,6 +1476,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         observer_bank = context_bank if bank_enabled else None
         final_target = forgetting_predictions(cnn_model, observer_template, observer_bank, X_test, y_test, synthetic_ids)
         final_reference = forgetting_predictions(cnn_model, observer_template, observer_bank, reference_x, reference_y, reference_ids)
+        if FLOW_CONTEXT_COUNTS is not None:
+            final_target, final_reference = flow_final_target, flow_final_reference
         diagnostics["forgetting_diagnostics"] = dict(
             same_level=forgetting_comparison(y_test.cpu().numpy(), forgetting_initial[0], final_target,
                                             [row["updated"] for row in diagnostic_trace]),
@@ -1438,7 +1496,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     pd.DataFrame(diagnostic_trace).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_trace.csv",index=False)
     Path(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_diagnostics.json").write_text(
         json.dumps(diagnostics,indent=2),encoding="utf-8")
-    if SYNTHETIC_CONTEXT_GROUPS:
+    if SYNTHETIC_CONTEXT_GROUPS or FLOW_CONTEXT_COUNTS is not None:
         remembered, baseline_predictions = {}, []
         for row in diagnostic_trace:
             key = row["context_key"]
@@ -1457,6 +1515,15 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
               diagnostics["last_label_baseline"]["accuracy"], diagnostics["amcal_accuracy_before_update"])
         Path(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_diagnostics.json").write_text(
             json.dumps(diagnostics, indent=2), encoding="utf-8")
+    if FLOW_CONTEXT_COUNTS is not None:
+        diagnostics["flow_lifecycle"] = dict(flows_per_class=FLOW_CONTEXT_COUNTS,
+            created=created_flows, expired=expired_flows, peak_active_contexts=peak_active,
+            final_active_contexts=len(context_bank), end_protocol="explicit end after last occurrence in simulated stream",
+            retention_protocol="observer evaluated at each flow retirement; reference rows assigned offline to same-class synthetic flow")
+        print("Temporary Context lifecycle:", diagnostics["flow_lifecycle"])
+        pd.DataFrame(dict(source_row=np.asarray(source_indices)+1, flow_id=synthetic_ids)).to_csv(
+            f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_flow_ids.csv", index=False)
+        Path(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_diagnostics.json").write_text(json.dumps(diagnostics, indent=2), encoding="utf-8")
     if "forgetting_diagnostics" in diagnostics:
         print("Forgetting diagnostics (observer only; initial -> final Context):")
         for name in ("same_level", "oversampled_validation"):
@@ -1712,6 +1779,7 @@ def evaluate_main():
 
 def cli():
     global FORGETTING_DIAGNOSTICS
+    global FLOW_CONTEXT_COUNTS
     global SYNTHETIC_CONTEXT_GROUPS
     global CLASS_CONTEXT_PROXY, BASE_TRAIN_EPOCHS, ADVERSARIAL_TRAIN_EPOCHS, TRAIN_PATIENCE
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
@@ -1797,7 +1865,12 @@ def cli():
     parser.add_argument("--forgetting-diagnostics", action="store_true", help="Observer-only initial/final same-level and oversampled validation retention.")
     parser.add_argument("--synthetic-context-groups", type=int, default=0,
                         help="Evaluation-only number of random label-independent Context groups; requires global budget.")
+    parser.add_argument("--flow-context-counts", type=int, nargs="+", help="Synthetic single-label flows per encoded class; evaluation only, global budget.")
     args=parser.parse_args()
+    FLOW_CONTEXT_COUNTS = args.flow_context_counts
+    if FLOW_CONTEXT_COUNTS is not None and (any(n < 1 for n in FLOW_CONTEXT_COUNTS) or args.command != "evaluate" or args.class_context_proxy or args.synthetic_context_groups or args.budget_mode != "total" or args.context_memory != "off" or args.context_guard != "off" or args.holdout_fraction != 0):
+        parser.error("Temporary flows require positive counts, evaluate, global budget, no other bank, memory, guard or holdout.")
+
     SYNTHETIC_CONTEXT_GROUPS = args.synthetic_context_groups
     if SYNTHETIC_CONTEXT_GROUPS < 0:
         parser.error("synthetic-context-groups must be nonnegative")
@@ -1940,6 +2013,8 @@ def cli():
     LEGACY_SELECTOR_MODE=args.selector_mode
     LEGACY_QUERY_GATE=args.query_gate
     seed_tag=(str(args.seed) if args.seed is not None else "unseeded") + "_trainmetadata"
+    if FLOW_CONTEXT_COUNTS is not None:
+        seed_tag += "_temporaryflows" + "-".join(map(str, FLOW_CONTEXT_COUNTS))
     if CLASS_CONTEXT_PROXY:
         seed_tag += "_class_context_proxy"
     if SYNTHETIC_CONTEXT_GROUPS:
@@ -2098,4 +2173,5 @@ def cli():
 
 if __name__=="__main__":
     cli()
+
 
