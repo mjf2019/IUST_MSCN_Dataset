@@ -40,6 +40,7 @@ MEMORY_WEIGHT = 1.0
 HOLDOUT_FRACTION = 0.0
 ONLINE_CONTEXT_LR = 0.25
 CLASS_CONTEXT_PROXY = False
+SYNTHETIC_CONTEXT_GROUPS = 0
 FORGETTING_DIAGNOSTICS = False
 BASE_TRAIN_EPOCHS = 200
 ADVERSARIAL_TRAIN_EPOCHS = 300
@@ -977,9 +978,9 @@ def forgetting_observer_mode(cnn, contexts):
             module.training = mode
 
 
-def forgetting_predictions(cnn, template, bank, x, y):
+def forgetting_predictions(cnn, template, bank, x, y, routing_ids=None):
     """Context-only observer; never invokes RL or creates bank slots."""
-    y = torch.as_tensor(y, dtype=torch.long, device=x.device)
+    y = torch.as_tensor(y if routing_ids is None else routing_ids, dtype=torch.long, device=x.device)
     predictions = torch.empty(len(y), dtype=torch.long, device=y.device)
     contexts = [template] + [entry[0] for entry in (bank or {}).values()]
     with forgetting_observer_mode(cnn, contexts):
@@ -1072,6 +1073,10 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     
     # Offline experiment block IDs; not exposed to RL or prediction features.
     stream_class_ids = y_test.copy()
+    bank_enabled = CLASS_CONTEXT_PROXY or SYNTHETIC_CONTEXT_GROUPS > 0
+    synthetic_ids = (np.random.default_rng(STREAM_SEED + 410003).integers(
+        0, SYNTHETIC_CONTEXT_GROUPS, size=len(df_test))[source_indices]
+        if SYNTHETIC_CONTEXT_GROUPS else None)
     class_quotas = split_class_budget(budget, len(label_encoder.classes_))
     if CLASS_BUDGET_FRACTION is not None:
         class_quotas = fractional_class_budget(stream_class_ids, len(label_encoder.classes_), CLASS_BUDGET_FRACTION)
@@ -1093,7 +1098,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     # Optimizer for context_model
     print(f"Online Context Adam learning rate: {fine_tune_lr:g}")
     context_optimizer = optim.Adam(context_model.parameters(), lr=fine_tune_lr, weight_decay=1e-4)
-    context_template = deepcopy(context_model) if CLASS_CONTEXT_PROXY else None
+    context_template = deepcopy(context_model) if bank_enabled else None
     context_bank = {}
     context_memory = make_context_memory(CONTEXT_MEMORY_MODE, MEMORY_PER_CLASS, LEGACY_DIAGNOSTIC_SEED if LEGACY_DIAGNOSTIC_SEED is not None else 42)
     forgetting_initial = None
@@ -1103,11 +1108,13 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         reference = pd.read_csv(reference_path)
         reference_x = torch.FloatTensor(scaler.transform(reference.iloc[:, :-1].values)).unsqueeze(1).to(device)
         reference_y = torch.LongTensor(label_encoder.transform(reference.iloc[:, -1].values)).to(device)
-        observer_template = context_template if CLASS_CONTEXT_PROXY else context_model
-        observer_bank = context_bank if CLASS_CONTEXT_PROXY else None
+        reference_ids = (np.random.default_rng(STREAM_SEED + 510007).integers(
+            0, SYNTHETIC_CONTEXT_GROUPS, size=len(reference_y)) if SYNTHETIC_CONTEXT_GROUPS else None)
+        observer_template = context_template if bank_enabled else context_model
+        observer_bank = context_bank if bank_enabled else None
         forgetting_initial = (
-            forgetting_predictions(cnn_model, observer_template, observer_bank, X_test, y_test),
-            forgetting_predictions(cnn_model, observer_template, observer_bank, reference_x, reference_y))
+            forgetting_predictions(cnn_model, observer_template, observer_bank, X_test, y_test, synthetic_ids),
+            forgetting_predictions(cnn_model, observer_template, observer_bank, reference_x, reference_y, reference_ids))
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     
     correct = 0
@@ -1138,13 +1145,14 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         
         updates_before = updates_used
         block_id = int(stream_class_ids[sample_idx-1])
-        if CLASS_CONTEXT_PROXY:
-            # Controlled class-as-ID proxy: model, Adam and memory are isolated.
-            if block_id not in context_bank:
+        context_key = int(synthetic_ids[sample_idx-1]) if synthetic_ids is not None else block_id
+        if bank_enabled:
+            # Separate Context and optimizer per routing group.
+            if context_key not in context_bank:
                 group_context = deepcopy(context_template)
-                context_bank[block_id] = (group_context,
+                context_bank[context_key] = (group_context,
                     optim.Adam(group_context.parameters(), lr=fine_tune_lr, weight_decay=1e-4))
-            context_model, context_optimizer = context_bank[block_id]
+            context_model, context_optimizer = context_bank[context_key]
         class_used_before = class_labels_used[block_id]
         observed_reward, observed_loss = None, None
         memory_info = dict(memory_loss=0.0, replay_samples=0)
@@ -1303,7 +1311,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
             y_pred.extend(predicted.cpu().numpy())
             y_true.extend(labels.cpu().numpy())
             diagnostic_trace.append(dict(update_probe=json.dumps(update_probe), step=sample_idx, source_row=source_indices[sample_idx-1]+1,
-                true_label=int(labels.item()),
+                true_label=int(labels.item()), context_key=context_key,
                 base_prediction=int(cnn_pred.item()),
                 base_prediction_train_scaler=int(train_scaled_prediction),
                 prediction_before_update=int(weighted_pred_before.item()),
@@ -1386,9 +1394,11 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                                         for row in diagnostic_trace),
         exploration_decisions_with_budget=sum(row["action_source"]=="exploration" and row["labels_before"]<budget
                                              for row in diagnostic_trace),
-        context_scope="oracle_class_as_flow_proxy" if CLASS_CONTEXT_PROXY else "shared",
+        context_scope=("synthetic_label_independent_groups" if SYNTHETIC_CONTEXT_GROUPS else "oracle_class_as_flow_proxy" if CLASS_CONTEXT_PROXY else "shared"),
+        synthetic_context_groups=SYNTHETIC_CONTEXT_GROUPS,
+        grouping_protocol="seeded uniform assignment independent of labels; separate reference RNG",
         oracle_context_routing=CLASS_CONTEXT_PROXY,
-        context_instances=len(context_bank) if CLASS_CONTEXT_PROXY else 1,
+        context_instances=len(context_bank) if bank_enabled else 1,
         reward_mode=SELECTOR_REWARD_MODE,
         transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
         query_gate=LEGACY_QUERY_GATE, confidence_gap_threshold=threshold,
@@ -1406,10 +1416,10 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         classes_before=classification_report(y_true,before_predictions,output_dict=True,zero_division=0),
         classes_after=classification_report(y_true,y_pred,output_dict=True,zero_division=0))
     if forgetting_initial is not None:
-        observer_template = context_template if CLASS_CONTEXT_PROXY else context_model
-        observer_bank = context_bank if CLASS_CONTEXT_PROXY else None
-        final_target = forgetting_predictions(cnn_model, observer_template, observer_bank, X_test, y_test)
-        final_reference = forgetting_predictions(cnn_model, observer_template, observer_bank, reference_x, reference_y)
+        observer_template = context_template if bank_enabled else context_model
+        observer_bank = context_bank if bank_enabled else None
+        final_target = forgetting_predictions(cnn_model, observer_template, observer_bank, X_test, y_test, synthetic_ids)
+        final_reference = forgetting_predictions(cnn_model, observer_template, observer_bank, reference_x, reference_y, reference_ids)
         diagnostics["forgetting_diagnostics"] = dict(
             same_level=forgetting_comparison(y_test.cpu().numpy(), forgetting_initial[0], final_target,
                                             [row["updated"] for row in diagnostic_trace]),
@@ -1428,6 +1438,25 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     pd.DataFrame(diagnostic_trace).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_trace.csv",index=False)
     Path(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_diagnostics.json").write_text(
         json.dumps(diagnostics,indent=2),encoding="utf-8")
+    if SYNTHETIC_CONTEXT_GROUPS:
+        remembered, baseline_predictions = {}, []
+        for row in diagnostic_trace:
+            key = row["context_key"]
+            baseline_predictions.append(remembered.get(key, row["base_prediction"]))
+            if row["updated"]:
+                remembered[key] = row["true_label"]
+        diagnostics["last_label_baseline"] = dict(
+            accuracy=float(accuracy_score(y_true, baseline_predictions)),
+            macro_f1=float(f1_score(y_true, baseline_predictions, average="macro", zero_division=0)),
+            labels_used=updates_used, scoring="before feedback; identical paid query positions")
+        diagnostics["group_class_counts"] = {
+            str(g): {str(c): int(np.sum((synthetic_ids == g) & (stream_class_ids == c)))
+                     for c in range(len(label_encoder.classes_))}
+            for g in range(SYNTHETIC_CONTEXT_GROUPS)}
+        print("Synthetic groups last-label baseline / AMCAL before feedback:",
+              diagnostics["last_label_baseline"]["accuracy"], diagnostics["amcal_accuracy_before_update"])
+        Path(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_diagnostics.json").write_text(
+            json.dumps(diagnostics, indent=2), encoding="utf-8")
     if "forgetting_diagnostics" in diagnostics:
         print("Forgetting diagnostics (observer only; initial -> final Context):")
         for name in ("same_level", "oversampled_validation"):
@@ -1683,6 +1712,7 @@ def evaluate_main():
 
 def cli():
     global FORGETTING_DIAGNOSTICS
+    global SYNTHETIC_CONTEXT_GROUPS
     global CLASS_CONTEXT_PROXY, BASE_TRAIN_EPOCHS, ADVERSARIAL_TRAIN_EPOCHS, TRAIN_PATIENCE
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
@@ -1765,7 +1795,15 @@ def cli():
     parser.add_argument("--guard-retries", type=int, default=4)
     parser.add_argument("--guard-lr-factor", type=float, default=0.5)
     parser.add_argument("--forgetting-diagnostics", action="store_true", help="Observer-only initial/final same-level and oversampled validation retention.")
+    parser.add_argument("--synthetic-context-groups", type=int, default=0,
+                        help="Evaluation-only number of random label-independent Context groups; requires global budget.")
     args=parser.parse_args()
+    SYNTHETIC_CONTEXT_GROUPS = args.synthetic_context_groups
+    if SYNTHETIC_CONTEXT_GROUPS < 0:
+        parser.error("synthetic-context-groups must be nonnegative")
+    if SYNTHETIC_CONTEXT_GROUPS and (args.command != "evaluate" or args.class_context_proxy or args.budget_mode != "total" or args.context_memory != "off" or args.context_guard != "off" or args.holdout_fraction != 0):
+        parser.error("Synthetic groups require evaluate, total budget, no class proxy, memory, guard or holdout.")
+
     FORGETTING_DIAGNOSTICS = args.forgetting_diagnostics
     if FORGETTING_DIAGNOSTICS and args.command != "evaluate":
         parser.error("forgetting-diagnostics is evaluation only")
@@ -1904,6 +1942,8 @@ def cli():
     seed_tag=(str(args.seed) if args.seed is not None else "unseeded") + "_trainmetadata"
     if CLASS_CONTEXT_PROXY:
         seed_tag += "_class_context_proxy"
+    if SYNTHETIC_CONTEXT_GROUPS:
+        seed_tag += f"_syntheticgroups{SYNTHETIC_CONTEXT_GROUPS}"
     if FORGETTING_DIAGNOSTICS:
         seed_tag += "_forgetting"
     gate_suffix = ("_no_filters" if args.query_gate=="none" else
