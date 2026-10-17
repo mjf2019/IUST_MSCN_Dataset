@@ -19,7 +19,7 @@ import pandas as pd
 import torch
 from torch import nn
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
 import amcal_burst_legacy as legacy
 from amcal_burst_stream import fractional_class_budget, stream_permutation
@@ -511,6 +511,66 @@ def early_stopping_step(score, best, stale):
     return best, stale + 1, False
 
 
+def readable_result(summary):
+    """Flat numeric report. Accuracy columns in percent; forgetting in pp."""
+    diagnostics = summary.get("forgetting_diagnostics", {})
+    target = diagnostics.get("same_level")
+    reference = diagnostics.get("oversampled_validation")
+    return {
+        "PER": summary["perturbation_level"],
+        "Online Acc %": 100 * summary["accuracy"],
+        "Macro F1 %": 100 * summary["macro_f1"],
+        "Context Final %": 100 * target["after"]["accuracy"] if target else None,
+        "Ref Initial %": 100 * reference["before"]["accuracy"] if reference else None,
+        "Ref Final %": 100 * reference["after"]["accuracy"] if reference else None,
+        "Ref Drop pp": -100 * reference["accuracy_delta"] if reference else None,
+        "Ref Broken": reference["correct_to_wrong"] if reference else None,
+        "Labels": summary["labels_used"],
+        "DQN Updates": summary["dqn_updates"],
+    }
+
+
+def print_evaluation_report(summary, rows, args, results):
+    level = summary["perturbation_level"]
+    truth = [r["true_label"] for r in rows]
+    predictions = [r["prediction_before_feedback"] for r in rows]
+    print(f"Adaptation rows: {len(rows)}; stream order: {args.stream_order}; seed: {args.seed}")
+    print(f"Context scope: {summary['context_scope']}; instances: {summary['context_instances']}")
+    print(f"Budget: {summary['budget_protocol']}; cap: {summary['label_cap']}")
+    print(f"Online Context Adam learning rate: {args.context_lr:g}; epsilon: {args.eval_epsilon:g}")
+    per_class = []
+    for c in sorted(set(truth)):
+        selected = [r for r in rows if r["true_label"] == c]
+        caps = summary["per_class_caps"]
+        per_class.append(dict(class_id=c, samples=len(selected), labels_used=summary["per_class_used"][c],
+                              label_budget=caps[c] if caps is not None else "global",
+                              accuracy_before_feedback=sum(r["prediction_before_feedback"] == c for r in selected)/len(selected)))
+    print("Per-class pre-feedback accuracy and label usage:")
+    print(pd.DataFrame(per_class).to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    diagnostics = summary.get("forgetting_diagnostics")
+    if diagnostics:
+        print("Forgetting diagnostics (Context -> frozen CNN; observer only; initial -> final):")
+        for name in ("same_level", "oversampled_validation"):
+            report = diagnostics[name]
+            print(f"  {name}: {100*report['before']['accuracy']:.2f}% -> {100*report['after']['accuracy']:.2f}%; "
+                  f"delta={100*report['accuracy_delta']:+.2f} pp; "
+                  f"correct->wrong={report['correct_to_wrong']}; wrong->correct={report['wrong_to_correct']}")
+        print("  Reference:", diagnostics["reference_path"])
+    print(f"\nResults for Perturbation Level {level} (predictions BEFORE feedback):")
+    print(f"  Test Accuracy: {summary['accuracy']:.4f}")
+    print(f"  Precision (weighted): {precision_score(truth, predictions, average='weighted', zero_division=0):.4f}")
+    print(f"  Recall (weighted): {recall_score(truth, predictions, average='weighted', zero_division=0):.4f}")
+    print(f"  F1 (weighted / macro): {summary['weighted_f1']:.4f} / {summary['macro_f1']:.4f}")
+    print(f"  Context labels used: {summary['labels_used']}/{summary['label_cap']}")
+    print(f"  DQN updates: {summary['dqn_updates']}")
+    loss = summary["dqn_loss"]
+    print("  Average DQN loss:", f"{loss:.6f}" if loss is not None else "N/A")
+    rewards = [r["reward"] for r in rows if r["reward"] is not None]
+    print("  Average paid-action reward:", f"{np.mean(rewards):.6f}" if rewards else "N/A")
+    print("  Action distribution (0=CNN, 1=Context, 2=Query+Context):", summary["actions"])
+    print("  Full report:", results / f"PER_{level}_summary.json")
+
+
 def main():
     root = Path(__file__).resolve().parent
     p=argparse.ArgumentParser(description=__doc__)
@@ -670,7 +730,8 @@ def main():
             summary.update(epoch=epoch+1,validation_routing_accuracy=score,
                            validation_online=validation_summary,
                            epochs_without_improvement=stale);history.append(summary)
-            print(json.dumps(summary))
+            (results/f"PER_{level}_summary.json").write_text(json.dumps(summary,indent=2))
+            print_evaluation_report(summary,rows,args,results)
             if improved:
                 best_epoch=epoch+1
                 saved=copy.deepcopy(bundle)
@@ -735,6 +796,9 @@ def main():
         results=args.output/"Results"/tag;results.mkdir(parents=True,exist_ok=True)
         summaries=[]
         for level in ([args.per] if args.per is not None else LEVELS):
+            print("\n" + "="*50)
+            print(f"Starting processing for perturbation level {level}")
+            print("="*50)
             # Each level starts from the identical CNN/Context/router snapshot.
             random.seed(args.seed);np.random.seed(args.seed);torch.manual_seed(args.seed)
             cnn,context=build_models(bundle["cnn_checkpoint"],bundle["context_checkpoint"],device)
@@ -755,10 +819,15 @@ def main():
         (results/"summary.json").write_text(json.dumps(summaries,indent=2))
         pd.DataFrame(summaries).to_csv(results/"combined_results.csv",index=False)
         (results/"manifest.json").write_text(json.dumps(vars(args),default=str,indent=2))
+        table = pd.DataFrame([readable_result(entry) for entry in summaries])
+        table.to_csv(results/"readable_results.csv", index=False)
+        print("\nCombined Results Table (percent; Ref Drop pp: positive = net forgetting):")
+        print(table.to_string(index=False, float_format=lambda x: f"{x:.2f}"))
         print("Results:",results)
 
 
 if __name__=="__main__":
     main()
+
 
 
