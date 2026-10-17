@@ -946,6 +946,7 @@ def evaluate_stream(args):
     frozen_snapshot = deepcopy(cnn.state_dict())
     queried_ids, trace, predicted, base_predicted = set(), [], [], []
     selector_updates, context_updates = 0, 0
+    random_selector = np.random.default_rng(args.seed + 719003)
     first_query_step = last_query_step = first_selector_update_step = None
     for step, (features, truth, source_id) in enumerate(zip(X, y, source_ids), start=1):
         source_id = int(source_id)
@@ -959,7 +960,8 @@ def evaluate_stream(args):
             adapted_prob = adapted_logits.softmax(dim=1)
             state = torch.cat([inputs.squeeze(1), 1.0-adapted_prob.max(1, keepdim=True).values], dim=1)
             prediction = int(adapted_logits.argmax(1).item())
-            action = int(agent.select_action(state, explore=False).item())
+            action = (int(random_selector.integers(0, 2)) if args.selector_mode == "random"
+                      else int(agent.select_action(state, explore=False).item()))
             confidence_gap = float(abs(adapted_prob.max().item()-base_prob.max().item()))
         # Capture the scored prediction before acquiring a label or changing weights.
         predicted.append(prediction)
@@ -997,7 +999,7 @@ def evaluate_stream(args):
             effective_action, reward, next_state = 0, 0.0, state
         # A budget-blocked action 1 is not an observed policy action 0.
         # Freeze both learners at zero budget and after budget exhaustion.
-        transition_stored = adaptation_allowed and (query or action == 0)
+        transition_stored = args.selector_mode == "learned" and adaptation_allowed and (query or action == 0)
         if transition_stored:
             agent.replay_buffer.push(state.detach(), effective_action, reward,
                                      next_state.detach(), 0.0)
@@ -1040,6 +1042,7 @@ def evaluate_stream(args):
         selector_freeze_rule="freeze at zero budget or after budget exhaustion",
         alignment=alignment, seed=args.seed, budget_fraction=args.budget_fraction,
         query_rule='selector action 1 and remaining unique-label budget',
+        selector_mode=args.selector_mode, random_query_probability=0.5 if args.selector_mode == 'random' else None,
         online_lr=args.lr, attack_sha256=file_sha256(attack_path),
         preprocessing_sha256=digest, device=str(device),
         protocol_version=3, selector_target="DDQN gamma=0.95; same-input local transitions",
@@ -1063,7 +1066,7 @@ def evaluate_stream(args):
             protocol="observer only; reference is source validation partition; no gradient or reward use; final target score retrospective")
 
     name = "clean" if args.attack_file is None else Path(args.attack_file).stem
-    tag = f"{name}_{args.stream_order}_forgetting{int(args.forgetting_diagnostics)}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
+    tag = f"{name}_{args.selector_mode}_{args.stream_order}_forgetting{int(args.forgetting_diagnostics)}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
     results_dir = output / "Results"
     results_dir.mkdir(exist_ok=True)
     pd.DataFrame(trace).to_csv(results_dir / (tag+"_trace.csv"), index=False)
@@ -1146,6 +1149,7 @@ def cli():
     parser=argparse.ArgumentParser(description="Shared two-action AMCAL; train-only scaling, global label budget, pre-feedback scoring.")
     parser.add_argument("command",choices=("audit","train","evaluate"))
     parser.add_argument("--source-file", default="IUST_MSCN_original.csv")
+    parser.add_argument("--selector-mode", choices=("learned", "random"), default="learned")
     parser.add_argument("--stream-order", choices=("input", "shuffle"), default="shuffle")
     parser.add_argument("--forgetting-diagnostics", action="store_true")
     parser.add_argument("--data-dir",default=str(Path(__file__).resolve().parent/"Dataset"))
