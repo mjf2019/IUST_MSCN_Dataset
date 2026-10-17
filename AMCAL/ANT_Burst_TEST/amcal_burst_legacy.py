@@ -939,40 +939,22 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
     return reward - SELECTION_COST if action == 1 else reward
 
 def load_metadata(base_path='AdvBurst_FTSC-IAT', train_perturb_level=0):
-    X_all, y_all = [], []
-    dataset_indices = []
-    if not os.path.exists(base_path):
-        print(f"Error: Data directory '{base_path}' not found.")
-        return None, None, None, None, None, None, None, None, None, None, None
-    try:
-        df = pd.read_csv(f'{base_path}/AdvBurstTrainedBurst_size_{train_perturb_level}_Step_2000.csv')
-        X = df.iloc[:, :-1].values
-        y = df.iloc[:, -1].values
-        X_all.append(X)
-        y_all.append(y)
-        dataset_indices.append(list(range(len(y))))
-        print(f"Loaded data for perturbation level {train_perturb_level} with {X.shape[0]} samples.")
-    except FileNotFoundError:
-        print(f"Error: File for perturbation level {train_perturb_level} not found.")
-        return None, None, None, None, None, None, None, None, None, None, None
-    if not X_all or not y_all:
-        print("Error: No valid data loaded for training.")
-        return None, None, None, None, None, None, None, None, None, None, None
-    # Create full dataset before splitting
-    X = np.vstack(X_all)
-    y = np.hstack(y_all)
-    label_encoder = LabelEncoder()
-    y = label_encoder.fit_transform(y)
-    num_classes = len(label_encoder.classes_)
-    if num_classes != 6:
-        print(f"Error: Expected 6 classes, found {num_classes} classes.")
-        return None, None, None, None, None, None, None, None, None, None, None
-    scaler = StandardScaler()
-    X = scaler.fit_transform(X)
-    class_counts = np.bincount(y)
-    print(f"Input length: {X.shape[1]}")
+    """Reconstruct training preprocessing from the training split only.
 
-    return num_classes, label_encoder, scaler, X.shape[1], class_counts
+    Arguments retained for compatibility; neither target features nor target
+    labels are read here. Mirrors load_training_data's scaler/encoder fit.
+    """
+    training_path = BURST_DATA_DIR / "oversampled_train_dataset.csv"
+    frame = pd.read_csv(training_path)
+    x_train = frame.iloc[:, :-1].to_numpy()
+    encoder = LabelEncoder()
+    y_train = encoder.fit_transform(frame.iloc[:, -1].to_numpy())
+    scaler = StandardScaler().fit(x_train)
+    counts = np.bincount(y_train, minlength=len(encoder.classes_))
+    print(f"Evaluation preprocessing: training split only: {training_path}")
+    print(f"Training metadata SHA256: {hashlib.sha256(training_path.read_bytes()).hexdigest()}")
+    print(f"Input length: {x_train.shape[1]}")
+    return len(encoder.classes_), encoder, scaler, x_train.shape[1], counts
 
 
 @contextmanager
@@ -1371,7 +1353,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     if not 0 <= updates_used <= budget:
         raise RuntimeError("Online label budget exceeded.")
     final_memory_report = final_context_memory_report(context_model, cnn_model, context_memory)
-    diagnostics = dict(final_context_memory=final_memory_report, per=perturb_level, seed=LEGACY_DIAGNOSTIC_SEED,
+    diagnostics = dict(preprocessing_protocol="scaler, encoder and class weights from oversampled_train_dataset.csv only",
+        training_metadata_sha256=hashlib.sha256((BURST_DATA_DIR / "oversampled_train_dataset.csv").read_bytes()).hexdigest(),
+        final_context_memory=final_memory_report, per=perturb_level, seed=LEGACY_DIAGNOSTIC_SEED,
         stream_order=STREAM_ORDER, stream_seed=STREAM_SEED,
         within_class_order_preserved=True,
         permutation_sha256=permutation_sha256(source_indices),
@@ -1917,7 +1901,7 @@ def cli():
         parser.error("--selector-mode is only for evaluate.")
     LEGACY_SELECTOR_MODE=args.selector_mode
     LEGACY_QUERY_GATE=args.query_gate
-    seed_tag=str(args.seed) if args.seed is not None else "unseeded"
+    seed_tag=(str(args.seed) if args.seed is not None else "unseeded") + "_trainmetadata"
     if CLASS_CONTEXT_PROXY:
         seed_tag += "_class_context_proxy"
     if FORGETTING_DIAGNOSTICS:
