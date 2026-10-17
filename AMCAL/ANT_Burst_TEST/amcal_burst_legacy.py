@@ -39,6 +39,10 @@ MEMORY_BATCH_SIZE = 16
 MEMORY_WEIGHT = 1.0
 HOLDOUT_FRACTION = 0.0
 ONLINE_CONTEXT_LR = 0.25
+CLASS_CONTEXT_PROXY = False
+BASE_TRAIN_EPOCHS = 200
+ADVERSARIAL_TRAIN_EPOCHS = 300
+TRAIN_PATIENCE = 30
 TRAIN_EPSILON_START = 1.0
 TRAIN_EPSILON_END = 0.01
 TRAIN_EPSILON_DECAY = 0.995
@@ -821,10 +825,10 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
 
 # Main execution
 def train_main():
-    base_epoch = 200
-    base_patience = 30
-    adver_epoch = 300
-    adver_patience = 30
+    base_epoch = BASE_TRAIN_EPOCHS
+    base_patience = TRAIN_PATIENCE
+    adver_epoch = ADVERSARIAL_TRAIN_EPOCHS
+    adver_patience = TRAIN_PATIENCE
     
     # Load data
     train_loader, val_loader, test_loader, full_loader, num_classes, input_length, class_counts = load_training_data(dataset_path=str(BURST_DATA_DIR))
@@ -1003,7 +1007,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         X_test, y_test = X_test[adaptation_indices], y_test[adaptation_indices]
         max_samples = len(adaptation_indices)
         # Interleave only the adaptation part; reserved rows never enter learners.
-        source_indices = stream_permutation(y_test, STREAM_ORDER, STREAM_SEED)
+        source_indices = (np.random.default_rng(STREAM_SEED).permutation(len(y_test))
+                          if STREAM_ORDER == "shuffle" else stream_permutation(y_test, STREAM_ORDER, STREAM_SEED))
         X_test = X_test[source_indices]
         y_test = y_test[source_indices]
         source_indices = [adaptation_indices[i] for i in source_indices]
@@ -1044,6 +1049,8 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     # Optimizer for context_model
     print(f"Online Context Adam learning rate: {fine_tune_lr:g}")
     context_optimizer = optim.Adam(context_model.parameters(), lr=fine_tune_lr, weight_decay=1e-4)
+    context_template = deepcopy(context_model) if CLASS_CONTEXT_PROXY else None
+    context_bank = {}
     context_memory = make_context_memory(CONTEXT_MEMORY_MODE, MEMORY_PER_CLASS, LEGACY_DIAGNOSTIC_SEED if LEGACY_DIAGNOSTIC_SEED is not None else 42)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     
@@ -1075,6 +1082,13 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         
         updates_before = updates_used
         block_id = int(stream_class_ids[sample_idx-1])
+        if CLASS_CONTEXT_PROXY:
+            # Controlled class-as-ID proxy: model, Adam and memory are isolated.
+            if block_id not in context_bank:
+                group_context = deepcopy(context_template)
+                context_bank[block_id] = (group_context,
+                    optim.Adam(group_context.parameters(), lr=fine_tune_lr, weight_decay=1e-4))
+            context_model, context_optimizer = context_bank[block_id]
         class_used_before = class_labels_used[block_id]
         observed_reward, observed_loss = None, None
         memory_info = dict(memory_loss=0.0, replay_samples=0)
@@ -1314,6 +1328,9 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                                         for row in diagnostic_trace),
         exploration_decisions_with_budget=sum(row["action_source"]=="exploration" and row["labels_before"]<budget
                                              for row in diagnostic_trace),
+        context_scope="oracle_class_as_flow_proxy" if CLASS_CONTEXT_PROXY else "shared",
+        oracle_context_routing=CLASS_CONTEXT_PROXY,
+        context_instances=len(context_bank) if CLASS_CONTEXT_PROXY else 1,
         reward_mode=SELECTOR_REWARD_MODE,
         transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
         query_gate=LEGACY_QUERY_GATE, confidence_gap_threshold=threshold,
@@ -1587,6 +1604,7 @@ def evaluate_main():
 
 
 def cli():
+    global CLASS_CONTEXT_PROXY, BASE_TRAIN_EPOCHS, ADVERSARIAL_TRAIN_EPOCHS, TRAIN_PATIENCE
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
     global CONTEXT_ARCHITECTURE, SELECTOR_STATE_VERSION
@@ -1601,6 +1619,11 @@ def cli():
     parser.add_argument("--output",help="Output/model folder; original and paper reward modes have separate defaults.")
     parser.add_argument("--per",type=int,choices=(0,1,3,5,7,10,12,15,17,20))
     parser.add_argument("--seed",type=int,help="Optional fixed random seed; legacy default stays unseeded.")
+    parser.add_argument("--class-context-proxy", action="store_true",
+                        help="Evaluation-only class-as-ID proxy; separate Context and Adam per class, shared frozen CNN and two-action DDQN.")
+    parser.add_argument("--base-epochs",type=int,default=200)
+    parser.add_argument("--adversarial-epochs",type=int,default=300)
+    parser.add_argument("--train-patience",type=int,default=30)
     parser.add_argument("--selector-mode", choices=("original","random","learned"), default="original",
                         help="original: notebook selector with online DQN; random: no-RL random updater; "
                              "learned: Q actions with optional epsilon-greedy exploration and online DQN.")
@@ -1634,7 +1657,7 @@ def cli():
                         help="Offline RL minimum random-action probability (default 0.01).")
     parser.add_argument("--train-epsilon-decay", type=float, default=0.995,
                         help="Multiply offline epsilon once per adversarial epoch (default 0.995); 1 keeps it fixed.")
-    parser.add_argument("--stream-order", choices=("input", "class-interleaved"),
+    parser.add_argument("--stream-order", choices=("input", "class-interleaved", "shuffle"),
                         default="class-interleaved",
                         help="Interleave class slots in oversampled training splits and attack evaluation; preserve within-class order.")
     parser.add_argument("--stream-seed", type=int, default=42,
@@ -1663,6 +1686,17 @@ def cli():
     parser.add_argument("--guard-retries", type=int, default=4)
     parser.add_argument("--guard-lr-factor", type=float, default=0.5)
     args=parser.parse_args()
+    if min(args.base_epochs,args.adversarial_epochs,args.train_patience)<1:
+        parser.error("Training epochs and patience must be positive.")
+    if args.class_context_proxy and (args.command != "evaluate" or args.context_memory != "off" or args.context_guard != "off" or args.holdout_fraction != 0):
+        parser.error("Class proxy requires evaluation without shared memory, guards or holdout.")
+    if args.stream_order == "shuffle" and args.command == "train":
+        parser.error("Shuffle is currently evaluation-only in the legacy two-action script.")
+    CLASS_CONTEXT_PROXY=args.class_context_proxy
+    BASE_TRAIN_EPOCHS=args.base_epochs
+    ADVERSARIAL_TRAIN_EPOCHS=args.adversarial_epochs
+    TRAIN_PATIENCE=args.train_patience
+
     if args.memory_per_class < 1 or args.memory_batch_size < 1:
         parser.error("memory capacities and batch size must be positive.")
     if not np.isfinite(args.memory_weight) or args.memory_weight < 0:
@@ -1784,6 +1818,8 @@ def cli():
     LEGACY_SELECTOR_MODE=args.selector_mode
     LEGACY_QUERY_GATE=args.query_gate
     seed_tag=str(args.seed) if args.seed is not None else "unseeded"
+    if CLASS_CONTEXT_PROXY:
+        seed_tag += "_class_context_proxy"
     gate_suffix = ("_no_filters" if args.query_gate=="none" else
                    "_disagreement_only" if args.query_gate=="disagreement" else
                    "_no_threshold" if args.query_gate=="no-threshold" else "")
@@ -1936,4 +1972,3 @@ def cli():
 
 if __name__=="__main__":
     cli()
-
