@@ -40,6 +40,7 @@ MEMORY_WEIGHT = 1.0
 HOLDOUT_FRACTION = 0.0
 ONLINE_CONTEXT_LR = 0.25
 CLASS_CONTEXT_PROXY = False
+FORGETTING_DIAGNOSTICS = False
 BASE_TRAIN_EPOCHS = 200
 ADVERSARIAL_TRAIN_EPOCHS = 300
 TRAIN_PATIENCE = 30
@@ -973,6 +974,66 @@ def load_metadata(base_path='AdvBurst_FTSC-IAT', train_perturb_level=0):
 
     return num_classes, label_encoder, scaler, X.shape[1], class_counts
 
+
+@contextmanager
+def forgetting_observer_mode(cnn, contexts):
+    """Evaluation must not change module modes or any learner RNG stream."""
+    import random
+    models = [cnn] + list(contexts)
+    modes = {module: module.training for model in models for module in model.modules()}
+    python_rng, numpy_rng = random.getstate(), np.random.get_state()
+    try:
+        with torch.random.fork_rng():
+            for model in models:
+                model.eval()
+            with torch.no_grad():
+                yield
+    finally:
+        random.setstate(python_rng)
+        np.random.set_state(numpy_rng)
+        for module, mode in modes.items():
+            module.training = mode
+
+
+def forgetting_predictions(cnn, template, bank, x, y):
+    """Context-only observer; never invokes RL or creates bank slots."""
+    predictions = torch.empty(len(y), dtype=torch.long, device=y.device)
+    contexts = [template] + [entry[0] for entry in (bank or {}).values()]
+    with forgetting_observer_mode(cnn, contexts):
+        for key in torch.unique(y).tolist() if bank is not None else [None]:
+            indices = torch.nonzero(y == key, as_tuple=True)[0] if key is not None else torch.arange(len(y), device=y.device)
+            model = bank[key][0] if bank is not None and key in bank else template
+            for batch in indices.split(64):
+                predictions[batch] = cnn(model(x[batch])).argmax(1)
+    return predictions.cpu().numpy()
+
+
+def forgetting_comparison(y, before, after, queried=None):
+    from sklearn.metrics import accuracy_score, f1_score
+    y = np.asarray(y)
+    def compare(mask):
+        n = int(np.sum(mask))
+        if not n:
+            return dict(samples=0)
+        truth, pre, post = y[mask], before[mask], after[mask]
+        def scores(pred):
+            return dict(accuracy=float(accuracy_score(truth, pred)),
+                        macro_f1=float(f1_score(truth, pred, average="macro", zero_division=0)),
+                        weighted_f1=float(f1_score(truth, pred, average="weighted", zero_division=0)))
+        a, b = scores(pre), scores(post)
+        return dict(samples=n, before=a, after=b,
+                    accuracy_delta=b["accuracy"]-a["accuracy"],
+                    correct_to_wrong=int(np.sum((pre == truth) & (post != truth))),
+                    wrong_to_correct=int(np.sum((pre != truth) & (post == truth))))
+    report = compare(np.ones(len(y), dtype=bool))
+    report["per_class"] = {str(c): compare(y == c) for c in np.unique(y)}
+    if queried is not None:
+        mask = np.asarray(queried, dtype=bool)
+        report["queried"] = compare(mask)
+        report["not_queried"] = compare(~mask)
+    return report
+
+
 def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, label_encoder, scaler, device, threshold, class_count, budget=300, fine_tune_lr=0.0001, max_test_samples=100):
     import json
     if HOLDOUT_FRACTION > 0:
@@ -1052,6 +1113,18 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     context_template = deepcopy(context_model) if CLASS_CONTEXT_PROXY else None
     context_bank = {}
     context_memory = make_context_memory(CONTEXT_MEMORY_MODE, MEMORY_PER_CLASS, LEGACY_DIAGNOSTIC_SEED if LEGACY_DIAGNOSTIC_SEED is not None else 42)
+    forgetting_initial = None
+    if FORGETTING_DIAGNOSTICS:
+        import hashlib
+        reference_path = BURST_DATA_DIR / "oversampled_validation_dataset.csv"
+        reference = pd.read_csv(reference_path)
+        reference_x = torch.FloatTensor(scaler.transform(reference.iloc[:, :-1].values)).unsqueeze(1).to(device)
+        reference_y = torch.LongTensor(label_encoder.transform(reference.iloc[:, -1].values)).to(device)
+        observer_template = context_template if CLASS_CONTEXT_PROXY else context_model
+        observer_bank = context_bank if CLASS_CONTEXT_PROXY else None
+        forgetting_initial = (
+            forgetting_predictions(cnn_model, observer_template, observer_bank, X_test, y_test),
+            forgetting_predictions(cnn_model, observer_template, observer_bank, reference_x, reference_y))
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     
     correct = 0
@@ -1347,6 +1420,18 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         learned_policy_used_for_actions=LEGACY_SELECTOR_MODE=="learned",
         classes_before=classification_report(y_true,before_predictions,output_dict=True,zero_division=0),
         classes_after=classification_report(y_true,y_pred,output_dict=True,zero_division=0))
+    if forgetting_initial is not None:
+        observer_template = context_template if CLASS_CONTEXT_PROXY else context_model
+        observer_bank = context_bank if CLASS_CONTEXT_PROXY else None
+        final_target = forgetting_predictions(cnn_model, observer_template, observer_bank, X_test, y_test)
+        final_reference = forgetting_predictions(cnn_model, observer_template, observer_bank, reference_x, reference_y)
+        diagnostics["forgetting_diagnostics"] = dict(
+            same_level=forgetting_comparison(y_test.cpu().numpy(), forgetting_initial[0], final_target,
+                                            [row["updated"] for row in diagnostic_trace]),
+            oversampled_validation=forgetting_comparison(reference_y.cpu().numpy(), forgetting_initial[1], final_reference),
+            reference_path=str(reference_path), reference_sha256=hashlib.sha256(reference_path.read_bytes()).hexdigest(),
+            protocol="initial versus final Context->CNN; observer only; same-level retrospective includes adaptation samples; not online or unseen accuracy",
+            preprocessing="same evaluation scaler as online learner")
     if BUDGET_MODE == "per-class":
         pd.DataFrame(class_summary).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_class_results.csv", index=False)
         pd.DataFrame(class_curve).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_class_curve.csv", index=False)
@@ -1604,6 +1689,7 @@ def evaluate_main():
 
 
 def cli():
+    global FORGETTING_DIAGNOSTICS
     global CLASS_CONTEXT_PROXY, BASE_TRAIN_EPOCHS, ADVERSARIAL_TRAIN_EPOCHS, TRAIN_PATIENCE
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
@@ -1685,7 +1771,11 @@ def cli():
     parser.add_argument("--guard-tolerance", type=float, default=0.02)
     parser.add_argument("--guard-retries", type=int, default=4)
     parser.add_argument("--guard-lr-factor", type=float, default=0.5)
+    parser.add_argument("--forgetting-diagnostics", action="store_true", help="Observer-only initial/final same-level and oversampled validation retention.")
     args=parser.parse_args()
+    FORGETTING_DIAGNOSTICS = args.forgetting_diagnostics
+    if FORGETTING_DIAGNOSTICS and args.command != "evaluate":
+        parser.error("forgetting-diagnostics is evaluation only")
     if min(args.base_epochs,args.adversarial_epochs,args.train_patience)<1:
         parser.error("Training epochs and patience must be positive.")
     if args.class_context_proxy and (args.command != "evaluate" or args.context_memory != "off" or args.context_guard != "off" or args.holdout_fraction != 0):
@@ -1820,6 +1910,8 @@ def cli():
     seed_tag=str(args.seed) if args.seed is not None else "unseeded"
     if CLASS_CONTEXT_PROXY:
         seed_tag += "_class_context_proxy"
+    if FORGETTING_DIAGNOSTICS:
+        seed_tag += "_forgetting"
     gate_suffix = ("_no_filters" if args.query_gate=="none" else
                    "_disagreement_only" if args.query_gate=="disagreement" else
                    "_no_threshold" if args.query_gate=="no-threshold" else "")
@@ -1972,3 +2064,4 @@ def cli():
 
 if __name__=="__main__":
     cli()
+
