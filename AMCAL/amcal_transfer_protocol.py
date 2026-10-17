@@ -260,6 +260,7 @@ REFERENCE_BATCH_SIZE = 32
 REFERENCE_HISTORY_SIZE = 256
 TRAIN_BUDGET_FRACTION = 0.2
 ONLINE_TRAIN_LR = 1e-5
+TRAIN_PERTURBATIONS = (0.0,)
 
 def load_data(dataset_path='Dataset', csv_filename=None):
     csv_filename = csv_filename or SOURCE_FILENAME
@@ -562,6 +563,25 @@ def budget_validation(cnn, initial_context, agent, loader, input_length):
                 'F1 Score': float(f1_score(y, predictions, average='weighted', zero_division=0))}
 
 
+def build_training_domains(cnn, features, labels):
+    """FGSM in saved StandardScaler units; called only on train or validation tensors."""
+    levels = TRAIN_PERTURBATIONS
+    domains = {0.0: features.detach()}
+    if any(level > 0 for level in levels):
+        signs = []
+        for start in range(0, len(labels), 64):
+            with torch.enable_grad():
+                x = features[start:start+64].detach().clone().requires_grad_(True)
+                loss = nn.functional.cross_entropy(cnn(x), labels[start:start+64])
+                gradient, = torch.autograd.grad(loss, x)
+            signs.append(gradient.sign().detach())
+        direction = torch.cat(signs)
+        for level in levels:
+            if level > 0:
+                domains[level] = (features.detach() + level*direction).detach()
+    return {level: domains[level] for level in levels}
+
+
 def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, val_loader, class_counts, input_length, num_classes, fine_tune_epochs=500, patience=50, pretrain_epochs=20):
     class_weights = torch.FloatTensor(1.0 / class_counts).to(device)
     cnn_criterion = nn.CrossEntropyLoss(weight=class_weights)
@@ -597,6 +617,11 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         context_scheduler.step()
         print(f"Pretrain Epoch {pretrain_epoch+1}/{pretrain_epochs}, Loss: {total_context_loss/num_batches:.4f}")
     
+    clean_train_x, train_y = full_loader.dataset.tensors
+    train_domains = build_training_domains(cnn_model, clean_train_x, train_y)
+    validation_x, validation_y = val_loader.dataset.tensors
+    validation_domains = build_training_domains(cnn_model, validation_x, validation_y)
+    print("Training-only FGSM domains:", TRAIN_PERTURBATIONS, "; no target/test files used.")
     episode_initial_context = deepcopy(context_model.state_dict())
     print("Starting budget-aware episodic training...")
     # Eq. (18): offline target synchronization every 15 epochs.
@@ -619,7 +644,9 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         context_model.load_state_dict(episode_initial_context)
         context_model.eval()
         context_optimizer = optim.Adam(context_model.parameters(), lr=ONLINE_TRAIN_LR, weight_decay=1e-4)
-        train_x, train_y = full_loader.dataset.tensors
+        episode_level = TRAIN_PERTURBATIONS[epoch % len(TRAIN_PERTURBATIONS)]
+        train_x = train_domains[episode_level]
+        print(f"  Training perturbation: {episode_level:g}")
         order = np.random.default_rng(RUN_SEED + epoch).permutation(len(train_y))
         cap, used = int(np.floor(TRAIN_BUDGET_FRACTION * len(order))), 0
         training_probe = TrainingProbe(train_x, train_y, RUN_SEED + epoch + 910033)
@@ -701,7 +728,13 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         print(f"  Proposed actions over entire stream, including after cap: {action_dist}")
         
         # Validation
-        val_results = budget_validation(cnn_model, episode_initial_context, dqn_agent, val_loader, input_length)
+        domain_results = []
+        for validation_level in TRAIN_PERTURBATIONS:
+            domain_loader = DataLoader(TensorDataset(validation_domains[validation_level], validation_y), batch_size=64)
+            result = budget_validation(cnn_model, episode_initial_context, dqn_agent, domain_loader, input_length)
+            print(f"  Validation perturbation {validation_level:g}: online accuracy {result['Accuracy']:.4f}")
+            domain_results.append(result)
+        val_results = {key: float(np.mean([result[key] for result in domain_results])) for key in domain_results[0]}
         print(f"Validation Results at Epoch {epoch+1}:")
         print(f"  Val Loss: {val_results['Test Loss']:.4f}")
         print(f"  Val Accuracy: {val_results['Accuracy']:.4f}")
@@ -745,6 +778,8 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     torch.save({
         'preprocessing_sha256': file_sha256('Models/protocol_preprocessing.joblib'),
         'protocol_version': 3,
+        'training_perturbations': list(TRAIN_PERTURBATIONS),
+        'training_shift_protocol': 'one shuffled FGSM domain per epoch; reset Context and Adam; validation mean across domains; epsilon in training StandardScaler units',
         'budget_state_version': 3,
         'reward_version': 'independent_probe_transfer_v1',
         'gain_weight': GAIN_WEIGHT, 'retention_weight': RETENTION_WEIGHT,
@@ -903,6 +938,7 @@ def save_preprocessing(frame, dataset_path, filename, scaler, encoder,
     Path("Models").mkdir(exist_ok=True)
     joblib.dump(artifact, "Models/protocol_preprocessing.joblib")
     report = dict(protocol_version=3, seed=RUN_SEED,
+        training_perturbations=list(TRAIN_PERTURBATIONS),
         source_sha256=artifact["source_sha256"], source_rows=len(frame),
         split_sizes={k:len(v) for k,v in
                      (("train",train_ids),("validation",val_ids),("test",test_ids))},
@@ -1172,6 +1208,7 @@ def evaluate_stream(args):
         positive_fraction=float(np.mean([r["reward"] > 0 for r in paid_rows])) if paid_rows else None,
         cost=SELECTION_COST,
         actions_while_budget_available=np.bincount([r["action"] for r in trace if not r["budget_blocked"]], minlength=2).tolist())
+    metrics["training_perturbations"] = selector_checkpoint.get("training_perturbations", [0.0])
     metrics["no_adaptation_context_accuracy"] = float(accuracy_score(y, initial_predictions))
     metrics["stream_order"] = args.stream_order
     metrics["source_file"] = SOURCE_FILENAME
@@ -1269,9 +1306,10 @@ def audit_dataset(args):
 
 def cli():
     global RUN_SEED, device, SOURCE_FILENAME, SELECTION_COST, TRAIN_BUDGET_FRACTION, ONLINE_TRAIN_LR
-    global GAIN_WEIGHT, RETENTION_WEIGHT, REFERENCE_BATCH_SIZE, REFERENCE_HISTORY_SIZE
+    global GAIN_WEIGHT, RETENTION_WEIGHT, REFERENCE_BATCH_SIZE, REFERENCE_HISTORY_SIZE, TRAIN_PERTURBATIONS
     parser=argparse.ArgumentParser(description="Shared two-action AMCAL; train-only scaling, global label budget, pre-feedback scoring.")
     parser.add_argument("command",choices=("audit","train","evaluate"))
+    parser.add_argument("--train-perturbations", type=float, nargs="+", default=[0.0], help="Training/validation FGSM domains; never target test files.")
     parser.add_argument("--selection-cost", type=float, default=0.0001)
     parser.add_argument("--gain-weight", type=float, default=1.0)
     parser.add_argument("--retention-weight", type=float, default=1.0)
@@ -1320,6 +1358,9 @@ def cli():
         parser.error("Reference sizes must be positive.")
     GAIN_WEIGHT, RETENTION_WEIGHT = args.gain_weight, args.retention_weight
     REFERENCE_BATCH_SIZE, REFERENCE_HISTORY_SIZE = args.reference_batch_size, args.reference_history_size
+    if any(not np.isfinite(level) or level < 0 for level in args.train_perturbations):
+        parser.error("Training perturbations must be finite and nonnegative.")
+    TRAIN_PERTURBATIONS = tuple(sorted(set(args.train_perturbations)))
     SELECTION_COST=args.selection_cost
     TRAIN_BUDGET_FRACTION=args.budget_fraction
     ONLINE_TRAIN_LR=args.train_online_lr
