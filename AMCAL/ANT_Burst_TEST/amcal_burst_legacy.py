@@ -28,6 +28,10 @@ TRAINING_SELECTOR_MODE = 'original'
 AGREEMENT_PENALTY = 0.2
 TEST_LABEL_BUDGET = 214
 SELECTION_COST = 0.0
+RETENTION_ALPHA = 1.0
+RETENTION_BETA = 1.0
+RETENTION_BATCH = 32
+RETENTION_HISTORY = 256
 STREAM_ORDER = 'class-interleaved'
 STREAM_SEED = 42
 BUDGET_MODE = 'total'
@@ -584,8 +588,53 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
         else:
             reward = 0.0
     else:
-        reward = 0.0 if SELECTOR_REWARD_MODE == "paper" else (1.5 if cnn_pred == label else -1.0)
+        reward = 0.0 if SELECTOR_REWARD_MODE in ("paper", "paper-retention") else (1.5 if cnn_pred == label else -1.0)
     return reward - SELECTION_COST if action == 1 else reward
+
+def normalized_retention_terms(before, after, ref_before, ref_after):
+    gain = (before-after)/(before+after+1e-8)
+    forgetting = max(0.0, (ref_after-ref_before)/(ref_before+ref_after+1e-8))
+    return gain, forgetting
+
+
+class RewardReference:
+    """Training-only source plus causal paid history; observer, no gradients."""
+    def __init__(self, x, y, seed):
+        self.x, self.y = x, y
+        self.rng = np.random.default_rng(seed + 910033)
+        labels = y.detach().cpu().numpy()
+        self.classes = [np.flatnonzero(labels == c) for c in np.unique(labels)]
+        self.history, self.seen = [], 0
+
+    def batch(self):
+        n = min(len(self.history), RETENTION_BATCH//2)
+        indices = [int(self.rng.choice(self.classes[int(self.rng.integers(len(self.classes)))]))
+                   for _ in range(RETENTION_BATCH-n)]
+        xs = [self.x[i:i+1] for i in indices]
+        ys = [int(self.y[i]) for i in indices]
+        if n:
+            for j in self.rng.choice(len(self.history), n, replace=False):
+                x, y = self.history[int(j)]
+                xs.append(x.to(self.x.device)); ys.append(y)
+        return torch.cat(xs), torch.tensor(ys, device=self.x.device)
+
+    def add(self, x, y):
+        for i in range(len(y)):
+            self.seen += 1
+            item = (x[i:i+1].detach().cpu().clone(), int(y[i]))
+            if len(self.history) < RETENTION_HISTORY:
+                self.history.append(item)
+            else:
+                j = int(self.rng.integers(self.seen))
+                if j < RETENTION_HISTORY:
+                    self.history[j] = item
+
+
+def reward_observation(cnn, context, x, y):
+    with evaluation_mode(cnn, context), torch.no_grad():
+        logits = cnn(context(x))
+        return nn.functional.cross_entropy(logits, y, reduction="none").detach(), logits.argmax(1)
+
 
 def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, val_loader, class_counts, input_length, num_classes, fine_tune_epochs=500, patience=50):
     class_weights = torch.FloatTensor(1.0 / class_counts).to(device)
@@ -637,6 +686,8 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         actions = []
         context_updated = False
         
+        retention_reference = (RewardReference(*(t.to(device) for t in full_loader.dataset.tensors),
+            (LEGACY_DIAGNOSTIC_SEED or 42) + epoch) if SELECTOR_REWARD_MODE == "paper-retention" else None)
         for inputs, labels in full_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             batch_size = inputs.size(0)
@@ -668,6 +719,10 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             action_mask = ((actions_batch == 1) & ~rejected_agreement).cpu()
             action_indices = action_mask.nonzero(as_tuple=True)[0]
             
+            if retention_reference is not None:
+                reward_before, reward_predictions = reward_observation(cnn_model, context_model, inputs, labels)
+                reference_batch = retention_reference.batch()
+                reference_before = reward_observation(cnn_model, context_model, *reference_batch)[0].mean().item()
             # Update ContextAwareNetwork only for samples with action=1
             if len(action_indices) > 0:
                 context_updated = True
@@ -703,14 +758,24 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 cnn_outputs_weighted = cnn_model(encoded_inputs).detach()
                 _, weighted_pred = torch.max(cnn_outputs_weighted, 1)
             
+            if retention_reference is not None:
+                reward_after = reward_observation(cnn_model, context_model, inputs, labels)[0]
+                reference_after = reward_observation(cnn_model, context_model, *reference_batch)[0].mean().item()
             # Compute rewards for all samples
             for i in range(batch_size):
                 r = compute_reward(actions_batch[i].item(), cnn_pred[i].item(), weighted_pred[i].item(), labels[i].item())
+                if retention_reference is not None:
+                    r = compute_reward(actions_batch[i].item(), cnn_pred[i].item(), reward_predictions[i].item(), labels[i].item())
+                    if actions_batch[i].item() == 1 and not rejected_agreement[i].item():
+                        gain, forgetting = normalized_retention_terms(reward_before[i].item(), reward_after[i].item(), reference_before, reference_after)
+                        r += RETENTION_ALPHA*gain - RETENTION_BETA*forgetting
                 if rejected_agreement[i].item():
                     # Keep action=1 in replay so Q learns that this request is wasteful.
                     r = -AGREEMENT_PENALTY
                 rewards.append(r)
             
+            if retention_reference is not None and len(action_indices):
+                retention_reference.add(inputs[action_indices], labels[action_indices])
             # Compute next states based on action
             with torch.no_grad():
                 if len(action_indices) > 0:
@@ -941,7 +1006,7 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
         else:
             reward = 0.0
     else:
-        reward = 0.0 if SELECTOR_REWARD_MODE == "paper" else (1.5 if cnn_pred == label else -1.0)
+        reward = 0.0 if SELECTOR_REWARD_MODE in ("paper", "paper-retention") else (1.5 if cnn_pred == label else -1.0)
     return reward - SELECTION_COST if action == 1 else reward
 
 def load_metadata(base_path='AdvBurst_FTSC-IAT', train_perturb_level=0):
@@ -1146,6 +1211,11 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     if FLOW_CONTEXT_COUNTS is not None and forgetting_initial is not None:
         flow_final_target = forgetting_initial[0].copy()
         flow_final_reference = forgetting_initial[1].copy()
+    retention_reference = None
+    if SELECTOR_REWARD_MODE == "paper-retention":
+        rx = torch.tensor(scaler.transform(train_frame.iloc[:, :-1].values), dtype=torch.float32, device=device).unsqueeze(1)
+        ry = torch.tensor(label_encoder.transform(train_frame.iloc[:, -1].values), device=device)
+        retention_reference = RewardReference(rx, ry, LEGACY_DIAGNOSTIC_SEED or 42)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     
     correct = 0
@@ -1274,6 +1344,10 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                     peak_active = max(peak_active, len(context_bank))
                 updates_used += 1
                 class_labels_used[block_id] += 1
+                if retention_reference is not None:
+                    reference_batch = retention_reference.batch()
+                    reward_before = reward_observation(cnn_model, context_model, inputs, labels)[0].mean().item()
+                    reference_before = reward_observation(cnn_model, context_model, *reference_batch)[0].mean().item()
                 probe_before = context_update_probe(context_model, cnn_model, inputs, labels, context_memory)
                 context_optimizer.zero_grad()
                 encoded_inputs = context_model(inputs)
@@ -1293,6 +1367,14 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
                     context_memory.add_batch(inputs, labels, [source_indices[sample_idx-1]+1])
                 # Compute reward for action=1
                 reward = compute_reward(action, cnn_pred.item(), weighted_pred.item(), labels.item())
+                if retention_reference is not None:
+                    reward_after = reward_observation(cnn_model, context_model, inputs, labels)[0].mean().item()
+                    reference_after = reward_observation(cnn_model, context_model, *reference_batch)[0].mean().item()
+                    gain, forgetting = normalized_retention_terms(reward_before, reward_after, reference_before, reference_after)
+                    reward += RETENTION_ALPHA*gain - RETENTION_BETA*forgetting
+                    retention_reference.add(inputs, labels)
+                    update_probe["reward_components"] = dict(gain=gain, forgetting=forgetting,
+                        reference_before=reference_before, reference_after=reference_after)
                 rewards.append(reward)
                 observed_reward = float(reward)
                 observed_loss = float(total_context_loss.item())
@@ -1460,6 +1542,7 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
         oracle_context_routing=CLASS_CONTEXT_PROXY,
         context_instances=len(context_bank) if bank_enabled else 1,
         reward_mode=SELECTOR_REWARD_MODE,
+        retention_reward=dict(alpha=RETENTION_ALPHA, beta=RETENTION_BETA, batch=RETENTION_BATCH, history=RETENTION_HISTORY) if SELECTOR_REWARD_MODE == "paper-retention" else None,
         transition_mode=SELECTOR_TRANSITION_MODE, gamma=float(dqn_agent.gamma),
         query_gate=LEGACY_QUERY_GATE, confidence_gap_threshold=threshold,
         context_loss_mode=CONTEXT_LOSS_MODE,
@@ -1785,6 +1868,7 @@ def cli():
     global FORGETTING_DIAGNOSTICS
     global FLOW_CONTEXT_COUNTS
     global SYNTHETIC_CONTEXT_GROUPS
+    global RETENTION_ALPHA, RETENTION_BETA, RETENTION_BATCH, RETENTION_HISTORY
     global TRAIN_CONTEXT_LR
     global CLASS_CONTEXT_PROXY, BASE_TRAIN_EPOCHS, ADVERSARIAL_TRAIN_EPOCHS, TRAIN_PATIENCE
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
@@ -1809,7 +1893,7 @@ def cli():
     parser.add_argument("--selector-mode", choices=("original","random","learned"), default="original",
                         help="original: notebook selector with online DQN; random: no-RL random updater; "
                              "learned: Q actions with optional epsilon-greedy exploration and online DQN.")
-    parser.add_argument("--reward-mode", choices=("original","paper"), default="original",
+    parser.add_argument("--reward-mode", choices=("original","paper","paper-retention"), default="original",
                         help="paper sets only action-0 reward to zero; other legacy logic is unchanged.")
     parser.add_argument("--transition-mode", choices=("terminal","local"), default="terminal",
                         help="local enables same-input DDQN bootstrap; terminal preserves legacy immediate targets.")
@@ -1872,7 +1956,18 @@ def cli():
                         help="Evaluation-only number of random label-independent Context groups; requires global budget.")
     parser.add_argument("--flow-context-counts", type=int, nargs="+", help="Synthetic single-label flows per encoded class; evaluation only, global budget.")
     parser.add_argument("--train-context-lr", type=float, default=5e-4, help="Initial Context Adam learning rate in both legacy training stages; cosine scheduler retained.")
+    parser.add_argument("--retention-alpha", type=float, default=1.0)
+    parser.add_argument("--retention-beta", type=float, default=1.0)
+    parser.add_argument("--retention-batch-size", type=int, default=32)
+    parser.add_argument("--retention-history-size", type=int, default=256)
     args=parser.parse_args()
+    RETENTION_ALPHA, RETENTION_BETA = args.retention_alpha, args.retention_beta
+    RETENTION_BATCH, RETENTION_HISTORY = args.retention_batch_size, args.retention_history_size
+    if any(not np.isfinite(v) or v < 0 for v in (RETENTION_ALPHA, RETENTION_BETA)) or min(RETENTION_BATCH, RETENTION_HISTORY) < 1:
+        parser.error("Invalid retention reward parameters")
+    if args.reward_mode == "paper-retention" and (args.class_context_proxy or args.synthetic_context_groups or args.flow_context_counts is not None):
+        parser.error("Retention reward currently requires shared Context")
+
     if not np.isfinite(args.train_context_lr) or args.train_context_lr <= 0:
         parser.error("train-context-lr must be finite and positive")
     TRAIN_CONTEXT_LR = args.train_context_lr
@@ -1944,7 +2039,7 @@ def cli():
     TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY = training_schedule
     if not np.isfinite(args.selection_cost) or args.selection_cost < 0:
         parser.error("selection-cost must be finite and nonnegative.")
-    if args.selection_cost > 0 and (args.reward_mode != "paper" or args.training_selector_mode != "original"):
+    if args.selection_cost > 0 and (args.reward_mode not in ("paper", "paper-retention") or args.training_selector_mode != "original"):
         parser.error("selection-cost experiments require --reward-mode paper and --training-selector-mode original.")
     if args.selection_cost > 0 and args.selector_mode == "random":
         parser.error("random has no reward computation; omit --selection-cost for the no-RL control.")
@@ -2029,6 +2124,8 @@ def cli():
         seed_tag += f"_syntheticgroups{SYNTHETIC_CONTEXT_GROUPS}"
     if FORGETTING_DIAGNOSTICS:
         seed_tag += "_forgetting"
+    if args.reward_mode == "paper-retention":
+        seed_tag += f"_retention_a{RETENTION_ALPHA:g}_b{RETENTION_BETA:g}"
     gate_suffix = ("_no_filters" if args.query_gate=="none" else
                    "_disagreement_only" if args.query_gate=="disagreement" else
                    "_no_threshold" if args.query_gate=="no-threshold" else "")
@@ -2076,6 +2173,8 @@ def cli():
             saved_versions.add(checkpoint.get("training_state_version", 1))
             saved_architectures.add(checkpoint.get("context_architecture", "legacy_single_token"))
             saved_states.add(checkpoint.get("selector_state_version", "legacy_scalar_v2"))
+            if args.reward_mode == "paper-retention" and checkpoint.get("retention_reward") != dict(alpha=RETENTION_ALPHA, beta=RETENTION_BETA, batch=RETENTION_BATCH, history=RETENTION_HISTORY):
+                parser.error("Retention reward settings mismatch; use training values")
             saved_mode=checkpoint.get("selector_reward_mode","original")
             if saved_mode!=args.reward_mode:
                 parser.error("Checkpoint reward mode mismatch: use the matching --reward-mode and --output.")
@@ -2168,6 +2267,7 @@ def cli():
                 checkpoint["training_stream_seed"]=STREAM_SEED
                 checkpoint["training_context_memory"] = dict(mode=CONTEXT_MEMORY_MODE,
                     per_class=MEMORY_PER_CLASS, batch_size=MEMORY_BATCH_SIZE, weight=MEMORY_WEIGHT)
+                checkpoint["retention_reward"]=dict(alpha=RETENTION_ALPHA, beta=RETENTION_BETA, batch=RETENTION_BATCH, history=RETENTION_HISTORY) if SELECTOR_REWARD_MODE == "paper-retention" else None
                 checkpoint["selection_cost"]=SELECTION_COST
                 checkpoint["training_epsilon_schedule"] = dict(
                     start=TRAIN_EPSILON_START, end=TRAIN_EPSILON_END,
@@ -2182,5 +2282,6 @@ def cli():
 
 if __name__=="__main__":
     cli()
+
 
 
