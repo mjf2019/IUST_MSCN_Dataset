@@ -408,8 +408,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
         for row in rows:
             queried[row["source_row"]-1] = row["queried"]
         summary["forgetting_diagnostics"] = dict(
-            same_level=legacy.forgetting_comparison(labels.cpu().numpy(), forgetting_initial[0], final_target, queried),
-            oversampled_validation=legacy.forgetting_comparison(reference_y.cpu().numpy(), forgetting_initial[1], final_reference),
+            same_level=legacy.forgetting_comparison(np.asarray(labels), forgetting_initial[0], final_target, queried),
+            oversampled_validation=legacy.forgetting_comparison(np.asarray(reference_y), forgetting_initial[1], final_reference),
             reference_path=str(reference_path), reference_sha256=hashlib.sha256(reference_path.read_bytes()).hexdigest(),
             protocol="initial versus final Context->CNN; observer only; same-level retrospective includes adaptation samples; not online or unseen accuracy",
             preprocessing="checkpoint scaler used by online learner")
