@@ -997,6 +997,7 @@ def forgetting_observer_mode(cnn, contexts):
 
 def forgetting_predictions(cnn, template, bank, x, y):
     """Context-only observer; never invokes RL or creates bank slots."""
+    y = torch.as_tensor(y, dtype=torch.long, device=x.device)
     predictions = torch.empty(len(y), dtype=torch.long, device=y.device)
     contexts = [template] + [entry[0] for entry in (bank or {}).values()]
     with forgetting_observer_mode(cnn, contexts):
