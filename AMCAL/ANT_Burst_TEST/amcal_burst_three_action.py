@@ -219,6 +219,15 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     if exact_budget and (training or not global_budget or matched_caps is not None):
         raise ValueError("consume-full-budget requires evaluation with a global budget and no matched reference.")
     epsilon = args.epsilon_start if training else args.eval_epsilon
+    forgetting_initial = None
+    if getattr(args, "forgetting_diagnostics", False):
+        reference_path = args.data_dir / "oversampled_validation_dataset.csv"
+        reference = pd.read_csv(reference_path)
+        reference_x, reference_y = tensors(reference, bundle["scaler"], bundle["encoder"], bundle["columns"], device)
+        forgetting_template = bank.template if proxy else context
+        forgetting_initial = (
+            legacy.forgetting_predictions(cnn, forgetting_template, bank.entries if proxy else None, x, labels),
+            legacy.forgetting_predictions(cnn, forgetting_template, bank.entries if proxy else None, reference_x, reference_y))
     initial_cnn = {k: v.detach().cpu().clone() for k,v in cnn.state_dict().items()}
     for pos, index in enumerate(order):
         sample = x[index:index+1]
@@ -392,6 +401,18 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                                    if matched_caps is not None else
                                    "rolling entropy queries; frozen DDQN non-query routes" if policy_mode == "uncertainty"
                                    else "epsilon-greedy"))
+    if forgetting_initial is not None:
+        final_target = legacy.forgetting_predictions(cnn, forgetting_template, bank.entries if proxy else None, x, labels)
+        final_reference = legacy.forgetting_predictions(cnn, forgetting_template, bank.entries if proxy else None, reference_x, reference_y)
+        queried = np.zeros(len(labels), dtype=bool)
+        for row in rows:
+            queried[row["source_row"]-1] = row["queried"]
+        summary["forgetting_diagnostics"] = dict(
+            same_level=legacy.forgetting_comparison(labels.cpu().numpy(), forgetting_initial[0], final_target, queried),
+            oversampled_validation=legacy.forgetting_comparison(reference_y.cpu().numpy(), forgetting_initial[1], final_reference),
+            reference_path=str(reference_path), reference_sha256=hashlib.sha256(reference_path.read_bytes()).hexdigest(),
+            protocol="initial versus final Context->CNN; observer only; same-level retrospective includes adaptation samples; not online or unseen accuracy",
+            preprocessing="checkpoint scaler used by online learner")
     return summary, rows
 
 
@@ -482,7 +503,10 @@ def main():
     p.add_argument("--per",type=int,choices=LEVELS)
     p.add_argument("--match-budget-from", type=Path,
                    help="RL summary.json; random routes and uniformly sampled queries matching each class count.")
+    p.add_argument("--forgetting-diagnostics",action="store_true",help="Observer-only initial/final same-level and oversampled validation retention.")
     args=p.parse_args()
+    if args.forgetting_diagnostics and args.command != "evaluate":
+        p.error("forgetting-diagnostics is evaluation only")
     if args.consume_full_budget and (args.command != "evaluate" or not args.global_label_budget or args.match_budget_from is not None):
         p.error("--consume-full-budget requires evaluate --global-label-budget without --match-budget-from.")
     if args.policy_mode != "adaptive" and args.command != "evaluate":
@@ -632,6 +656,8 @@ def main():
                     p.error("Invalid reference label counts.")
                 references[level] = entry
             tag += "_matched_random_uniform_" + hashlib.sha256(raw).hexdigest()[:8]
+        if args.forgetting_diagnostics:
+            tag += "_forgetting"
         results=args.output/"Results"/tag;results.mkdir(parents=True,exist_ok=True)
         summaries=[]
         for level in ([args.per] if args.per is not None else LEVELS):
@@ -660,3 +686,4 @@ def main():
 
 if __name__=="__main__":
     main()
+
