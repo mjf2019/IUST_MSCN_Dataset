@@ -181,6 +181,13 @@ class ReplayBuffer:
     def __len__(self):
         return len(self.buffer)
 
+def mask_query_action(q_values, states):
+    """State[-2] is remaining budget fraction; exhausted states permit routes 0/1."""
+    masked = q_values.clone()
+    masked[states[:, -2] <= 0, 2] = float("-inf")
+    return masked
+
+
 # DQN Agent
 class DQNSelectorAgent:
     def __init__(self, input_size, device, lr=1e-4, gamma=0.95, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_capacity=50000, batch_size=256):
@@ -208,12 +215,13 @@ class DQNSelectorAgent:
         state = state.to(self.device)
         
         if explore and random.random() < self.epsilon:
-            return torch.randint(0, 3, (state.size(0),), device=self.device)
+            limits = torch.where(state[:, -2] > 0, 3, 2)
+            return (torch.rand(state.size(0), device=self.device) * limits).long()
         else:
             with torch.no_grad():
                 was_training = self.policy_net.training
                 self.policy_net.eval()
-                q_values = self.policy_net(state)
+                q_values = mask_query_action(self.policy_net(state), state)
                 self.policy_net.train(was_training)
                 return q_values.argmax(dim=1)
     
@@ -236,7 +244,7 @@ class DQNSelectorAgent:
         with torch.no_grad():
             was_training = self.policy_net.training
             self.policy_net.eval()
-            next_actions = self.policy_net(next_states).argmax(1)
+            next_actions = mask_query_action(self.policy_net(next_states), next_states).argmax(1)
             self.policy_net.train(was_training)
             next_q_values = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze(1)
             target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
@@ -545,7 +553,7 @@ def budget_validation(cnn, initial_context, agent, loader, input_length):
             with torch.no_grad():
                 base, logits = cnn(x), cnn(context(x))
                 state = budget_state(x, logits.softmax(1), base.softmax(1), cap-used, cap, pos, len(order))
-                action = int(agent.policy_net(state).argmax(1).item())
+                action = int(mask_query_action(agent.policy_net(state), state).argmax(1).item())
                 routed_logits = base if action == 0 else logits
                 predictions.append(int(routed_logits.argmax(1).item()))
                 validation_loss += float(nn.functional.cross_entropy(routed_logits, y).item())
@@ -1060,6 +1068,8 @@ def evaluate_stream(args):
     queried_ids, trace, predicted, base_predicted = set(), [], [], []
     selector_updates, context_updates = 0, 0
     random_selector = np.random.default_rng(args.seed + 719003)
+    exploration_rng = np.random.default_rng(args.seed + 619003)
+    exploration_decisions = 0
     paid_history = PaidHistory(args.seed + 910033)
     first_query_step = last_query_step = first_selector_update_step = None
     for step, (features, truth, source_id) in enumerate(zip(X, y, source_ids), start=1):
@@ -1073,8 +1083,16 @@ def evaluate_stream(args):
             adapted_logits = cnn(context(inputs))
             adapted_prob = adapted_logits.softmax(dim=1)
             state = budget_state(inputs, adapted_prob, base_prob, budget-len(queried_ids), budget, step-1, len(y))
-            action = (int(random_selector.integers(0, 3)) if args.selector_mode == "random"
-                      else int(agent.select_action(state, explore=False).item()))
+            available_actions = 3 if len(queried_ids) < budget else 2
+            explored = False
+            if args.selector_mode == "random":
+                action = int(random_selector.integers(0, available_actions))
+            elif exploration_rng.random() < args.eval_epsilon:
+                action = int(exploration_rng.integers(0, available_actions))
+                explored = True
+                exploration_decisions += 1
+            else:
+                action = int(agent.select_action(state, explore=False).item())
             prediction = base_prediction if action == 0 else int(adapted_logits.argmax(1).item())
             confidence_gap = float(abs(adapted_prob.max().item()-base_prob.max().item()))
         # Capture the scored prediction before acquiring a label or changing weights.
@@ -1150,7 +1168,7 @@ def evaluate_stream(args):
         # The evaluator may score all truths; the learner sees only queried labels.
         trace.append(dict(step=step, source_row=source_id, prediction_before_update=prediction,
             base_prediction=base_prediction, true_label=int(truth), correct=int(prediction == truth),
-            action=action, effective_action=effective_action,
+            action=action, effective_action=effective_action, exploration=explored,
             confidence_gap=confidence_gap, queried=query,
             transition_stored=transition_stored, budget_blocked=not adaptation_allowed,
             replay_size=len(agent.replay_buffer),
@@ -1176,10 +1194,11 @@ def evaluate_stream(args):
         classifier_unchanged=True, protocol="predict-score-query-update",
         selector_freeze_rule="freeze at zero budget or after budget exhaustion",
         alignment=alignment, seed=args.seed, budget_fraction=args.budget_fraction,
-        query_rule='action 2 and remaining unique-label budget; exhausted action 2 uses Context without feedback',
+        query_rule='action 2 and remaining unique-label budget; query action masked after exhaustion; choose route 0/1',
         reward_version="three_action_route_transfer_v1", gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
         reward_reference="online: previous queried samples only, excluding feature-identical current; train: independent training batch excluding feature-identical current; per-example positive gain and damage; no reference gradient",
         reference_batch_size=REFERENCE_BATCH_SIZE, reference_history_size=REFERENCE_HISTORY_SIZE,
+        eval_epsilon=args.eval_epsilon, exploration_decisions=exploration_decisions, action_mask="query disabled at exhausted budget in behavior and DDQN next-action maximization",
         selection_cost=SELECTION_COST, state_protocol="features; frozen probabilities; context probabilities; remaining-budget fraction; elapsed-stream fraction",
         selector_mode=args.selector_mode, random_query_probability=1/3 if args.selector_mode == 'random' else None,
         online_lr=args.lr, attack_sha256=file_sha256(attack_path),
@@ -1216,7 +1235,7 @@ def evaluate_stream(args):
             protocol="observer only; reference is source validation partition; no gradient or reward use; final target score retrospective")
 
     name = "clean" if args.attack_file is None else Path(args.attack_file).stem
-    tag = f"three_route_transfer_a{GAIN_WEIGHT:g}_b{RETENTION_WEIGHT:g}_cost{SELECTION_COST:g}_{name}_{args.selector_mode}_{args.stream_order}_forgetting{int(args.forgetting_diagnostics)}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
+    tag = f"masked_eps{args.eval_epsilon:g}_three_route_transfer_a{GAIN_WEIGHT:g}_b{RETENTION_WEIGHT:g}_cost{SELECTION_COST:g}_{name}_{args.selector_mode}_{args.stream_order}_forgetting{int(args.forgetting_diagnostics)}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
     results_dir = output / "Results"
     results_dir.mkdir(exist_ok=True)
     pd.DataFrame(trace).to_csv(results_dir / (tag+"_trace.csv"), index=False)
@@ -1299,6 +1318,7 @@ def cli():
     global GAIN_WEIGHT, RETENTION_WEIGHT, REFERENCE_BATCH_SIZE, REFERENCE_HISTORY_SIZE
     parser=argparse.ArgumentParser(description="Three-action shared-Context AMCAL; train-only scaling, global label budget, pre-feedback scoring.")
     parser.add_argument("command",choices=("audit","train","evaluate"))
+    parser.add_argument("--eval-epsilon", type=float, default=0.0)
     parser.add_argument("--selection-cost", type=float, default=0.0001)
     parser.add_argument("--gain-weight", type=float, default=1.0)
     parser.add_argument("--retention-weight", type=float, default=1.0)
@@ -1337,6 +1357,8 @@ def cli():
         parser.error("Training epochs must be positive; pretraining may be zero.")
     if args.base_patience < 1 or args.context_patience < 1 or args.lr <= 0:
         parser.error("Patience and learning rate must be positive.")
+    if not 0 <= args.eval_epsilon <= 1:
+        parser.error("Evaluation epsilon must be between zero and one.")
     if args.selection_cost < 0 or not np.isfinite(args.selection_cost):
         parser.error("Selection cost must be finite and nonnegative.")
     if args.train_online_lr <= 0 or not np.isfinite(args.train_online_lr):
