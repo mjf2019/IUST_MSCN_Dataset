@@ -240,11 +240,11 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
     if retention:
         if proxy:
             raise ValueError("Retention reward currently requires shared Context")
-        reference_path = args.data_dir / "oversampled_train_dataset.csv"
-        reference_frame = pd.read_csv(reference_path)
-        reference_x, reference_labels = tensors(reference_frame, bundle["scaler"], bundle["encoder"], bundle["columns"], device)
-        reference_by_class = [np.flatnonzero(reference_labels == c) for c in np.unique(reference_labels)]
-        reference_hash = hashlib.sha256(reference_path.read_bytes()).hexdigest()
+        reward_reference_path = args.data_dir / "oversampled_train_dataset.csv"
+        reward_reference_frame = pd.read_csv(reward_reference_path)
+        reward_reference_x, reward_reference_labels = tensors(reward_reference_frame, bundle["scaler"], bundle["encoder"], bundle["columns"], device)
+        reference_by_class = [np.flatnonzero(reward_reference_labels == c) for c in np.unique(reward_reference_labels)]
+        reference_hash = hashlib.sha256(reward_reference_path.read_bytes()).hexdigest()
     initial_cnn = {k: v.detach().cpu().clone() for k,v in cnn.state_dict().items()}
     for pos, index in enumerate(order):
         sample = x[index:index+1]
@@ -313,8 +313,8 @@ def run_stream(frame, args, bundle, cnn, context, agent, training=False):
                 train_count = args.reference_batch_size - history_count
                 reference_indices = [int(reference_rng.choice(reference_by_class[int(reference_rng.integers(len(reference_by_class)))]))
                                      for _ in range(train_count)]
-                ref_x = [reference_x[i:i+1] for i in reference_indices]
-                ref_y = [int(reference_labels[i]) for i in reference_indices]
+                ref_x = [reward_reference_x[i:i+1] for i in reference_indices]
+                ref_y = [int(reward_reference_labels[i]) for i in reference_indices]
                 if history_count:
                     for j in reference_rng.choice(len(paid_history), history_count, replace=False):
                         old_x, old_y = paid_history[int(j)]
