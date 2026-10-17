@@ -254,6 +254,7 @@ class DQNSelectorAgent:
 # Load and preprocess data - GENERALIZED version
 SOURCE_FILENAME = 'IUST_MSCN_original.csv'
 SELECTION_COST = 0.0001
+OPPORTUNITY_WEIGHT = 0.0
 GAIN_WEIGHT = 1.0
 RETENTION_WEIGHT = 1.0
 REFERENCE_BATCH_SIZE = 32
@@ -476,6 +477,13 @@ def transfer_utility(before, after):
     return GAIN_WEIGHT*gain - RETENTION_WEIGHT*harm - SELECTION_COST, gain, harm
 
 
+def opportunity_cost(labels_used, label_cap, processed, total):
+    """Soft pacing penalty after a paid update; uses counts, never labels."""
+    if label_cap <= 0 or total <= 0:
+        return 0.0
+    return OPPORTUNITY_WEIGHT * max(0.0, labels_used / label_cap - processed / total)
+
+
 class PaidHistory:
     """Reservoir of previously queried labels only, with an isolated RNG."""
     def __init__(self, seed):
@@ -651,6 +659,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         cap, used = int(np.floor(TRAIN_BUDGET_FRACTION * len(order))), 0
         training_probe = TrainingProbe(train_x, train_y, RUN_SEED + epoch + 910033)
         selected_rewards, selected_gains, selected_harms = [], [], []
+        selected_opportunity_costs = []
         allowed_actions = []
         last_query = None
         for position, idx in enumerate(order):
@@ -682,6 +691,9 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                     after = cnn_model(context_model(inputs))
                 reference_after = probe_losses(cnn_model, context_model, reference_batch)
                 reward, gain, harm = transfer_utility(reference_before, reference_after)
+                pacing_cost = opportunity_cost(used, cap, position+1, len(order))
+                reward -= pacing_cost
+                selected_opportunity_costs.append(pacing_cost)
                 selected_rewards.append(reward)
                 selected_gains.append(gain)
                 selected_harms.append(harm)
@@ -723,6 +735,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         print(f"  Context Updated Samples: {context_updated_samples}")
         print(f"  Mean paid reward: {np.mean(selected_rewards) if selected_rewards else 0:.7f}")
         print(f"  Mean probe gain/harm/cost: {np.mean(selected_gains) if selected_gains else 0:.7f} / {np.mean(selected_harms) if selected_harms else 0:.7f} / {SELECTION_COST:.7f}")
+        print(f"  Mean opportunity cost: {np.mean(selected_opportunity_costs) if selected_opportunity_costs else 0:.7f}; weight: {OPPORTUNITY_WEIGHT:g}")
         print(f"  Positive paid rewards: {100*np.mean(np.asarray(selected_rewards)>0) if selected_rewards else 0:.2f}%")
         print(f"  Actions while budget available (skip/query): {np.bincount(allowed_actions, minlength=2)}; last query: {last_query}/{len(order)}")
         print(f"  Proposed actions over entire stream, including after cap: {action_dist}")
@@ -781,7 +794,8 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         'training_perturbations': list(TRAIN_PERTURBATIONS),
         'training_shift_protocol': 'one shuffled FGSM domain per epoch; reset Context and Adam; validation mean across domains; epsilon in training StandardScaler units',
         'budget_state_version': 3,
-        'reward_version': 'independent_probe_transfer_v1',
+        'reward_version': 'independent_probe_transfer_opportunity_v2',
+        'opportunity_weight': OPPORTUNITY_WEIGHT,
         'gain_weight': GAIN_WEIGHT, 'retention_weight': RETENTION_WEIGHT,
         'reference_batch_size': REFERENCE_BATCH_SIZE, 'reference_history_size': REFERENCE_HISTORY_SIZE,
         'selection_cost': SELECTION_COST,
@@ -1052,6 +1066,8 @@ def evaluate_stream(args):
         raise ValueError("Budget-aware checkpoint and matching selection cost required; retrain in a fresh output.")
     expected_reward = dict(gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
                            reference_batch_size=REFERENCE_BATCH_SIZE, reference_history_size=REFERENCE_HISTORY_SIZE)
+    if selector_checkpoint.get("opportunity_weight", 0.0) != OPPORTUNITY_WEIGHT:
+        raise ValueError("Opportunity weight differs from checkpoint; retrain for a new weight.")
     if any(selector_checkpoint.get(k) != v for k, v in expected_reward.items()):
         raise ValueError("Reward/reference configuration differs from training checkpoint.")
     agent.policy_net.load_state_dict(selector_checkpoint["dqn_policy_net_state_dict"])
@@ -1106,6 +1122,7 @@ def evaluate_stream(args):
         query = (action == 1 and adaptation_allowed and source_id not in queried_ids)
         reward, loss_value, selector_loss = None, None, None
         gain, harm = None, None
+        pacing_cost = 0.0
         if query:
             queried_ids.add(source_id)
             if first_query_step is None:
@@ -1131,6 +1148,8 @@ def evaluate_stream(args):
                 after_prediction = int(after_logits.argmax(1).item())
             reference_after = probe_losses(cnn, context, reference_batch)
             reward, gain, harm = transfer_utility(reference_before, reference_after)
+            pacing_cost = opportunity_cost(len(queried_ids), budget, step, len(y))
+            reward -= pacing_cost
             paid_history.add(inputs, labels)
             effective_action = 1
         else:
@@ -1167,7 +1186,7 @@ def evaluate_stream(args):
             transition_stored=transition_stored, budget_blocked=not adaptation_allowed,
             replay_size=len(agent.replay_buffer),
             unique_labels_used=len(queried_ids), context_updates=context_updates,
-            selector_updates=selector_updates, reward=reward,
+            selector_updates=selector_updates, reward=reward, opportunity_cost=pacing_cost,
             context_loss=loss_value, selector_loss=selector_loss, normalized_gain=gain, normalized_reference_harm=harm))
     for name, value in cnn.state_dict().items():
         if not torch.equal(value, frozen_snapshot[name]):
@@ -1189,7 +1208,8 @@ def evaluate_stream(args):
         selector_freeze_rule="freeze at zero budget or after budget exhaustion",
         alignment=alignment, seed=args.seed, budget_fraction=args.budget_fraction,
         query_rule='selector action 1 and remaining unique-label budget',
-        reward_version="independent_probe_transfer_v1", gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
+        reward_version="independent_probe_transfer_opportunity_v2", opportunity_weight=OPPORTUNITY_WEIGHT,
+        opportunity_protocol="weight * max(0, used/cap - processed/total), after paid update; skip reward zero", gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
         reward_reference="online: previous queried samples only, excluding feature-identical current; train: independent training batch excluding feature-identical current; per-example positive gain and damage; no reference gradient",
         reference_batch_size=REFERENCE_BATCH_SIZE, reference_history_size=REFERENCE_HISTORY_SIZE,
         selection_cost=SELECTION_COST, state_protocol="features; uncertainty; remaining-budget fraction; elapsed-stream fraction",
@@ -1206,6 +1226,7 @@ def evaluate_stream(args):
         mean_gain=float(np.mean([r["normalized_gain"] for r in paid_rows])) if paid_rows else None,
         mean_harm=float(np.mean([r["normalized_reference_harm"] for r in paid_rows])) if paid_rows else None,
         positive_fraction=float(np.mean([r["reward"] > 0 for r in paid_rows])) if paid_rows else None,
+        mean_opportunity_cost=float(np.mean([r["opportunity_cost"] for r in paid_rows])) if paid_rows else None,
         cost=SELECTION_COST,
         actions_while_budget_available=np.bincount([r["action"] for r in trace if not r["budget_blocked"]], minlength=2).tolist())
     metrics["training_perturbations"] = selector_checkpoint.get("training_perturbations", [0.0])
@@ -1226,7 +1247,7 @@ def evaluate_stream(args):
             protocol="observer only; reference is source validation partition; no gradient or reward use; final target score retrospective")
 
     name = "clean" if args.attack_file is None else Path(args.attack_file).stem
-    tag = f"transfer_a{GAIN_WEIGHT:g}_b{RETENTION_WEIGHT:g}_cost{SELECTION_COST:g}_{name}_{args.selector_mode}_{args.stream_order}_forgetting{int(args.forgetting_diagnostics)}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
+    tag = f"opportunity{OPPORTUNITY_WEIGHT:g}_transfer_a{GAIN_WEIGHT:g}_b{RETENTION_WEIGHT:g}_cost{SELECTION_COST:g}_{name}_{args.selector_mode}_{args.stream_order}_forgetting{int(args.forgetting_diagnostics)}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
     results_dir = output / "Results"
     results_dir.mkdir(exist_ok=True)
     pd.DataFrame(trace).to_csv(results_dir / (tag+"_trace.csv"), index=False)
@@ -1305,11 +1326,13 @@ def audit_dataset(args):
     print(json.dumps(report,indent=2))
 
 def cli():
+    global OPPORTUNITY_WEIGHT
     global RUN_SEED, device, SOURCE_FILENAME, SELECTION_COST, TRAIN_BUDGET_FRACTION, ONLINE_TRAIN_LR
     global GAIN_WEIGHT, RETENTION_WEIGHT, REFERENCE_BATCH_SIZE, REFERENCE_HISTORY_SIZE, TRAIN_PERTURBATIONS
     parser=argparse.ArgumentParser(description="Shared two-action AMCAL; train-only scaling, global label budget, pre-feedback scoring.")
     parser.add_argument("command",choices=("audit","train","evaluate"))
     parser.add_argument("--train-perturbations", type=float, nargs="+", default=[0.0], help="Training/validation FGSM domains; never target test files.")
+    parser.add_argument("--opportunity-weight", type=float, default=0.0, help="Soft budget pacing penalty; zero reproduces prior reward. Must match training.")
     parser.add_argument("--selection-cost", type=float, default=0.0001)
     parser.add_argument("--gain-weight", type=float, default=1.0)
     parser.add_argument("--retention-weight", type=float, default=1.0)
@@ -1361,6 +1384,9 @@ def cli():
     if any(not np.isfinite(level) or level < 0 for level in args.train_perturbations):
         parser.error("Training perturbations must be finite and nonnegative.")
     TRAIN_PERTURBATIONS = tuple(sorted(set(args.train_perturbations)))
+    if not np.isfinite(args.opportunity_weight) or args.opportunity_weight < 0:
+        parser.error("Opportunity weight must be finite and nonnegative.")
+    OPPORTUNITY_WEIGHT=args.opportunity_weight
     SELECTION_COST=args.selection_cost
     TRAIN_BUDGET_FRACTION=args.budget_fraction
     ONLINE_TRAIN_LR=args.train_online_lr
@@ -1394,5 +1420,6 @@ def cli():
 
 if __name__ == "__main__":
     cli()
+
 
 
