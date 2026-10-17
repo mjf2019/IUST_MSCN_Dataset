@@ -1444,6 +1444,14 @@ def test_system(cnn_model, dqn_agent, context_model, base_path, perturb_level, l
     pd.DataFrame(diagnostic_trace).to_csv(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_trace.csv",index=False)
     Path(f"{LEGACY_RESULTS_DIR}/legacy_PER_{perturb_level}_diagnostics.json").write_text(
         json.dumps(diagnostics,indent=2),encoding="utf-8")
+    if "forgetting_diagnostics" in diagnostics:
+        print("Forgetting diagnostics (observer only; initial -> final Context):")
+        for name in ("same_level", "oversampled_validation"):
+            report = diagnostics["forgetting_diagnostics"][name]
+            print(f"  {name}: accuracy {report['before']['accuracy']:.4f} -> {report['after']['accuracy']:.4f}; "
+                  f"delta={100*report['accuracy_delta']:+.2f} pp; "
+                  f"correct->wrong={report['correct_to_wrong']}; wrong->correct={report['wrong_to_correct']}")
+        print("  Full report:", str(Path(LEGACY_RESULTS_DIR).resolve() / f"legacy_PER_{perturb_level}_diagnostics.json"))
     print("Diagnostic frozen CNN / pre-update AMCAL / post-update AMCAL:",
           diagnostics["base_accuracy_legacy_scaler"],
           diagnostics["amcal_accuracy_before_update"],
@@ -1812,8 +1820,9 @@ def cli():
     if BUDGET_MODE == "per-class":
         if args.command != "evaluate":
             parser.error("per-class budget is evaluation only.")
-        args.stream_order = "input"
-        print("Per-class budget: original class blocks, one checkpoint per perturbation level.")
+        if not CLASS_CONTEXT_PROXY:
+            args.stream_order = "input"
+        print(f"Per-class budget; stream order: {args.stream_order}; one checkpoint per perturbation level.")
     if args.command == "train":
         CONTEXT_ARCHITECTURE = args.context_architecture or "feature_tokens_v1"
     if not np.isfinite(args.online_context_lr) or args.online_context_lr <= 0:
