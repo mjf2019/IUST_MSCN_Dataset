@@ -43,6 +43,7 @@ CLASS_CONTEXT_PROXY = False
 SYNTHETIC_CONTEXT_GROUPS = 0
 FLOW_CONTEXT_COUNTS = None
 FORGETTING_DIAGNOSTICS = False
+TRAIN_CONTEXT_LR = 5e-4
 BASE_TRAIN_EPOCHS = 200
 ADVERSARIAL_TRAIN_EPOCHS = 300
 TRAIN_PATIENCE = 30
@@ -427,7 +428,10 @@ def load_training_data(dataset_path=str(BURST_DATA_DIR)):
     weights = 1.0 / class_counts[y_train]
     train_sampler = WeightedRandomSampler(weights, len(weights))
     
-    if STREAM_ORDER == "class-interleaved":
+    if STREAM_ORDER == "shuffle":
+        train_sampler = np.random.default_rng(STREAM_SEED).permutation(len(y_train)).tolist()
+        full_sampler = train_sampler
+    elif STREAM_ORDER == "class-interleaved":
         # CSVs are already oversampled; do not resample or duplicate them again.
         train_sampler = ClassInterleavedSampler(y_train, STREAM_SEED)
         full_sampler = ClassInterleavedSampler(y_train, STREAM_SEED)
@@ -586,7 +590,7 @@ def compute_reward(action, cnn_pred, weighted_pred, label):
 def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, val_loader, class_counts, input_length, num_classes, fine_tune_epochs=500, patience=50):
     class_weights = torch.FloatTensor(1.0 / class_counts).to(device)
     cnn_criterion = nn.CrossEntropyLoss(weight=class_weights)
-    context_optimizer = optim.Adam(context_model.parameters(), lr=5e-4, weight_decay=1e-4)
+    context_optimizer = optim.Adam(context_model.parameters(), lr=TRAIN_CONTEXT_LR, weight_decay=1e-4)
     context_scheduler = lr_scheduler.CosineAnnealingLR(context_optimizer, T_max=100)
     
     best_val_accuracy = -float('inf')
@@ -1781,6 +1785,7 @@ def cli():
     global FORGETTING_DIAGNOSTICS
     global FLOW_CONTEXT_COUNTS
     global SYNTHETIC_CONTEXT_GROUPS
+    global TRAIN_CONTEXT_LR
     global CLASS_CONTEXT_PROXY, BASE_TRAIN_EPOCHS, ADVERSARIAL_TRAIN_EPOCHS, TRAIN_PATIENCE
     global TRAINING_SELECTOR_MODE, AGREEMENT_PENALTY, TEST_LABEL_BUDGET, SELECTION_COST
     global TRAIN_EPSILON_START, TRAIN_EPSILON_END, TRAIN_EPSILON_DECAY
@@ -1866,7 +1871,11 @@ def cli():
     parser.add_argument("--synthetic-context-groups", type=int, default=0,
                         help="Evaluation-only number of random label-independent Context groups; requires global budget.")
     parser.add_argument("--flow-context-counts", type=int, nargs="+", help="Synthetic single-label flows per encoded class; evaluation only, global budget.")
+    parser.add_argument("--train-context-lr", type=float, default=5e-4, help="Initial Context Adam learning rate in both legacy training stages; cosine scheduler retained.")
     args=parser.parse_args()
+    if not np.isfinite(args.train_context_lr) or args.train_context_lr <= 0:
+        parser.error("train-context-lr must be finite and positive")
+    TRAIN_CONTEXT_LR = args.train_context_lr
     FLOW_CONTEXT_COUNTS = args.flow_context_counts
     if FLOW_CONTEXT_COUNTS is not None and (any(n < 1 for n in FLOW_CONTEXT_COUNTS) or args.command != "evaluate" or args.class_context_proxy or args.synthetic_context_groups or args.budget_mode != "total" or args.context_memory != "off" or args.context_guard != "off" or args.holdout_fraction != 0):
         parser.error("Temporary flows require positive counts, evaluate, global budget, no other bank, memory, guard or holdout.")
@@ -1884,8 +1893,7 @@ def cli():
         parser.error("Training epochs and patience must be positive.")
     if args.class_context_proxy and (args.command != "evaluate" or args.context_memory != "off" or args.context_guard != "off" or args.holdout_fraction != 0):
         parser.error("Class proxy requires evaluation without shared memory, guards or holdout.")
-    if args.stream_order == "shuffle" and args.command == "train":
-        parser.error("Shuffle is currently evaluation-only in the legacy two-action script.")
+
     CLASS_CONTEXT_PROXY=args.class_context_proxy
     BASE_TRAIN_EPOCHS=args.base_epochs
     ADVERSARIAL_TRAIN_EPOCHS=args.adversarial_epochs
@@ -2156,6 +2164,7 @@ def cli():
                 checkpoint["context_architecture"]=CONTEXT_ARCHITECTURE
                 checkpoint["selector_state_version"]=SELECTOR_STATE_VERSION
                 checkpoint["training_stream_order"]=STREAM_ORDER
+                checkpoint["training_context_lr"]=TRAIN_CONTEXT_LR
                 checkpoint["training_stream_seed"]=STREAM_SEED
                 checkpoint["training_context_memory"] = dict(mode=CONTEXT_MEMORY_MODE,
                     per_class=MEMORY_PER_CLASS, batch_size=MEMORY_BATCH_SIZE, weight=MEMORY_WEIGHT)
