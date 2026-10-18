@@ -35,3 +35,6 @@ foreach ($mode in @('learned','random')) {
         if ($LASTEXITCODE -ne 0) { throw "Evaluation failed: $Representation / $mode / level $level" }
     }
 }
+
+python AMCAL/amcal_burst_results_summary.py --output $run --seed $Seed --lr $OnlineLR --routing-reward-mode $RoutingRewardMode --context-replay-size $ContextReplaySize
+if ($LASTEXITCODE -ne 0) { throw "Results summary failed" }
