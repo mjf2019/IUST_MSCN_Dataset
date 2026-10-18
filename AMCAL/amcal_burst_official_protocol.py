@@ -52,6 +52,8 @@ def main():
     parser.add_argument('--original-split-dir', type=Path, help='Original oversampled train/validation files for CNN and Context pretraining.')
     parser.add_argument('--burst-assume-row-aligned', action='store_true')
     extra, remaining = parser.parse_known_args()
+    # Resolve before core.cli changes cwd to the run output directory.
+    official_split = extra.official_split_dir.resolve() if extra.official_split_dir else None
     root = extra.burst_dir.resolve()
     maps = extra.burst_mapping_dir.resolve() if extra.burst_mapping_dir else None
     if not extra.burst_assume_row_aligned and maps is None:
@@ -119,12 +121,12 @@ def main():
             print(f'Independent Burst RL pools: train={len(train_ids)}, validation={len(val_ids)}, heldout={len(test_ids)}')
             return train_loader, validation_loader, test_loader, full_loader, len(counts), source.shape[1]-1, counts
         core.load_data = original_load_data
-    if extra.official_split_dir is not None:
+    if official_split is not None:
         def official_load_data(dataset_path='Dataset',csv_filename=None):
             from sklearn.preprocessing import StandardScaler,LabelEncoder
             from torch.utils.data import TensorDataset,DataLoader
             source=pd.read_csv(domain_path(0))
-            split_root=extra.official_split_dir.resolve()
+            split_root=official_split
             partitions=json.loads((split_root/'official_partitions.json').read_text())
             pools=[np.asarray(partitions[k],dtype=np.int64) for k in ('train','validation','test')]
             if sorted(np.concatenate(pools).tolist())!=list(range(len(source))):raise ValueError('Official partitions must cover source once')
