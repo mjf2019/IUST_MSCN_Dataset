@@ -1,0 +1,39 @@
+{
+  "source_repository": "https://github.com/amsadeghzadeh/AdversarialNetworkTraffic",
+  "source_sha256": {
+    "dataset": "2203c7e883ecc3639bb727d62166942e47b7ad486100609a1260957d7564c53b",
+    "uap": "38860f60630c7bc9280af7daca5cc45920c64eda94b0bf37288497398f8827e4",
+    "notebook": "f8665228ba0becfe7a5ec4604cf3274acdffbe928ce1e52283976c35482b9a13"
+  },
+  "csv_sha256": {
+    "clean": "476f4dd2f3f8da3ad51eac6e4f5d81dc8423639bfd57f368f22b929be5ee48a0",
+    "level3": "20b9e6b3b347c3af0e23a0efd2486986e953db0fcfe2cd1402992edb1ccf2feb"
+  },
+  "raw_split_sizes": {
+    "train": 3258,
+    "validation": 1086,
+    "test": 1090
+  },
+  "prepared_train_rows_before_oversampling": 3221,
+  "prepared_validation_rows": 1073,
+  "prepared_test_rows": 1073,
+  "clean_labels_match": true,
+  "level3_labels_match": true,
+  "clean_max_abs_error": 0.0022752446073002197,
+  "clean_matching_rows_atol_1e_6": 1072,
+  "level3_matching_rows_atol_1e_6": 1072,
+  "level3_max_abs_error": 0.0022752446073002197,
+  "discrepant_source_rows": [
+    1019
+  ],
+  "official_normalization": {
+    "IPT_train_max_log": 180002031.0,
+    "IPT_train_max": 1.0,
+    "IPT_train_min": -1.0,
+    "IPT_val_min": -1.0,
+    "IPT_test_min": -1.0
+  },
+  "no_eligible_burst_rows": 112,
+  "scope": "Reconstruction with authors saved UAP, not re-optimization or packet replay.",
+  "compatibility": "Explicit per-flow arithmetic for modern NumPy; original nan_to_num/clipping retained; no oversampling needed for test reconstruction."
+}
