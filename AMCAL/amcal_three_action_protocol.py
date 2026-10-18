@@ -511,6 +511,20 @@ class PaidHistory:
                 self.rows[idx] = row
 
 
+ROUTING_REWARD_MODE = "absolute"
+
+def route_reward_value(action, frozen_prediction, context_prediction, truth):
+    frozen_ok = int(frozen_prediction == truth)
+    context_ok = int(context_prediction == truth)
+    if ROUTING_REWARD_MODE == "relative":
+        advantage = context_ok - frozen_ok
+        return float(-advantage if action == 0 else advantage)
+    selected_ok = frozen_ok if action == 0 else context_ok
+    return 1.0 if selected_ok else -1.0
+
+def route_reward_version():
+    return "three_action_relative_route_transfer_v1" if ROUTING_REWARD_MODE == "relative" else "three_action_route_transfer_v1"
+
 CONTEXT_REPLAY_SIZE = 0
 CONTEXT_CURRENT_WEIGHT = 0.5
 
@@ -704,7 +718,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             allowed = used < cap
             selected = proposed == 2 and allowed
             routed_prediction = int((base if proposed == 0 else before).argmax(1).item())
-            route_reward = 1.0 if routed_prediction == int(labels.item()) else -1.0
+            route_reward = route_reward_value(proposed, int(base.argmax(1).item()), int(before.argmax(1).item()), int(labels.item()))
             reward = route_reward
             if allowed:
                 allowed_actions.append(proposed)
@@ -751,7 +765,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 dqn_agent.replay_buffer.push(state.detach(), proposed, reward, next_state.detach(), terminal)
                 if selected:
                     for skip_action, skip_logits in ((0, base), (1, before)):
-                        skip_reward = 1.0 if int(skip_logits.argmax(1).item()) == int(labels.item()) else -1.0
+                        skip_reward = route_reward_value(skip_action, int(base.argmax(1).item()), int(before.argmax(1).item()), int(labels.item()))
                         dqn_agent.replay_buffer.push(state.detach(), skip_action, skip_reward, skip_next.detach(), float(position+1 == len(order)))
                 dqn_loss = dqn_agent.optimize()
                 if dqn_loss is not None:
@@ -835,7 +849,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         'training_perturbations': list(TRAIN_PERTURBATIONS),
         'training_shift_protocol': 'one shuffled FGSM domain per epoch; reset Context and Adam; validation mean across domains; epsilon in training StandardScaler units',
         'budget_state_version': 4,
-        'reward_version': 'three_action_route_transfer_v1',
+        'reward_version': route_reward_version(), 'routing_reward_mode': ROUTING_REWARD_MODE,
         'gain_weight': GAIN_WEIGHT, 'retention_weight': RETENTION_WEIGHT,
         'reference_batch_size': REFERENCE_BATCH_SIZE, 'reference_history_size': REFERENCE_HISTORY_SIZE,
         'context_replay_size': CONTEXT_REPLAY_SIZE, 'context_current_weight': CONTEXT_CURRENT_WEIGHT,
@@ -1105,6 +1119,8 @@ def evaluate_stream(args):
     selector_checkpoint = checkpoint("adversarial_best_dqn.pth")
     if selector_checkpoint.get("budget_state_version") != 4 or selector_checkpoint.get("selection_cost") != SELECTION_COST:
         raise ValueError("Budget-aware checkpoint and matching selection cost required; retrain in a fresh output.")
+    if selector_checkpoint.get("routing_reward_mode","absolute") != ROUTING_REWARD_MODE:
+        raise ValueError("Routing reward differs from training; train a new matching checkpoint.")
     expected_reward = dict(gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
                            reference_batch_size=REFERENCE_BATCH_SIZE, reference_history_size=REFERENCE_HISTORY_SIZE)
     if any(selector_checkpoint.get(k) != v for k, v in expected_reward.items()):
@@ -1212,7 +1228,7 @@ def evaluate_stream(args):
                 after_prediction = int(after_logits.argmax(1).item())
             reference_after = probe_losses(cnn, context, reference_batch)
             utility, gain, harm = transfer_utility(reference_before, reference_after)
-            reward = (1.0 if prediction == int(truth) else -1.0) + utility
+            reward = route_reward_value(action, base_prediction, int(adapted_logits.argmax(1).item()), int(truth)) + utility
             paid_history.add(inputs, labels)
             effective_action = 2
         else:
@@ -1233,7 +1249,7 @@ def evaluate_stream(args):
             agent.replay_buffer.push(state.detach(), effective_action, reward,
                                      next_state.detach(), float(step == len(y) or len(queried_ids) >= budget))
             for skip_action, skip_prediction in ((0, base_prediction), (1, int(adapted_logits.argmax(1).item()))):
-                skip_reward = 1.0 if skip_prediction == int(truth) else -1.0
+                skip_reward = route_reward_value(skip_action, base_prediction, int(adapted_logits.argmax(1).item()), int(truth))
                 agent.replay_buffer.push(state.detach(), skip_action, skip_reward, skip_next.detach(), float(step == len(y)))
             agent.policy_net.train()
             selector_loss = agent.optimize()
@@ -1275,7 +1291,7 @@ def evaluate_stream(args):
         selector_freeze_rule="freeze at zero budget or after budget exhaustion",
         alignment=alignment, seed=args.seed, budget_fraction=args.budget_fraction,
         query_rule='action 2 and remaining unique-label budget; query action masked after exhaustion; choose route 0/1',
-        reward_version="three_action_route_transfer_v1", gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
+        reward_version=route_reward_version(), routing_reward_mode=ROUTING_REWARD_MODE, gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
         reward_reference="online: previous queried samples only, excluding feature-identical current; train: independent training batch excluding feature-identical current; per-example positive gain and damage; no reference gradient",
         context_replay_size=CONTEXT_REPLAY_SIZE, context_current_weight=CONTEXT_CURRENT_WEIGHT,
         reference_batch_size=REFERENCE_BATCH_SIZE, reference_history_size=REFERENCE_HISTORY_SIZE,
@@ -1297,7 +1313,7 @@ def evaluate_stream(args):
         cost=SELECTION_COST,
         actions_while_budget_available=np.bincount([r["action"] for r in trace if not r["budget_blocked"]], minlength=3).tolist())
     metrics["action_counts"] = np.bincount([r["action"] for r in trace], minlength=3).tolist()
-    metrics["routing_reward"] = "pre-feedback routed correctness +1/-1; query adds transfer gain minus damage minus cost"
+    metrics["routing_reward"] = ("pre-feedback relative correctness: chosen route minus alternative route; ties zero; query adds transfer gain minus damage minus cost" if ROUTING_REWARD_MODE == "relative" else "pre-feedback routed correctness +1/-1; query adds transfer gain minus damage minus cost")
     metrics["online_reward_access"] = "queried labels only; skip-route counterfactuals use the same paid label; no unqueried correctness reward"
     metrics["training_perturbations"] = selector_checkpoint.get("training_perturbations", [0.0])
     metrics["no_adaptation_context_accuracy"] = float(accuracy_score(y, initial_predictions))
@@ -1419,7 +1435,7 @@ def audit_dataset(args):
     print(json.dumps(report,indent=2))
 
 def cli():
-    global CONTEXT_REPLAY_SIZE, CONTEXT_CURRENT_WEIGHT
+    global ROUTING_REWARD_MODE, CONTEXT_REPLAY_SIZE, CONTEXT_CURRENT_WEIGHT
     global RUN_SEED, device, SOURCE_FILENAME, SELECTION_COST, TRAIN_BUDGET_FRACTION, ONLINE_TRAIN_LR
     global GAIN_WEIGHT, RETENTION_WEIGHT, REFERENCE_BATCH_SIZE, REFERENCE_HISTORY_SIZE, TRAIN_PERTURBATIONS
     parser=argparse.ArgumentParser(description="Three-action shared-Context AMCAL; train-only scaling, global label budget, pre-feedback scoring.")
@@ -1456,7 +1472,9 @@ def cli():
                         help="Online replay minibatch size; offline training remains at 256.")
     parser.add_argument("--context-replay-size",type=int,default=0)
     parser.add_argument("--context-current-weight",type=float,default=0.5)
+    parser.add_argument("--routing-reward-mode",choices=("absolute","relative"),default="absolute")
     args=parser.parse_args()
+    ROUTING_REWARD_MODE = args.routing_reward_mode
     if args.context_replay_size < 0 or not 0 < args.context_current_weight <= 1:
         parser.error("Invalid context replay configuration.")
     CONTEXT_REPLAY_SIZE, CONTEXT_CURRENT_WEIGHT = args.context_replay_size,args.context_current_weight
