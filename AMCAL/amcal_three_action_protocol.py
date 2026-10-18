@@ -1192,6 +1192,21 @@ def evaluate_stream(args):
     context.eval()
     agent = DQNSelectorAgent(input_length + 2*num_classes + 2 + (4 if ROUTE_HISTORY_ENABLED else 0), device,
                              batch_size=args.online_selector_batch_size)
+    independent_router = None
+    if args.independent_router:
+        if args.query_schedule != "uniform" or args.continual_state or args.eval_epsilon != 0:
+            raise ValueError("Independent routing control requires uniform queries, epsilon zero and independent levels.")
+        from amcal_independent_router import RouteHead
+        router_checkpoint = torch.load(models/"independent_router.pth",map_location="cpu",weights_only=True)
+        if router_checkpoint["context_lr"] != args.lr or router_checkpoint["budget_fraction"] != args.budget_fraction:
+            raise ValueError("Router training Context LR/budget must match evaluation.")
+        for name, expected in router_checkpoint["model_hashes"].items():
+            if file_sha256(models/name) != expected:
+                raise ValueError("Independent router CNN/Context/preprocessing mismatch: "+name)
+        with torch.random.fork_rng(devices=list(range(torch.cuda.device_count()))):
+            independent_router = RouteHead(input_length+2*num_classes).to(device)
+        independent_router.load_state_dict(router_checkpoint["state_dict"])
+        independent_router.eval()
     selector_checkpoint = checkpoint("adversarial_best_dqn.pth")
     if selector_checkpoint.get("budget_state_version") != 4 or selector_checkpoint.get("selection_cost") != SELECTION_COST:
         raise ValueError("Budget-aware checkpoint and matching selection cost required; retrain in a fresh output.")
@@ -1315,6 +1330,9 @@ def evaluate_stream(args):
                         action = int(exploration_rng.integers(0,2))
                     else:
                         action = int(agent.policy_net(state)[:,:2].argmax(1).item())
+            if independent_router is not None and args.selector_mode == "learned" and action != 2:
+                from amcal_independent_router import route_features
+                action = int(independent_router(route_features(inputs,base_prob,adapted_prob)).argmax(1).item())
             prediction = base_prediction if action == 0 else int(adapted_logits.argmax(1).item())
             confidence_gap = float(abs(adapted_prob.max().item()-base_prob.max().item()))
         # Capture the scored prediction before acquiring a label or changing weights.
@@ -1483,6 +1501,7 @@ def evaluate_stream(args):
         for row, ok in zip(trace, oracle_ok):
             row["oracle_route_correct"] = bool(ok)
 
+    metrics["independent_router"] = bool(args.independent_router and args.selector_mode == "learned")
     metrics["query_schedule"] = args.query_schedule
     if args.query_schedule == "uniform":
         if len(queried_ids) != budget:
@@ -1516,6 +1535,8 @@ def evaluate_stream(args):
 
     name = "clean" if args.attack_file is None else Path(args.attack_file).stem
     tag = f"oracle{int(args.routing_oracle)}_masked_eps{args.eval_epsilon:g}_three_route_transfer_a{GAIN_WEIGHT:g}_b{RETENTION_WEIGHT:g}_cost{SELECTION_COST:g}_{name}_{args.selector_mode}_{args.stream_order}_forgetting{int(args.forgetting_diagnostics)}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
+    if args.independent_router:
+        tag += "_independentrouter"
     if args.query_schedule != "policy":
         tag += "_query"+args.query_schedule
     if session_path is not None:
@@ -1628,6 +1649,7 @@ def cli():
     parser.add_argument("--routing-reward-mode",choices=("absolute","relative"),default="absolute")
     parser.add_argument("--route-aux-weight",type=float,default=0.0)
     parser.add_argument("--route-history",action="store_true")
+    parser.add_argument("--independent-router",action="store_true",help="Uniform-feedback control using Models/independent_router.pth for routes 0/1.")
     parser.add_argument("--continual-state",type=str,help="Local state file to retain Context/DDQN/replay between domain evaluations.")
     parser.add_argument("--query-schedule",choices=("policy","uniform"),default="policy",help="Diagnostic uniform fixed-budget feedback; keeps learned routing but overrides query selection.")
     args=parser.parse_args()
