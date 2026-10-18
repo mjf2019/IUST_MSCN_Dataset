@@ -1,0 +1,1813 @@
+{
+  "clean_sha256": "476f4dd2f3f8da3ad51eac6e4f5d81dc8423639bfd57f368f22b929be5ee48a0",
+  "clean_rows": 1073,
+  "features": 100,
+  "levels": [
+    {
+      "level": 1,
+      "sha256": "57d07183268459b06d450b892cdf134246d50cea1e57d6c8ec41e21c4d5e497b",
+      "rows": 1073,
+      "schema_matches": true,
+      "positional_correspondence": "hypothesis tested by preserved feature prefix/suffix, not source provenance",
+      "labels_match": true,
+      "changed_rows": 961,
+      "unchanged_rows": 112,
+      "insertion_consistent_changed": 961,
+      "unique_insertion_changed": 961,
+      "inconsistent_changed": 0,
+      "insertion_index_counts": {
+        "5": 629,
+        "6": 123,
+        "7": 38,
+        "9": 6,
+        "13": 4,
+        "4": 123,
+        "10": 6,
+        "8": 22,
+        "40": 1,
+        "17": 1,
+        "26": 1,
+        "15": 1,
+        "12": 5,
+        "11": 1
+      },
+      "status": "structural audit only; no automatic certification",
+      "per_class_uap": {
+        "0": {
+          "rows": 88,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473
+          ]
+        },
+        "1": {
+          "rows": 73,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473
+          ]
+        },
+        "2": {
+          "rows": 256,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0
+          ],
+          "example_uap": [
+            -0.8810185
+          ]
+        },
+        "3": {
+          "rows": 216,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473
+          ]
+        },
+        "4": {
+          "rows": 78,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0
+          ],
+          "example_uap": [
+            -1.0415608
+          ]
+        },
+        "5": {
+          "rows": 250,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473
+          ]
+        }
+      }
+    },
+    {
+      "level": 3,
+      "sha256": "20b9e6b3b347c3af0e23a0efd2486986e953db0fcfe2cd1402992edb1ccf2feb",
+      "rows": 1073,
+      "schema_matches": true,
+      "positional_correspondence": "hypothesis tested by preserved feature prefix/suffix, not source provenance",
+      "labels_match": true,
+      "changed_rows": 961,
+      "unchanged_rows": 112,
+      "insertion_consistent_changed": 961,
+      "unique_insertion_changed": 961,
+      "inconsistent_changed": 0,
+      "insertion_index_counts": {
+        "5": 629,
+        "6": 123,
+        "7": 38,
+        "9": 6,
+        "13": 4,
+        "4": 123,
+        "10": 6,
+        "8": 22,
+        "40": 1,
+        "17": 1,
+        "26": 1,
+        "15": 1,
+        "12": 5,
+        "11": 1
+      },
+      "status": "structural audit only; no automatic certification",
+      "per_class_uap": {
+        "0": {
+          "rows": 88,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "1": {
+          "rows": 73,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "2": {
+          "rows": 256,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -0.726913,
+            -0.726913,
+            -0.726913
+          ]
+        },
+        "3": {
+          "rows": 216,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "4": {
+          "rows": 78,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -0.726913,
+            -0.726913,
+            -1.2113473
+          ]
+        },
+        "5": {
+          "rows": 250,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        }
+      }
+    },
+    {
+      "level": 5,
+      "sha256": "42e229be2d737a53a608b7152d010bea218dc7eb2d4fe35e79dc6c222de2c688",
+      "rows": 1073,
+      "schema_matches": true,
+      "positional_correspondence": "hypothesis tested by preserved feature prefix/suffix, not source provenance",
+      "labels_match": true,
+      "changed_rows": 961,
+      "unchanged_rows": 112,
+      "insertion_consistent_changed": 961,
+      "unique_insertion_changed": 961,
+      "inconsistent_changed": 0,
+      "insertion_index_counts": {
+        "5": 629,
+        "6": 123,
+        "7": 38,
+        "9": 6,
+        "13": 4,
+        "4": 123,
+        "10": 6,
+        "8": 22,
+        "40": 1,
+        "17": 1,
+        "26": 1,
+        "15": 1,
+        "12": 5,
+        "11": 1
+      },
+      "status": "structural audit only; no automatic certification",
+      "per_class_uap": {
+        "0": {
+          "rows": 88,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "1": {
+          "rows": 73,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "2": {
+          "rows": 256,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913
+          ]
+        },
+        "3": {
+          "rows": 216,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "4": {
+          "rows": 78,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -1.2113473
+          ]
+        },
+        "5": {
+          "rows": 250,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        }
+      }
+    },
+    {
+      "level": 7,
+      "sha256": "4d1830c7f4a45019c9fd8c447b63225d58e2bcc9ecb611bb726497c19747d9df",
+      "rows": 1073,
+      "schema_matches": true,
+      "positional_correspondence": "hypothesis tested by preserved feature prefix/suffix, not source provenance",
+      "labels_match": true,
+      "changed_rows": 961,
+      "unchanged_rows": 112,
+      "insertion_consistent_changed": 961,
+      "unique_insertion_changed": 961,
+      "inconsistent_changed": 0,
+      "insertion_index_counts": {
+        "5": 629,
+        "6": 123,
+        "7": 38,
+        "9": 6,
+        "13": 4,
+        "4": 123,
+        "10": 6,
+        "8": 22,
+        "40": 1,
+        "17": 1,
+        "26": 1,
+        "15": 1,
+        "12": 5,
+        "11": 1
+      },
+      "status": "structural audit only; no automatic certification",
+      "per_class_uap": {
+        "0": {
+          "rows": 88,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "1": {
+          "rows": 73,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913
+          ]
+        },
+        "2": {
+          "rows": 256,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.8532973,
+            -0.726913,
+            -1.2113473,
+            -0.726913
+          ]
+        },
+        "3": {
+          "rows": 216,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "4": {
+          "rows": 78,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "5": {
+          "rows": 250,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        }
+      }
+    },
+    {
+      "level": 10,
+      "sha256": "eca158440ffd6d17853b03a5e1296c21b52ab30dcd41c62a75aea9297c66827b",
+      "rows": 1073,
+      "schema_matches": true,
+      "positional_correspondence": "hypothesis tested by preserved feature prefix/suffix, not source provenance",
+      "labels_match": true,
+      "changed_rows": 961,
+      "unchanged_rows": 112,
+      "insertion_consistent_changed": 961,
+      "unique_insertion_changed": 960,
+      "inconsistent_changed": 0,
+      "insertion_index_counts": {
+        "5": 628,
+        "6": 123,
+        "7": 38,
+        "9": 6,
+        "13": 4,
+        "4": 123,
+        "10": 6,
+        "8": 22,
+        "40": 1,
+        "17": 1,
+        "26": 1,
+        "15": 1,
+        "12": 5,
+        "11": 1
+      },
+      "status": "structural audit only; no automatic certification",
+      "per_class_uap": {
+        "0": {
+          "rows": 88,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "1": {
+          "rows": 73,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913
+          ]
+        },
+        "2": {
+          "rows": 256,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.94721484,
+            -0.726913,
+            -0.726913,
+            -0.726913
+          ]
+        },
+        "3": {
+          "rows": 216,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913
+          ]
+        },
+        "4": {
+          "rows": 78,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.1408483,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913
+          ]
+        },
+        "5": {
+          "rows": 249,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913
+          ]
+        }
+      }
+    },
+    {
+      "level": 12,
+      "sha256": "553875878fc2dbad53aab7f4231ae49f7350c893498bd26d65f5995398da95f0",
+      "rows": 1073,
+      "schema_matches": true,
+      "positional_correspondence": "hypothesis tested by preserved feature prefix/suffix, not source provenance",
+      "labels_match": true,
+      "changed_rows": 961,
+      "unchanged_rows": 112,
+      "insertion_consistent_changed": 961,
+      "unique_insertion_changed": 960,
+      "inconsistent_changed": 0,
+      "insertion_index_counts": {
+        "5": 628,
+        "6": 123,
+        "7": 38,
+        "9": 6,
+        "13": 4,
+        "4": 123,
+        "10": 6,
+        "8": 22,
+        "40": 1,
+        "17": 1,
+        "26": 1,
+        "15": 1,
+        "12": 5,
+        "11": 1
+      },
+      "status": "structural audit only; no automatic certification",
+      "per_class_uap": {
+        "0": {
+          "rows": 88,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.0957301,
+            -1.0878179,
+            -0.726913,
+            -1.2113473
+          ]
+        },
+        "1": {
+          "rows": 73,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -1.0276951
+          ]
+        },
+        "2": {
+          "rows": 256,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.85043067,
+            -1.1562748,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913
+          ]
+        },
+        "3": {
+          "rows": 216,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "4": {
+          "rows": 78,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.9468942,
+            -1.2113473,
+            -0.726913,
+            -1.017661,
+            -0.726913
+          ]
+        },
+        "5": {
+          "rows": 249,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913
+          ]
+        }
+      }
+    },
+    {
+      "level": 15,
+      "sha256": "6cdec040c2c9f44b09be00ccfb902178a9f5e00e5f2d4a16e08cddd482de98db",
+      "rows": 1073,
+      "schema_matches": true,
+      "positional_correspondence": "hypothesis tested by preserved feature prefix/suffix, not source provenance",
+      "labels_match": true,
+      "changed_rows": 961,
+      "unchanged_rows": 112,
+      "insertion_consistent_changed": 961,
+      "unique_insertion_changed": 960,
+      "inconsistent_changed": 0,
+      "insertion_index_counts": {
+        "5": 628,
+        "6": 123,
+        "7": 38,
+        "9": 6,
+        "13": 4,
+        "4": 123,
+        "10": 6,
+        "8": 22,
+        "40": 1,
+        "17": 1,
+        "26": 1,
+        "15": 1,
+        "12": 5,
+        "11": 1
+      },
+      "status": "structural audit only; no automatic certification",
+      "per_class_uap": {
+        "0": {
+          "rows": 88,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -0.9072236,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -1.0038338
+          ]
+        },
+        "1": {
+          "rows": 73,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913
+          ]
+        },
+        "2": {
+          "rows": 256,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -1.0499642,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -1.0802195,
+            -0.726913,
+            -0.726913,
+            -0.726913
+          ]
+        },
+        "3": {
+          "rows": 216,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -0.726913
+          ]
+        },
+        "4": {
+          "rows": 78,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.087909,
+            -1.2113473,
+            -1.2113473,
+            -0.9687887,
+            -0.726913,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.726913
+          ]
+        },
+        "5": {
+          "rows": 249,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913
+          ]
+        }
+      }
+    },
+    {
+      "level": 17,
+      "sha256": "b2446ce4888fb1d26f6240d887145570e8a7f7fca5d2741f43e1a37bb9d6ccd5",
+      "rows": 1073,
+      "schema_matches": true,
+      "positional_correspondence": "hypothesis tested by preserved feature prefix/suffix, not source provenance",
+      "labels_match": true,
+      "changed_rows": 961,
+      "unchanged_rows": 112,
+      "insertion_consistent_changed": 961,
+      "unique_insertion_changed": 961,
+      "inconsistent_changed": 0,
+      "insertion_index_counts": {
+        "5": 629,
+        "6": 123,
+        "7": 38,
+        "9": 6,
+        "13": 4,
+        "4": 123,
+        "10": 6,
+        "8": 22,
+        "40": 1,
+        "17": 1,
+        "26": 1,
+        "15": 1,
+        "12": 5,
+        "11": 1
+      },
+      "status": "structural audit only; no automatic certification",
+      "per_class_uap": {
+        "0": {
+          "rows": 88,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.8866529,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913
+          ]
+        },
+        "1": {
+          "rows": 73,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -0.98217696,
+            -1.2113473,
+            -0.9983677,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.1329622,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -0.726913,
+            -1.0438336,
+            -1.2113473,
+            -0.726913,
+            -1.2113473
+          ]
+        },
+        "2": {
+          "rows": 256,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.0700214,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.9636079,
+            -0.7649265,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.89096725,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -0.726913
+          ]
+        },
+        "3": {
+          "rows": 216,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -1.0663105,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "4": {
+          "rows": 78,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.1145877,
+            -1.2113473,
+            -0.979795,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -0.9934327,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913
+          ]
+        },
+        "5": {
+          "rows": 250,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.0353799,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -0.88941,
+            -1.1298939
+          ]
+        }
+      }
+    },
+    {
+      "level": 20,
+      "sha256": "80f5e1cb2f4ccd93e8e716f47ed3b9f19fbc690bc2292a999f4f6c71ad4aa766",
+      "rows": 1073,
+      "schema_matches": true,
+      "positional_correspondence": "hypothesis tested by preserved feature prefix/suffix, not source provenance",
+      "labels_match": true,
+      "changed_rows": 961,
+      "unchanged_rows": 112,
+      "insertion_consistent_changed": 961,
+      "unique_insertion_changed": 960,
+      "inconsistent_changed": 0,
+      "insertion_index_counts": {
+        "5": 628,
+        "6": 123,
+        "7": 38,
+        "9": 6,
+        "13": 4,
+        "4": 123,
+        "10": 6,
+        "8": 22,
+        "40": 1,
+        "17": 1,
+        "26": 1,
+        "15": 1,
+        "12": 5,
+        "11": 1
+      },
+      "status": "structural audit only; no automatic certification",
+      "per_class_uap": {
+        "0": {
+          "rows": 88,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -0.9744064,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "1": {
+          "rows": 73,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.0600795,
+            -0.726913,
+            -0.933037,
+            -0.726913,
+            -0.726913,
+            -1.0122328,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913
+          ]
+        },
+        "2": {
+          "rows": 256,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -0.9869644,
+            -0.8048056,
+            -0.726913,
+            -0.726913,
+            -0.80719465,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.85526353,
+            -1.0090468,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.9521376,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "3": {
+          "rows": 216,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -0.857477,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "4": {
+          "rows": 78,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.1645018,
+            -1.2113473,
+            -0.726913,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.88115245,
+            -0.726913,
+            -1.0582439,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473
+          ]
+        },
+        "5": {
+          "rows": 249,
+          "shared_uap_within_tolerance": true,
+          "coordinate_ranges": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "example_uap": [
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.726913,
+            -0.87646466,
+            -1.2113473,
+            -1.2113473,
+            -1.2113473,
+            -0.726913
+          ]
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "Structural insertion equality does not establish capture/session provenance.",
+    "Direction, IAT bounds and units need original normalization and packet metadata.",
+    "Shared per-class UAP is necessary for this formulation but does not prove gradient optimization.",
+    "No dependence on AMCAL accuracy; no existing data changed."
+  ]
+}
