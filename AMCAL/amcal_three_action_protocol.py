@@ -1188,6 +1188,30 @@ def evaluate_stream(args):
     agent.policy_net.eval()
     # Online replay starts empty; skipped samples create label-free zero-reward transitions.
     optimizer = optim.Adam(context.parameters(), lr=args.lr, weight_decay=1e-4)
+    session_path = Path(args.continual_state) if args.continual_state else None
+    session_identity = dict(preprocessing_sha256=digest, cnn_sha256=file_sha256(models/"initial_cnn_model.pth"),
+        context_sha256=file_sha256(models/"adversarial_best_context.pth"), selector_sha256=file_sha256(models/"adversarial_best_dqn.pth"),
+        seed=args.seed, selector_mode=args.selector_mode, lr=args.lr, budget_fraction=args.budget_fraction,
+        eval_epsilon=args.eval_epsilon, reward=ROUTING_REWARD_MODE, replay=CONTEXT_REPLAY_SIZE,
+        route_history=ROUTE_HISTORY_ENABLED, aux=ROUTE_AUX_WEIGHT)
+    continuation = None
+    if session_path is not None and session_path.exists():
+        continuation = torch.load(session_path,map_location=device,weights_only=False)
+        if continuation["identity"] != session_identity:
+            raise ValueError("Continual session configuration/model mismatch.")
+        if file_sha256(attack_path) in continuation["domains"]:
+            raise ValueError("This domain was already evaluated in this session; start a new session to repeat.")
+        context.load_state_dict(continuation["context"])
+        optimizer.load_state_dict(continuation["context_optimizer"])
+        agent.policy_net.load_state_dict(continuation["policy"])
+        agent.target_net.load_state_dict(continuation["target"])
+        agent.optimizer.load_state_dict(continuation["selector_optimizer"])
+        agent.replay_buffer = continuation["replay_buffer"]
+        agent.route_examples = continuation["route_examples"]
+        agent.epsilon = continuation["epsilon"]
+        agent.steps_done = continuation["steps_done"]
+        route_history = continuation["route_history"]
+        print("Continuing prior domain: Context, DDQN, optimizers and replay retained.",flush=True)
     weights = torch.tensor(1.0 / artifact["class_counts"], dtype=torch.float32, device=device)
     criterion = nn.CrossEntropyLoss(weight=weights)
     def observer(features, truths):
@@ -1220,6 +1244,15 @@ def evaluate_stream(args):
     exploration_decisions = 0
     context_replay = ContextReplay(args.seed + 810033)
     paid_history = PaidHistory(args.seed + 910033)
+    if continuation is not None:
+        context_replay = continuation["context_replay"]
+        paid_history = continuation["paid_history"]
+        random_selector.bit_generator.state = continuation["random_selector_rng"]
+        exploration_rng.bit_generator.state = continuation["exploration_rng"]
+        random.setstate(continuation["python_rng"])
+        torch.set_rng_state(continuation["torch_rng"].cpu())
+        if torch.cuda.is_available() and continuation.get("cuda_rng") is not None:
+            torch.cuda.set_rng_state_all([v.cpu() for v in continuation["cuda_rng"]])
     first_query_step = last_query_step = first_selector_update_step = None
     for step, (features, truth, source_id) in enumerate(zip(X, y, source_ids), start=1):
         source_id = int(source_id)
@@ -1410,8 +1443,35 @@ def evaluate_stream(args):
         for row, ok in zip(trace, oracle_ok):
             row["oracle_route_correct"] = bool(ok)
 
+    metrics["continual"] = session_path is not None
+    if session_path is not None:
+        prior_domains = continuation["domains"] if continuation is not None else []
+        baseline_ref = continuation.get("initial_reference") if continuation is not None else forgetting_initial
+        metrics["continual_session"] = session_path.parent.name
+        metrics["continual_domain_index"] = len(prior_domains) + 1
+        metrics["continual_budget_protocol"] = "20% cap separately per domain; labels charged again per domain; optimizer/replay retained"
+        if baseline_ref is not None and args.forgetting_diagnostics:
+            metrics["continual_reference_initial_accuracy"] = float((np.asarray(baseline_ref)==reference_y).mean())
+            metrics["continual_reference_final_accuracy"] = float((observer(reference_x,reference_y)==reference_y).mean())
+            metrics["continual_reference_drop_pp"] = 100*(metrics["continual_reference_initial_accuracy"]-metrics["continual_reference_final_accuracy"])
+        payload = dict(identity=session_identity, domains=prior_domains+[file_sha256(attack_path)],
+            context=context.state_dict(),context_optimizer=optimizer.state_dict(),
+            policy=agent.policy_net.state_dict(),target=agent.target_net.state_dict(),selector_optimizer=agent.optimizer.state_dict(),
+            replay_buffer=agent.replay_buffer,route_examples=agent.route_examples,epsilon=agent.epsilon,steps_done=agent.steps_done,
+            route_history=route_history,context_replay=context_replay,paid_history=paid_history,
+            random_selector_rng=random_selector.bit_generator.state,exploration_rng=exploration_rng.bit_generator.state,
+            python_rng=random.getstate(),torch_rng=torch.get_rng_state(),
+            cuda_rng=torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,initial_reference=baseline_ref)
+        session_path.parent.mkdir(parents=True,exist_ok=True)
+        temporary=session_path.with_suffix(".tmp")
+        torch.save(payload,temporary)
+        temporary.replace(session_path)
+        print("Saved continual stream state:",session_path,flush=True)
+
     name = "clean" if args.attack_file is None else Path(args.attack_file).stem
     tag = f"oracle{int(args.routing_oracle)}_masked_eps{args.eval_epsilon:g}_three_route_transfer_a{GAIN_WEIGHT:g}_b{RETENTION_WEIGHT:g}_cost{SELECTION_COST:g}_{name}_{args.selector_mode}_{args.stream_order}_forgetting{int(args.forgetting_diagnostics)}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
+    if session_path is not None:
+        tag += "_continual_"+session_path.parent.name
     results_dir = output / "Results"
     results_dir.mkdir(exist_ok=True)
     pd.DataFrame(trace).to_csv(results_dir / (tag+"_trace.csv"), index=False)
@@ -1534,7 +1594,11 @@ def cli():
     parser.add_argument("--routing-reward-mode",choices=("absolute","relative"),default="absolute")
     parser.add_argument("--route-aux-weight",type=float,default=0.0)
     parser.add_argument("--route-history",action="store_true")
+    parser.add_argument("--continual-state",type=str,help="Local state file to retain Context/DDQN/replay between domain evaluations.")
     args=parser.parse_args()
+    if args.continual_state:
+        if args.command != "evaluate":parser.error("--continual-state is evaluation only")
+        args.continual_state=str(Path(args.continual_state).resolve())
     ROUTE_HISTORY_ENABLED = args.route_history
     if not np.isfinite(args.route_aux_weight) or args.route_aux_weight < 0:
         parser.error("Auxiliary weight must be finite and nonnegative.")
