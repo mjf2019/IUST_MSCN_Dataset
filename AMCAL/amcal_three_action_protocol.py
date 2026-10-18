@@ -970,7 +970,7 @@ def train_main(dataset_path, base_epoch=200, base_patience=50,
     dqn_agent = DQNSelectorAgent(input_length + 2*num_classes + 2 + (4 if ROUTE_HISTORY_ENABLED else 0), device)
     context_model = ContextAwareNetwork(input_length).to(device)
     
-    print(f"DQN Agent initialized with input size: {input_length + 2*num_classes + 2}")
+    print(f"DQN Agent initialized with input size: {input_length + 2*num_classes + 2 + (4 if ROUTE_HISTORY_ENABLED else 0)}")
     print(f"Context Model initialized with input size: {input_length}")
     
     # Train adversarial system
@@ -1166,7 +1166,7 @@ def evaluate_stream(args):
     context = ContextAwareNetwork(input_length).to(device)
     context.load_state_dict(checkpoint("adversarial_best_context.pth")["context_model_state_dict"])
     context.eval()
-    agent = DQNSelectorAgent(input_length + 2*num_classes + 2, device,
+    agent = DQNSelectorAgent(input_length + 2*num_classes + 2 + (4 if ROUTE_HISTORY_ENABLED else 0), device,
                              batch_size=args.online_selector_batch_size)
     selector_checkpoint = checkpoint("adversarial_best_dqn.pth")
     if selector_checkpoint.get("budget_state_version") != 4 or selector_checkpoint.get("selection_cost") != SELECTION_COST:
