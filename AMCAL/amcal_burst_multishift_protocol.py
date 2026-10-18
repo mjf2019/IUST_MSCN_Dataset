@@ -48,6 +48,7 @@ def main():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--burst-dir', type=Path, required=True)
     parser.add_argument('--burst-mapping-dir', type=Path)
+    parser.add_argument('--original-split-dir', type=Path, help='Original oversampled train/validation files for CNN and Context pretraining.')
     parser.add_argument('--burst-assume-row-aligned', action='store_true')
     extra, remaining = parser.parse_known_args()
     root = extra.burst_dir.resolve()
@@ -60,6 +61,63 @@ def main():
         return root / f'AdvBurstTrainedBurst_size_{int(level)}_Step_2000.csv'
     if extra.burst_assume_row_aligned:
         print('BURST: row order is ASSUMED across intensities; matching labels do not prove provenance.')
+    original_split = extra.original_split_dir.resolve() if extra.original_split_dir else None
+    episodic_loaders = None
+    if original_split is not None:
+        def original_load_data(dataset_path='Dataset', csv_filename=None):
+            nonlocal episodic_loaders
+            from sklearn.preprocessing import StandardScaler, LabelEncoder
+            from torch.utils.data import TensorDataset, DataLoader, WeightedRandomSampler
+            source = pd.read_csv(domain_path(0))
+            train = pd.read_csv(original_split / 'oversampled_train_dataset.csv')
+            validation = pd.read_csv(original_split / 'oversampled_validation_dataset.csv')
+            for frame in (train, validation):
+                if list(frame.columns) != list(source.columns):
+                    raise ValueError('Original split schema differs from Burst level 0.')
+            train_ids, val_ids, test_ids = core.split_source_rows(source, core.RUN_SEED)
+            # Original supervised files are preserved. Exclude exact feature overlap
+            # from all target development/holdout pools, rather than train on test rows.
+            supervised_groups = set(core.feature_groups(train)) | set(core.feature_groups(validation))
+            groups = core.feature_groups(source)
+            pools = []
+            for ids in (train_ids, val_ids, test_ids):
+                pools.append(np.asarray([i for i in ids if groups[i] not in supervised_groups], dtype=np.int64))
+            train_ids, val_ids, test_ids = pools
+            if min(map(len, pools)) < 1:
+                raise ValueError('Original supervised files overlap all rows of a Burst pool. Need independent source data; cannot silently reuse supervised rows as heldout.')
+            encoder = LabelEncoder().fit(train.iloc[:, -1])
+            scaler = StandardScaler().fit(train.iloc[:, :-1].to_numpy())
+            ytrain = encoder.transform(train.iloc[:, -1].to_numpy())
+            counts = np.bincount(ytrain, minlength=len(encoder.classes_))
+            def dataset(frame):
+                x = scaler.transform(frame.iloc[:, :-1].to_numpy()).astype(np.float32)
+                if not np.isfinite(x).all():
+                    raise ValueError('Nonfinite original/target features.')
+                y = encoder.transform(frame.iloc[:, -1].to_numpy())
+                return TensorDataset(torch.tensor(x, device=core.device).unsqueeze(1),
+                                     torch.tensor(y, dtype=torch.long, device=core.device))
+            core.save_preprocessing(source, str(root), domain_path(0).name, scaler, encoder,
+                counts, train_ids, val_ids, test_ids)
+            artifact_path = Path('Models/protocol_preprocessing.joblib')
+            artifact = joblib.load(artifact_path)
+            artifact['base_split_protocol'] = 'original oversampled train and validation; target source pools exclude exact-feature overlap with both'
+            artifact['original_train_sha256'] = core.file_sha256(original_split / 'oversampled_train_dataset.csv')
+            artifact['reference_csv'] = str(original_split / 'oversampled_validation_dataset.csv')
+            artifact['reference_sha256'] = core.file_sha256(artifact['reference_csv'])
+            joblib.dump(artifact, artifact_path)
+            ds = dataset(train)
+            sampler = WeightedRandomSampler(1.0 / counts[ytrain], len(ytrain))
+            train_loader = DataLoader(ds, batch_size=64, sampler=sampler, drop_last=True)
+            full_loader = DataLoader(ds, batch_size=64, sampler=sampler)
+            validation_loader = DataLoader(dataset(validation), batch_size=64)
+            # No heldout score is used in training or model selection.
+            test_loader = DataLoader(dataset(source.iloc[test_ids]), batch_size=64)
+            episodic_loaders = (DataLoader(dataset(source.iloc[train_ids]), batch_size=64),
+                                DataLoader(dataset(source.iloc[val_ids]), batch_size=64))
+            print(f'Original supervised train: {len(train)}; validation: {len(validation)}')
+            print(f'Independent Burst RL pools: train={len(train_ids)}, validation={len(val_ids)}, heldout={len(test_ids)}')
+            return train_loader, validation_loader, test_loader, full_loader, len(counts), source.shape[1]-1, counts
+        core.load_data = original_load_data
     calls = 0
     def build_domains(cnn, features, labels):
         nonlocal calls
@@ -99,6 +157,8 @@ def main():
     # Keep explicit domain provenance in selector metadata rather than FGSM wording.
     original_train = core.train_adversarial_system
     def train_with_metadata(*args, **kwargs):
+        if episodic_loaders is not None:
+            kwargs["episode_loaders"] = episodic_loaders
         result = original_train(*args, **kwargs)
         path = Path('Models/adversarial_best_dqn.pth')
         checkpoint = torch.load(path, map_location='cpu', weights_only=False)
