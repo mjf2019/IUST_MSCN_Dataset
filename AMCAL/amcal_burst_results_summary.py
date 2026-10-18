@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 
-def collect(root, seed, lr, reward_mode, replay_size):
+def collect(root, seed, lr, reward_mode, replay_size, continual=False, session_id=None):
     selected = {}
     for path in sorted(root.glob('*_metrics.json'), key=lambda p:p.stat().st_mtime):
         match = re.search(r'AdvBurstTrainedBurst_size_(\d+)_Step', path.name)
@@ -20,6 +20,8 @@ def collect(root, seed, lr, reward_mode, replay_size):
                 or d.get('eval_epsilon') != 0.2
                 or d.get('budget_fraction') != 0.2
                 or d.get('selection_cost') != 0.0001):
+            continue
+        if bool(d.get('continual',False)) != continual or (session_id is not None and d.get('continual_session') != session_id):
             continue
         mode = d.get('selector_mode')
         if mode in ('learned','random'):
@@ -43,11 +45,14 @@ def main():
     p.add_argument('--lr',type=float,default=0.0001)
     p.add_argument('--routing-reward-mode',choices=['absolute','relative'],default='absolute')
     p.add_argument('--context-replay-size',type=int,default=0)
+    p.add_argument('--levels',type=int,nargs='+',default=[1,5,7,10,15,17,20])
+    p.add_argument('--continual',action='store_true')
+    p.add_argument('--session-id')
     a=p.parse_args();root=a.output/'Results'
-    selected=collect(root,a.seed,a.lr,a.routing_reward_mode,a.context_replay_size)
+    selected=collect(root,a.seed,a.lr,a.routing_reward_mode,a.context_replay_size,a.continual,a.session_id)
     if not selected:p.error('No matching metrics found in '+str(root))
     rows=[]
-    for level in (1,5,7,10,15,17,20):
+    for level in a.levels:
         row={'PER':level}
         for mode,prefix in [('learned','RL'),('random','Random')]:
             d=selected.get((level,mode))
@@ -72,9 +77,10 @@ def main():
         'FinalRL':'RL_CurrentFinal', 'FinalRnd':'Random_CurrentFinal'}
     display([{short:r.get(full) for short,full in columns.items()} for r in rows],list(columns))
     print('Ref: clean reference; Final: current-level Context-only final accuracy; RL/Random: online full-system accuracy.')
-    missing=[f'{n}/{m}' for n in (1,5,7,10,15,17,20) for m in ('learned','random') if (n,m) not in selected]
+    missing=[f'{n}/{m}' for n in a.levels for m in ('learned','random') if (n,m) not in selected]
     if missing:print('Missing evaluations (shown as -): '+', '.join(missing))
-    target=root/f'combined_seed{a.seed}_lr{a.lr:g}_replay{a.context_replay_size}_{a.routing_reward_mode}.csv'
+    suffix=('_continual_'+(a.session_id or 'latest')) if a.continual else ''
+    target=root/f'combined_seed{a.seed}_lr{a.lr:g}_replay{a.context_replay_size}_{a.routing_reward_mode}{suffix}.csv'
     with target.open('w',newline='',encoding='utf-8-sig') as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
     print('\nCombined summary saved:',target.resolve())
