@@ -590,12 +590,37 @@ class TrainingProbe:
         return self.x[ids].to(device), self.y[ids].to(device)
 
 
-def budget_state(inputs, probabilities, base_probabilities, remaining, cap, position, count):
+ROUTE_HISTORY_ENABLED = False
+
+class RouteHistory:
+    def __init__(self):
+        self.values = [0.0,0.0,0.0,0.0]
+        self.count = 0
+    def update(self, base_logits, context_logits, labels):
+        if not ROUTE_HISTORY_ENABLED:
+            return
+        with torch.no_grad():
+            values = [
+                float((base_logits.argmax(1) != labels).float().mean().item()),
+                float((context_logits.argmax(1) != labels).float().mean().item()),
+                float(nn.functional.cross_entropy(base_logits,labels).item()),
+                float(nn.functional.cross_entropy(context_logits,labels).item())]
+        # Bounded CE values; cold start is explicit zeros until first paid label.
+        values[2:] = [v/(1.0+v) for v in values[2:]]
+        self.values = values if self.count == 0 else [0.9*old+0.1*new for old,new in zip(self.values,values)]
+        self.count += 1
+
+def budget_state(inputs, probabilities, base_probabilities, remaining, cap, position, count, route_history=None):
     extra = inputs.new_tensor([[remaining / max(cap, 1), position / max(count, 1)]])
-    return torch.cat([inputs.squeeze(1), base_probabilities, probabilities, extra], dim=1)
+    parts = [inputs.squeeze(1), base_probabilities, probabilities]
+    if ROUTE_HISTORY_ENABLED:
+        values = route_history.values if route_history is not None else [0.,0.,0.,0.]
+        parts.append(inputs.new_tensor([values]).expand(inputs.size(0),-1))
+    return torch.cat(parts + [extra], dim=1)
 
 
 def budget_validation(cnn, initial_context, agent, loader, input_length):
+    route_history = RouteHistory()
     # Isolated greedy online validation; no selector updates or changes to training RNG.
     with torch.random.fork_rng(devices=list(range(torch.cuda.device_count()))):
         context = ContextAwareNetwork(input_length).to(device)
@@ -613,12 +638,13 @@ def budget_validation(cnn, initial_context, agent, loader, input_length):
             x, y = features[idx:idx+1], truths[idx:idx+1]
             with torch.no_grad():
                 base, logits = cnn(x), cnn(context(x))
-                state = budget_state(x, logits.softmax(1), base.softmax(1), cap-used, cap, pos, len(order))
+                state = budget_state(x, logits.softmax(1), base.softmax(1), cap-used, cap, pos, len(order), route_history=route_history)
                 action = int(mask_query_action(agent.policy_net(state), state).argmax(1).item())
                 routed_logits = base if action == 0 else logits
                 predictions.append(int(routed_logits.argmax(1).item()))
                 validation_loss += float(nn.functional.cross_entropy(routed_logits, y).item())
             if action == 2 and used < cap:
+                route_history.update(base,logits,y)
                 used += 1
                 optimizer.zero_grad()
                 loss = context_objective(nn.functional.cross_entropy(cnn(context(x)), y), nn.functional.cross_entropy(base, y))
@@ -721,6 +747,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         print(f"  Training perturbation: {episode_level:g}")
         order = np.random.default_rng(RUN_SEED + epoch).permutation(len(train_y))
         cap, used = int(np.floor(TRAIN_BUDGET_FRACTION * len(order))), 0
+        route_history = RouteHistory()
         context_replay = ContextReplay(RUN_SEED + epoch + 810033)
         training_probe = TrainingProbe(train_x, train_y, RUN_SEED + epoch + 910033)
         selected_rewards, selected_gains, selected_harms = [], [], []
@@ -732,7 +759,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
             with torch.no_grad():
                 base = cnn_model(inputs)
                 before = cnn_model(context_model(inputs))
-                state = budget_state(inputs, before.softmax(1), base.softmax(1), cap-used, cap, position, len(order))
+                state = budget_state(inputs, before.softmax(1), base.softmax(1), cap-used, cap, position, len(order), route_history=route_history)
             proposed = int(dqn_agent.select_action(state).item())
             actions.append(proposed)
             allowed = used < cap
@@ -746,10 +773,11 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 with torch.no_grad():
                     if position+1 < len(order):
                         nx = train_x[order[position+1]:order[position+1]+1]
-                        skip_next = budget_state(nx, cnn_model(context_model(nx)).softmax(1), cnn_model(nx).softmax(1), cap-used, cap, position+1, len(order))
+                        skip_next = budget_state(nx, cnn_model(context_model(nx)).softmax(1), cnn_model(nx).softmax(1), cap-used, cap, position+1, len(order), route_history=route_history)
                     else:
                         skip_next = torch.zeros_like(state)
                 dqn_agent.observe_route(state,int(base.argmax(1).item()),int(before.argmax(1).item()),int(labels.item()))
+                route_history.update(base,before,labels)
                 reference_batch = training_probe.sample(inputs)
                 reference_before = probe_losses(cnn_model, context_model, reference_batch)
                 used += 1
@@ -778,7 +806,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                     next_idx = order[position+1]
                     next_inputs = train_x[next_idx:next_idx+1]
                     next_prob = cnn_model(context_model(next_inputs)).softmax(1)
-                    next_state = budget_state(next_inputs, next_prob, cnn_model(next_inputs).softmax(1), cap-used, cap, position+1, len(order))
+                    next_state = budget_state(next_inputs, next_prob, cnn_model(next_inputs).softmax(1), cap-used, cap, position+1, len(order), route_history=route_history)
                 else:
                     next_state = torch.zeros_like(state)
             if allowed:
@@ -870,6 +898,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         'training_perturbations': list(TRAIN_PERTURBATIONS),
         'training_shift_protocol': 'one shuffled FGSM domain per epoch; reset Context and Adam; validation mean across domains; epsilon in training StandardScaler units',
         'budget_state_version': 4,
+        'route_history': ROUTE_HISTORY_ENABLED, 'route_history_ema': 0.1,
         'route_aux_weight': ROUTE_AUX_WEIGHT,
         'reward_version': route_reward_version(), 'routing_reward_mode': ROUTING_REWARD_MODE,
         'gain_weight': GAIN_WEIGHT, 'retention_weight': RETENTION_WEIGHT,
@@ -938,7 +967,7 @@ def train_main(dataset_path, base_epoch=200, base_patience=50,
     print("Initializing Adversarial Components")
     print("=" * 60)
     
-    dqn_agent = DQNSelectorAgent(input_length + 2*num_classes + 2, device)
+    dqn_agent = DQNSelectorAgent(input_length + 2*num_classes + 2 + (4 if ROUTE_HISTORY_ENABLED else 0), device)
     context_model = ContextAwareNetwork(input_length).to(device)
     
     print(f"DQN Agent initialized with input size: {input_length + 2*num_classes + 2}")
@@ -1096,6 +1125,7 @@ def load_evaluation_frame(data_dir, attack_file, artifact, row_map=None,
 
 
 def evaluate_stream(args):
+    route_history = RouteHistory()
     output = Path(args.output).resolve()
     models = output / "Models"
     artifact_path = models / "protocol_preprocessing.joblib"
@@ -1141,6 +1171,8 @@ def evaluate_stream(args):
     selector_checkpoint = checkpoint("adversarial_best_dqn.pth")
     if selector_checkpoint.get("budget_state_version") != 4 or selector_checkpoint.get("selection_cost") != SELECTION_COST:
         raise ValueError("Budget-aware checkpoint and matching selection cost required; retrain in a fresh output.")
+    if selector_checkpoint.get("route_history",False) != ROUTE_HISTORY_ENABLED:
+        raise ValueError("Route-history state differs from training; use matching checkpoint.")
     if selector_checkpoint.get("route_aux_weight",0.0) != ROUTE_AUX_WEIGHT:
         raise ValueError("Route auxiliary weight differs from training.")
     if selector_checkpoint.get("routing_reward_mode","absolute") != ROUTING_REWARD_MODE:
@@ -1199,7 +1231,7 @@ def evaluate_stream(args):
             base_prediction = int(base_logits.argmax(1).item())
             adapted_logits = cnn(context(inputs))
             adapted_prob = adapted_logits.softmax(dim=1)
-            state = budget_state(inputs, adapted_prob, base_prob, budget-len(queried_ids), budget, step-1, len(y))
+            state = budget_state(inputs, adapted_prob, base_prob, budget-len(queried_ids), budget, step-1, len(y), route_history=route_history)
             available_actions = 3 if len(queried_ids) < budget else 2
             explored = False
             if args.selector_mode == "random":
@@ -1223,7 +1255,7 @@ def evaluate_stream(args):
             with torch.no_grad():
                 if step < len(y):
                     nx = torch.tensor(X[step], dtype=torch.float32, device=device).reshape(1, 1, -1)
-                    skip_next = budget_state(nx, cnn(context(nx)).softmax(1), cnn(nx).softmax(1), budget-len(queried_ids), budget, step, len(y))
+                    skip_next = budget_state(nx, cnn(context(nx)).softmax(1), cnn(nx).softmax(1), budget-len(queried_ids), budget, step, len(y), route_history=route_history)
                 else:
                     skip_next = torch.zeros_like(state)
             queried_ids.add(source_id)
@@ -1233,6 +1265,7 @@ def evaluate_stream(args):
             labels = torch.tensor([int(truth)], dtype=torch.long, device=device)
             if args.selector_mode == "learned":
                 agent.observe_route(state,base_prediction,int(adapted_logits.argmax(1).item()),int(truth))
+            route_history.update(base_logits,adapted_logits,labels)
             reference_batch = paid_history.sample(inputs)
             reference_before = probe_losses(cnn, context, reference_batch)
             optimizer.zero_grad()
@@ -1265,7 +1298,7 @@ def evaluate_stream(args):
             if step < len(y) and len(queried_ids) < budget:
                 next_inputs = torch.tensor(X[step], dtype=torch.float32, device=device).reshape(1, 1, -1)
                 next_prob = cnn(context(next_inputs)).softmax(1)
-                next_state = budget_state(next_inputs, next_prob, cnn(next_inputs).softmax(1), budget-len(queried_ids), budget, step, len(y))
+                next_state = budget_state(next_inputs, next_prob, cnn(next_inputs).softmax(1), budget-len(queried_ids), budget, step, len(y), route_history=route_history)
             else:
                 next_state = torch.zeros_like(state)
         # A budget-blocked action 1 is not an observed policy action 0.
@@ -1317,12 +1350,12 @@ def evaluate_stream(args):
         selector_freeze_rule="freeze at zero budget or after budget exhaustion",
         alignment=alignment, seed=args.seed, budget_fraction=args.budget_fraction,
         query_rule='action 2 and remaining unique-label budget; query action masked after exhaustion; choose route 0/1',
-        route_aux_weight=ROUTE_AUX_WEIGHT, reward_version=route_reward_version(), routing_reward_mode=ROUTING_REWARD_MODE, gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
+        route_history=ROUTE_HISTORY_ENABLED, route_history_ema=0.1, route_aux_weight=ROUTE_AUX_WEIGHT, reward_version=route_reward_version(), routing_reward_mode=ROUTING_REWARD_MODE, gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
         reward_reference="online: previous queried samples only, excluding feature-identical current; train: independent training batch excluding feature-identical current; per-example positive gain and damage; no reference gradient",
         context_replay_size=CONTEXT_REPLAY_SIZE, context_current_weight=CONTEXT_CURRENT_WEIGHT,
         reference_batch_size=REFERENCE_BATCH_SIZE, reference_history_size=REFERENCE_HISTORY_SIZE,
         eval_epsilon=args.eval_epsilon, exploration_decisions=exploration_decisions, action_mask="query disabled at exhausted budget in behavior and DDQN next-action maximization",
-        selection_cost=SELECTION_COST, state_protocol="features; frozen probabilities; context probabilities; remaining-budget fraction; elapsed-stream fraction",
+        selection_cost=SELECTION_COST, state_protocol=("features; frozen probabilities; context probabilities; optional four previous-paid pre-feedback route EMA statistics; remaining-budget fraction; elapsed-stream fraction"),
         selector_mode=args.selector_mode, random_query_probability=1/3 if args.selector_mode == 'random' else None,
         online_lr=args.lr, attack_sha256=file_sha256(attack_path),
         preprocessing_sha256=digest, device=str(device),
@@ -1461,7 +1494,7 @@ def audit_dataset(args):
     print(json.dumps(report,indent=2))
 
 def cli():
-    global ROUTE_AUX_WEIGHT, ROUTING_REWARD_MODE, CONTEXT_REPLAY_SIZE, CONTEXT_CURRENT_WEIGHT
+    global ROUTE_HISTORY_ENABLED, ROUTE_AUX_WEIGHT, ROUTING_REWARD_MODE, CONTEXT_REPLAY_SIZE, CONTEXT_CURRENT_WEIGHT
     global RUN_SEED, device, SOURCE_FILENAME, SELECTION_COST, TRAIN_BUDGET_FRACTION, ONLINE_TRAIN_LR
     global GAIN_WEIGHT, RETENTION_WEIGHT, REFERENCE_BATCH_SIZE, REFERENCE_HISTORY_SIZE, TRAIN_PERTURBATIONS
     parser=argparse.ArgumentParser(description="Three-action shared-Context AMCAL; train-only scaling, global label budget, pre-feedback scoring.")
@@ -1500,7 +1533,9 @@ def cli():
     parser.add_argument("--context-current-weight",type=float,default=0.5)
     parser.add_argument("--routing-reward-mode",choices=("absolute","relative"),default="absolute")
     parser.add_argument("--route-aux-weight",type=float,default=0.0)
+    parser.add_argument("--route-history",action="store_true")
     args=parser.parse_args()
+    ROUTE_HISTORY_ENABLED = args.route_history
     if not np.isfinite(args.route_aux_weight) or args.route_aux_weight < 0:
         parser.error("Auxiliary weight must be finite and nonnegative.")
     ROUTE_AUX_WEIGHT = args.route_aux_weight
