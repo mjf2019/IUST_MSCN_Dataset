@@ -1124,6 +1124,30 @@ def load_evaluation_frame(data_dir, attack_file, artifact, row_map=None,
     return frame, source_ids, path, alignment
 
 
+def print_stream_summary(metrics, name, mode, lr):
+    level = name.split("_size_")[-1].split("_Step_")[0] if "_size_" in name else name
+    print("\\n" + "="*68)
+    print(f"Level: {level} | Mode: {mode} | LR: {lr:g} | Samples: {metrics['evaluated_rows']}")
+    print("-"*68)
+    print(f"Online accuracy: {100*metrics['accuracy']:.2f}% | Macro-F1: {100*metrics['macro_f1']:.2f}%")
+    print(f"Frozen CNN: {100*metrics['base_accuracy']:.2f}% | Initial Context: {100*metrics['no_adaptation_context_accuracy']:.2f}%")
+    if "routing_oracle" in metrics:
+        oracle = metrics["routing_oracle"]
+        print(f"Routing oracle: {100*oracle['accuracy']:.2f}% | Gap: {oracle['routing_gap_pp']:.2f} pp")
+        print(f"Context-only online: {100*oracle['context_only_online_accuracy']:.2f}%")
+    print(f"Labels used: {metrics['unique_labels_queried']}/{metrics['label_budget']} | Actual: {100*metrics['actual_label_fraction']:.2f}%")
+    if metrics.get("query_schedule") == "uniform":
+        print("Feedback: fixed label-blind schedule (diagnostic)")
+    for key,label in (("source_validation","Clean reference"),("same_level","Current-level Context")):
+        row = metrics.get("forgetting",{}).get(key)
+        if row:
+            print(f"{label}: {100*row['initial_accuracy']:.2f}% -> {100*row['final_accuracy']:.2f}% | Drop: {row['drop_pp']:+.2f} pp | Broken: {row['correct_to_wrong']}")
+    if metrics.get("continual"):
+        print(f"Continual domain: {metrics['continual_domain_index']} | Total reference drop: {metrics.get('continual_reference_drop_pp',float('nan')):+.2f} pp")
+    print("Positive Drop = net forgetting. Scores above are before feedback.")
+    print("="*68, flush=True)
+
+
 def evaluate_stream(args):
     route_history = RouteHistory()
     output = Path(args.output).resolve()
@@ -1500,21 +1524,7 @@ def evaluate_stream(args):
     results_dir.mkdir(exist_ok=True)
     pd.DataFrame(trace).to_csv(results_dir / (tag+"_trace.csv"), index=False)
     (results_dir / (tag+"_metrics.json")).write_text(json.dumps(metrics, indent=2), encoding="utf-8")
-    print(json.dumps(metrics, indent=2))
-    print("\nOnline accuracy (before feedback): {:.2f}%".format(100*metrics["accuracy"]))
-    print("Without adaptation, Context: {:.2f}% | Frozen CNN: {:.2f}%".format(
-        100*metrics["no_adaptation_context_accuracy"], 100*metrics["base_accuracy"]))
-    print("Labels: {}/{}".format(metrics["unique_labels_queried"], metrics["label_budget"]))
-    if args.routing_oracle:
-        row = metrics["routing_oracle"]
-        print("Routing oracle: {:.2f}% | routing gap: {:.2f} pp | Context-only online: {:.2f}% | both wrong: {}".format(
-            100*row["accuracy"], row["routing_gap_pp"], 100*row["context_only_online_accuracy"], row["both_wrong"]))
-    if args.forgetting_diagnostics:
-        for label in ("same_level", "source_validation"):
-            row = metrics["forgetting"][label]
-            print("{}: {:.2f}% -> {:.2f}% | drop {:+.2f} pp | broken {}".format(
-                label, 100*row["initial_accuracy"], 100*row["final_accuracy"],
-                row["drop_pp"], row["correct_to_wrong"]))
+    print_stream_summary(metrics, name, args.selector_mode, args.lr)
 
 
 
