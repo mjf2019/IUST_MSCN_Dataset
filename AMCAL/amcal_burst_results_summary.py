@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 
-def collect(root, seed, lr, reward_mode, replay_size, continual=False, session_id=None):
+def collect(root, seed, lr, reward_mode, replay_size, continual=False, session_id=None, eval_epsilon=0.2):
     selected = {}
     for path in sorted(root.glob('*_metrics.json'), key=lambda p:p.stat().st_mtime):
         match = re.search(r'AdvBurstTrainedBurst_size_(\d+)_Step', path.name)
@@ -17,7 +17,7 @@ def collect(root, seed, lr, reward_mode, replay_size, continual=False, session_i
                 or d.get('routing_reward_mode','absolute') != reward_mode
                 or d.get('context_replay_size',0) != replay_size
                 or d.get('stream_order') != 'shuffle'
-                or d.get('eval_epsilon') != 0.2
+                or d.get('eval_epsilon') != eval_epsilon
                 or d.get('budget_fraction') != 0.2
                 or d.get('selection_cost') != 0.0001):
             continue
@@ -48,8 +48,9 @@ def main():
     p.add_argument('--levels',type=int,nargs='+',default=[1,5,7,10,15,17,20])
     p.add_argument('--continual',action='store_true')
     p.add_argument('--session-id')
+    p.add_argument('--eval-epsilon',type=float,default=0.2)
     a=p.parse_args();root=a.output/'Results'
-    selected=collect(root,a.seed,a.lr,a.routing_reward_mode,a.context_replay_size,a.continual,a.session_id)
+    selected=collect(root,a.seed,a.lr,a.routing_reward_mode,a.context_replay_size,a.continual,a.session_id,a.eval_epsilon)
     if not selected:p.error('No matching metrics found in '+str(root))
     rows=[]
     for level in a.levels:
@@ -80,7 +81,7 @@ def main():
     missing=[f'{n}/{m}' for n in a.levels for m in ('learned','random') if (n,m) not in selected]
     if missing:print('Missing evaluations (shown as -): '+', '.join(missing))
     suffix=('_continual_'+(a.session_id or 'latest')) if a.continual else ''
-    target=root/f'combined_seed{a.seed}_lr{a.lr:g}_replay{a.context_replay_size}_{a.routing_reward_mode}{suffix}.csv'
+    target=root/f'combined_seed{a.seed}_lr{a.lr:g}_replay{a.context_replay_size}_{a.routing_reward_mode}_eps{a.eval_epsilon:g}{suffix}.csv'
     with target.open('w',newline='',encoding='utf-8-sig') as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
     print('\nCombined summary saved:',target.resolve())
