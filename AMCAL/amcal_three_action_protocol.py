@@ -1196,7 +1196,8 @@ def evaluate_stream(args):
         route_history=ROUTE_HISTORY_ENABLED, aux=ROUTE_AUX_WEIGHT)
     continuation = None
     if session_path is not None and session_path.exists():
-        continuation = torch.load(session_path,map_location=device,weights_only=False)
+        # Keep replay and paid-history tensors on CPU; parameter state loaders handle device transfer.
+        continuation = torch.load(session_path,map_location="cpu",weights_only=False)
         if continuation["identity"] != session_identity:
             raise ValueError("Continual session configuration/model mismatch.")
         if file_sha256(attack_path) in continuation["domains"]:
