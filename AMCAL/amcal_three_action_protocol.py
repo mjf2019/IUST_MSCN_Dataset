@@ -1203,7 +1203,8 @@ def evaluate_stream(args):
                     agent.update_target_network()
         # The evaluator may score all truths; the learner sees only queried labels.
         trace.append(dict(step=step, source_row=source_id, prediction_before_update=prediction,
-            base_prediction=base_prediction, true_label=int(truth), correct=int(prediction == truth),
+            base_prediction=base_prediction, context_prediction=int(adapted_logits.argmax(1).item()),
+            true_label=int(truth), correct=int(prediction == truth),
             action=action, effective_action=effective_action, exploration=explored,
             confidence_gap=confidence_gap, queried=query,
             transition_stored=transition_stored, budget_blocked=not adaptation_allowed,
@@ -1271,8 +1272,27 @@ def evaluate_stream(args):
             source_validation=comparison(reference_y, forgetting_initial, observer(reference_x, reference_y)),
             protocol="observer only; reference is source validation partition; no gradient or reward use; final target score retrospective")
 
+    if args.routing_oracle:
+        # Observer only, after the stream: never feed oracle labels/predictions to RL.
+        base_ok = np.asarray([r["base_prediction"] == r["true_label"] for r in trace])
+        context_ok = np.asarray([r["context_prediction"] == r["true_label"] for r in trace])
+        routed_ok = np.asarray([bool(r["correct"]) for r in trace])
+        oracle_ok = base_ok | context_ok
+        metrics["routing_oracle"] = dict(
+            accuracy=float(oracle_ok.mean()),
+            routing_gap_pp=float(100*(oracle_ok.mean()-routed_ok.mean())),
+            context_only_online_accuracy=float(context_ok.mean()),
+            both_correct=int((base_ok & context_ok).sum()),
+            only_frozen_correct=int((base_ok & ~context_ok).sum()),
+            only_context_correct=int((~base_ok & context_ok).sum()),
+            both_wrong=int((~oracle_ok).sum()),
+            missed_correct_route=int((oracle_ok & ~routed_ok).sum()),
+            protocol="true-label observer; exact per-sample accuracy ceiling over pre-feedback frozen/Context routes along unchanged policy update trajectory; not an oracle query policy or global adaptation optimum")
+        for row, ok in zip(trace, oracle_ok):
+            row["oracle_route_correct"] = bool(ok)
+
     name = "clean" if args.attack_file is None else Path(args.attack_file).stem
-    tag = f"masked_eps{args.eval_epsilon:g}_three_route_transfer_a{GAIN_WEIGHT:g}_b{RETENTION_WEIGHT:g}_cost{SELECTION_COST:g}_{name}_{args.selector_mode}_{args.stream_order}_forgetting{int(args.forgetting_diagnostics)}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
+    tag = f"oracle{int(args.routing_oracle)}_masked_eps{args.eval_epsilon:g}_three_route_transfer_a{GAIN_WEIGHT:g}_b{RETENTION_WEIGHT:g}_cost{SELECTION_COST:g}_{name}_{args.selector_mode}_{args.stream_order}_forgetting{int(args.forgetting_diagnostics)}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
     results_dir = output / "Results"
     results_dir.mkdir(exist_ok=True)
     pd.DataFrame(trace).to_csv(results_dir / (tag+"_trace.csv"), index=False)
@@ -1282,6 +1302,10 @@ def evaluate_stream(args):
     print("Without adaptation, Context: {:.2f}% | Frozen CNN: {:.2f}%".format(
         100*metrics["no_adaptation_context_accuracy"], 100*metrics["base_accuracy"]))
     print("Labels: {}/{}".format(metrics["unique_labels_queried"], metrics["label_budget"]))
+    if args.routing_oracle:
+        row = metrics["routing_oracle"]
+        print("Routing oracle: {:.2f}% | routing gap: {:.2f} pp | Context-only online: {:.2f}% | both wrong: {}".format(
+            100*row["accuracy"], row["routing_gap_pp"], 100*row["context_only_online_accuracy"], row["both_wrong"]))
     if args.forgetting_diagnostics:
         for label in ("same_level", "source_validation"):
             row = metrics["forgetting"][label]
@@ -1355,6 +1379,7 @@ def cli():
     global GAIN_WEIGHT, RETENTION_WEIGHT, REFERENCE_BATCH_SIZE, REFERENCE_HISTORY_SIZE, TRAIN_PERTURBATIONS
     parser=argparse.ArgumentParser(description="Three-action shared-Context AMCAL; train-only scaling, global label budget, pre-feedback scoring.")
     parser.add_argument("command",choices=("audit","train","evaluate"))
+    parser.add_argument("--routing-oracle", action="store_true", help="Observer-only true-label route ceiling; keeps all policy decisions and updates unchanged.")
     parser.add_argument("--eval-epsilon", type=float, default=0.0)
     parser.add_argument("--train-perturbations", type=float, nargs="+", default=[0.0], help="Training/validation FGSM domains; never target test files.")
     parser.add_argument("--selection-cost", type=float, default=0.0001)
@@ -1443,5 +1468,6 @@ def cli():
 
 if __name__ == "__main__":
     cli()
+
 
 
