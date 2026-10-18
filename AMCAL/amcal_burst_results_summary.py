@@ -62,10 +62,16 @@ def main():
         values=[r[k] for r in rows if k!='PER' and isinstance(r.get(k),(int,float))]
         if values:mean[k]=sum(values)/len(values)
     rows.append(mean)
-    print('\nCombined online results (%; Gain_pp = RL minus Random):')
-    display(rows,['PER','Frozen','RL_Acc','Random_Acc','Gain_pp','RL_Oracle','Random_Oracle','RL_Labels','Random_Labels'])
-    print('\nContext-only retention (%; positive RefDrop = net forgetting):')
-    display(rows,['PER','RL_RefInitial','RL_RefFinal','Random_RefFinal','RL_RefDrop','Random_RefDrop','RL_CurrentFinal','Random_CurrentFinal'])
+    print('\nCombined results (%; Gap/Drop in percentage points; positive Drop = net forgetting):')
+    columns = {
+        'PER':'PER', 'Frozen':'Frozen', 'RL':'RL_Acc', 'Random':'Random_Acc',
+        'Gap':'Gain_pp', 'OracleRL':'RL_Oracle', 'OracleRnd':'Random_Oracle',
+        'LabRL':'RL_Labels', 'LabRnd':'Random_Labels',
+        'Ref0':'RL_RefInitial', 'RefRL':'RL_RefFinal', 'RefRnd':'Random_RefFinal',
+        'DropRL':'RL_RefDrop', 'DropRnd':'Random_RefDrop',
+        'FinalRL':'RL_CurrentFinal', 'FinalRnd':'Random_CurrentFinal'}
+    display([{short:r.get(full) for short,full in columns.items()} for r in rows],list(columns))
+    print('Ref: clean reference; Final: current-level Context-only final accuracy; RL/Random: online full-system accuracy.')
     missing=[f'{n}/{m}' for n in (1,5,7,10,15,17,20) for m in ('learned','random') if (n,m) not in selected]
     if missing:print('Missing evaluations (shown as -): '+', '.join(missing))
     target=root/f'combined_seed{a.seed}_lr{a.lr:g}_replay{a.context_replay_size}_{a.routing_reward_mode}.csv'
