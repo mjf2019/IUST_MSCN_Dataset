@@ -719,7 +719,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     train_domains = build_training_domains(cnn_model, clean_train_x, train_y)
     validation_x, validation_y = episode_val.dataset.tensors
     validation_domains = build_training_domains(cnn_model, validation_x, validation_y)
-    print("Training-only FGSM domains:", TRAIN_PERTURBATIONS, "; no target/test files used.")
+    print("Training domain IDs:", TRAIN_PERTURBATIONS, "; see domain manifest for construction; no target/test files used.")
     episode_initial_context = deepcopy(context_model.state_dict())
     print("Starting budget-aware episodic training...")
     # Eq. (18): offline target synchronization every 15 epochs.
