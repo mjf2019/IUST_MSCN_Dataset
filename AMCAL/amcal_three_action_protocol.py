@@ -1126,7 +1126,7 @@ def load_evaluation_frame(data_dir, attack_file, artifact, row_map=None,
 
 def print_stream_summary(metrics, name, mode, lr):
     level = name.split("_size_")[-1].split("_Step_")[0] if "_size_" in name else name
-    print("\\n" + "="*68)
+    print("\n" + "="*68)
     print(f"Level: {level} | Mode: {mode} | LR: {lr:g} | Samples: {metrics['evaluated_rows']}")
     print("-"*68)
     print(f"Online accuracy: {100*metrics['accuracy']:.2f}% | Macro-F1: {100*metrics['macro_f1']:.2f}%")
@@ -1144,7 +1144,7 @@ def print_stream_summary(metrics, name, mode, lr):
             print(f"{label}: {100*row['initial_accuracy']:.2f}% -> {100*row['final_accuracy']:.2f}% | Drop: {row['drop_pp']:+.2f} pp | Broken: {row['correct_to_wrong']}")
     if metrics.get("continual"):
         print(f"Continual domain: {metrics['continual_domain_index']} | Total reference drop: {metrics.get('continual_reference_drop_pp',float('nan')):+.2f} pp")
-    print("Positive Drop = net forgetting. Scores above are before feedback.")
+    print("Positive Drop = net forgetting; online scores are before feedback; final scores are retrospective.")
     print("="*68, flush=True)
 
 
