@@ -511,6 +511,31 @@ class PaidHistory:
                 self.rows[idx] = row
 
 
+CONTEXT_REPLAY_SIZE = 0
+CONTEXT_CURRENT_WEIGHT = 0.5
+
+class ContextReplay:
+    """Only previously paid labels; isolated from the reward reference sampler."""
+    def __init__(self, seed):
+        self.rows = []
+        self.rng = np.random.default_rng(seed)
+    def objective(self, cnn, context, x, y, current_loss):
+        if CONTEXT_REPLAY_SIZE and self.rows:
+            eligible = [r for r in self.rows if not torch.equal(r[0], x.detach().cpu())]
+            if eligible:
+                ids = self.rng.choice(len(eligible), min(CONTEXT_REPLAY_SIZE,len(eligible)), replace=False)
+                rx = torch.cat([eligible[i][0] for i in ids]).to(x.device)
+                ry = torch.cat([eligible[i][1] for i in ids]).to(y.device)
+                replay_ce = nn.functional.cross_entropy(cnn(context(rx)), ry)
+                with torch.no_grad():
+                    frozen_ce = nn.functional.cross_entropy(cnn(rx), ry)
+                current_loss = CONTEXT_CURRENT_WEIGHT*current_loss + (1-CONTEXT_CURRENT_WEIGHT)*context_objective(replay_ce,frozen_ce)
+        return current_loss
+    def add(self,x,y):
+        if CONTEXT_REPLAY_SIZE:
+            self.rows.append((x.detach().cpu().clone(),y.detach().cpu().clone()))
+            self.rows = self.rows[-REFERENCE_HISTORY_SIZE:]
+
 def probe_losses(cnn, context, batch):
     if batch is None:
         return None
@@ -546,6 +571,7 @@ def budget_validation(cnn, initial_context, agent, loader, input_length):
         features, truths = loader.dataset.tensors
         order = np.random.default_rng(RUN_SEED + 40001).permutation(len(truths))
         cap, used, predictions = int(TRAIN_BUDGET_FRACTION * len(order)), 0, []
+        context_replay = ContextReplay(RUN_SEED + 810033)
         validation_loss = 0.0
         was_training = agent.policy_net.training
         agent.policy_net.eval()
@@ -562,8 +588,10 @@ def budget_validation(cnn, initial_context, agent, loader, input_length):
                 used += 1
                 optimizer.zero_grad()
                 loss = context_objective(nn.functional.cross_entropy(cnn(context(x)), y), nn.functional.cross_entropy(base, y))
+                loss = context_replay.objective(cnn,context,x,y,loss)
                 loss.backward()
                 optimizer.step()
+                context_replay.add(x,y)
         agent.policy_net.train(was_training)
         y = truths[order].cpu().numpy()
         return {'Accuracy': float(accuracy_score(y, predictions)), 'Test Loss': validation_loss / len(order),
@@ -659,6 +687,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         print(f"  Training perturbation: {episode_level:g}")
         order = np.random.default_rng(RUN_SEED + epoch).permutation(len(train_y))
         cap, used = int(np.floor(TRAIN_BUDGET_FRACTION * len(order))), 0
+        context_replay = ContextReplay(RUN_SEED + epoch + 810033)
         training_probe = TrainingProbe(train_x, train_y, RUN_SEED + epoch + 910033)
         selected_rewards, selected_gains, selected_harms = [], [], []
         allowed_actions = []
@@ -692,8 +721,10 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                 context_optimizer.zero_grad()
                 context_loss = cnn_criterion(cnn_model(context_model(inputs)), labels)
                 loss = context_objective(context_loss, cnn_criterion(base, labels))
+                loss = context_replay.objective(cnn_model,context_model,inputs,labels,loss)
                 loss.backward()
                 context_optimizer.step()
+                context_replay.add(inputs,labels)
                 context_updated_samples += 1
                 running_context_loss += float(loss.item())
                 with torch.no_grad():
@@ -807,6 +838,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         'reward_version': 'three_action_route_transfer_v1',
         'gain_weight': GAIN_WEIGHT, 'retention_weight': RETENTION_WEIGHT,
         'reference_batch_size': REFERENCE_BATCH_SIZE, 'reference_history_size': REFERENCE_HISTORY_SIZE,
+        'context_replay_size': CONTEXT_REPLAY_SIZE, 'context_current_weight': CONTEXT_CURRENT_WEIGHT,
         'selection_cost': SELECTION_COST,
         'training_budget_fraction': TRAIN_BUDGET_FRACTION,
         'dqn_policy_net_state_dict': dqn_agent.policy_net.state_dict(),
@@ -1077,6 +1109,8 @@ def evaluate_stream(args):
                            reference_batch_size=REFERENCE_BATCH_SIZE, reference_history_size=REFERENCE_HISTORY_SIZE)
     if any(selector_checkpoint.get(k) != v for k, v in expected_reward.items()):
         raise ValueError("Reward/reference configuration differs from training checkpoint.")
+    if selector_checkpoint.get("context_replay_size",0) != CONTEXT_REPLAY_SIZE or selector_checkpoint.get("context_current_weight",0.5) != CONTEXT_CURRENT_WEIGHT:
+        raise ValueError("Context replay differs from checkpoint; use the matching new training run.")
     agent.policy_net.load_state_dict(selector_checkpoint["dqn_policy_net_state_dict"])
     agent.update_target_network()
     agent.policy_net.eval()
@@ -1112,6 +1146,7 @@ def evaluate_stream(args):
     random_selector = np.random.default_rng(args.seed + 719003)
     exploration_rng = np.random.default_rng(args.seed + 619003)
     exploration_decisions = 0
+    context_replay = ContextReplay(args.seed + 810033)
     paid_history = PaidHistory(args.seed + 910033)
     first_query_step = last_query_step = first_selector_update_step = None
     for step, (features, truth, source_id) in enumerate(zip(X, y, source_ids), start=1):
@@ -1163,8 +1198,10 @@ def evaluate_stream(args):
             context_loss = criterion(cnn(context(inputs)), labels)
             original_loss = criterion(base_logits, labels)
             loss = context_objective(context_loss, original_loss)
+            loss = context_replay.objective(cnn,context,inputs,labels,loss)
             loss.backward()
             optimizer.step()
+            context_replay.add(inputs,labels)
             context_updates += 1
             loss_value = float(loss.item())
             # Reward/state may use post-update outputs of this queried sample.
@@ -1240,6 +1277,7 @@ def evaluate_stream(args):
         query_rule='action 2 and remaining unique-label budget; query action masked after exhaustion; choose route 0/1',
         reward_version="three_action_route_transfer_v1", gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
         reward_reference="online: previous queried samples only, excluding feature-identical current; train: independent training batch excluding feature-identical current; per-example positive gain and damage; no reference gradient",
+        context_replay_size=CONTEXT_REPLAY_SIZE, context_current_weight=CONTEXT_CURRENT_WEIGHT,
         reference_batch_size=REFERENCE_BATCH_SIZE, reference_history_size=REFERENCE_HISTORY_SIZE,
         eval_epsilon=args.eval_epsilon, exploration_decisions=exploration_decisions, action_mask="query disabled at exhausted budget in behavior and DDQN next-action maximization",
         selection_cost=SELECTION_COST, state_protocol="features; frozen probabilities; context probabilities; remaining-budget fraction; elapsed-stream fraction",
@@ -1381,6 +1419,7 @@ def audit_dataset(args):
     print(json.dumps(report,indent=2))
 
 def cli():
+    global CONTEXT_REPLAY_SIZE, CONTEXT_CURRENT_WEIGHT
     global RUN_SEED, device, SOURCE_FILENAME, SELECTION_COST, TRAIN_BUDGET_FRACTION, ONLINE_TRAIN_LR
     global GAIN_WEIGHT, RETENTION_WEIGHT, REFERENCE_BATCH_SIZE, REFERENCE_HISTORY_SIZE, TRAIN_PERTURBATIONS
     parser=argparse.ArgumentParser(description="Three-action shared-Context AMCAL; train-only scaling, global label budget, pre-feedback scoring.")
@@ -1415,7 +1454,12 @@ def cli():
     parser.add_argument("--lr",type=float,default=0.0001)
     parser.add_argument("--online-selector-batch-size",type=int,default=32,
                         help="Online replay minibatch size; offline training remains at 256.")
+    parser.add_argument("--context-replay-size",type=int,default=0)
+    parser.add_argument("--context-current-weight",type=float,default=0.5)
     args=parser.parse_args()
+    if args.context_replay_size < 0 or not 0 < args.context_current_weight <= 1:
+        parser.error("Invalid context replay configuration.")
+    CONTEXT_REPLAY_SIZE, CONTEXT_CURRENT_WEIGHT = args.context_replay_size,args.context_current_weight
     if not 0 <= args.budget_fraction <= 1:
         parser.error("Budget fraction must be between 0 and 1.")
     if args.online_selector_batch_size < 1:
