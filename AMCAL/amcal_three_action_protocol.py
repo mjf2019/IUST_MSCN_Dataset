@@ -204,6 +204,7 @@ class DQNSelectorAgent:
         self.epsilon_end = epsilon_end
         self.epsilon_decay = epsilon_decay
         self.steps_done = 0
+        self.route_examples = []
     
     def select_action(self, state, explore=True):
         """Select action for given state. Always returns a tensor."""
@@ -228,6 +229,17 @@ class DQNSelectorAgent:
     def update_epsilon(self):
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
     
+    def observe_route(self, state, frozen_prediction, context_prediction, truth):
+        if ROUTE_AUX_WEIGHT <= 0:
+            return
+        frozen_ok, context_ok = frozen_prediction == truth, context_prediction == truth
+        if frozen_ok == context_ok:
+            return
+        target = 0 if frozen_ok else 1
+        self.route_examples.append((state.detach().reshape(-1).cpu().clone(), target))
+        if len(self.route_examples) > 50000:
+            del self.route_examples[:len(self.route_examples)-50000]
+
     def optimize(self):
         if len(self.replay_buffer) < self.batch_size:
             return None
@@ -250,6 +262,13 @@ class DQNSelectorAgent:
             target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
         
         loss = nn.MSELoss()(current_q_values, target_q_values)
+        if ROUTE_AUX_WEIGHT > 0 and self.route_examples:
+            examples = random.sample(self.route_examples, min(32,len(self.route_examples)))
+            route_states = torch.stack([x for x,y in examples]).to(self.device)
+            route_targets = torch.tensor([y for x,y in examples],dtype=torch.long,device=self.device)
+            # Classify only routes 0/1; query utility remains governed by DDQN.
+            aux_loss = nn.functional.cross_entropy(self.policy_net(route_states)[:,:2],route_targets)
+            loss = loss + ROUTE_AUX_WEIGHT * aux_loss
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1.0)
@@ -511,6 +530,7 @@ class PaidHistory:
                 self.rows[idx] = row
 
 
+ROUTE_AUX_WEIGHT = 0.0
 ROUTING_REWARD_MODE = "absolute"
 
 def route_reward_value(action, frozen_prediction, context_prediction, truth):
@@ -729,6 +749,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
                         skip_next = budget_state(nx, cnn_model(context_model(nx)).softmax(1), cnn_model(nx).softmax(1), cap-used, cap, position+1, len(order))
                     else:
                         skip_next = torch.zeros_like(state)
+                dqn_agent.observe_route(state,int(base.argmax(1).item()),int(before.argmax(1).item()),int(labels.item()))
                 reference_batch = training_probe.sample(inputs)
                 reference_before = probe_losses(cnn_model, context_model, reference_batch)
                 used += 1
@@ -849,6 +870,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         'training_perturbations': list(TRAIN_PERTURBATIONS),
         'training_shift_protocol': 'one shuffled FGSM domain per epoch; reset Context and Adam; validation mean across domains; epsilon in training StandardScaler units',
         'budget_state_version': 4,
+        'route_aux_weight': ROUTE_AUX_WEIGHT,
         'reward_version': route_reward_version(), 'routing_reward_mode': ROUTING_REWARD_MODE,
         'gain_weight': GAIN_WEIGHT, 'retention_weight': RETENTION_WEIGHT,
         'reference_batch_size': REFERENCE_BATCH_SIZE, 'reference_history_size': REFERENCE_HISTORY_SIZE,
@@ -1119,6 +1141,8 @@ def evaluate_stream(args):
     selector_checkpoint = checkpoint("adversarial_best_dqn.pth")
     if selector_checkpoint.get("budget_state_version") != 4 or selector_checkpoint.get("selection_cost") != SELECTION_COST:
         raise ValueError("Budget-aware checkpoint and matching selection cost required; retrain in a fresh output.")
+    if selector_checkpoint.get("route_aux_weight",0.0) != ROUTE_AUX_WEIGHT:
+        raise ValueError("Route auxiliary weight differs from training.")
     if selector_checkpoint.get("routing_reward_mode","absolute") != ROUTING_REWARD_MODE:
         raise ValueError("Routing reward differs from training; train a new matching checkpoint.")
     expected_reward = dict(gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
@@ -1207,6 +1231,8 @@ def evaluate_stream(args):
                 first_query_step = step
             last_query_step = step
             labels = torch.tensor([int(truth)], dtype=torch.long, device=device)
+            if args.selector_mode == "learned":
+                agent.observe_route(state,base_prediction,int(adapted_logits.argmax(1).item()),int(truth))
             reference_batch = paid_history.sample(inputs)
             reference_before = probe_losses(cnn, context, reference_batch)
             optimizer.zero_grad()
@@ -1291,7 +1317,7 @@ def evaluate_stream(args):
         selector_freeze_rule="freeze at zero budget or after budget exhaustion",
         alignment=alignment, seed=args.seed, budget_fraction=args.budget_fraction,
         query_rule='action 2 and remaining unique-label budget; query action masked after exhaustion; choose route 0/1',
-        reward_version=route_reward_version(), routing_reward_mode=ROUTING_REWARD_MODE, gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
+        route_aux_weight=ROUTE_AUX_WEIGHT, reward_version=route_reward_version(), routing_reward_mode=ROUTING_REWARD_MODE, gain_weight=GAIN_WEIGHT, retention_weight=RETENTION_WEIGHT,
         reward_reference="online: previous queried samples only, excluding feature-identical current; train: independent training batch excluding feature-identical current; per-example positive gain and damage; no reference gradient",
         context_replay_size=CONTEXT_REPLAY_SIZE, context_current_weight=CONTEXT_CURRENT_WEIGHT,
         reference_batch_size=REFERENCE_BATCH_SIZE, reference_history_size=REFERENCE_HISTORY_SIZE,
@@ -1435,7 +1461,7 @@ def audit_dataset(args):
     print(json.dumps(report,indent=2))
 
 def cli():
-    global ROUTING_REWARD_MODE, CONTEXT_REPLAY_SIZE, CONTEXT_CURRENT_WEIGHT
+    global ROUTE_AUX_WEIGHT, ROUTING_REWARD_MODE, CONTEXT_REPLAY_SIZE, CONTEXT_CURRENT_WEIGHT
     global RUN_SEED, device, SOURCE_FILENAME, SELECTION_COST, TRAIN_BUDGET_FRACTION, ONLINE_TRAIN_LR
     global GAIN_WEIGHT, RETENTION_WEIGHT, REFERENCE_BATCH_SIZE, REFERENCE_HISTORY_SIZE, TRAIN_PERTURBATIONS
     parser=argparse.ArgumentParser(description="Three-action shared-Context AMCAL; train-only scaling, global label budget, pre-feedback scoring.")
@@ -1473,7 +1499,11 @@ def cli():
     parser.add_argument("--context-replay-size",type=int,default=0)
     parser.add_argument("--context-current-weight",type=float,default=0.5)
     parser.add_argument("--routing-reward-mode",choices=("absolute","relative"),default="absolute")
+    parser.add_argument("--route-aux-weight",type=float,default=0.0)
     args=parser.parse_args()
+    if not np.isfinite(args.route_aux_weight) or args.route_aux_weight < 0:
+        parser.error("Auxiliary weight must be finite and nonnegative.")
+    ROUTE_AUX_WEIGHT = args.route_aux_weight
     ROUTING_REWARD_MODE = args.routing_reward_mode
     if args.context_replay_size < 0 or not 0 < args.context_current_weight <= 1:
         parser.error("Invalid context replay configuration.")
