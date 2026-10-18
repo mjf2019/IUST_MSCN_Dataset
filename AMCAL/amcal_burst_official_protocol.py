@@ -156,7 +156,7 @@ def main():
     calls = 0
     def build_domains(cnn, features, labels):
         nonlocal calls
-        split = ('train_ids', 'val_ids')[calls]
+        split = ('train_ids', 'val_ids')[calls % 2]
         calls += 1
         artifact = joblib.load('Models/protocol_preprocessing.joblib')
         selected_ids = np.asarray(artifact[split])
