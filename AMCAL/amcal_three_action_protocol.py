@@ -591,7 +591,7 @@ def build_training_domains(cnn, features, labels):
     return {level: domains[level] for level in levels}
 
 
-def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, val_loader, class_counts, input_length, num_classes, fine_tune_epochs=500, patience=50, pretrain_epochs=20):
+def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, val_loader, class_counts, input_length, num_classes, fine_tune_epochs=500, patience=50, pretrain_epochs=20, episode_loaders=None):
     class_weights = torch.FloatTensor(1.0 / class_counts).to(device)
     cnn_criterion = nn.CrossEntropyLoss(weight=class_weights)
     context_optimizer = optim.Adam(context_model.parameters(), lr=5e-4, weight_decay=1e-4)
@@ -626,9 +626,10 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         context_scheduler.step()
         print(f"Pretrain Epoch {pretrain_epoch+1}/{pretrain_epochs}, Loss: {total_context_loss/num_batches:.4f}")
     
-    clean_train_x, train_y = full_loader.dataset.tensors
+    episode_full, episode_val = episode_loaders if episode_loaders is not None else (full_loader, val_loader)
+    clean_train_x, train_y = episode_full.dataset.tensors
     train_domains = build_training_domains(cnn_model, clean_train_x, train_y)
-    validation_x, validation_y = val_loader.dataset.tensors
+    validation_x, validation_y = episode_val.dataset.tensors
     validation_domains = build_training_domains(cnn_model, validation_x, validation_y)
     print("Training-only FGSM domains:", TRAIN_PERTURBATIONS, "; no target/test files used.")
     episode_initial_context = deepcopy(context_model.state_dict())
@@ -1095,7 +1096,12 @@ def evaluate_stream(args):
     forgetting_initial = None
     if args.forgetting_diagnostics:
         source = pd.read_csv(Path(args.data_dir) / SOURCE_FILENAME)
-        reference = source.iloc[artifact["val_ids"]]
+        if artifact.get("reference_csv"):
+            if file_sha256(artifact["reference_csv"]) != artifact["reference_sha256"]:
+                raise ValueError("Reference CSV changed since training.")
+            reference = pd.read_csv(artifact["reference_csv"])
+        else:
+            reference = source.iloc[artifact["val_ids"]]
         reference_x = artifact["scaler"].transform(reference.iloc[:, :-1].to_numpy())
         reference_y = artifact["label_encoder"].transform(reference.iloc[:, -1].to_numpy())
         forgetting_initial = observer(reference_x, reference_y)
@@ -1468,6 +1474,7 @@ def cli():
 
 if __name__ == "__main__":
     cli()
+
 
 
 
