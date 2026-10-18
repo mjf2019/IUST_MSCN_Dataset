@@ -21,7 +21,11 @@ def main():
     p.add_argument('--stage1-rl-epochs',type=int,default=12)
     p.add_argument('--cnn-multishift-epochs',type=int,default=30)
     p.add_argument('--cnn-multishift-patience',type=int,default=10)
+    p.add_argument('--stage2-pretrain-epochs',type=int,default=0)
+    p.add_argument('--reuse-multishift-run',type=Path)
     extra,remaining=p.parse_known_args()
+    reuse=extra.reuse_multishift_run.resolve() if extra.reuse_multishift_run else None
+    if extra.stage2_pretrain_epochs < 0:p.error('Pretraining epochs must be nonnegative')
     if min(extra.stage1_rl_epochs,extra.cnn_multishift_epochs,extra.cnn_multishift_patience)<1:p.error('Stage epochs/patience must be positive')
     if 'train' not in remaining:p.error('This entry point is training only; use amcal_burst_official_protocol.py evaluate for testing')
     if '--official-split-dir' not in remaining:p.error('--official-split-dir is required')
@@ -33,21 +37,43 @@ def main():
         digest=core.file_sha256('Models/protocol_preprocessing.joblib')
         def save_cnn(cnn):
             torch.save(dict(preprocessing_sha256=digest,protocol_version=3,model_state_dict=cnn.state_dict(),input_length=width,num_classes=nclasses),'Models/initial_cnn_model.pth')
-        print('\nSTAGE 1A: CNN on clean training rows only; clean validation checkpoint selection.',flush=True)
-        cnn=core.CNN1D(width,nclasses).to(core.device)
-        cnn=core.train_initial_cnn(cnn,train,val,counts,base_epoch,base_patience)
-        save_cnn(cnn)
         state_width=width+2*nclasses+2+(4 if core.ROUTE_HISTORY_ENABLED else 0)
-        agent=core.DQNSelectorAgent(state_width,core.device)
-        context=core.ContextAwareNetwork(width).to(core.device)
-        core.TRAIN_PERTURBATIONS=(0.0,)
-        print('\nSTAGE 1B: Context and RL on clean rows only.',flush=True)
-        cnn,agent,context=core.train_adversarial_system(cnn,agent,context,full,val,counts,width,nclasses,extra.stage1_rl_epochs,min(adver_patience,extra.stage1_rl_epochs),pretrain_epochs)
-        archive=Path('Stage1/Models');archive.mkdir(parents=True,exist_ok=True)
-        for path in Path('Models').iterdir():
-            if path.is_file():shutil.copy2(path,archive/path.name)
-        shutil.copy2('burst_training_domains.json','Stage1/burst_training_domains.json')
-        prior_policy=deepcopy(agent.policy_net.state_dict());prior_context=deepcopy(context.state_dict())
+        if reuse is None:
+            print('\nSTAGE 1A: CNN on clean training rows only; clean validation checkpoint selection.',flush=True)
+            cnn=core.CNN1D(width,nclasses).to(core.device)
+            cnn=core.train_initial_cnn(cnn,train,val,counts,base_epoch,base_patience)
+            save_cnn(cnn)
+            state_width=width+2*nclasses+2+(4 if core.ROUTE_HISTORY_ENABLED else 0)
+            agent=core.DQNSelectorAgent(state_width,core.device)
+            context=core.ContextAwareNetwork(width).to(core.device)
+            core.TRAIN_PERTURBATIONS=(0.0,)
+            print('\nSTAGE 1B: Context and RL on clean rows only.',flush=True)
+            cnn,agent,context=core.train_adversarial_system(cnn,agent,context,full,val,counts,width,nclasses,extra.stage1_rl_epochs,min(adver_patience,extra.stage1_rl_epochs),pretrain_epochs)
+            archive=Path('Stage1/Models');archive.mkdir(parents=True,exist_ok=True)
+            for path in Path('Models').iterdir():
+                if path.is_file():shutil.copy2(path,archive/path.name)
+            shutil.copy2('burst_training_domains.json','Stage1/burst_training_domains.json')
+            prior_policy=deepcopy(agent.policy_net.state_dict());prior_context=deepcopy(context.state_dict())
+        else:
+            print('Reusing multishift CNN, Context and policy; no CNN retraining.',flush=True)
+            old=joblib.load(reuse/'Models/protocol_preprocessing.joblib')
+            new=joblib.load('Models/protocol_preprocessing.joblib')
+            if old['source_sha256']!=new['source_sha256'] or old['feature_names']!=new['feature_names']:
+                raise ValueError('Reuse source/features differ')
+            for key in ('train_ids','val_ids','test_ids'):
+                if not np.array_equal(old[key],new[key]):raise ValueError('Reuse split differs: '+key)
+            for key in ('mean_','scale_'):
+                if not np.allclose(getattr(old['scaler'],key),getattr(new['scaler'],key)):raise ValueError('Reuse scaling differs')
+            if not np.array_equal(old['label_encoder'].classes_,new['label_encoder'].classes_):raise ValueError('Reuse classes differ')
+            def saved(name):return torch.load(reuse/'Models'/name,map_location='cpu',weights_only=False)
+            cnn=core.CNN1D(width,nclasses).to(core.device)
+            cnn.load_state_dict(saved('initial_cnn_model.pth')['model_state_dict'])
+            prior_context=saved('adversarial_best_context.pth')['context_model_state_dict']
+            policy=saved('adversarial_best_dqn.pth')
+            if policy.get('routing_reward_mode','absolute')!=core.ROUTING_REWARD_MODE or policy.get('route_history',False)!=core.ROUTE_HISTORY_ENABLED or policy.get('route_aux_weight',0)!=core.ROUTE_AUX_WEIGHT:
+                raise ValueError('Reuse selector configuration differs')
+            prior_policy=policy['dqn_policy_net_state_dict']
+            context=core.ContextAwareNetwork(width).to(core.device)
         art=joblib.load('Models/protocol_preprocessing.joblib')
         def combined_loader(ids,shuffle):
             frames=[]
@@ -64,9 +90,10 @@ def main():
             return DataLoader(ds,batch_size=64,shuffle=shuffle)
         multitrain=combined_loader(art['train_ids'],True)
         multival=combined_loader(art['val_ids'],False)
-        print('\nSTAGE 2A: Continue CNN on training domains 0/3/12; select using validation domains only.',flush=True)
-        for parameter in cnn.parameters():parameter.requires_grad_(True)
-        cnn=core.train_initial_cnn(cnn,multitrain,multival,counts,extra.cnn_multishift_epochs,extra.cnn_multishift_patience)
+        if reuse is None:
+            print('\nSTAGE 2A: Continue CNN on training domains 0/3/12; select using validation domains only.',flush=True)
+            for parameter in cnn.parameters():parameter.requires_grad_(True)
+            cnn=core.train_initial_cnn(cnn,multitrain,multival,counts,extra.cnn_multishift_epochs,extra.cnn_multishift_patience)
         cnn.eval()
         for parameter in cnn.parameters():parameter.requires_grad_(False)
         save_cnn(cnn)
@@ -76,12 +103,13 @@ def main():
         assert len(agent.replay_buffer)==0
         context.load_state_dict(prior_context)
         core.TRAIN_PERTURBATIONS=(0.0,3.0,12.0)
-        # No additional Context pretraining: preserve stage-1 Context warm start.
-        core.train_adversarial_system(cnn,agent,context,full,val,counts,width,nclasses,adver_epoch,adver_patience,0)
+        # Pretrain against the new CNN on train-only 0/3/12, then keep per-domain RL episodes.
+        pretrain_loader=multitrain if extra.stage2_pretrain_epochs else full
+        core.train_adversarial_system(cnn,agent,context,pretrain_loader,val,counts,width,nclasses,adver_epoch,adver_patience,extra.stage2_pretrain_epochs,episode_loaders=(full,val))
         ckpath=Path('Models/adversarial_best_dqn.pth');ck=torch.load(ckpath,map_location='cpu',weights_only=False)
         ck['two_stage_protocol']='clean CNN/Context/RL -> CNN multishift refinement -> warm-start Context/RL with empty replay'
         torch.save(ck,ckpath)
-        manifest=dict(stage1_domains=[0],stage1_rl_epochs=extra.stage1_rl_epochs,cnn_refinement_domains=[0,3,12],cnn_refinement_max_epochs=extra.cnn_multishift_epochs,stage2_rl_domains=[0,3,12],stage2_rl_max_epochs=adver_epoch,context_warm_start=True,policy_warm_start=True,selector_replay_reset=True,heldout_scoring_during_training=False,preprocessing_sha256=digest)
+        manifest=dict(reused_run=str(reuse) if reuse else None,stage2_pretrain_epochs=extra.stage2_pretrain_epochs,stage1_domains=[0],stage1_rl_epochs=extra.stage1_rl_epochs,cnn_refinement_domains=[0,3,12],cnn_refinement_max_epochs=extra.cnn_multishift_epochs,stage2_rl_domains=[0,3,12],stage2_rl_max_epochs=adver_epoch,context_warm_start=True,policy_warm_start=True,selector_replay_reset=True,heldout_scoring_during_training=False,preprocessing_sha256=digest)
         Path('two_stage_training.json').write_text(json.dumps(manifest,indent=2))
         print('\nTwo-stage training complete. Final models saved in Models; stage-1 snapshots in Stage1/Models. No heldout test was scored.',flush=True)
     core.train_main=train_stages
