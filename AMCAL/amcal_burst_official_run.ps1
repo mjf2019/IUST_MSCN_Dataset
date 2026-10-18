@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $dataset = "AMCAL/ANT_Burst_${Representation}_TEST/Dataset_official_v1"
 $burst = "$dataset/AdvBurst_FTSC-$Representation"
 $run = "AMCAL/ANT_Burst_${Representation}_TEST/protocol_runs/three_action_official_levels3_12_lr0p0001_seed$Seed"
-$cache = 'AMCAL/ANT_Burst_TEST/official_source_cache'
+$cache = "AMCAL/ANT_Burst_TEST/official_source_cache/$Representation"
 if (Test-Path "$dataset/manifest.json") {
     Write-Host "Using prepared $Representation data: $dataset"
 } else {
