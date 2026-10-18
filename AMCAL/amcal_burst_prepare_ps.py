@@ -35,6 +35,8 @@ def main():
     exec(compile(ast.Module(body=nodes,type_ignores=[]),'official_ps_helpers','exec'),env)
     tx,ty,ti,vx,vy,vi,x,y,info,norm=env['prepare_data'](data,[len(data.name[data.traget_classification_index])],3,100)
     labels=np.argmax(y,axis=1);files={};levels={}
+    header=norm.direct_PktSizeNormalization([np.array([54])],set_name='validation')[0][0]
+    domain=(0.,float(np.max(tx)-header),float(np.min(tx)),float(np.max(tx)))
     def save(path,x,y):
         frame=pd.DataFrame(x[:,:100],columns=[str(i) for i in range(1,101)])
         frame['label']=np.argmax(y,axis=1);frame.to_csv(path,index=False)
@@ -50,9 +52,10 @@ def main():
         if uap.shape!=(len(data.name[data.traget_classification_index]),1000,1):raise ValueError('Unexpected UAP shape')
         attacked,mask=env['prepare_attack_data_PktSize'](x,info,{'AdvBurstOverHead':level},norm,set_name='test')
         for i,cls in enumerate(labels):
-            idx=np.flatnonzero(mask[i]==0);values=uap[cls,:len(idx),0]
+            idx=np.flatnonzero(mask[i]==0);values=np.clip(uap[cls,:len(idx),0],min(domain[:2]),max(domain[:2]))
             # Official add_AdvBurst_to_FTSC_seq: UAP + sign(UAP)*header.
             attacked[i,idx]=values+np.sign(values)*attacked[i,idx]
+        attacked=np.clip(attacked,domain[2],domain[3])
         if not np.isfinite(attacked).all():raise ValueError('Non-finite features')
         save(target/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv',attacked,y)
         levels[str(level)]={'uap_sha256':sha(path),'no_eligible_burst_rows':int((np.sum(mask==0,axis=1)==0).sum())}
