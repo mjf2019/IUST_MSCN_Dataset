@@ -1,0 +1,115 @@
+{
+  "representation": "FTSC-PS",
+  "source": "https://github.com/amsadeghzadeh/AdversarialNetworkTraffic",
+  "dataset_sha256": "2203c7e883ecc3639bb727d62166942e47b7ad486100609a1260957d7564c53b",
+  "notebook_sha256": "f8665228ba0becfe7a5ec4604cf3274acdffbe928ce1e52283976c35482b9a13",
+  "classes": [
+    "chat",
+    "email",
+    "filetransfer",
+    "streaming",
+    "torrent",
+    "voip"
+  ],
+  "normalization": {
+    "PS_mean": 626.7516674407533,
+    "PS_std": 635.3629482580055,
+    "PS_train_min": -0.9376556644893195,
+    "PS_val_min": -0.9250644360868232,
+    "PS_test_min": -0.9250644360868232,
+    "PS_train_max": 2.312064315408387
+  },
+  "files": {
+    "train_dataset.csv": {
+      "rows": 3230,
+      "sha256": "ecc737c54a26211684632fa3d23b7f3f59b4c59ace7e3d85a7cf736a1bc175f1"
+    },
+    "validation_dataset.csv": {
+      "rows": 1075,
+      "sha256": "57f1517b8d8ae4400fdf97fb52187a292d16c03972721ae0aa2f3008d9bb1382"
+    },
+    "test_dataset.csv": {
+      "rows": 1076,
+      "sha256": "05a14d6a66baceabf15d505a55ace7cc1313d9709f4f45888990e1866a337e6d"
+    },
+    "AdvBurst_FTSC-PS/AdvBurstTrainedBurst_size_0_Step_2000.csv": {
+      "rows": 1076,
+      "sha256": "05a14d6a66baceabf15d505a55ace7cc1313d9709f4f45888990e1866a337e6d"
+    },
+    "AdvBurst_FTSC-PS/AdvBurstTrainedBurst_size_1_Step_2000.csv": {
+      "rows": 1076,
+      "sha256": "b1f363e29786c1b177e60f06bd74c6ee6c722fcb24761423b5b5f6830fa15e55"
+    },
+    "AdvBurst_FTSC-PS/AdvBurstTrainedBurst_size_3_Step_2000.csv": {
+      "rows": 1076,
+      "sha256": "594d360ecbf850fca3d3ae659166be896cd78a069517287e46006aab211350b2"
+    },
+    "AdvBurst_FTSC-PS/AdvBurstTrainedBurst_size_5_Step_2000.csv": {
+      "rows": 1076,
+      "sha256": "c3d1420b8ee9f1577ea19039d53d598ed71afaf21f3aa80c252e16e09261b406"
+    },
+    "AdvBurst_FTSC-PS/AdvBurstTrainedBurst_size_7_Step_2000.csv": {
+      "rows": 1076,
+      "sha256": "1f4dc1212054d6b8c2e2111ee2f4885fbe28aad8c1dc4921e5d6c332728fea0f"
+    },
+    "AdvBurst_FTSC-PS/AdvBurstTrainedBurst_size_10_Step_2000.csv": {
+      "rows": 1076,
+      "sha256": "6d67ab3e27e2983005303e4c385320bf1521b6b50c6174ba87e8affa35361da2"
+    },
+    "AdvBurst_FTSC-PS/AdvBurstTrainedBurst_size_12_Step_2000.csv": {
+      "rows": 1076,
+      "sha256": "f124f009e9846a37f8c27ea04c4f30c473f4b28c623ce6c6b10e6a03003cf95c"
+    },
+    "AdvBurst_FTSC-PS/AdvBurstTrainedBurst_size_15_Step_2000.csv": {
+      "rows": 1076,
+      "sha256": "306556e71e150e62d1b4feb85b5027d5cba6a07c1f550fba592d421544a645ae"
+    },
+    "AdvBurst_FTSC-PS/AdvBurstTrainedBurst_size_17_Step_2000.csv": {
+      "rows": 1076,
+      "sha256": "a22f0d0617e74240a2b030d6949bd2f4f85dddac5b6ae27c07188f11c53bf365"
+    },
+    "AdvBurst_FTSC-PS/AdvBurstTrainedBurst_size_20_Step_2000.csv": {
+      "rows": 1076,
+      "sha256": "23dc94bebf59ee28548fc3c97eb25dce4167d361f728ffb827cb7a50bc4e7622"
+    }
+  },
+  "levels": {
+    "1": {
+      "uap_sha256": "d61bf5824c0a7e0e76d9e26b826bf5f22db7b22a3158f065a156f2704a7e7d9e",
+      "no_eligible_burst_rows": 107
+    },
+    "3": {
+      "uap_sha256": "fbf78718a28b8808763d032c29a5f73e7228a262f91b535ad591df8de84ce2f4",
+      "no_eligible_burst_rows": 107
+    },
+    "5": {
+      "uap_sha256": "d204961b88d10554b735012b86dc290302ea3d5cef3df256b72793f6c7eced5b",
+      "no_eligible_burst_rows": 107
+    },
+    "7": {
+      "uap_sha256": "8eebc0df05b7c110f03e1a22f6f1dbb216ab7890fad2fcc7bb3807d9f56c8f90",
+      "no_eligible_burst_rows": 107
+    },
+    "10": {
+      "uap_sha256": "acae52f588a96d9678be1d42ac024f538b11cf7d7a17ef3067a1c99c54d106f0",
+      "no_eligible_burst_rows": 107
+    },
+    "12": {
+      "uap_sha256": "8d31ac9a4f8e4928ccd9ac21740dd3428cb6286204771ba0d2c2a908f31026bc",
+      "no_eligible_burst_rows": 107
+    },
+    "15": {
+      "uap_sha256": "4f864dfdf25f7f367bdf73c6abe0770f61c0e556b63095cc3cdd40c4246f98c0",
+      "no_eligible_burst_rows": 107
+    },
+    "17": {
+      "uap_sha256": "9d3b0a9b939abe6076cbee5cc42a92a447b3433f6a34ae53006948c8e3c5e76f",
+      "no_eligible_burst_rows": 107
+    },
+    "20": {
+      "uap_sha256": "9f7e16c2c3d0da408c9c0fcc0e2c221022aeaf20aa190065218b397bbdd6cac1",
+      "no_eligible_burst_rows": 107
+    }
+  },
+  "scope": "Official saved UAP reconstruction; no re-optimization. Original normalization retained, including split-dependent shifts. Train split is not oversampled. PS row counts can differ from IAT after short-flow filtering."
+}
