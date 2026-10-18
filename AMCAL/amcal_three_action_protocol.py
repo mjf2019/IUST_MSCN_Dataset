@@ -1192,7 +1192,7 @@ def evaluate_stream(args):
     session_identity = dict(preprocessing_sha256=digest, cnn_sha256=file_sha256(models/"initial_cnn_model.pth"),
         context_sha256=file_sha256(models/"adversarial_best_context.pth"), selector_sha256=file_sha256(models/"adversarial_best_dqn.pth"),
         seed=args.seed, selector_mode=args.selector_mode, lr=args.lr, budget_fraction=args.budget_fraction,
-        eval_epsilon=args.eval_epsilon, reward=ROUTING_REWARD_MODE, replay=CONTEXT_REPLAY_SIZE,
+        query_schedule=args.query_schedule, eval_epsilon=args.eval_epsilon, reward=ROUTING_REWARD_MODE, replay=CONTEXT_REPLAY_SIZE,
         route_history=ROUTE_HISTORY_ENABLED, aux=ROUTE_AUX_WEIGHT)
     continuation = None
     if session_path is not None and session_path.exists():
@@ -1255,6 +1255,11 @@ def evaluate_stream(args):
         if torch.cuda.is_available() and continuation.get("cuda_rng") is not None:
             torch.cuda.set_rng_state_all([v.cpu() for v in continuation["cuda_rng"]])
     first_query_step = last_query_step = first_selector_update_step = None
+    scheduled_queries = set()
+    if args.query_schedule == "uniform":
+        # Independent RNG and features/labels are not consulted.
+        schedule_rng = np.random.default_rng(args.seed + 819003)
+        scheduled_queries = set(schedule_rng.choice(len(y),budget,replace=False).tolist())
     for step, (features, truth, source_id) in enumerate(zip(X, y, source_ids), start=1):
         source_id = int(source_id)
         inputs = torch.tensor(features, dtype=torch.float32, device=device).reshape(1, 1, -1)
@@ -1276,6 +1281,16 @@ def evaluate_stream(args):
                 exploration_decisions += 1
             else:
                 action = int(agent.select_action(state, explore=False).item())
+            if args.query_schedule == "uniform":
+                if step-1 in scheduled_queries:
+                    action = 2
+                elif action == 2:
+                    if args.selector_mode == "random":
+                        action = int(random_selector.integers(0,2))
+                    elif explored:
+                        action = int(exploration_rng.integers(0,2))
+                    else:
+                        action = int(agent.policy_net(state)[:,:2].argmax(1).item())
             prediction = base_prediction if action == 0 else int(adapted_logits.argmax(1).item())
             confidence_gap = float(abs(adapted_prob.max().item()-base_prob.max().item()))
         # Capture the scored prediction before acquiring a label or changing weights.
@@ -1444,6 +1459,12 @@ def evaluate_stream(args):
         for row, ok in zip(trace, oracle_ok):
             row["oracle_route_correct"] = bool(ok)
 
+    metrics["query_schedule"] = args.query_schedule
+    if args.query_schedule == "uniform":
+        if len(queried_ids) != budget:
+            raise RuntimeError("Scheduled query budget was not consumed exactly.")
+        metrics["query_rule"] = "diagnostic fixed uniform label-blind query positions; action 2 forced at scheduled positions; policy/random controls only routes elsewhere"
+        metrics["scheduled_query_count"] = len(scheduled_queries)
     metrics["continual"] = session_path is not None
     if session_path is not None:
         prior_domains = continuation["domains"] if continuation is not None else []
@@ -1471,6 +1492,8 @@ def evaluate_stream(args):
 
     name = "clean" if args.attack_file is None else Path(args.attack_file).stem
     tag = f"oracle{int(args.routing_oracle)}_masked_eps{args.eval_epsilon:g}_three_route_transfer_a{GAIN_WEIGHT:g}_b{RETENTION_WEIGHT:g}_cost{SELECTION_COST:g}_{name}_{args.selector_mode}_{args.stream_order}_forgetting{int(args.forgetting_diagnostics)}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
+    if args.query_schedule != "policy":
+        tag += "_query"+args.query_schedule
     if session_path is not None:
         tag += "_continual_"+session_path.parent.name
     results_dir = output / "Results"
@@ -1596,6 +1619,7 @@ def cli():
     parser.add_argument("--route-aux-weight",type=float,default=0.0)
     parser.add_argument("--route-history",action="store_true")
     parser.add_argument("--continual-state",type=str,help="Local state file to retain Context/DDQN/replay between domain evaluations.")
+    parser.add_argument("--query-schedule",choices=("policy","uniform"),default="policy",help="Diagnostic uniform fixed-budget feedback; keeps learned routing but overrides query selection.")
     args=parser.parse_args()
     if args.continual_state:
         if args.command != "evaluate":parser.error("--continual-state is evaluation only")
