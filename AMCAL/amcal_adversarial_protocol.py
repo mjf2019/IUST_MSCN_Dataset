@@ -261,7 +261,7 @@ def display(rows):
     print('Seen: heldout source rows at clean/training intensity. Unseen: heldout rows at other intensities.', flush=True)
 
 
-def evaluate(a):
+def prepare_evaluation_domains(a):
     path = a.output / 'adversarial_training.json'
     manifest = json.loads(path.read_text())
     if manifest['version'] != VERSION or manifest['attack'] != a.attack or manifest['status'] != 'complete':
@@ -287,6 +287,12 @@ def evaluate(a):
     ids = np.asarray(artifact['test_ids'], dtype=np.int64)
     for level in a.levels:
         if level:make_attack(a, torch, core, model, artifact, source, roots, level, ids, evaluation_manifest)
+    cache.write_text(json.dumps(evaluation_manifest, indent=2))
+    return roots
+
+
+def evaluate(a):
+    roots = prepare_evaluation_domains(a)
     import amcal_burst_structured_bank_protocol as bank
     original = bank.evaluate
     original_report = bank.report_level

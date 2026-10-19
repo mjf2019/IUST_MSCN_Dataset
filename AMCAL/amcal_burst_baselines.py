@@ -427,9 +427,9 @@ def evaluate(a,artifact):
             import river
             if saved['river_version']!=river.__version__:raise ValueError('River version differs from this CALMID/MicFoal checkpoint.')
         if p['source_preprocessing_sha256']!=core.file_sha256(a.output/'Models/protocol_preprocessing.joblib'):raise ValueError('Baseline preprocessing changed.')
-        if set(a.levels)&set(p['train_levels']):raise ValueError('Test levels overlap training levels.')
+        if set(a.levels)&set(p['train_levels']) and not a.include_seen_levels:raise ValueError('Test levels overlap training levels.')
         for level,digest in p['training_domains_sha256'].items():
-            if core.file_sha256(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv')!=digest:raise ValueError('Training domain provenance changed.')
+            if core.file_sha256(a.training_domain_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv')!=digest:raise ValueError('Training domain provenance changed.')
         for level in a.levels:
             core.set_seed(a.seed)
             domain=shared.read_domain(a.burst_dir,artifact,level,'test_ids')
@@ -483,6 +483,8 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command',choices=['train','evaluate'])
     parser.add_argument('--source-run',type=Path)
+    parser.add_argument('--training-domain-dir',type=Path,help='Original training files when evaluation domains are stored separately.')
+    parser.add_argument('--include-seen-levels',action='store_true',help='Score seen intensities on disjoint TEST source IDs only.')
     parser.add_argument('--burst-dir',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path)
     parser.add_argument('--methods',nargs='+',choices=list(METHOD_NAMES),default=list(METHOD_NAMES))
@@ -530,6 +532,9 @@ def main():
     core.set_seed(a.seed)
     if a.device!='auto':core.device=torch.device(a.device)
     a.output=a.output.resolve();a.burst_dir=a.burst_dir.resolve()
+    a.training_domain_dir=(a.training_domain_dir or a.burst_dir).resolve()
+    if a.command=='train' and a.training_domain_dir!=a.burst_dir:parser.error('Training domain directory must match --burst-dir during training.')
+    if a.command=='train' and a.include_seen_levels:parser.error('--include-seen-levels is evaluation only.')
     if a.command=='train':
         if a.source_run is None:parser.error('Training requires --source-run from the final structured AMCAL run.')
         a.source_run=a.source_run.resolve()

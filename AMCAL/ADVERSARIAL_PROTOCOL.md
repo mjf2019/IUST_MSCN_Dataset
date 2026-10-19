@@ -124,3 +124,26 @@ The top-level `$run/Results/all_attacks_seed42.csv` combines all modes/domains.
 Console summaries are readable tables, not JSON. Internal shared-engine cache
 filenames use its existing domain layout; no Burst data are used in this run.
 Training requires a fresh output directory and never overwrites prior models.
+
+## Existing baselines on the identical mapped domains
+
+After the four AMCAL training runs complete, use
+`amcal_adversarial_baselines.py train --amcal-run <AMCAL root> --output <fresh baseline root> --attack all`.
+It trains CNN, RAL, AF, DFE, ARF, CALMID and MicFoal separately per attack.
+CNN reuses the final AMCAL Frozen checkpoint; the other methods retain their
+existing implementations/defaults and fit exactly the clean/level-2 TRAIN rows.
+Validation uses the corresponding validation IDs. No test attack is generated
+or scored by the baseline training command.
+
+Use the same wrapper with `evaluate`, the same roots, `--data-dir <original data>`
+and `--source-file <original.csv> --levels 0 1 2 3 4 5` afterwards. Evaluation
+reuses/generates the AMCAL TEST-only mapped domains from its saved clean surrogate;
+training attack hashes are checked in the separate TrainingDomains directory.
+Seen intensities (0/2) are explicitly allowed only on disjoint TEST IDs.
+Models reset per level. The baseline's native query rule is retained under the
+common 20% cap, and its budget, runtime and retention tables are unchanged.
+The consolidated accuracy/budget summary is `Results/all_baselines_seed42.csv`.
+Existing per-attack Results also retain timing, same-level retention and traces.
+Attacks are fixed source-CNN transfer attacks, not model-specific direct attacks.
+Baseline source CNN and attack generation are reused; there is no redundant CNN
+training, data download, or modification to the approved AMCAL RL method.
