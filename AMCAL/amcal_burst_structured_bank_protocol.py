@@ -25,6 +25,7 @@ import amcal_burst_context_bank_protocol as base
 from baselines.stream_timing import StreamTimer, timing_row, timing_report
 from baselines.quality_budget import QualityBudget, VERSION as QUALITY_VERSION
 from baselines.rl_budget import BudgetState, GLOBAL_WIDTH, SLOT_WIDTH, VERSION as BUDGET_VERSION
+from baselines.balanced_reference import balanced_indices, macro_transfer
 core = base.core
 SLOTS = 3
 ROUTES = 4
@@ -267,6 +268,31 @@ def build_state(outputs,embedding,history,used,cap,position,count,gate):
     return torch.cat([route_x.flatten(1),extra],dim=1)
 
 
+class BalancedRewardReference:
+    """Wrap the existing TRAIN/paid reservoir; only probe sampling changes."""
+    def __init__(self, source):
+        self.source = source
+
+    def sample(self, current):
+        source = self.source
+        current_cpu = current.detach().cpu()
+        if hasattr(source, 'x'):
+            eligible = torch.any(source.x != current_cpu, dim=tuple(range(1, source.x.ndim))).nonzero().flatten().numpy()
+            labels = source.y.numpy().reshape(-1)
+            ids = balanced_indices(labels, eligible, core.REFERENCE_BATCH_SIZE, source.rng)
+            if not len(ids):return None
+            return source.x[ids].to(current.device), source.y[ids].to(current.device)
+        eligible = [i for i,row in enumerate(source.rows) if not torch.equal(row[0], current_cpu)]
+        labels = [int(row[1].item()) for row in source.rows]
+        ids = balanced_indices(labels, eligible, core.REFERENCE_BATCH_SIZE, source.rng)
+        if not len(ids):return None
+        return (torch.cat([source.rows[i][0] for i in ids]).to(current.device),
+                torch.cat([source.rows[i][1] for i in ids]).to(current.device))
+
+    def add(self, x, y):
+        self.source.add(x, y)
+
+
 def utility_before(a,cnn,bank,selected,batch):
     if batch is None:return None
     if not a.bank_utility:return core.probe_losses(cnn,bank[selected],batch)
@@ -279,7 +305,11 @@ def utility_before(a,cnn,bank,selected,batch):
 def utility_after(a,cnn,bank,selected,batch,before):
     if before is None:return core.transfer_utility(None,None)
     if not a.bank_utility:
-        return core.transfer_utility(before,core.probe_losses(cnn,bank[selected],batch))
+        after=core.probe_losses(cnn,bank[selected],batch)
+        if getattr(a,'balanced_reward_reference',False):
+            return macro_transfer(before,after,batch[1].detach().cpu().numpy(),
+                                  a.gain_weight,a.retention_weight,a.selection_cost)
+        return core.transfer_utility(before,after)
     with torch.no_grad():
         after = before.clone()
         after[selected+1] = F.cross_entropy(cnn(bank[selected](batch[0])),batch[1],reduction='none')
@@ -411,6 +441,8 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
     if budget_aware:
         history.budget=BudgetState(a.budget_priors,**budget_settings(a))
     reward_reference=core.TrainingProbe(x,torch.tensor(y,device=x.device),seed+910033) if training else core.PaidHistory(seed+910033)
+    if getattr(a,'balanced_reward_reference',False):
+        reward_reference=BalancedRewardReference(reward_reference)
     if budget_aware:
         reward_reference=MixedBudgetProbe(a.budget_anchors,reward_reference,seed+910043)
     timer=StreamTimer(x.device,enabled=not training)
@@ -543,6 +575,9 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
         row=dict(step=pos+1,source_row=int(source_ids[pos]),truth=truth,prediction=prediction,
                  action=action,route=route,queried=paid,labels_used=used,reward=reward,gain=gain,harm=harm,
                  oracle_all=bool(correct.any()),oracle_legal=any(correct[r] for r in legal_routes))
+        if getattr(a,'balanced_reward_reference',False):
+            probe_labels=[] if batch is None else batch[1].detach().cpu().numpy().reshape(-1).tolist()
+            row['reference_class_counts']=json.dumps({str(int(c)):probe_labels.count(c) for c in sorted(set(probe_labels))})
         if budget_aware:
             row.update(query_propensity=propensity,update_slot=selected if paid else None,
                        budget_price_before=float(state[0,ROUTES*agent.policy.route_width+4].item())*history.budget.price_max)
@@ -715,6 +750,19 @@ def train(a,models,artifact):
     cnn,bank,initial,route_width=models_from_source(models,artifact)
     aware=getattr(a,'budget_aware_policy',False)
     agent=Agent(route_width,core.device,a.seed,offline=True,gamma=a.gamma,budget_aware=aware)
+    if getattr(a,'resume_selector',False):
+        previous=torch.load(models/'structured_bank_ddqn.pth',map_location='cpu',weights_only=False)
+        if previous.get('version')!=1 or aware or previous['route_width']!=route_width:
+            raise ValueError('Resume requires a matching original seven-action structured selector.')
+        if set(previous['training_levels'])!=set(a.levels):
+            raise ValueError('Resume training levels must match the existing selector.')
+        for name,digest in previous['model_hashes'].items():
+            if core.file_sha256(models/name)!=digest:raise ValueError('Resume source checkpoint mismatch: '+name)
+        agent.policy.load_state_dict(previous['policy_state_dict'])
+        agent.target.load_state_dict(agent.policy.state_dict())
+        print('Resuming all selector weights; fresh optimizers/replay. Frozen CNN and initial Context unchanged.')
+    if getattr(a,'balanced_reward_reference',False):
+        print('Balanced reward reference: at most 32 unique rows; equal class-weight gain/damage. Online: previous paid labels only.')
     if aware:
         prepare_budget(a,cnn,bank,artifact)
         prior=models/'structured_bank_ddqn.pth'
@@ -786,6 +834,8 @@ def evaluate(a,models,artifact):
     if saved.get('version') not in (1,2):raise ValueError('Unsupported structured-bank checkpoint.')
     aware=getattr(a,'budget_aware_policy',False)
     if aware!=(saved['version']==2):raise ValueError('Checkpoint uses a different budget policy; pass --budget-aware-policy only for a v2 trained run.')
+    if bool(saved.get('config',{}).get('balanced_reward_reference',False))!=a.balanced_reward_reference:
+        raise ValueError('Reward reference differs from training; use --balanced-reward-reference for a matching checkpoint.')
     if aware:
         if saved.get('budget_version')!=BUDGET_VERSION:raise ValueError('Unsupported RL budget policy version.')
         config=saved['config']
@@ -808,6 +858,7 @@ def evaluate(a,models,artifact):
     root=a.output/'Results';root.mkdir(exist_ok=True)
     execution={key:getattr(a,key) for key in ('seed','context_lr','budget_fraction','selection_cost','gain_weight','retention_weight','gamma','eval_epsilon','query_schedule','update_policy','bank_utility')}
     execution['same_level_diagnostics_version']=1
+    if a.balanced_reward_reference:execution['reward_reference']='class_balanced_macro_v1'
     execution['budget_report_version']=1
     execution['timing_version']=1
     if aware:
@@ -920,6 +971,8 @@ def main():
     p.add_argument('--epochs',type=int,default=12)
     p.add_argument('--patience',type=int,default=5)
     p.add_argument('--router-warmup-episodes',type=int,default=3)
+    p.add_argument('--balanced-reward-reference',action='store_true',help='Class-balanced probe sampling and macro class gain/damage; online uses only previous paid labels.')
+    p.add_argument('--resume-selector',action='store_true',help='Continue all original selector weights from --source-run, with fresh replay and optimizers.')
     p.add_argument('--context-lr',type=float,default=.0005)
     p.add_argument('--budget-fraction',type=float,default=.2)
     p.add_argument('--selection-cost',type=float,default=.0001)
@@ -953,6 +1006,10 @@ def main():
     if not 0<=a.budget_fraction<=1 or not 0<=a.gamma<=1 or not 0<=a.train_epsilon<=1 or not 0<=a.eval_epsilon<=1:p.error('Budget, gamma and epsilon must be in [0,1].')
     if not np.isfinite(a.context_lr) or a.context_lr<=0 or not np.isfinite(a.selection_cost) or any(not np.isfinite(v) or v<0 for v in (a.gain_weight,a.retention_weight)):p.error('Invalid LR/reward.')
     if a.update_policy=='fixed' and a.query_schedule!='uniform':p.error('Fixed-destination control requires uniform feedback.')
+    if a.balanced_reward_reference and (a.bank_utility or a.budget_aware_policy):
+        p.error('Balanced reward reference is an isolated v1 selected-Context reward experiment.')
+    if a.resume_selector and (a.command!='train' or a.router_warmup_episodes!=0):
+        p.error('Resume selector requires train and --router-warmup-episodes 0.')
     if a.budget_aware_policy:
         if a.query_schedule!='policy' or a.update_policy!='learned' or a.bank_utility:
             p.error('Budget-aware RL requires --query-schedule policy --update-policy learned, without --bank-utility or an external gate.')
