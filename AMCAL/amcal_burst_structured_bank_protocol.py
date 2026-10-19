@@ -243,7 +243,8 @@ def utility_after(a,cnn,bank,selected,batch,before):
     return core.transfer_utility(before.min(0).values.cpu().numpy(),after.min(0).values.cpu().numpy())
 
 
-def reference_observer(cnn,bank,agent,x,y,history,used,cap,clock,mode,seed):
+def reference_observer(cnn,bank,agent,x,y,history,used,cap,clock,mode,seed,
+                       return_route_predictions=False):
     z,h = base_cache(cnn,x)
     predictions,per_route=[],[]
     rng = np.random.default_rng(seed+30003)
@@ -256,11 +257,32 @@ def reference_observer(cnn,bank,agent,x,y,history,used,cap,clock,mode,seed):
             predictions.extend(all_predictions[torch.arange(len(bx),device=x.device),routes].cpu().tolist())
             per_route.append(all_predictions.cpu().numpy())
     all_predictions=np.concatenate(per_route)
-    return np.asarray(predictions),(all_predictions==np.asarray(y)[:,None]).mean(0).tolist()
+    result=(np.asarray(predictions),(all_predictions==np.asarray(y)[:,None]).mean(0).tolist())
+    return result+(all_predictions,) if return_route_predictions else result
+
+
+def retention_summary(before,after,y,mask):
+    """Observer-only comparison on exactly the same rows at both endpoints."""
+    mask=np.asarray(mask,dtype=bool)
+    count=int(mask.sum())
+    if count==0:
+        return dict(samples=0,initial=None,final=None,drop_pp=None,broken=0,fixed=0,
+                    per_route_initial=None,per_route_final=None,per_route_broken=None,
+                    per_route_fixed=None,mean_context_drop_pp=None)
+    truth=np.asarray(y)[mask]
+    good0=before[0][mask]==truth;good1=after[0][mask]==truth
+    routes0=before[2][mask]==truth[:,None];routes1=after[2][mask]==truth[:,None]
+    return dict(samples=count,initial=float(good0.mean()),final=float(good1.mean()),
+                drop_pp=float(100*(good0.mean()-good1.mean())),
+                broken=int((good0&~good1).sum()),fixed=int((~good0&good1).sum()),
+                per_route_initial=routes0.mean(0).tolist(),per_route_final=routes1.mean(0).tolist(),
+                per_route_broken=(routes0&~routes1).sum(0).tolist(),
+                per_route_fixed=(~routes0&routes1).sum(0).tolist(),
+                mean_context_drop_pp=float(100*(routes0[:,1:].mean()-routes1[:,1:].mean())))
 
 
 def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
-            learning=True,warmup=False,rollout_seed=None,reference=None):
+            learning=True,warmup=False,rollout_seed=None,reference=None,same_level=False):
     x,y,source_ids=domain
     seed=a.seed if rollout_seed is None else rollout_seed
     for context in bank:
@@ -279,6 +301,8 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
     reward_reference=core.TrainingProbe(x,torch.tensor(y,device=x.device),seed+910033) if training else core.PaidHistory(seed+910033)
     bz,embedding=base_cache(cnn,x)
     initial_ref=reference_observer(cnn,bank,agent,*reference,history,0,cap,0,mode,a.seed) if reference is not None else None
+    initial_current=reference_observer(cnn,bank,agent,x,y,history,0,cap,0,mode,a.seed,
+                                       return_route_predictions=True) if same_level else None
     used=0;actions=np.zeros(ACTIONS,dtype=int);slot_queries=np.zeros(SLOTS,dtype=int)
     prediction_rows=[];trace=[];route_probabilities=[]
     oracle_all,oracle_legal=0,0
@@ -394,6 +418,16 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
                                   broken=int((good0&~good1).sum()),per_route_initial=per_first,per_route_final=per_final,
                                   mean_context_drop_pp=100*float(np.mean(per_first[1:])-np.mean(per_final[1:])),
                                   protocol='observer only; current bank reliability/query-count state retained; gate set to prediction-only')
+    if same_level:
+        final_current=reference_observer(cnn,bank,agent,x,y,history,used,cap,n,mode,a.seed,
+                                         return_route_predictions=True)
+        metrics['same_level']=dict(
+            all_rows=retention_summary(initial_current,final_current,y,np.ones(n,dtype=bool)),
+            unqueried=retention_summary(initial_current,final_current,y,~actual_queries),
+            protocol='observer only; initial/final prediction-only routed system and each route; '
+                     'same rows at both endpoints; final score is retrospective, not online accuracy; '
+                     'unqueried subset selected by this policy after the stream, not an independent holdout; '
+                     'no observer labels, states or predictions enter learning or action selection')
     return metrics,trace
 
 
@@ -437,6 +471,19 @@ def report_level(level,mode,m):
         print(f'  Routed clean reference: {100*ref["initial"]:.2f}% -> {100*ref["final"]:.2f}% | drop {ref["drop_pp"]:+.2f} pp')
         for k,(before,after) in enumerate(zip(ref['per_route_initial'][1:],ref['per_route_final'][1:]),1):
             print(f'  Clean Context {k}: {100*before:.2f}% -> {100*after:.2f}% | drop {100*(before-after):+.2f} pp')
+    current=m.get('same_level')
+    if current:
+        for key,label in [('all_rows','all rows'),('unqueried','unqueried rows')]:
+            result=current[key]
+            if not result['samples']:
+                print(f'  Same level ({label}): no rows; retention N/A')
+                continue
+            print(f'  Same level ({label}; n={result["samples"]}): {100*result["initial"]:.2f}% -> {100*result["final"]:.2f}% | drop {result["drop_pp"]:+.2f} pp | broken {result["broken"]} | fixed {result["fixed"]}')
+        result=current['unqueried']
+        if result['samples']:
+            for k in range(1,ROUTES):
+                before,after=result['per_route_initial'][k],result['per_route_final'][k]
+                print(f'  Same-level unqueried Context {k}: {100*before:.2f}% -> {100*after:.2f}% | drop {100*(before-after):+.2f} pp | broken {result["per_route_broken"][k]}')
 
 
 def train(a,models,artifact):
@@ -496,20 +543,28 @@ def evaluate(a,models,artifact):
     reference=read_domain(a.burst_dir,artifact,0,'val_ids')[:2]
     root=a.output/'Results';root.mkdir(exist_ok=True)
     execution={key:getattr(a,key) for key in ('seed','context_lr','budget_fraction','selection_cost','gain_weight','retention_weight','gamma','eval_epsilon','query_schedule','update_policy','bank_utility')}
+    execution['same_level_diagnostics_version']=1
     run_id=hashlib.sha256(json.dumps(execution,sort_keys=True).encode()).hexdigest()[:8]
-    rows=[]
+    rows=[];retention_rows=[]
     for level in a.levels:
         domain=read_domain(a.burst_dir,artifact,level,'test_ids')
         pair={}
         for mode in a.modes:
             core.set_seed(a.seed)
             agent=Agent(route_width,core.device,a.seed,policy_state=saved['policy_state_dict'],gamma=a.gamma)
-            m,trace=episode(a,cnn,bank,initial,agent,domain,mode=mode,learning=mode=='learned',reference=reference)
+            m,trace=episode(a,cnn,bank,initial,agent,domain,mode=mode,learning=mode=='learned',reference=reference,same_level=True)
             m.update(level=level,classes=a.classes,execution_config=execution,classifier_unchanged=not cnn.training and all(not p.requires_grad for p in cnn.parameters()))
             tag=f'structured_{mode}_per{level}_seed{a.seed}_lr{a.context_lr:g}_{a.update_policy}_{run_id}'
             (root/(tag+'_metrics.json')).write_text(json.dumps(m,indent=2))
             base.write_trace(root/(tag+'_trace.csv'),trace)
             report_level(level,mode,m);pair[mode]=m
+            for subset,label in [('all_rows','All'),('unqueried','Unqueried')]:
+                current=m['same_level'][subset]
+                retention_rows.append(dict(PER=level,Mode=mode,Subset=label,N=current['samples'],
+                    Initial=None if current['initial'] is None else 100*current['initial'],
+                    Final=None if current['final'] is None else 100*current['final'],
+                    Drop=current['drop_pp'],Broken=current['broken'],Fixed=current['fixed'],
+                    CtxDrop=current['mean_context_drop_pp']))
         row={'PER':level,'Frozen':100*next(iter(pair.values()))['frozen_accuracy']}
         for mode,prefix in [('learned','RL'),('random','Rnd')]:
             if mode not in pair:continue
@@ -534,6 +589,20 @@ def evaluate(a,models,artifact):
     filename=root/f'combined_structured_seed{a.seed}_lr{a.context_lr:g}_eps{a.eval_epsilon:g}_{a.update_policy}_{run_id}.csv'
     base.write_trace(filename,rows)
     print('Saved:',filename)
+    retention_file=filename.with_name(filename.stem+'_same_level.csv')
+    base.write_trace(retention_file,retention_rows)
+    print('\nSame-level retention on unqueried rows (%; positive Drop = net forgetting):')
+    same_fields=['PER','Mode','N','Initial','Final','Drop','Broken','Fixed','CtxDrop']
+    same_rows=[{key:row[key] for key in same_fields} for row in retention_rows if row['Subset']=='Unqueried']
+    for mode in a.modes:
+        valid=[row for row in same_rows if row['Mode']==mode and row['N']>0]
+        if valid:
+            same_rows.append(dict(PER='Mean',Mode=mode,**{
+                key:float(np.mean([row[key] for row in valid])) for key in same_fields[2:]}))
+    # display() accepts numeric missing values as strings; empty subsets are explicit N/A.
+    display([{key:'N/A' if value is None else value for key,value in row.items()} for row in same_rows],same_fields)
+    print('Initial/Final: retrospective prediction-only system; CtxDrop: mean of three Context drops. No labels from these rows used for updates.')
+    print('Unqueried subsets can differ between policies; these are not independent heldout sets. All-row and unqueried results saved:',retention_file)
 
 
 def main():
@@ -595,3 +664,4 @@ def main():
 
 
 if __name__=='__main__':main()
+
