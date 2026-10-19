@@ -59,6 +59,29 @@ trained policy. Reference scores show both routed accuracy and per-Context reten
 routed retention alone cannot establish that individual Contexts retained knowledge.
 Reference state uses actual paid-feedback statistics rather than zeroing them.
 
+Evaluation also reports same-level retention automatically, without retraining.
+Before and after each stream, an observer evaluates prediction-only routing
+(actions 0..3) and each of the four routes on the same current-level rows.
+The end-of-stream observer uses final reliability/history and budget state.
+This is a retrospective endpoint score, not the predict-before-feedback online
+score. The observer cannot query, update parameters/replay, or affect the stream.
+Random routing uses identical independent route draws at both endpoints.
+
+Two subsets are saved: all current-level rows, and rows whose labels were never
+queried during that stream. The latter mask is applied identically to the stored
+initial and final predictions. These policy-dependent subsets can differ between
+learned and random runs; they are not a separate independent holdout. Neither
+subset supplies observer labels to any learner. Reports include initial/final
+accuracy, net drop in percentage points, correct-to-wrong (Broken), wrong-to-correct
+(Fixed), and individual-route retention. Zero rows yield N/A rather than a score.
+Net-zero drop does not imply zero forgetting: Broken and Fixed may cancel.
+
+The console prints a second compact combined table for unqueried same-level rows.
+`combined_structured_..._same_level.csv` contains both subsets for every level/mode.
+Full per-route numbers are in each metrics JSON under `same_level` and individual
+Context drops are printed per level. A diagnostics-version hash separates these
+files from old evaluations. The existing clean-reference and online table remain.
+
 Only concise reports and the combined table are printed. Metrics JSON and detailed
 CSV traces are saved to Results. Trace files contain all route predictions and legal
 oracle outcomes; they are never replay inputs. Configuration hashes separate outputs.
@@ -76,3 +99,7 @@ separation, legal masks, identical-bank fixed controls, unchanged frozen weights
 and invariance to changes in unqueried test labels. A small end-to-end CPU training
 and evaluation smoke run also exercises the real CNN/Context classes. These are
 correctness checks, not evidence of GPU performance or benchmark accuracy.
+Same-level checks additionally verify paired-row damage/fix counts, empty subsets,
+unchanged actions/rewards/weights with the observer enabled, and evaluate/save/table
+integration on a small CPU fixture.
+
