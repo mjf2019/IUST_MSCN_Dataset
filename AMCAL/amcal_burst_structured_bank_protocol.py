@@ -858,7 +858,8 @@ def evaluate(a,models,artifact):
         if any(getattr(a,key)!=config[key] for key in matching):raise ValueError('RL budget/reward settings differ from training; use checkpoint settings.')
     for name,digest in saved['model_hashes'].items():
         if core.file_sha256(models/name)!=digest:raise ValueError('Source checkpoint mismatch: '+name)
-    if set(a.levels)&set(saved['training_levels']):raise ValueError('Heldout test levels must exclude training levels.')
+    if set(a.levels)&set(saved['training_levels']) and not getattr(a,'include_seen_levels',False):
+        raise ValueError('Heldout test levels must exclude training levels; --include-seen-levels explicitly reports seen-domain TEST rows separately.')
     cnn,bank,initial,route_width=models_from_source(models,artifact)
     if route_width!=saved['route_width']:raise ValueError('Router state width mismatch.')
     if aware:prepare_budget(a,cnn,bank,artifact,saved)
@@ -877,6 +878,7 @@ def evaluate(a,models,artifact):
     if a.decoupled_query:execution['query_prediction']='decoupled_best_route_v1'
     execution['budget_report_version']=1
     execution['timing_version']=1
+    if getattr(a,'include_seen_levels',False):execution['include_seen_levels']=True
     if aware:
         execution.update(budget_policy_version=BUDGET_VERSION,budget_aware_policy=True,
                          **{'budget_'+key:value for key,value in budget_settings(a).items()})
@@ -884,7 +886,7 @@ def evaluate(a,models,artifact):
         execution.update(quality_budget_version=QUALITY_VERSION,quality_reference_accuracy=a.quality_reference_accuracy,
                          **{'quality_'+key:getattr(a,'quality_'+key) for key in QUALITY_OPTIONS})
     run_id=hashlib.sha256(json.dumps(execution,sort_keys=True).encode()).hexdigest()[:8]
-    rows=[];retention_rows=[];budget_rows=[];time_rows=[]
+    rows=[];retention_rows=[];budget_rows=[];time_rows=[];evaluation_results=[]
     for level in a.levels:
         domain=read_domain(a.burst_dir,artifact,level,'test_ids')
         pair={}
@@ -893,6 +895,8 @@ def evaluate(a,models,artifact):
             agent=Agent(route_width,core.device,a.seed,policy_state=saved['policy_state_dict'],gamma=a.gamma,budget_aware=aware,decoupled_query=a.decoupled_query)
             m,trace=episode(a,cnn,bank,initial,agent,domain,mode=mode,learning=mode=='learned',reference=reference,same_level=True)
             m.update(level=level,classes=a.classes,execution_config=execution,classifier_unchanged=not cnn.training and all(not p.requires_grad for p in cnn.parameters()))
+            m['domain_status']='seen_domain_test_rows' if level in saved['training_levels'] else 'unseen_domain_test_rows'
+            evaluation_results.append(m)
             tag=f'structured_{mode}_per{level}_seed{a.seed}_lr{a.context_lr:g}_{a.update_policy}_{run_id}'
             (root/(tag+'_metrics.json')).write_text(json.dumps(m,indent=2))
             base.write_trace(root/(tag+'_trace.csv'),trace)
@@ -972,6 +976,7 @@ def evaluate(a,models,artifact):
     if aware:
         print('Budget-aware RL: all seven actions selected by policy/epsilon exploration; only exhausted-budget query masking. No minimum spending guarantee.')
         print('Query actions predict through the learned best route before feedback, then update their selected Context. Random uses random prediction routes.')
+    return evaluation_results
 
 
 QUALITY_OPTIONS=('bootstrap_labels','audit_fraction','window','return_window','min_return_updates',
@@ -982,6 +987,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('command',choices=['train','evaluate'])
     p.add_argument('--source-run',type=Path)
+    p.add_argument('--include-seen-levels',action='store_true',help='Evaluation only: include seen intensities on disjoint TEST source IDs; reported separately from unseen domains.')
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--burst-dir',type=Path,required=True)
     p.add_argument('--levels',type=int,nargs='+')
@@ -1022,6 +1028,7 @@ def main():
     p.add_argument('--device',choices=['auto','cpu','cuda'],default='auto')
     a=p.parse_args()
     if min(a.epochs,a.patience)<1 or a.router_warmup_episodes<0:p.error('Invalid epochs/patience/warmup.')
+    if a.include_seen_levels and a.command!='evaluate':p.error('--include-seen-levels is evaluation only.')
     if not 0<=a.budget_fraction<=1 or not 0<=a.gamma<=1 or not 0<=a.train_epsilon<=1 or not 0<=a.eval_epsilon<=1:p.error('Budget, gamma and epsilon must be in [0,1].')
     if not np.isfinite(a.context_lr) or a.context_lr<=0 or not np.isfinite(a.selection_cost) or any(not np.isfinite(v) or v<0 for v in (a.gain_weight,a.retention_weight)):p.error('Invalid LR/reward.')
     if a.update_policy=='fixed' and a.query_schedule!='uniform':p.error('Fixed-destination control requires uniform feedback.')
