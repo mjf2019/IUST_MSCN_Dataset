@@ -483,6 +483,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command',choices=['train','evaluate'])
     parser.add_argument('--source-run',type=Path)
+    parser.add_argument('--independent-source',action='store_true',help='Use a separately trained matched-domain CNN/preprocessing source, without an AMCAL selector.')
     parser.add_argument('--training-domain-dir',type=Path,help='Original training files when evaluation domains are stored separately.')
     parser.add_argument('--include-seen-levels',action='store_true',help='Score seen intensities on disjoint TEST source IDs only.')
     parser.add_argument('--burst-dir',required=True,type=Path)
@@ -538,10 +539,13 @@ def main():
     if a.command=='train':
         if a.source_run is None:parser.error('Training requires --source-run from the final structured AMCAL run.')
         a.source_run=a.source_run.resolve()
-        checkpoint=torch.load(a.source_run/'Models/structured_bank_ddqn.pth',map_location='cpu',weights_only=False)
-        if set(checkpoint['training_levels'])!=set(a.train_levels):parser.error('Baseline training domains must match AMCAL.')
+        if a.independent_source:
+            checkpoint=json.loads((a.source_run/'baseline_source.json').read_text())
+        else:
+            checkpoint=torch.load(a.source_run/'Models/structured_bank_ddqn.pth',map_location='cpu',weights_only=False)
+        if set(checkpoint['training_levels'])!=set(a.train_levels):parser.error('Baseline training domains must match source development domains.')
         for name,digest in checkpoint['model_hashes'].items():
-            if core.file_sha256(a.source_run/'Models'/name)!=digest:parser.error('AMCAL source checkpoint provenance changed.')
+            if core.file_sha256(a.source_run/'Models'/name)!=digest:parser.error('Source checkpoint provenance changed.')
         path=a.source_run/'Models/protocol_preprocessing.joblib'
     else:path=a.output/'Models/protocol_preprocessing.joblib'
     artifact=joblib.load(path)

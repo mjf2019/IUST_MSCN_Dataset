@@ -148,14 +148,76 @@ def evaluate(a):
     print('Saved:',target,flush=True)
 
 
+def independent_baseline_source(a):
+    """Same clean/multishift CNN stages and split, without Context or RL training."""
+    manifest=prepare(a)
+    roots=a.output/'Domains'
+    source=a.output/'BaselineSource'
+    source.mkdir()
+    import torch
+    from torch.utils.data import DataLoader,TensorDataset
+    from sklearn.preprocessing import StandardScaler,LabelEncoder
+    import amcal_burst_structured_bank_protocol as bank
+    core=bank.core
+    core.device=torch.device('cuda' if a.device=='auto' and torch.cuda.is_available() else 'cpu' if a.device=='auto' else a.device)
+    core.RUN_SEED=a.seed
+    core.TRAIN_PERTURBATIONS=(0.,2.)
+    core.set_seed(a.seed)
+    frame=pd.read_csv(roots/domain_name(0))
+    groups=core.feature_groups(frame);seen=set();filtered=[]
+    for key in ('train','validation','test'):
+        ids=np.asarray(manifest['source_partitions'][key],dtype=np.int64)
+        keep=np.array([i for i in ids if groups[i] not in seen],dtype=np.int64)
+        filtered.append(keep);seen.update(groups[i] for i in ids)
+    if min(map(len,filtered))==0:raise ValueError('Empty partition after exact-feature overlap removal.')
+    train_ids,val_ids,test_ids=filtered
+    train=frame.iloc[train_ids]
+    encoder=LabelEncoder().fit(train.iloc[:,-1])
+    scaler=StandardScaler().fit(train.iloc[:,:-1])
+    counts=np.bincount(encoder.transform(train.iloc[:,-1]),minlength=len(encoder.classes_))
+    with working_directory(source):
+        core.save_preprocessing(frame,str(roots),domain_name(0),scaler,encoder,counts,train_ids,val_ids,test_ids)
+        artifact_path=source/'Models/protocol_preprocessing.joblib'
+        artifact=joblib.load(artifact_path)
+        artifact['allow_partial_domains']=True
+        artifact['supplied_domain_alignment']=manifest['alignment']
+        joblib.dump(artifact,artifact_path)
+        def loader(levels,split,shuffle):
+            values=[bank.read_domain(roots,artifact,level,split) for level in levels]
+            x=torch.cat([value[0] for value in values])
+            y=torch.as_tensor(np.concatenate([value[1] for value in values]),dtype=torch.long,device=core.device)
+            return DataLoader(TensorDataset(x,y),batch_size=64,shuffle=shuffle)
+        cnn=core.CNN1D(len(artifact['feature_names']),len(encoder.classes_)).to(core.device)
+        print('Independent CNN stage 1: clean TRAIN; validation-only selection.',flush=True)
+        cnn=core.train_initial_cnn(cnn,loader([0],'train_ids',True),loader([0],'val_ids',False),counts,a.base_epochs,15)
+        print('Independent CNN stage 2: clean + level-2 TRAIN; no Context/RL dependency.',flush=True)
+        cnn=core.train_initial_cnn(cnn,loader([0,2],'train_ids',True),loader([0,2],'val_ids',False),counts,a.cnn_epochs,10)
+        torch.save(dict(model_state_dict=cnn.state_dict(),input_length=len(artifact['feature_names']),
+                        num_classes=len(encoder.classes_),training_levels=[0,2],
+                        preprocessing_sha256=digest(artifact_path)),source/'Models/initial_cnn_model.pth')
+    record=dict(training_levels=[0,2],independent_cnn=True,seed=a.seed,
+                model_hashes={name:digest(source/'Models'/name) for name in ('initial_cnn_model.pth','protocol_preprocessing.joblib')},
+                cnn_stages=['clean','clean + level 2'],test_used=False)
+    (source/'baseline_source.json').write_text(json.dumps(record,indent=2))
+    manifest.update(status='complete',purpose='independent_baselines',baseline_source='BaselineSource')
+    (a.output/'supplied_attack_training.json').write_text(json.dumps(manifest,indent=2))
+    return roots
+
+
 def baseline(a):
-    roots=check(a)
+    if a.command=='train-baselines' and a.independent_baselines:
+        roots=independent_baseline_source(a)
+    else:roots=check(a)
+    manifest=json.loads((a.output/'supplied_attack_training.json').read_text())
+    independent=manifest.get('purpose')=='independent_baselines'
+    source=a.output/('BaselineSource' if independent else 'Bank')
     command='train' if a.command=='train-baselines' else 'evaluate'
     values=[sys.executable,str(Path(__file__).with_name('amcal_burst_baselines.py')),
-            command,'--source-run',str(a.output/'Bank'),'--burst-dir',str(roots),
+            command,'--source-run',str(source),'--burst-dir',str(roots),
             '--output',str(a.output/'Baselines'),'--train-levels','0','2',
             '--methods',*a.methods,'--budget-fraction',str(a.budget_fraction),
             '--seed',str(a.seed),'--device',a.device]
+    if independent and command=='train':values+=['--independent-source']
     if command=='evaluate':values+=['--include-seen-levels','--levels',*map(str,a.levels)]
     subprocess.run(values,check=True)
 
@@ -163,6 +225,7 @@ def baseline(a):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('command',choices=('train','evaluate','train-baselines','evaluate-baselines'))
+    p.add_argument('--independent-baselines',action='store_true',help='Train baselines in their own fresh output, with an independent CNN and no dependency on AMCAL completion.')
     p.add_argument('--data-dir',type=Path,default=Path('AMCAL/SDNCampus_TEST/Dataset'))
     p.add_argument('--source-file',default='SDNCampus_original.csv')
     p.add_argument('--attack',choices=('all',*LEVELS),default='all')
@@ -184,6 +247,7 @@ def main():
     if any(v not in range(6) for v in a.levels) or len(set(a.levels))!=len(a.levels):p.error('Distinct levels 0..5 required.')
     if not 0<=a.budget_fraction<=1 or not 0<=a.eval_epsilon<=1 or not np.isfinite(a.context_lr) or a.context_lr<=0:p.error('Invalid budget, epsilon or LR.')
     if min(a.base_epochs,a.stage1_epochs,a.cnn_epochs,a.source_epochs,a.bank_epochs)<1:p.error('Epochs must be positive.')
+    if a.independent_baselines and a.command not in ('train-baselines','evaluate-baselines'):p.error('--independent-baselines is baseline-only.')
     if a.attack=='all':
         for attack in LEVELS:
             values=[sys.executable,str(Path(__file__).resolve()),a.command,
@@ -192,6 +256,7 @@ def main():
                     '--levels',*map(str,a.levels),'--methods',*a.methods]
             for key in ('context_lr','budget_fraction','eval_epsilon','base_epochs','stage1_epochs','cnn_epochs','source_epochs','bank_epochs'):
                 values+=['--'+key.replace('_','-'),str(getattr(a,key))]
+            if a.independent_baselines:values+=['--independent-baselines']
             subprocess.run(values,check=True)
         return
     if a.command=='train':train(a)

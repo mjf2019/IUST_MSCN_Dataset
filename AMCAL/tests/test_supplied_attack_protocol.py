@@ -4,6 +4,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 import numpy as np
 import pandas as pd
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -40,5 +41,21 @@ class SuppliedTests(unittest.TestCase):
             self.assertEqual(mapping.source_row.tolist(),pool.tolist())
             self.assertIn('ASSUMED',manifest['alignment'])
             with self.assertRaises(ValueError):protocol.prepare(a)
+
+    def test_independent_baselines_never_require_amcal_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            (root/'supplied_attack_training.json').write_text(json.dumps(dict(purpose='independent_baselines')))
+            a=SimpleNamespace(output=root,command='train-baselines',independent_baselines=True,
+                              methods=['cnn','arf'],budget_fraction=.2,seed=42,device='cuda')
+            with patch.object(protocol,'independent_baseline_source',return_value=root/'Domains') as prepare, patch.object(protocol,'check') as check, patch.object(protocol.subprocess,'run') as run:
+                protocol.baseline(a)
+            prepare.assert_called_once()
+            check.assert_not_called()
+            command=run.call_args.args[0]
+            self.assertIn('--independent-source',command)
+            self.assertEqual(command[command.index('--source-run')+1],str(root/'BaselineSource'))
+            self.assertFalse((root/'Bank').exists())
+
 
 if __name__=='__main__':unittest.main()

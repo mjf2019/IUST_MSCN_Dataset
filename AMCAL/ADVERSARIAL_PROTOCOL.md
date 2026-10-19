@@ -184,3 +184,18 @@ All baselines reuse these exact partitions and domains, and CNN reuses the final
 Frozen CNN. Source and attack domains may have different partition sizes; the
 optional partial-domain artifact flag enables this without weakening the default
 full-coverage checks for existing Burst experiments.
+
+### Parallel independent baseline execution
+
+To start baselines immediately while AMCAL is training, use a **different fresh
+output root** and `train-baselines --independent-baselines`. This creates the same
+supplied domains and deterministic source partitions independently, fits a CNN
+with clean-first and clean+level-2 refinement stages (same architecture, epochs,
+patience and loss), and trains all seven baselines. It never waits for or loads
+AMCAL Context/selector checkpoints. CNN weights are independently trained and
+are not guaranteed to equal AMCAL's Frozen CNN because the intervening AMCAL
+Context/RL stage consumes random numbers. The training manifest explicitly
+records independent CNN initialization. No architectural/reward change is made
+to AMCAL. `evaluate-baselines` detects that source from its saved manifest.
+For final runtime comparisons run methods sequentially without concurrent GPU
+jobs; parallel execution is useful for initial accuracy experiments.
