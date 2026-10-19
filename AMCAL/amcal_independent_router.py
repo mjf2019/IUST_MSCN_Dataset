@@ -28,6 +28,40 @@ def route_features(inputs, base_prob, context_prob):
     return torch.cat([inputs.flatten(1), base_prob, context_prob], dim=1)
 
 
+
+class OnlineRouteLearner:
+    """Bounded replay of paid, pre-feedback route preferences; isolated RNG."""
+    def __init__(self, head, lr, seed, capacity=256, batch_size=32):
+        from collections import deque
+        self.head = head
+        self.optimizer = torch.optim.Adam(head.parameters(), lr=lr, weight_decay=1e-4)
+        self.buffer = deque(maxlen=capacity)
+        self.rng = np.random.default_rng(seed)
+        self.batch_size, self.updates, self.examples = batch_size, 0, 0
+        self.last_loss = None
+
+    def observe(self, inputs, base_prob, context_prob, label):
+        frozen_ok = int(base_prob.argmax(1).item()) == int(label.item())
+        context_ok = int(context_prob.argmax(1).item()) == int(label.item())
+        if frozen_ok != context_ok:
+            state = route_features(inputs, base_prob, context_prob).detach().reshape(-1).cpu().clone()
+            self.buffer.append((state, int(context_ok)))
+            self.examples += 1
+        if not self.buffer:
+            return
+        indices = self.rng.choice(len(self.buffer), min(self.batch_size, len(self.buffer)), replace=False)
+        device = next(self.head.parameters()).device
+        states = torch.stack([self.buffer[int(i)][0] for i in indices]).to(device)
+        targets = torch.tensor([self.buffer[int(i)][1] for i in indices], dtype=torch.long, device=device)
+        self.optimizer.zero_grad()
+        loss = nn.functional.cross_entropy(self.head(states), targets)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.head.parameters(), 1)
+        self.optimizer.step()
+        self.updates += 1
+        self.last_loss = float(loss.detach().item())
+
+
 def main():
     import amcal_burst_official_protocol as official
     core = official.core
