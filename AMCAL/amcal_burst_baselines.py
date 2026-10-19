@@ -1,0 +1,404 @@
+"""Matched official-Burst baselines: existing CNN/RAL, causal AF and DFE.
+
+Training and evaluation are separate. All methods use the AMCAL source-row
+partitions, train domains, global label cap and predict-score-query-update.
+See BURST_BASELINES.md for the precise adaptations and DFE ambiguities.
+"""
+import argparse
+from copy import deepcopy
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import random
+import shutil
+import sys
+import time
+
+import joblib
+import numpy as np
+import torch
+from torch import nn
+import torch.nn.functional as F
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, f1_score
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+
+import amcal_burst_structured_bank_protocol as shared
+from amcal_burst_results_summary import display
+from baselines.ral_existing import RAL
+from baselines.dfe_burst import (DFEBackbone,FlowImages,GaussianCompression,
+    TemplateLibrary,constrained_triplet,triplet_indices,knn_vote,embed)
+
+core=shared.core
+METHOD_NAMES={'cnn':'1D-CNN-existing-frozen','ral':'RAL-existing-global-budget',
+              'af':'AF-Burst-causal','dfe':'DFE-Burst-adapted'}
+
+
+def cpu_state(model):return {k:v.detach().cpu().clone() for k,v in model.state_dict().items()}
+
+
+def af_module():
+    """Reuse corrected CDR_MLC AF modules, including the tested GRL sign."""
+    name='amcal_burst_af_source'
+    if name not in sys.modules:
+        path=Path(__file__).resolve().parents[1]/'CDR_MLC/benchmarks/AF/af_single_source.py'
+        if not path.exists():raise FileNotFoundError('Required corrected AF source: '+str(path))
+        spec=importlib.util.spec_from_file_location(name,path)
+        module=importlib.util.module_from_spec(spec);sys.modules[name]=module
+        try:spec.loader.exec_module(module)
+        except Exception:
+            del sys.modules[name]
+            raise
+    return sys.modules[name]
+
+
+def af_network(width,classes,device):
+    af=af_module();config=af.AFConfig()
+    # Continuous Burst IAT/PS is not a packet-direction vector. Do not feed
+    # continuous features to the direction-only DF network under an exact label.
+    return af.AFDomainNetwork(af.TabularFeatureExtractor(width,config.embedding_dim),classes,config).to(device)
+
+
+def af_step(model,optimizer,xs,ys,xt,device):
+    size=min(len(xs),len(xt))
+    if size<2:return None
+    model.train()
+    sx=torch.as_tensor(xs[:size],device=device);sy=torch.as_tensor(ys[:size],device=device)
+    tx=torch.as_tensor(xt[:size],device=device)
+    logits,domains=model(torch.cat([sx,tx]))
+    labels=torch.cat([torch.zeros(size,device=device,dtype=torch.long),
+                      torch.ones(size,device=device,dtype=torch.long)])
+    loss=F.cross_entropy(logits[:size],sy)+F.cross_entropy(domains,labels)
+    optimizer.zero_grad();loss.backward();optimizer.step();model.eval()
+    return float(loss.detach())
+
+
+def af_embed(model,x,device):
+    model.eval()
+    with torch.no_grad():
+        return np.concatenate([F.normalize(model.extractor(torch.as_tensor(x[i:i+256],device=device)),dim=1).cpu().numpy()
+                               for i in range(0,len(x),256)])
+
+
+def choose_k(templates,labels,queries,y):
+    scores=[(f1_score(y,knn_vote(templates,labels,queries,k)[0],average='macro',zero_division=0),-k)
+            for k in (1,3,5,7)]
+    best=max(scores)
+    return -best[1],float(best[0])
+
+
+def train_dfe(a,train,validation):
+    x,y=train;vx,vy=validation
+    transform=FlowImages().fit(x)
+    images=transform.transform(x);val_images=transform.transform(vx)
+    model=DFEBackbone().to(core.device);compressor=GaussianCompression(tuple(a.dfe_betas)).to(core.device)
+    optimizer=torch.optim.SGD(model.parameters(),lr=a.dfe_lr)
+    library=TemplateLibrary(images,y,a.templates,a.seed);lx,ly=library.arrays()
+    best=-1;state=None;stale=0;best_k=1;logs=[]
+    for epoch in range(a.dfe_epochs):
+        rng=np.random.default_rng(a.seed+epoch*1009)
+        order=rng.permutation(len(y));model.train();losses=[]
+        for start in range(0,len(y),a.batch_size):
+            ids=order[start:start+a.batch_size]
+            if len(ids)<2:continue
+            positive,negative=triplet_indices(y,ids,rng)
+            batch=torch.as_tensor(np.concatenate([images[ids],images[positive],images[negative]]),device=core.device)
+            z,features=model(batch,return_features=True);anchor,pos,neg=z.chunk(3)
+            loss=compressor(features)+a.dfe_lambda*constrained_triplet(anchor,pos,neg,a.dfe_alpha1,a.dfe_alpha2,a.dfe_eta)
+            if not torch.isfinite(loss):raise RuntimeError('Nonfinite DFE training loss; no checkpoint written.')
+            optimizer.zero_grad();loss.backward();optimizer.step();losses.append(float(loss.detach()))
+        k,score=choose_k(embed(model,lx,core.device),ly,embed(model,val_images,core.device),vy)
+        logs.append(dict(epoch=epoch+1,loss=float(np.mean(losses)),validation_macro_f1=score,k=k))
+        print(f'DFE epoch {epoch+1}/{a.dfe_epochs} | loss {np.mean(losses):.4f} | validation Macro-F1 {100*score:.2f}% | k {k}',flush=True)
+        if score>best+1e-10:best=score;state=cpu_state(model);stale=0;best_k=k
+        else:
+            stale+=1
+            if stale>=a.patience:break
+    if state is None:raise RuntimeError('No valid DFE model.')
+    return dict(state=state,transform=transform,library=library,k=best_k,logs=logs,
+                compression_estimator='same-transition diagonal Gaussian components from channel spatial moments; six mixture bounds',
+                validation_macro_f1=best)
+
+
+def train_af(a,train,validation,clean,shifted):
+    x,y=train;vx,vy=validation;source,source_y=clean;target=shifted
+    model=af_network(x.shape[1],len(a.classes),core.device)
+    optimizer=torch.optim.Adam(model.parameters(),lr=a.af_lr)
+    rng=np.random.default_rng(a.seed+701)
+    for epoch in range(a.af_epochs):
+        losses=[]
+        for start in range(0,len(source),a.batch_size):
+            count=min(a.batch_size,len(source)-start)
+            ids=rng.choice(len(source),count,replace=False)
+            tid=rng.choice(len(target),count,replace=len(target)<count)
+            loss=af_step(model,optimizer,source[ids],source_y[ids],target[tid],core.device)
+            if loss is not None:losses.append(loss)
+        print(f'AF epoch {epoch+1}/{a.af_epochs} | DANN loss {np.mean(losses):.4f}',flush=True)
+    # Source-supervision fairness: all available training rows may support kNN.
+    # Unlike DFE's 20-template cap, AF keeps the complete source support.
+    k,score=choose_k(af_embed(model,x,core.device),y,af_embed(model,vx,core.device),vy)
+    return dict(state=cpu_state(model),source_x=x,source_y=y,k=k,
+                dann_source_x=source,dann_source_y=source_y,validation_macro_f1=score)
+
+
+class Learner:
+    def __init__(self,method,saved,a):
+        self.method,self.saved,self.a=method,saved,a
+        self.rng=np.random.default_rng(a.seed+81013)
+        self.steps=0
+        if method=='cnn':
+            self.model=core.CNN1D(saved['width'],saved['classes']).to(core.device)
+            self.model.load_state_dict(saved['state']);self.model.eval()
+            for p in self.model.parameters():p.requires_grad_(False)
+        elif method=='ral':
+            self.model=deepcopy(saved['model']);self.model._budget=None
+        elif method=='dfe':
+            self.model=DFEBackbone().to(core.device);self.model.load_state_dict(saved['state']);self.model.eval()
+            for p in self.model.parameters():p.requires_grad_(False)
+            self.library=deepcopy(saved['library'])
+            self.refresh()
+        else:
+            self.model=af_network(saved['source_x'].shape[1],len(a.classes),core.device)
+            self.model.load_state_dict(saved['state']);self.model.eval()
+            self.optimizer=torch.optim.Adam(self.model.parameters(),lr=a.af_lr)
+            self.paid_x=[];self.paid_y=[]
+            self.refresh()
+
+    def refresh(self):
+        if self.method=='dfe':
+            x,self.support_y=self.library.arrays()
+            self.support_z=embed(self.model,x,core.device)
+        elif self.method=='af':
+            # Re-embed every stored support after DANN changes the extractor.
+            # No future or unqueried test feature enters the DANN target batch.
+            if self.paid_x:
+                x=np.concatenate([self.saved['source_x'],np.asarray(self.paid_x)])
+                self.support_y=np.concatenate([self.saved['source_y'],np.asarray(self.paid_y)])
+            else:x=self.saved['source_x'];self.support_y=self.saved['source_y']
+            self.support_z=af_embed(self.model,x,core.device)
+
+    def predict(self,x):
+        if self.method=='cnn':
+            with torch.no_grad():
+                return np.concatenate([self.model(torch.as_tensor(x[i:i+128],device=core.device).unsqueeze(1)).argmax(1).cpu().numpy()
+                                       for i in range(0,len(x),128)])
+        if self.method=='ral':return self.model._committee_classifier.predict(x)
+        if self.method=='dfe':z=embed(self.model,self.saved['transform'].transform(x),core.device)
+        else:z=af_embed(self.model,x,core.device)
+        return knn_vote(self.support_z,self.support_y,z,self.saved['k'])[0]
+
+    def request(self,x):
+        if self.method=='ral':
+            committee,decisions=self.model.ask_committee(x)
+            return self.model.should_label(committee),(committee,decisions)
+        return False,None
+
+    def update(self,x,y,request_info=None):
+        if self.method=='ral':
+            committee,decisions=request_info
+            self.model.acquire_label(x,y,committee,decisions)
+        elif self.method=='dfe':
+            self.library.add(self.saved['transform'].transform(x[None,:])[0],y);self.refresh()
+        elif self.method=='af':
+            self.paid_x.append(x.copy());self.paid_y.append(int(y))
+            source=self.saved['dann_source_x'];ys=self.saved['dann_source_y']
+            count=min(self.a.batch_size,len(self.paid_x),len(source))
+            sid=self.rng.choice(len(source),count,replace=False)
+            tid=self.rng.choice(len(self.paid_x),count,replace=False)
+            if af_step(self.model,self.optimizer,source[sid],ys[sid],np.asarray(self.paid_x)[tid],core.device) is not None:self.steps+=1
+            self.refresh()
+
+
+def summary_pair(before,after,y,mask):
+    mask=np.asarray(mask,dtype=bool)
+    if not mask.any():return dict(n=0,initial=None,final=None,drop_pp=None,broken=0,fixed=0)
+    b=before[mask]==y[mask];f=after[mask]==y[mask]
+    return dict(n=int(mask.sum()),initial=float(b.mean()),final=float(f.mean()),
+                drop_pp=float(100*(b.mean()-f.mean())),broken=int((b&~f).sum()),fixed=int((~b&f).sum()))
+
+
+def evaluate_level(a,method,saved,domain,reference,observer=True):
+    x,y,ids=domain;x=x.squeeze(1).cpu().numpy()
+    order=np.random.default_rng(a.seed).permutation(len(y));x,y,ids=x[order],y[order],ids[order]
+    n=len(y);cap=int(np.floor(n*a.budget_fraction));learner=Learner(method,saved,a)
+    reference_x,reference_y=reference
+    reference_x=reference_x.squeeze(1).cpu().numpy()
+    initial=learner.predict(x) if observer else None
+    ref_initial=learner.predict(reference_x) if observer else None
+    schedule=set(np.random.default_rng(a.seed+819003).choice(n,cap,replace=False).tolist())
+    queried=np.zeros(n,dtype=bool);predictions=[];trace=[];used=0
+    random.seed(a.seed)
+    start=time.perf_counter()
+    for pos in range(n):
+        prediction=int(learner.predict(x[pos:pos+1])[0])
+        # Freeze prediction before querying or exposing truth to the learner.
+        if method=='ral':request,info=learner.request(x[pos])
+        else:request,info=(method!='cnn' and pos in schedule),None
+        paid=bool(request and used<cap)
+        if paid:
+            learner.update(x[pos],int(y[pos]),info);used+=1;queried[pos]=True
+        predictions.append(prediction)
+        trace.append(dict(step=pos+1,source_row=int(ids[pos]),truth=int(y[pos]),prediction=prediction,
+                          queried=paid,labels_used=used))
+    elapsed=time.perf_counter()-start
+    metrics=dict(method=METHOD_NAMES[method],accuracy=float(accuracy_score(y,predictions)),
+                 macro_f1=float(f1_score(y,predictions,average='macro',zero_division=0)),
+                 weighted_f1=float(f1_score(y,predictions,average='weighted',zero_division=0)),
+                 labels=used,label_cap=cap,online_seconds=elapsed,online_gradient_steps=learner.steps,
+                 query_protocol='none' if method=='cnn' else 'RAL committee/greedy with external global cap' if method=='ral' else 'label-blind uniform exact cap',
+                 protocol='predict-score-query-update; fresh model per level; reference/same-level observers never feed learning')
+    if observer:
+        final=learner.predict(x);ref_final=learner.predict(reference_x)
+        metrics['same_level']=dict(all_rows=summary_pair(initial,final,y,np.ones(n,dtype=bool)),
+                                   unqueried=summary_pair(initial,final,y,~queried))
+        metrics['reference']=summary_pair(ref_initial,ref_final,reference_y,np.ones(len(reference_y),dtype=bool))
+    return metrics,trace
+
+
+def training_data(a,artifact):
+    parts={level:shared.read_domain(a.burst_dir,artifact,level,'train_ids') for level in a.train_levels}
+    vals=[shared.read_domain(a.burst_dir,artifact,level,'val_ids') for level in a.train_levels]
+    x=np.concatenate([v[0].squeeze(1).cpu().numpy() for v in parts.values()]);y=np.concatenate([v[1] for v in parts.values()])
+    vx=np.concatenate([v[0].squeeze(1).cpu().numpy() for v in vals]);vy=np.concatenate([v[1] for v in vals])
+    return (x,y),(vx,vy),parts
+
+
+def train(a,artifact):
+    if a.output.exists():raise ValueError('Use a fresh baseline output directory.')
+    a.output.mkdir(parents=True);models=a.output/'Models';models.mkdir()
+    shutil.copy2(a.source_run/'Models/protocol_preprocessing.joblib',models/'protocol_preprocessing.joblib')
+    train,validation,parts=training_data(a,artifact)
+    domain_hashes={str(level):core.file_sha256(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv') for level in a.train_levels}
+    config={key:str(value) if isinstance(value,Path) else value for key,value in vars(a).items()}
+    provenance=dict(version=1,train_levels=a.train_levels,training_domains_sha256=domain_hashes,
+                    source_preprocessing_sha256=core.file_sha256(models/'protocol_preprocessing.joblib'),
+                    partition_sha256={key:hashlib.sha256(np.asarray(artifact[key],dtype='<i8').tobytes()).hexdigest()
+                                      for key in ('train_ids','val_ids','test_ids')},
+                    config=config,classes=a.classes,feature_names=artifact['feature_names'])
+    for method in a.methods:
+        core.set_seed(a.seed)
+        if method=='cnn':
+            checkpoint=torch.load(a.source_run/'Models/initial_cnn_model.pth',map_location='cpu',weights_only=False)
+            saved=dict(state=checkpoint['model_state_dict'],width=train[0].shape[1],classes=len(a.classes),
+                       source_cnn_sha256=core.file_sha256(a.source_run/'Models/initial_cnn_model.pth'))
+            print('1D-CNN: reused identical frozen CNN checkpoint; no redundant retraining.',flush=True)
+        elif method=='ral':
+            model=RAL([KNeighborsClassifier(),RandomForestClassifier(random_state=a.seed,n_jobs=a.jobs),
+                       DecisionTreeClassifier(random_state=a.seed)],.9,.025,.01,
+                       reward=1,penalty=-1,budget=None,model_update_frequency=1)
+            model.fit(*train);saved=dict(model=model)
+            print(f'RAL trained on {len(train[1])} rows; existing committee/alpha/threshold rules retained.',flush=True)
+        elif method=='dfe':saved=train_dfe(a,train,validation)
+        else:
+            if 0 not in parts or len(parts)<2:raise ValueError('AF DANN requires clean source and training shift domains.')
+            clean=(parts[0][0].squeeze(1).cpu().numpy(),parts[0][1])
+            shifted=np.concatenate([v[0].squeeze(1).cpu().numpy() for k,v in parts.items() if k!=0])
+            saved=train_af(a,train,validation,clean,shifted)
+        saved['provenance']=provenance
+        joblib.dump(saved,models/f'{method}.joblib')
+        learner=Learner(method,saved,a)
+        prediction=learner.predict(validation[0]);score=f1_score(validation[1],prediction,average='macro',zero_division=0)
+        print(f'{METHOD_NAMES[method]} ready | validation Macro-F1 {100*score:.2f}%',flush=True)
+    (a.output/'training_manifest.json').write_text(json.dumps(provenance,indent=2))
+    print('Training complete. No heldout test scored.')
+
+
+def evaluate(a,artifact):
+    root=a.output/'Results';root.mkdir(exist_ok=True)
+    reference=shared.read_domain(a.burst_dir,artifact,0,'val_ids')[:2]
+    config=dict(seed=a.seed,budget=a.budget_fraction,af_online_lr=a.af_lr,protocol_version=1)
+    tag=hashlib.sha256(json.dumps(config,sort_keys=True).encode()).hexdigest()[:8]
+    rows=[];same_rows=[]
+    for method in a.methods:
+        saved=joblib.load(a.output/'Models'/f'{method}.joblib');p=saved['provenance']
+        if p['source_preprocessing_sha256']!=core.file_sha256(a.output/'Models/protocol_preprocessing.joblib'):raise ValueError('Baseline preprocessing changed.')
+        if set(a.levels)&set(p['train_levels']):raise ValueError('Test levels overlap training levels.')
+        for level,digest in p['training_domains_sha256'].items():
+            if core.file_sha256(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv')!=digest:raise ValueError('Training domain provenance changed.')
+        for level in a.levels:
+            core.set_seed(a.seed)
+            domain=shared.read_domain(a.burst_dir,artifact,level,'test_ids')
+            metrics,trace=evaluate_level(a,method,saved,domain,reference)
+            metrics.update(level=level,execution_config=config,training_provenance=p,
+                           target_sha256=core.file_sha256(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv'))
+            stem=f'{method}_per{level}_seed{a.seed}_{tag}'
+            (root/(stem+'_metrics.json')).write_text(json.dumps(metrics,indent=2))
+            shared.base.write_trace(root/(stem+'_trace.csv'),trace)
+            ref=metrics['reference'];same=metrics['same_level']['unqueried']
+            row=dict(Method=method,PER=level,Online=100*metrics['accuracy'],MacroF1=100*metrics['macro_f1'],
+                     Labels=metrics['labels'],Ref0=100*ref['initial'],RefFinal=100*ref['final'],RefDrop=ref['drop_pp'])
+            rows.append(row)
+            same_rows.append(dict(Method=method,PER=level,N=same['n'],Initial=None if same['initial'] is None else 100*same['initial'],
+                                  Final=None if same['final'] is None else 100*same['final'],Drop=same['drop_pp'],Broken=same['broken'],Fixed=same['fixed']))
+            print(f'{method.upper()} | PER {level} | online {row["Online"]:.2f}% | labels {metrics["labels"]}/{metrics["label_cap"]} | clean {row["Ref0"]:.2f}% -> {row["RefFinal"]:.2f}% | drop {row["RefDrop"]:+.2f} pp',flush=True)
+            if same['n']:print(f'  Same-level unqueried: {100*same["initial"]:.2f}% -> {100*same["final"]:.2f}% | drop {same["drop_pp"]:+.2f} pp | broken {same["broken"]} | fixed {same["fixed"]}')
+    for method in a.methods:
+        own=[r for r in rows if r['Method']==method]
+        rows.append(dict(Method=method,PER='Mean',**{key:float(np.mean([r[key] for r in own])) for key in rows[0] if key not in ('Method','PER')}))
+    print('\nCombined baselines (%; Drop in pp; positive Drop = net forgetting):')
+    display(rows,list(rows[0]));shared.base.write_trace(root/f'combined_baselines_seed{a.seed}_{tag}.csv',rows)
+    for method in a.methods:
+        own=[r for r in same_rows if r['Method']==method and r['N']>0]
+        if own:same_rows.append(dict(Method=method,PER='Mean',**{
+            key:float(np.mean([r[key] for r in own])) for key in same_rows[0] if key not in ('Method','PER')}))
+    print('\nSame-level retention on unqueried rows (retrospective):')
+    display(same_rows,list(same_rows[0]));shared.base.write_trace(root/f'combined_baselines_seed{a.seed}_{tag}_same_level.csv',same_rows)
+    print('Saved:',root)
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command',choices=['train','evaluate'])
+    parser.add_argument('--source-run',type=Path)
+    parser.add_argument('--burst-dir',required=True,type=Path)
+    parser.add_argument('--output',required=True,type=Path)
+    parser.add_argument('--methods',nargs='+',choices=list(METHOD_NAMES),default=list(METHOD_NAMES))
+    parser.add_argument('--train-levels',type=int,nargs='+',default=[0,1,3])
+    parser.add_argument('--levels',type=int,nargs='+',default=[5,7,10,12,15,17,20])
+    parser.add_argument('--seed',type=int,default=42)
+    parser.add_argument('--budget-fraction',type=float,default=.2)
+    parser.add_argument('--dfe-epochs',type=int,default=200)
+    parser.add_argument('--af-epochs',type=int,default=30)
+    parser.add_argument('--patience',type=int,default=10)
+    parser.add_argument('--batch-size',type=int,default=32)
+    parser.add_argument('--dfe-lr',type=float,default=.001)
+    parser.add_argument('--af-lr',type=float,default=1e-5)
+    parser.add_argument('--dfe-alpha1',type=float,default=.5)
+    parser.add_argument('--dfe-alpha2',type=float,default=2.)
+    parser.add_argument('--dfe-eta',type=float,default=.5)
+    parser.add_argument('--dfe-lambda',type=float,default=1.)
+    parser.add_argument('--dfe-betas',type=float,nargs=6,default=[.01,.02,.03,.04,.05,.05])
+    parser.add_argument('--templates',type=int,default=20)
+    parser.add_argument('--jobs',type=int,default=-1)
+    parser.add_argument('--device',choices=['auto','cpu','cuda'],default='auto')
+    a=parser.parse_args()
+    if not 0<=a.budget_fraction<=1 or min(a.dfe_epochs,a.af_epochs,a.patience,a.templates)<1 or a.batch_size<2:parser.error('Invalid budget/epochs/batch/templates.')
+    if any(not np.isfinite(v) or v<=0 for v in [a.dfe_lr,a.af_lr]):parser.error('Learning rates must be finite and positive.')
+    if any(not np.isfinite(v) or v<0 for v in [a.dfe_alpha1,a.dfe_alpha2,a.dfe_eta,a.dfe_lambda,*a.dfe_betas]):parser.error('Invalid DFE objective weights.')
+    if len(set(a.methods))!=len(a.methods) or any(len(set(values))!=len(values) or min(values)<0
+                                                 for values in (a.levels,a.train_levels)):parser.error('Duplicate methods or invalid levels.')
+    core.set_seed(a.seed)
+    if a.device!='auto':core.device=torch.device(a.device)
+    a.output=a.output.resolve();a.burst_dir=a.burst_dir.resolve()
+    if a.command=='train':
+        if a.source_run is None:parser.error('Training requires --source-run from the final structured AMCAL run.')
+        a.source_run=a.source_run.resolve()
+        checkpoint=torch.load(a.source_run/'Models/structured_bank_ddqn.pth',map_location='cpu',weights_only=False)
+        if set(checkpoint['training_levels'])!=set(a.train_levels):parser.error('Baseline training domains must match AMCAL.')
+        for name,digest in checkpoint['model_hashes'].items():
+            if core.file_sha256(a.source_run/'Models'/name)!=digest:parser.error('AMCAL source checkpoint provenance changed.')
+        path=a.source_run/'Models/protocol_preprocessing.joblib'
+    else:path=a.output/'Models/protocol_preprocessing.joblib'
+    artifact=joblib.load(path)
+    partitions=[np.asarray(artifact[key],dtype=np.int64) for key in ('train_ids','val_ids','test_ids')]
+    ids=np.concatenate(partitions)
+    if any(not len(v) for v in partitions) or len(np.unique(ids))!=len(ids) or (ids<0).any() or (ids>=artifact['source_rows']).any():parser.error('Invalid/disjoint source partitions.')
+    if core.file_sha256(a.burst_dir/'AdvBurstTrainedBurst_size_0_Step_2000.csv')!=artifact['source_sha256']:parser.error('Clean source provenance mismatch.')
+    a.classes=[str(c) for c in artifact['label_encoder'].classes_]
+    if a.command=='train':train(a,artifact)
+    else:evaluate(a,artifact)
+
+
+if __name__=='__main__':main()
