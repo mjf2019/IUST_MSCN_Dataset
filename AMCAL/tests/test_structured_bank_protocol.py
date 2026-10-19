@@ -4,6 +4,12 @@ from pathlib import Path
 from types import SimpleNamespace
 import sys
 import unittest
+from unittest.mock import patch
+import tempfile
+import json
+import csv
+import io
+from contextlib import redirect_stdout
 
 import numpy as np
 import torch
@@ -151,5 +157,63 @@ class StructuredBankTests(unittest.TestCase):
         self.assertAlmostEqual(harm,0)
         self.assertAlmostEqual(utility,-m.core.SELECTION_COST)
 
+    def test_retention_uses_identical_unqueried_rows_and_counts_damage(self):
+        y=np.array([0,1,0,1])
+        before=np.array([0,1,1,0]);after=np.array([1,1,0,1])
+        first=(before,None,np.tile(before[:,None],(1,4)))
+        final=(after,None,np.tile(after[:,None],(1,4)))
+        result=m.retention_summary(first,final,y,np.array([True,False,True,False]))
+        self.assertEqual(result['samples'],2)
+        self.assertEqual(result['initial'],.5);self.assertEqual(result['final'],.5)
+        self.assertEqual(result['drop_pp'],0)
+        self.assertEqual(result['broken'],1);self.assertEqual(result['fixed'],1)
+        self.assertEqual(result['per_route_broken'],[1]*4)
+        self.assertEqual(result['per_route_fixed'],[1]*4)
+        empty=m.retention_summary(first,final,y,np.zeros(4,dtype=bool))
+        self.assertEqual(empty['samples'],0);self.assertIsNone(empty['drop_pp'])
+
+    def test_same_level_observer_cannot_change_trajectory_or_weights(self):
+        cnn,bank,initial,a,domain=self.fixture()
+        agent=m.Agent(34,torch.device('cpu'),42)
+        snapshot=deepcopy(agent.policy.state_dict())
+        original,trace=m.episode(a,cnn,bank,initial,agent,domain)
+        weights=deepcopy(agent.policy.state_dict())
+        bank_weights=[deepcopy(c.state_dict()) for c in bank]
+        other=m.Agent(34,torch.device('cpu'),42,policy_state=snapshot)
+        metrics,second=m.episode(a,cnn,bank,initial,other,domain,same_level=True)
+        self.assertEqual(trace,second)
+        self.assertEqual(original['accuracy'],metrics['accuracy'])
+        self.assertEqual(metrics['same_level']['all_rows']['samples'],16)
+        self.assertEqual(metrics['same_level']['unqueried']['samples'],8)
+        self.assertEqual(metrics['same_level']['unqueried']['per_route_initial'][0],
+                         metrics['same_level']['unqueried']['per_route_final'][0])
+        self.assertEqual(metrics['same_level']['unqueried']['per_route_broken'][0],0)
+        for k,v in weights.items():self.assertTrue(torch.equal(v,other.policy.state_dict()[k]))
+        for saved,context in zip(bank_weights,bank):
+            for k,v in saved.items():self.assertTrue(torch.equal(v,context.state_dict()[k]))
+
+    def test_evaluate_saves_readable_same_level_table_and_csv(self):
+        cnn,bank,initial,a,domain=self.fixture()
+        agent=m.Agent(34,torch.device('cpu'),42)
+        a.levels=[5];a.modes=['learned','random'];a.gamma=.95
+        a.selection_cost=.0001;a.gain_weight=1;a.retention_weight=1
+        with tempfile.TemporaryDirectory() as directory:
+            a.output=Path(directory);a.burst_dir=Path(directory)
+            models=a.output/'Models';models.mkdir()
+            torch.save(dict(version=1,model_hashes={},training_levels=[0,1,3],
+                            route_width=34,policy_state_dict=agent.policy.state_dict()),
+                       models/'structured_bank_ddqn.pth')
+            with patch.object(m,'models_from_source',return_value=(cnn,bank,initial,34)), \
+                 patch.object(m,'read_domain',return_value=domain),redirect_stdout(io.StringIO()) as output:
+                m.evaluate(a,models,{})
+            self.assertIn('Same-level retention on unqueried rows',output.getvalue())
+            path=next((a.output/'Results').glob('*_same_level.csv'))
+            with path.open(newline='',encoding='utf-8-sig') as stream:rows=list(csv.DictReader(stream))
+            self.assertEqual(len(rows),4)
+            self.assertEqual({row['Subset'] for row in rows},{'All','Unqueried'})
+            metrics=json.loads(next((a.output/'Results').glob('*learned*_metrics.json')).read_text())
+            self.assertEqual(metrics['same_level']['unqueried']['samples'],8)
+
 
 if __name__=='__main__':unittest.main()
+
