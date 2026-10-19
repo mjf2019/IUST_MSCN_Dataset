@@ -1,4 +1,4 @@
-"""Train clean CNN/Context/RL, then refine CNN on 0/3/12 and warm-start Context/RL.
+"""Train clean CNN/Context/RL, then refine CNN on configured domains and warm-start Context/RL.
 No heldout scoring is performed in training. Use the official evaluator afterwards.
 """
 import argparse
@@ -27,7 +27,7 @@ def main():
     p.add_argument('--multishift-levels',type=int,nargs='+',default=[0,3,12])
     extra,remaining=p.parse_known_args()
     levels=tuple(sorted(set(extra.multishift_levels)))
-    if len(levels)!=3 or levels[0]!=0 or any(v<0 for v in levels):p.error('Specify zero and two distinct positive Burst levels')
+    if len(levels)<2 or levels[0]!=0 or any(v<0 for v in levels):p.error('Specify zero and at least one distinct positive Burst level')
     reuse=extra.reuse_multishift_run.resolve() if extra.reuse_multishift_run else None
     if extra.refine_routing_only and (reuse is None or extra.stage2_pretrain_epochs != 0):p.error('Routing refinement requires --reuse-multishift-run and --stage2-pretrain-epochs 0')
     if extra.stage2_pretrain_epochs < 0:p.error('Pretraining epochs must be nonnegative')
@@ -35,7 +35,7 @@ def main():
     if 'train' not in remaining:p.error('This entry point is training only; use amcal_burst_official_protocol.py evaluate for testing')
     if '--official-split-dir' not in remaining:p.error('--official-split-dir is required')
     root=Path(remaining[remaining.index('--burst-dir')+1]).resolve()
-    if '--train-perturbations' in remaining:p.error('Training stages fix perturbations to 0, then 0/3/12; omit --train-perturbations')
+    if '--train-perturbations' in remaining:p.error('Training stages use clean 0, then --multishift-levels; omit --train-perturbations')
     def train_stages(dataset_path,base_epoch=100,base_patience=15,adver_epoch=100,adver_patience=15,pretrain_epochs=20):
         train,val,_unused_test,full,nclasses,width,counts=core.load_data(dataset_path=dataset_path)
         if set(core.TRAIN_PERTURBATIONS)!=set(levels):raise ValueError('Final domain configuration differs')
@@ -111,7 +111,7 @@ def main():
         assert len(agent.replay_buffer)==0
         context.load_state_dict(prior_context)
         core.TRAIN_PERTURBATIONS=tuple(float(v) for v in levels)
-        # Pretrain against the new CNN on train-only 0/3/12, then keep per-domain RL episodes.
+        # Pretrain against the new CNN on configured TRAIN domains, then keep per-domain RL episodes.
         pretrain_loader=multitrain if extra.stage2_pretrain_epochs else full
         core.train_adversarial_system(cnn,agent,context,pretrain_loader,val,counts,width,nclasses,adver_epoch,adver_patience,extra.stage2_pretrain_epochs,episode_loaders=(full,val))
         if extra.refine_routing_only:
