@@ -20,6 +20,7 @@ from torch import nn
 import torch.nn.functional as F
 
 import amcal_burst_context_bank_protocol as base
+from baselines.stream_timing import StreamTimer, timing_row, timing_report
 core = base.core
 SLOTS = 3
 ROUTES = 4
@@ -299,7 +300,9 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
     rng=np.random.default_rng(seed+719003)
     history=Reliability(len(a.classes))
     reward_reference=core.TrainingProbe(x,torch.tensor(y,device=x.device),seed+910033) if training else core.PaidHistory(seed+910033)
-    bz,embedding=base_cache(cnn,x)
+    timer=StreamTimer(x.device,enabled=not training)
+    with timer.stage('cache'):
+        bz,embedding=base_cache(cnn,x)
     initial_ref=reference_observer(cnn,bank,agent,*reference,history,0,cap,0,mode,a.seed) if reference is not None else None
     initial_current=reference_observer(cnn,bank,agent,x,y,history,0,cap,0,mode,a.seed,
                                        return_route_predictions=True) if same_level else None
@@ -308,24 +311,27 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
     oracle_all,oracle_legal=0,0
     route_updates0,td_updates0=agent.route_updates,agent.td_updates
     next_cached=None
+    timer.start()
     for pos in range(n):
         inputs=x[pos:pos+1]
-        outputs=next_cached if next_cached is not None else route_outputs(cnn,bank,inputs,bz[pos:pos+1])
-        next_cached=None
-        state=build_state(outputs,embedding[pos:pos+1],history,used,cap,pos,n,state_gate(pos))
-        allowed=base.legal_actions(SLOTS,cap-used,gate(pos))
-        if a.update_policy=='fixed':
-            fixed_action=4+int(fixed_destinations[pos])
-            allowed=[v for v in allowed if v<4 or v==fixed_action]
-        with torch.no_grad():
-            values=agent.policy(state).squeeze(0)
-            probability=agent.policy.route_logits(state).sigmoid().squeeze(0)
-            epsilon=a.train_epsilon if training else a.eval_epsilon
-            if mode=='random' or warmup or rng.random()<epsilon:
-                action=int(rng.choice(allowed))
-            else:
-                valid=torch.tensor(allowed,device=x.device)
-                action=int(valid[values[valid].argmax()].item())
+        with timer.stage('prediction'):
+            outputs=next_cached if next_cached is not None else route_outputs(cnn,bank,inputs,bz[pos:pos+1])
+            next_cached=None
+        with timer.stage('selection'):
+            state=build_state(outputs,embedding[pos:pos+1],history,used,cap,pos,n,state_gate(pos))
+            allowed=base.legal_actions(SLOTS,cap-used,gate(pos))
+            if a.update_policy=='fixed':
+                fixed_action=4+int(fixed_destinations[pos])
+                allowed=[v for v in allowed if v<4 or v==fixed_action]
+            with torch.no_grad():
+                values=agent.policy(state).squeeze(0)
+                probability=agent.policy.route_logits(state).sigmoid().squeeze(0)
+                epsilon=a.train_epsilon if training else a.eval_epsilon
+                if mode=='random' or warmup or rng.random()<epsilon:
+                    action=int(rng.choice(allowed))
+                else:
+                    valid=torch.tensor(allowed,device=x.device)
+                    action=int(valid[values[valid].argmax()].item())
         route=base.route_index(action,SLOTS)
         predictions=outputs[0].argmax(2).squeeze(0).cpu().numpy()
         prediction_rows.append(predictions.copy())
@@ -337,55 +343,56 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
         oracle_legal+=any(correct[base.route_index(v,SLOTS)] for v in allowed)
         actions[action]+=1
         agent.clock+=1
-        successor_output=None
-        if pos+1<n:
-            # Cache once, then refresh just the updated slot for the actual successor.
-            if not warmup and (paid or training):
-                successor_output=route_outputs(cnn,bank,x[pos+1:pos+2],bz[pos+1:pos+2])
-        zero=torch.zeros_like(state)
-        skip_next=zero
-        if successor_output is not None:
-            skip_next=build_state(successor_output,embedding[pos+1:pos+2],history,used,cap,pos+1,n,state_gate(pos+1))
-        reward,gain,harm=None,None,None
-        before=None;batch=None
-        if paid:
-            assert used<cap
-            selected=route-1
-            label=torch.tensor([truth],device=x.device)
-            if not warmup:
-                batch=reward_reference.sample(inputs)
-                before=utility_before(a,cnn,bank,selected,batch)
-            history.observe_paid(outputs[0].softmax(2),truth)
-            optimizers[selected].zero_grad()
-            loss=core.context_objective(F.cross_entropy(cnn(bank[selected](inputs)),label),
-                                        F.cross_entropy(outputs[0][:,0],label))
-            loss.backward();optimizers[selected].step()
-            utility,gain,harm=(0.0,0.0,0.0) if warmup else utility_after(a,cnn,bank,selected,batch,before)
-            reward=(1.0 if prediction==truth else -1.0)+utility
-            used+=1;slot_queries[selected]+=1
-            after_current=refresh_slot(cnn,bank,inputs,outputs,route)
-            change=(after_current[0][:,route].softmax(1)-outputs[0][:,route].softmax(1)).abs().mean().item()
-            history.updated(route,pos+1,change)
-            if not training:reward_reference.add(inputs,label)
+        with timer.stage('update'):
+            successor_output=None
+            if pos+1<n:
+                # Cache once, then refresh just the updated slot for the actual successor.
+                if not warmup and (paid or training):
+                    successor_output=route_outputs(cnn,bank,x[pos+1:pos+2],bz[pos+1:pos+2])
+            zero=torch.zeros_like(state)
+            skip_next=zero
             if successor_output is not None:
-                successor_output=refresh_slot(cnn,bank,x[pos+1:pos+2],successor_output,route)
-        # Offline TRAIN labels supervise all routes; validation/test only paid labels.
-        may_learn=training or (learning and mode=='learned' and paid)
-        if may_learn:
-            target=torch.tensor(correct,device=x.device,dtype=torch.float32)
-            step_now=(not training) or paid or pos%16==15 or pos+1==n
-            agent.observe_routes(state,target,step_now=step_now)
-        if may_learn and not warmup:
-            # Non-query actions share the same no-update successor and future value.
-            skip_state=state.clone()
-            if schedule is not None:skip_state[:,-3]=0
-            for r in range(ROUTES):
-                agent.push(skip_state,r,1.0 if correct[r] else -1.0,skip_next,pos+1==n)
+                skip_next=build_state(successor_output,embedding[pos+1:pos+2],history,used,cap,pos+1,n,state_gate(pos+1))
+            reward,gain,harm=None,None,None
+            before=None;batch=None
             if paid:
-                successor=zero if successor_output is None else build_state(successor_output,embedding[pos+1:pos+2],history,used,cap,pos+1,n,state_gate(pos+1))
-                # Budget exhaustion masks queries; it does NOT end future prediction value.
-                agent.push(state,action,reward,successor,pos+1==n)
-            if paid or pos%16==15 or pos+1==n:agent.learn_td()
+                assert used<cap
+                selected=route-1
+                label=torch.tensor([truth],device=x.device)
+                if not warmup:
+                    batch=reward_reference.sample(inputs)
+                    before=utility_before(a,cnn,bank,selected,batch)
+                history.observe_paid(outputs[0].softmax(2),truth)
+                optimizers[selected].zero_grad()
+                loss=core.context_objective(F.cross_entropy(cnn(bank[selected](inputs)),label),
+                                            F.cross_entropy(outputs[0][:,0],label))
+                loss.backward();optimizers[selected].step()
+                utility,gain,harm=(0.0,0.0,0.0) if warmup else utility_after(a,cnn,bank,selected,batch,before)
+                reward=(1.0 if prediction==truth else -1.0)+utility
+                used+=1;slot_queries[selected]+=1
+                after_current=refresh_slot(cnn,bank,inputs,outputs,route)
+                change=(after_current[0][:,route].softmax(1)-outputs[0][:,route].softmax(1)).abs().mean().item()
+                history.updated(route,pos+1,change)
+                if not training:reward_reference.add(inputs,label)
+                if successor_output is not None:
+                    successor_output=refresh_slot(cnn,bank,x[pos+1:pos+2],successor_output,route)
+            # Offline TRAIN labels supervise all routes; validation/test only paid labels.
+            may_learn=training or (learning and mode=='learned' and paid)
+            if may_learn:
+                target=torch.tensor(correct,device=x.device,dtype=torch.float32)
+                step_now=(not training) or paid or pos%16==15 or pos+1==n
+                agent.observe_routes(state,target,step_now=step_now)
+            if may_learn and not warmup:
+                # Non-query actions share the same no-update successor and future value.
+                skip_state=state.clone()
+                if schedule is not None:skip_state[:,-3]=0
+                for r in range(ROUTES):
+                    agent.push(skip_state,r,1.0 if correct[r] else -1.0,skip_next,pos+1==n)
+                if paid:
+                    successor=zero if successor_output is None else build_state(successor_output,embedding[pos+1:pos+2],history,used,cap,pos+1,n,state_gate(pos+1))
+                    # Budget exhaustion masks queries; it does NOT end future prediction value.
+                    agent.push(state,action,reward,successor,pos+1==n)
+                if paid or pos%16==15 or pos+1==n:agent.learn_td()
         next_cached=successor_output
         row=dict(step=pos+1,source_row=int(source_ids[pos]),truth=truth,prediction=prediction,
                  action=action,route=route,queried=paid,labels_used=used,reward=reward,gain=gain,harm=harm,
@@ -394,6 +401,7 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
             row[f'prediction_{r}']=int(predictions[r]);row[f'correctness_probability_{r}']=float(probability[r].item())
         for action_id in range(ACTIONS):row[f'q_{action_id}']=float(values[action_id].item())
         trace.append(row)
+    timer.stop()
     if schedule is not None:assert used==cap
     matrix=np.asarray(prediction_rows)
     chosen=np.asarray([r['prediction'] for r in trace])
@@ -412,6 +420,7 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
                  bank_utility=a.bank_utility,seed=a.seed,
                  oracle_protocol='observer only, along this policy bank trajectory; legal oracle obeys uniform gate and fixed-destination control',
                  fixed_skip_protocol='retrospective control: keep actual query actions/destinations; use one fixed route on all non-query rows')
+    metrics.update(timer.metrics(n,used))
     if reference is not None:
         final,per_final=reference_observer(cnn,bank,agent,*reference,history,used,cap,n,mode,a.seed)
         first,per_first=initial_ref
@@ -548,8 +557,9 @@ def evaluate(a,models,artifact):
     execution={key:getattr(a,key) for key in ('seed','context_lr','budget_fraction','selection_cost','gain_weight','retention_weight','gamma','eval_epsilon','query_schedule','update_policy','bank_utility')}
     execution['same_level_diagnostics_version']=1
     execution['budget_report_version']=1
+    execution['timing_version']=1
     run_id=hashlib.sha256(json.dumps(execution,sort_keys=True).encode()).hexdigest()[:8]
-    rows=[];retention_rows=[];budget_rows=[]
+    rows=[];retention_rows=[];budget_rows=[];time_rows=[]
     for level in a.levels:
         domain=read_domain(a.burst_dir,artifact,level,'test_ids')
         pair={}
@@ -562,6 +572,8 @@ def evaluate(a,models,artifact):
             (root/(tag+'_metrics.json')).write_text(json.dumps(m,indent=2))
             base.write_trace(root/(tag+'_trace.csv'),trace)
             report_level(level,mode,m);pair[mode]=m
+            print(timing_report(m),flush=True)
+            time_rows.append(timing_row(mode,level,m))
             budget_rows.append(dict(PER=level,Mode=mode,N=m['samples'],Labels=m['labels'],Cap=m['label_cap'],
                 **{'Label%':100*m['actual_label_fraction'],'CapUsed%':m['budget_utilization_pct']},
                 Left=m['labels_remaining']))
@@ -604,6 +616,15 @@ def evaluate(a,models,artifact):
     print('\nLabel budget consumption (Label%: stream percentage; CapUsed%: cap percentage):')
     display(budget_rows,list(budget_rows[0]));base.write_trace(budget_file,budget_rows)
     print('Budget report saved:',budget_file)
+    for mode in a.modes:
+        own=[row for row in time_rows if row['Method']==mode]
+        time_rows.append(dict(Method=mode,PER='Mean',**{
+            key:float(np.mean([row[key] for row in own])) for key in time_rows[0] if key not in ('Method','PER')}))
+    timing_file=filename.with_name(filename.stem+'_timing.csv')
+    print('\nOnline runtime (seconds; synchronized CUDA; excludes endpoint observers and file I/O):')
+    display(time_rows,list(time_rows[0]));base.write_trace(timing_file,time_rows)
+    print('Pred includes Cache (not an extra charge). Update includes Context, reward probes and selector updates. Other includes bookkeeping. Run modes sequentially for timing comparisons.')
+    print('Timing report saved:',timing_file)
     retention_file=filename.with_name(filename.stem+'_same_level.csv')
     base.write_trace(retention_file,retention_rows)
     print('\nSame-level retention on unqueried rows (%; positive Drop = net forgetting):')

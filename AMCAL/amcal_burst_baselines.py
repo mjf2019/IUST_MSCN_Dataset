@@ -28,6 +28,7 @@ from sklearn.tree import DecisionTreeClassifier
 import amcal_burst_structured_bank_protocol as shared
 from amcal_burst_results_summary import display
 from baselines.ral_existing import RAL
+from baselines.stream_timing import StreamTimer, timing_row, timing_report
 from baselines.dfe_burst import (DFEBackbone,FlowImages,GaussianCompression,
     TemplateLibrary,constrained_triplet,triplet_indices,knn_vote,embed)
 
@@ -266,32 +267,38 @@ def evaluate_level(a,method,saved,domain,reference,observer=True):
     schedule=set(np.random.default_rng(a.seed+819003).choice(n,cap,replace=False).tolist())
     queried=np.zeros(n,dtype=bool);predictions=[];trace=[];used=0
     random.seed(a.seed)
-    start=time.perf_counter()
+    timer=StreamTimer('cpu' if method in ('ral','arf') else core.device)
+    timer.start();start=time.perf_counter()
     for pos in range(n):
-        prediction=int(learner.predict(x[pos:pos+1])[0])
+        with timer.stage('prediction'):
+            prediction=int(learner.predict(x[pos:pos+1])[0])
         # Freeze prediction before querying or exposing truth to the learner.
-        if method=='ral':request,info=learner.request(x[pos])
-        else:request,info=(method!='cnn' and pos in schedule),None
+        with timer.stage('selection'):
+            if method=='ral':request,info=learner.request(x[pos])
+            else:request,info=(method!='cnn' and pos in schedule),None
         paid=bool(request and used<cap)
         if paid:
-            learner.update(x[pos],int(y[pos]),info);used+=1;queried[pos]=True
+            with timer.stage('update'):
+                learner.update(x[pos],int(y[pos]),info)
+            used+=1;queried[pos]=True
         predictions.append(prediction)
         trace.append(dict(step=pos+1,source_row=int(ids[pos]),truth=int(y[pos]),prediction=prediction,
                           queried=paid,labels_used=used))
         every=getattr(a,'progress_every',0)
         if method=='ral' and every>0 and (pos+1)%every==0:
             print(f'  RAL progress {pos+1}/{n} | labels {used}/{cap} | elapsed {time.perf_counter()-start:.1f}s',flush=True)
-    elapsed=time.perf_counter()-start
+    timer.stop()
     metrics=dict(method=METHOD_NAMES[method],accuracy=float(accuracy_score(y,predictions)),
                  macro_f1=float(f1_score(y,predictions,average='macro',zero_division=0)),
                  weighted_f1=float(f1_score(y,predictions,average='weighted',zero_division=0)),
                  samples=n,labels=used,label_cap=cap,actual_label_fraction=used/n,
                  budget_utilization_pct=100*used/cap if cap else 0.,labels_remaining=cap-used,
-                 online_seconds=elapsed,online_gradient_steps=learner.steps,
+                 online_gradient_steps=learner.steps,
                  query_protocol='none' if method=='cnn' else
                     ('RAL paper prefix-ratio gate plus strict global cap' if getattr(a,'ral_budget_mode','prefix')=='prefix'
                      else 'RAL committee/greedy with global cap only') if method=='ral' else 'label-blind uniform exact cap',
                  protocol='predict-score-query-update; fresh model per level; reference/same-level observers never feed learning')
+    metrics.update(timer.metrics(n,used))
     if method=='ral':
         metrics.update(ral_budget_mode=getattr(a,'ral_budget_mode','prefix'),
                        ral_protocol_version=saved.get('ral_protocol_version',0),
@@ -366,11 +373,11 @@ def train(a,artifact):
 def evaluate(a,artifact):
     root=a.output/'Results';root.mkdir(exist_ok=True)
     reference=shared.read_domain(a.burst_dir,artifact,0,'val_ids')[:2]
-    config=dict(seed=a.seed,budget=a.budget_fraction,af_online_lr=a.af_lr,protocol_version=1)
+    config=dict(seed=a.seed,budget=a.budget_fraction,af_online_lr=a.af_lr,protocol_version=1,timing_version=1)
     if 'ral' in a.methods:
         config.update(ral_protocol_version=2,ral_budget_mode=getattr(a,'ral_budget_mode','prefix'))
     tag=hashlib.sha256(json.dumps(config,sort_keys=True).encode()).hexdigest()[:8]
-    rows=[];same_rows=[]
+    rows=[];same_rows=[];time_rows=[]
     for method in a.methods:
         saved=joblib.load(a.output/'Models'/f'{method}.joblib');p=saved['provenance']
         if method=='ral' and saved.get('ral_protocol_version',0)<2:
@@ -396,9 +403,11 @@ def evaluate(a,artifact):
                      **{'Label%':100*metrics['actual_label_fraction'],'CapUsed%':metrics['budget_utilization_pct']},
                      Ref0=100*ref['initial'],RefFinal=100*ref['final'],RefDrop=ref['drop_pp'])
             rows.append(row)
+            time_rows.append(timing_row(method,level,metrics))
             same_rows.append(dict(Method=method,PER=level,N=same['n'],Initial=None if same['initial'] is None else 100*same['initial'],
                                   Final=None if same['final'] is None else 100*same['final'],Drop=same['drop_pp'],Broken=same['broken'],Fixed=same['fixed']))
             print(f'{method.upper()} | PER {level} | online {row["Online"]:.2f}% | labels {metrics["labels"]}/{metrics["label_cap"]} ({row["Label%"]:.2f}% of stream; {row["CapUsed%"]:.2f}% of cap) | clean {row["Ref0"]:.2f}% -> {row["RefFinal"]:.2f}% | drop {row["RefDrop"]:+.2f} pp',flush=True)
+            print(timing_report(metrics),flush=True)
             if same['n']:print(f'  Same-level unqueried: {100*same["initial"]:.2f}% -> {100*same["final"]:.2f}% | drop {same["drop_pp"]:+.2f} pp | broken {same["broken"]} | fixed {same["fixed"]}')
     for method in a.methods:
         own=[r for r in rows if r['Method']==method]
@@ -406,6 +415,13 @@ def evaluate(a,artifact):
     print('\nCombined baselines (%; Drop in pp; positive Drop = net forgetting):')
     display(rows,list(rows[0]));shared.base.write_trace(root/f'combined_baselines_seed{a.seed}_{tag}.csv',rows)
     print('Labels: acquired labels; Cap: maximum allowed labels; Label%: percentage of stream; CapUsed%: percentage of cap used (0 if cap is zero).')
+    for method in a.methods:
+        own=[r for r in time_rows if r['Method']==method]
+        time_rows.append(dict(Method=method,PER='Mean',**{
+            key:float(np.mean([r[key] for r in own])) for key in time_rows[0] if key not in ('Method','PER')}))
+    print('\nOnline runtime (seconds; synchronized CUDA; excludes endpoint observers and file I/O):')
+    display(time_rows,list(time_rows[0]));shared.base.write_trace(root/f'combined_baselines_seed{a.seed}_{tag}_timing.csv',time_rows)
+    print('Pred includes Cache (not an extra charge). Update includes all paid adaptation. Other includes bookkeeping. Run methods sequentially for timing comparisons.')
     for method in a.methods:
         own=[r for r in same_rows if r['Method']==method and r['N']>0]
         if own:same_rows.append(dict(Method=method,PER='Mean',**{

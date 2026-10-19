@@ -213,12 +213,33 @@ class StructuredBankTests(unittest.TestCase):
             self.assertIn('Same-level retention on unqueried rows',output.getvalue())
             self.assertIn('Label budget consumption',output.getvalue())
             self.assertTrue(list((a.output/'Results').glob('*_budget.csv')))
+            self.assertIn('Online runtime',output.getvalue())
+            self.assertTrue(list((a.output/'Results').glob('*_timing.csv')))
             path=next((a.output/'Results').glob('*_same_level.csv'))
             with path.open(newline='',encoding='utf-8-sig') as stream:rows=list(csv.DictReader(stream))
             self.assertEqual(len(rows),4)
             self.assertEqual({row['Subset'] for row in rows},{'All','Unqueried'})
             metrics=json.loads(next((a.output/'Results').glob('*learned*_metrics.json')).read_text())
             self.assertEqual(metrics['same_level']['unqueried']['samples'],8)
+            self.assertGreater(metrics['cache_seconds'],0)
+            self.assertGreater(metrics['update_seconds'],0)
+            self.assertAlmostEqual(metrics['online_seconds'],sum(metrics[k] for k in
+                ('prediction_seconds','selection_seconds','update_seconds','other_seconds')))
+
+    def test_timing_cannot_change_policy_actions_or_bank(self):
+        cnn,bank,initial,a,domain=self.fixture()
+        agent=m.Agent(34,torch.device('cpu'),42)
+        snapshot=deepcopy(agent.policy.state_dict())
+        measured,trace=m.episode(a,cnn,bank,initial,agent,domain)
+        weights=[deepcopy(c.state_dict()) for c in bank]
+        other=m.Agent(34,torch.device('cpu'),42,policy_state=snapshot)
+        timer=m.StreamTimer
+        with patch.object(m,'StreamTimer',side_effect=lambda device,enabled:timer(device,enabled=False)):
+            unmeasured,second=m.episode(a,cnn,bank,initial,other,domain)
+        self.assertEqual(trace,second)
+        self.assertEqual(measured['accuracy'],unmeasured['accuracy'])
+        for before,context in zip(weights,bank):
+            for k,v in before.items():self.assertTrue(torch.equal(v,context.state_dict()[k]))
 
 
 if __name__=='__main__':unittest.main()

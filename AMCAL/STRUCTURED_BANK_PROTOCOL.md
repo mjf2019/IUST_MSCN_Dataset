@@ -89,6 +89,19 @@ Labels, allowed Cap, Label% (100*Labels/N), CapUsed% (100*Labels/Cap), and Left
 is saved as `combined_structured_..._budget.csv`; metrics contain the same fields.
 Reporting changes require evaluation only, with no retraining.
 
+Evaluation also prints synchronized wall-clock prediction, routing/selection,
+update and total online times. The separate `*_timing.csv` table reports these
+times per mode/level and their means, plus ms/row, rows/s and update ms/label.
+Update time includes Context gradients, reward-reference probes and online
+selector learning. Frozen cache construction is included once in prediction and
+total (also shown separately as Cache); successor caching needed for online
+learning is charged to update. Other includes trace/oracle bookkeeping.
+Model loading, initialization, initial/final retention observers and file I/O
+are excluded. CUDA operations are synchronized at timer boundaries. The batched
+frozen cache is retained, so these are implementation timings rather than an
+uncached live-service latency claim. No human label delay is simulated. Run
+comparisons sequentially on an idle machine. Timers leave trajectories unchanged.
+
 Only concise reports and the combined table are printed. Metrics JSON and detailed
 CSV traces are saved to Results. Trace files contain all route predictions and legal
 oracle outcomes; they are never replay inputs. Configuration hashes separate outputs.

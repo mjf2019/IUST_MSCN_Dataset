@@ -204,6 +204,15 @@ class BurstBaselineTests(unittest.TestCase):
             self.assertEqual(forests[0].n_estimators,10)
             self.assertEqual(saved['ral_protocol_version'],2)
             self.assertIn('CapUsed%',output.getvalue())
+            self.assertIn('Online runtime',output.getvalue())
+            self.assertTrue(list((self.a.output/'Results').glob('*_timing.csv')))
+            for path in (self.a.output/'Results').glob('*_metrics.json'):
+                import json
+                timing=json.loads(path.read_text())
+                self.assertGreater(timing['online_seconds'],0)
+                self.assertGreater(timing['prediction_seconds'],0)
+                self.assertAlmostEqual(timing['online_seconds'],sum(timing[k] for k in
+                    ('prediction_seconds','selection_seconds','update_seconds','other_seconds')))
 
 
 if __name__=='__main__':unittest.main()

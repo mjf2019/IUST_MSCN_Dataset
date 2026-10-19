@@ -33,6 +33,45 @@ notebooks and CDR_MLC implementations are not modified.
 - `online_seconds` excludes the endpoint observers. AF's DANN/re-embedding
   work is included; it is not presented as free inference.
 
+## Runtime reporting (evaluation only)
+
+All five baselines and the structured bank print prediction, selection and online
+update wall seconds per level. A separate combined `*_timing.csv` table also
+reports Other(s), total Online(s), ms/row, rows/s and update ms/label, with per-method
+means. The metrics JSON retains full precision and device information. CUDA is
+synchronized at stage boundaries; CPU-only RAL/ARF are timed on CPU even if the
+other methods use CUDA. Timers do not change queries, random draws or gradients.
+
+The timed interval excludes model loading/initialization, CSV input/output and
+initial/final retention observers. Update includes RAL full refits, AF's paid
+DANN/re-embedding, DFE template refresh, ARF learn_one and AMCAL reward probes and
+selector learning. AMCAL frozen logits/embedding cache construction is charged
+once to prediction and total; Cache(s) is a subset of prediction, not an extra
+charge. Other(s) includes trace construction, oracle bookkeeping and progress
+printing. Human label turnaround time is not simulated. Endpoint oracle forwards
+are not timed. The existing batched frozen cache is retained; these results
+describe this implementation, not an uncached request-at-a-time service benchmark.
+Run methods sequentially on the same idle machine for timing comparisons; record
+CPU/GPU differences. Training is unnecessary to add timings to existing evaluations.
+
+For prepared **PS** data, an entry point separates complete training and testing:
+
+```powershell
+python AMCAL/amcal_burst_matched_run.py train --representation PS --seed 42 --device cuda
+python AMCAL/amcal_burst_matched_run.py evaluate --representation PS --seed 42 --device cuda
+```
+
+Training first creates (or reuses a completed) PS-specific two-stage source run
+on 0/1/3, including twenty second-stage Context pretraining epochs. It then trains
+the final structured bank (three Contexts, seven actions, policy queries, Context
+LR .0005), followed by CNN/RAL/AF/DFE/ARF matched baselines. Testing uses only
+5/7/10/12/15/17/20, epsilon .05 for the bank, per-level independent resets and a
+20% cap. Source CNN/Context are never taken from IAT. No downloads are performed.
+Existing final AMCAL/baseline outputs are not overwritten during training.
+Flags `--source-run`, `--amcal-run`, `--baseline-run`, and `--dataset` override paths.
+The same entry point supports `--representation IAT`; existing separately trained
+baselines can instead be evaluated individually with the original runner.
+
 ## 1D-CNN
 
 The CNN architecture is exactly the one in `ANT_Burst_TEST/1D_CNN.ipynb` and
