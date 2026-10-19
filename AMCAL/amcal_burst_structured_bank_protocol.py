@@ -951,7 +951,7 @@ def main():
     a=p.parse_args()
     if min(a.epochs,a.patience)<1 or a.router_warmup_episodes<0:p.error('Invalid epochs/patience/warmup.')
     if not 0<=a.budget_fraction<=1 or not 0<=a.gamma<=1 or not 0<=a.train_epsilon<=1 or not 0<=a.eval_epsilon<=1:p.error('Budget, gamma and epsilon must be in [0,1].')
-    if not np.isfinite(a.context_lr) or a.context_lr<=0 or any(not np.isfinite(v) or v<0 for v in (a.selection_cost,a.gain_weight,a.retention_weight)):p.error('Invalid LR/reward.')
+    if not np.isfinite(a.context_lr) or a.context_lr<=0 or not np.isfinite(a.selection_cost) or any(not np.isfinite(v) or v<0 for v in (a.gain_weight,a.retention_weight)):p.error('Invalid LR/reward.')
     if a.update_policy=='fixed' and a.query_schedule!='uniform':p.error('Fixed-destination control requires uniform feedback.')
     if a.budget_aware_policy:
         if a.query_schedule!='policy' or a.update_policy!='learned' or a.bank_utility:
