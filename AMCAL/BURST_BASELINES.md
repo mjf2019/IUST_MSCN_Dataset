@@ -1,5 +1,10 @@
 # Matched baselines for the final structured AMCAL bank
 
+CALMID and MicFoal are also available as `--methods calmid micfoal`.
+See [CALMID_MICFOAL.md](CALMID_MICFOAL.md) for the paper/source-code audit,
+equations, CPU backend, explicit source-bootstrap/budget adaptations and separate
+train/test commands. Existing five-method commands below remain valid.
+
 Entry point: `AMCAL/amcal_burst_baselines.py`. Existing AMCAL runners,
 notebooks and CDR_MLC implementations are not modified.
 
@@ -238,3 +243,4 @@ train/save/load/evaluate paths on a tiny fixture. They are not benchmark
 performance measurements; full CUDA training/testing is run by the researcher.
 The additional ARF check uses a real River forest to verify save/load, independent
 clones, observer isolation, exact query cap and invariance to unqueried labels.
+

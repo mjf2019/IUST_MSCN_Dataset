@@ -1,8 +1,8 @@
-"""Matched official-Burst baselines: existing CNN/RAL, causal AF, DFE and River ARF.
+"""Matched Burst baselines: CNN, RAL, AF, DFE, ARF, CALMID and MicFoal.
 
 Training and evaluation are separate. All methods use the AMCAL source-row
 partitions, train domains, global label cap and predict-score-query-update.
-See BURST_BASELINES.md for the precise adaptations and DFE ambiguities.
+See BURST_BASELINES.md and CALMID_MICFOAL.md for paper mappings and adaptations.
 """
 import argparse
 from copy import deepcopy
@@ -29,12 +29,14 @@ import amcal_burst_structured_bank_protocol as shared
 from amcal_burst_results_summary import display
 from baselines.ral_existing import RAL
 from baselines.stream_timing import StreamTimer, timing_row, timing_report
+from baselines.calmid_micfoal import CALMID, MicFoal, VERSION as ACTIVE_VERSION
 from baselines.dfe_burst import (DFEBackbone,FlowImages,GaussianCompression,
     TemplateLibrary,constrained_triplet,triplet_indices,knn_vote,embed)
 
 core=shared.core
 METHOD_NAMES={'cnn':'1D-CNN-existing-frozen','ral':'RAL-paper-core',
-              'af':'AF-Burst-causal','dfe':'DFE-Burst-adapted','arf':'River-ARFClassifier'}
+              'af':'AF-Burst-causal','dfe':'DFE-Burst-adapted','arf':'River-ARFClassifier',
+              'calmid':'CALMID-paper-River','micfoal':'MicFoal-paper-weighted-ARF'}
 
 
 def cpu_state(model):return {k:v.detach().cpu().clone() for k,v in model.state_dict().items()}
@@ -60,6 +62,26 @@ def train_arf(a,train):
         print(f'ARF training pass {epoch+1}/{a.arf_train_passes} | samples {len(y)} | trees {a.arf_trees}',flush=True)
     return dict(model=model,river_version=version,trees=a.arf_trees,train_passes=a.arf_train_passes,
                 training_samples_per_pass=len(y))
+
+
+def train_active(a,train,method):
+    import river
+    if river.__version__!='0.26.1':raise ValueError('CALMID/MicFoal require river==0.26.1 for the audited Python backend.')
+    options=dict(seed=a.seed,models=getattr(a,'active_models',10),window=getattr(a,'active_window',500),
+                 random_ratio=getattr(a,'active_random_ratio',.1),budget=a.budget_fraction)
+    if method=='calmid':
+        model=CALMID(range(len(a.classes)),threshold=getattr(a,'calmid_threshold',.5),
+                     step=getattr(a,'calmid_step',.01),**options)
+    else:
+        model=MicFoal(threshold=getattr(a,'micfoal_threshold',.9),step=getattr(a,'micfoal_step',.1),
+                      adaptive_budget=not getattr(a,'micfoal_fixed_budget',False),**options)
+    x,y=train;order=np.random.default_rng(a.seed).permutation(len(y))
+    print(f'{method.upper()} source learning | {len(y)} TRAIN rows | {options["models"]} trees | window {options["window"]}',flush=True)
+    model.fit_source(x[order],y[order])
+    model.begin_stream(a.seed,a.budget_fraction)
+    return dict(model=model,active_protocol_version=ACTIVE_VERSION,river_version=river.__version__,
+                training_samples_per_pass=len(y),initialization='all available source TRAIN rows; no test bootstrap labels',
+                paper_doi='10.1016/j.knosys.2021.106778' if method=='calmid' else '10.1016/j.engappai.2022.105607')
 
 
 def af_module():
@@ -181,6 +203,9 @@ class Learner:
             # deciding to acquire the current sample. The wrapper additionally
             # retains the shared strict floor(budget*n) total ceiling.
             self.model._budget=a.budget_fraction if getattr(a,'ral_budget_mode','prefix')=='prefix' else None
+        elif method in ('calmid','micfoal'):
+            self.model=deepcopy(saved['model'])
+            self.model.begin_stream(a.seed,a.budget_fraction)
         elif method=='arf':
             # Deep-copy trained trees, detectors, metrics and RNG; River clone()
             # would create an unfitted forest rather than restore this checkpoint.
@@ -216,6 +241,7 @@ class Learner:
                 return np.concatenate([self.model(torch.as_tensor(x[i:i+128],device=core.device).unsqueeze(1)).argmax(1).cpu().numpy()
                                        for i in range(0,len(x),128)])
         if self.method=='ral':return self.model._committee_classifier.predict(x)
+        if self.method in ('calmid','micfoal'):return self.model.predict(x)
         if self.method=='arf':
             predictions=[self.model.predict_one(river_row(row)) for row in x]
             if any(value is None for value in predictions):raise RuntimeError('ARF produced no prediction after source training.')
@@ -224,7 +250,9 @@ class Learner:
         else:z=af_embed(self.model,x,core.device)
         return knn_vote(self.support_z,self.support_y,z,self.saved['k'])[0]
 
-    def request(self,x):
+    def request(self,x,can_query=True):
+        if self.method in ('calmid','micfoal'):
+            return self.model.request(x,can_query=can_query)
         if self.method=='ral':
             committee,decisions=self.model.ask_committee(x)
             return self.model.should_label(committee),(committee,decisions)
@@ -234,6 +262,8 @@ class Learner:
         if self.method=='ral':
             committee,decisions=request_info
             self.model.acquire_label(x,y,committee,decisions)
+        elif self.method in ('calmid','micfoal'):
+            self.model.update(x,y,request_info)
         elif self.method=='dfe':
             self.library.add(self.saved['transform'].transform(x[None,:])[0],y);self.refresh()
         elif self.method=='arf':
@@ -267,14 +297,14 @@ def evaluate_level(a,method,saved,domain,reference,observer=True):
     schedule=set(np.random.default_rng(a.seed+819003).choice(n,cap,replace=False).tolist())
     queried=np.zeros(n,dtype=bool);predictions=[];trace=[];used=0
     random.seed(a.seed)
-    timer=StreamTimer('cpu' if method in ('ral','arf') else core.device)
+    timer=StreamTimer('cpu' if method in ('ral','arf','calmid','micfoal') else core.device)
     timer.start();start=time.perf_counter()
     for pos in range(n):
         with timer.stage('prediction'):
             prediction=int(learner.predict(x[pos:pos+1])[0])
         # Freeze prediction before querying or exposing truth to the learner.
         with timer.stage('selection'):
-            if method=='ral':request,info=learner.request(x[pos])
+            if method in ('ral','calmid','micfoal'):request,info=learner.request(x[pos],can_query=used<cap)
             else:request,info=(method!='cnn' and pos in schedule),None
         paid=bool(request and used<cap)
         if paid:
@@ -284,9 +314,13 @@ def evaluate_level(a,method,saved,domain,reference,observer=True):
         predictions.append(prediction)
         trace.append(dict(step=pos+1,source_row=int(ids[pos]),truth=int(y[pos]),prediction=prediction,
                           queried=paid,labels_used=used))
+        if method in ('calmid','micfoal'):
+            trace[-1].update(selected_random=info.random,selected_uncertain=info.uncertain,
+                selected_selective=info.selective,native_budget=learner.model.budget,
+                training_weight=learner.model.last_weight if paid else None)
         every=getattr(a,'progress_every',0)
-        if method=='ral' and every>0 and (pos+1)%every==0:
-            print(f'  RAL progress {pos+1}/{n} | labels {used}/{cap} | elapsed {time.perf_counter()-start:.1f}s',flush=True)
+        if method in ('ral','calmid','micfoal') and every>0 and (pos+1)%every==0:
+            print(f'  {method.upper()} progress {pos+1}/{n} | labels {used}/{cap} | elapsed {time.perf_counter()-start:.1f}s',flush=True)
     timer.stop()
     metrics=dict(method=METHOD_NAMES[method],accuracy=float(accuracy_score(y,predictions)),
                  macro_f1=float(f1_score(y,predictions,average='macro',zero_division=0)),
@@ -294,11 +328,14 @@ def evaluate_level(a,method,saved,domain,reference,observer=True):
                  samples=n,labels=used,label_cap=cap,actual_label_fraction=used/n,
                  budget_utilization_pct=100*used/cap if cap else 0.,labels_remaining=cap-used,
                  online_gradient_steps=learner.steps,
-                 query_protocol='none' if method=='cnn' else
+                 query_protocol='paper hybrid random/uncertainty/selective with native ratio gate and strict global cap' if method in ('calmid','micfoal') else 'none' if method=='cnn' else
                     ('RAL paper prefix-ratio gate plus strict global cap' if getattr(a,'ral_budget_mode','prefix')=='prefix'
                      else 'RAL committee/greedy with global cap only') if method=='ral' else 'label-blind uniform exact cap',
                  protocol='predict-score-query-update; fresh model per level; reference/same-level observers never feed learning')
     metrics.update(timer.metrics(n,used))
+    if method in ('calmid','micfoal'):
+        metrics.update(active_learning=learner.model.statistics(),river_version=saved['river_version'],
+                       online_update_calls=used,source_initialization=saved['initialization'])
     if method=='ral':
         metrics.update(ral_budget_mode=getattr(a,'ral_budget_mode','prefix'),
                        ral_protocol_version=saved.get('ral_protocol_version',0),
@@ -356,6 +393,7 @@ def train(a,artifact):
             print(f'RAL trained on {len(train[1])} rows | kNN k=5, decision tree, RF=10 | paper reward/EXP4/threshold updates.',flush=True)
         elif method=='dfe':saved=train_dfe(a,train,validation)
         elif method=='arf':saved=train_arf(a,train)
+        elif method in ('calmid','micfoal'):saved=train_active(a,train,method)
         else:
             if 0 not in parts or len(parts)<2:raise ValueError('AF DANN requires clean source and training shift domains.')
             clean=(parts[0][0].squeeze(1).cpu().numpy(),parts[0][1])
@@ -376,12 +414,18 @@ def evaluate(a,artifact):
     config=dict(seed=a.seed,budget=a.budget_fraction,af_online_lr=a.af_lr,protocol_version=1,timing_version=1)
     if 'ral' in a.methods:
         config.update(ral_protocol_version=2,ral_budget_mode=getattr(a,'ral_budget_mode','prefix'))
+    if set(a.methods)&{'calmid','micfoal'}:config['active_protocol_version']=ACTIVE_VERSION
     tag=hashlib.sha256(json.dumps(config,sort_keys=True).encode()).hexdigest()[:8]
     rows=[];same_rows=[];time_rows=[]
     for method in a.methods:
         saved=joblib.load(a.output/'Models'/f'{method}.joblib');p=saved['provenance']
         if method=='ral' and saved.get('ral_protocol_version',0)<2:
             raise ValueError('Old RAL checkpoint used default RF=100. Retrain --methods ral in a fresh output for paper RF=10.')
+        if method in ('calmid','micfoal') and saved.get('active_protocol_version')!=ACTIVE_VERSION:
+            raise ValueError('CALMID/MicFoal protocol differs; train a fresh matching checkpoint.')
+        if method in ('calmid','micfoal'):
+            import river
+            if saved['river_version']!=river.__version__:raise ValueError('River version differs from this CALMID/MicFoal checkpoint.')
         if p['source_preprocessing_sha256']!=core.file_sha256(a.output/'Models/protocol_preprocessing.joblib'):raise ValueError('Baseline preprocessing changed.')
         if set(a.levels)&set(p['train_levels']):raise ValueError('Test levels overlap training levels.')
         for level,digest in p['training_domains_sha256'].items():
@@ -408,6 +452,10 @@ def evaluate(a,artifact):
                                   Final=None if same['final'] is None else 100*same['final'],Drop=same['drop_pp'],Broken=same['broken'],Fixed=same['fixed']))
             print(f'{method.upper()} | PER {level} | online {row["Online"]:.2f}% | labels {metrics["labels"]}/{metrics["label_cap"]} ({row["Label%"]:.2f}% of stream; {row["CapUsed%"]:.2f}% of cap) | clean {row["Ref0"]:.2f}% -> {row["RefFinal"]:.2f}% | drop {row["RefDrop"]:+.2f} pp',flush=True)
             print(timing_report(metrics),flush=True)
+            if method in ('calmid','micfoal'):
+                active=metrics['active_learning']
+                flags=active['query_counts']
+                print(f'  Native budget {active["native_budget_initial"]:.4f} -> {active["native_budget_final"]:.4f} | query flags random/uncertain/selective {flags.get("random",0)}/{flags.get("uncertain",0)}/{flags.get("selective",0)} | drift replacements {active["drifts"]}',flush=True)
             if same['n']:print(f'  Same-level unqueried: {100*same["initial"]:.2f}% -> {100*same["final"]:.2f}% | drop {same["drop_pp"]:+.2f} pp | broken {same["broken"]} | fixed {same["fixed"]}')
     for method in a.methods:
         own=[r for r in rows if r['Method']==method]
@@ -456,14 +504,24 @@ def main():
     parser.add_argument('--templates',type=int,default=20)
     parser.add_argument('--arf-trees',type=int,default=10)
     parser.add_argument('--arf-train-passes',type=int,default=1)
+    parser.add_argument('--active-models',type=int,default=10,help='CALMID/MicFoal ensemble size.')
+    parser.add_argument('--active-window',type=int,default=500,help='Time-based label windows, including placeholders.')
+    parser.add_argument('--active-random-ratio',type=float,default=.1)
+    parser.add_argument('--calmid-threshold',type=float,default=.5)
+    parser.add_argument('--calmid-step',type=float,default=.01)
+    parser.add_argument('--micfoal-threshold',type=float,default=.9)
+    parser.add_argument('--micfoal-step',type=float,default=.1)
+    parser.add_argument('--micfoal-fixed-budget',action='store_true',help='MicFoal_hw ablation; default enables periodic budget adaptation.')
     parser.add_argument('--ral-budget-mode',choices=['prefix','global'],default='prefix',
                         help='prefix: paper ratio gate plus common global cap; global: previous budget ablation.')
-    parser.add_argument('--progress-every',type=int,default=200,help='RAL progress interval in stream rows; 0 disables.')
+    parser.add_argument('--progress-every',type=int,default=200,help='Active-method progress interval in stream rows; 0 disables.')
     parser.add_argument('--jobs',type=int,default=-1)
     parser.add_argument('--device',choices=['auto','cpu','cuda'],default='auto')
     a=parser.parse_args()
     if not 0<=a.budget_fraction<=1 or min(a.dfe_epochs,a.af_epochs,a.patience,a.templates)<1 or a.batch_size<2:parser.error('Invalid budget/epochs/batch/templates.')
     if min(a.arf_trees,a.arf_train_passes)<1:parser.error('ARF trees and train passes must be positive.')
+    if min(a.active_models,a.active_window)<1 or not 0<a.active_random_ratio<=1:parser.error('Invalid active ensemble/window/random ratio.')
+    if any(not np.isfinite(v) or not 0<v<=1 for v in (a.calmid_threshold,a.micfoal_threshold)) or any(not np.isfinite(v) or not 0<v<1 for v in (a.calmid_step,a.micfoal_step)):parser.error('Invalid active threshold/step.')
     if a.progress_every<0:parser.error('Progress interval must be nonnegative.')
     if any(not np.isfinite(v) or v<=0 for v in [a.dfe_lr,a.af_lr]):parser.error('Learning rates must be finite and positive.')
     if any(not np.isfinite(v) or v<0 for v in [a.dfe_alpha1,a.dfe_alpha2,a.dfe_eta,a.dfe_lambda,*a.dfe_betas]):parser.error('Invalid DFE objective weights.')
@@ -492,3 +550,4 @@ def main():
 
 
 if __name__=='__main__':main()
+
