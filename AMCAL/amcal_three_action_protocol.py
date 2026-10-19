@@ -1194,12 +1194,12 @@ def evaluate_stream(args):
                              batch_size=args.online_selector_batch_size)
     independent_router = None
     if args.independent_router:
-        if args.query_schedule != "uniform" or args.continual_state or args.eval_epsilon != 0:
-            raise ValueError("Independent routing control requires uniform queries, epsilon zero and independent levels.")
+        if args.query_schedule != "uniform" or args.continual_state:
+            raise ValueError("Independent routing control requires uniform queries and independent levels.")
         from amcal_independent_router import RouteHead
         router_checkpoint = torch.load(models/"independent_router.pth",map_location="cpu",weights_only=True)
         if router_checkpoint["context_lr"] != args.lr or router_checkpoint["budget_fraction"] != args.budget_fraction:
-            raise ValueError("Router training Context LR/budget must match evaluation.")
+            print(f'Router development LR/budget: {router_checkpoint["context_lr"]:g}/{router_checkpoint["budget_fraction"]:g}; evaluation: {args.lr:g}/{args.budget_fraction:g}')
         for name, expected in router_checkpoint["model_hashes"].items():
             if file_sha256(models/name) != expected:
                 raise ValueError("Independent router CNN/Context/preprocessing mismatch: "+name)
@@ -1330,7 +1330,7 @@ def evaluate_stream(args):
                         action = int(exploration_rng.integers(0,2))
                     else:
                         action = int(agent.policy_net(state)[:,:2].argmax(1).item())
-            if independent_router is not None and args.selector_mode == "learned" and action != 2:
+            if independent_router is not None and args.selector_mode == "learned" and action != 2 and not explored:
                 from amcal_independent_router import route_features
                 action = int(independent_router(route_features(inputs,base_prob,adapted_prob)).argmax(1).item())
             prediction = base_prediction if action == 0 else int(adapted_logits.argmax(1).item())
@@ -1502,6 +1502,10 @@ def evaluate_stream(args):
             row["oracle_route_correct"] = bool(ok)
 
     metrics["independent_router"] = bool(args.independent_router and args.selector_mode == "learned")
+    if args.independent_router:
+        metrics["router_development_context_lr"] = router_checkpoint["context_lr"]
+        metrics["router_development_budget_fraction"] = router_checkpoint["budget_fraction"]
+        metrics["router_exploration_protocol"] = "epsilon random route 0/1 on non-query rows; fixed uniform query schedule"
     metrics["query_schedule"] = args.query_schedule
     if args.query_schedule == "uniform":
         if len(queried_ids) != budget:
