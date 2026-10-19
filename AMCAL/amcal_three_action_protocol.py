@@ -1136,6 +1136,8 @@ def print_stream_summary(metrics, name, mode, lr):
         print(f"Routing oracle: {100*oracle['accuracy']:.2f}% | Gap: {oracle['routing_gap_pp']:.2f} pp")
         print(f"Context-only online: {100*oracle['context_only_online_accuracy']:.2f}%")
     print(f"Labels used: {metrics['unique_labels_queried']}/{metrics['label_budget']} | Actual: {100*metrics['actual_label_fraction']:.2f}%")
+    if metrics.get("router_online_lr",0) > 0:
+        print("Independent router updates:",metrics["router_online_updates"],"| Preference examples:",metrics["router_online_examples"])
     if metrics.get("query_schedule") == "uniform":
         print("Feedback: fixed label-blind schedule (diagnostic)")
     for key,label in (("source_validation","Clean reference"),("same_level","Current-level Context")):
@@ -1193,6 +1195,7 @@ def evaluate_stream(args):
     agent = DQNSelectorAgent(input_length + 2*num_classes + 2 + (4 if ROUTE_HISTORY_ENABLED else 0), device,
                              batch_size=args.online_selector_batch_size)
     independent_router = None
+    online_router = None
     if args.independent_router:
         if args.query_schedule != "uniform" or args.continual_state:
             raise ValueError("Independent routing control requires uniform queries and independent levels.")
@@ -1207,6 +1210,9 @@ def evaluate_stream(args):
             independent_router = RouteHead(input_length+2*num_classes).to(device)
         independent_router.load_state_dict(router_checkpoint["state_dict"])
         independent_router.eval()
+        if args.router_online_lr > 0 and args.selector_mode == "learned":
+            from amcal_independent_router import OnlineRouteLearner
+            online_router = OnlineRouteLearner(independent_router,args.router_online_lr,args.seed+720019)
     selector_checkpoint = checkpoint("adversarial_best_dqn.pth")
     if selector_checkpoint.get("budget_state_version") != 4 or selector_checkpoint.get("selection_cost") != SELECTION_COST:
         raise ValueError("Budget-aware checkpoint and matching selection cost required; retrain in a fresh output.")
@@ -1354,6 +1360,8 @@ def evaluate_stream(args):
                 first_query_step = step
             last_query_step = step
             labels = torch.tensor([int(truth)], dtype=torch.long, device=device)
+            if online_router is not None:
+                online_router.observe(inputs,base_prob,adapted_prob,labels)
             if args.selector_mode == "learned":
                 agent.observe_route(state,base_prediction,int(adapted_logits.argmax(1).item()),int(truth))
             route_history.update(base_logits,adapted_logits,labels)
@@ -1501,6 +1509,10 @@ def evaluate_stream(args):
         for row, ok in zip(trace, oracle_ok):
             row["oracle_route_correct"] = bool(ok)
 
+    metrics["router_online_lr"] = args.router_online_lr
+    metrics["router_online_updates"] = online_router.updates if online_router is not None else 0
+    metrics["router_online_examples"] = online_router.examples if online_router is not None else 0
+    metrics["router_online_protocol"] = "paid pre-feedback route preferences only; replay 256, minibatch 32, reset per level; one update per paid label after first preference" if args.router_online_lr > 0 else "disabled"
     metrics["independent_router"] = bool(args.independent_router and args.selector_mode == "learned")
     if args.independent_router:
         metrics["router_development_context_lr"] = router_checkpoint["context_lr"]
@@ -1541,6 +1553,8 @@ def evaluate_stream(args):
     tag = f"oracle{int(args.routing_oracle)}_masked_eps{args.eval_epsilon:g}_three_route_transfer_a{GAIN_WEIGHT:g}_b{RETENTION_WEIGHT:g}_cost{SELECTION_COST:g}_{name}_{args.selector_mode}_{args.stream_order}_forgetting{int(args.forgetting_diagnostics)}_budget{args.budget_fraction:g}_seed{args.seed}_n{len(y)}_lr{args.lr:g}_sb{args.online_selector_batch_size}_v3"
     if args.independent_router:
         tag += "_independentrouter"
+    if args.router_online_lr > 0:
+        tag += f"_routeronline{args.router_online_lr:g}"
     if args.query_schedule != "policy":
         tag += "_query"+args.query_schedule
     if session_path is not None:
@@ -1655,8 +1669,13 @@ def cli():
     parser.add_argument("--route-history",action="store_true")
     parser.add_argument("--independent-router",action="store_true",help="Uniform-feedback control using Models/independent_router.pth for routes 0/1.")
     parser.add_argument("--continual-state",type=str,help="Local state file to retain Context/DDQN/replay between domain evaluations.")
+    parser.add_argument("--router-online-lr",type=float,default=0.0,help="Independent router online Adam LR; zero keeps it frozen.")
     parser.add_argument("--query-schedule",choices=("policy","uniform"),default="policy",help="Diagnostic uniform fixed-budget feedback; keeps learned routing but overrides query selection.")
     args=parser.parse_args()
+    if not np.isfinite(args.router_online_lr) or args.router_online_lr < 0:
+        parser.error("Router online LR must be finite and nonnegative.")
+    if args.router_online_lr > 0 and (not args.independent_router or args.command != "evaluate"):
+        parser.error("Online router learning requires evaluate --independent-router.")
     if args.continual_state:
         if args.command != "evaluate":parser.error("--continual-state is evaluation only")
         args.continual_state=str(Path(args.continual_state).resolve())
