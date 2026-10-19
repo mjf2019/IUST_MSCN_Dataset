@@ -76,6 +76,23 @@ support, global percentage budget and validation-selected k are benchmark
 adaptations; they are not the paper's batch few-shot M=25/N-per-class protocol.
 They are labeled `AF-Burst-causal` in metrics, not an exact original AF result.
 
+## River ARF
+
+`--methods arf` runs `river.forest.ARFClassifier`, default ten trees and one
+source-training pass, as in the earlier standalone ARF benchmark. Source rows
+from the declared levels 0/1/3 are combined and shuffled for each training pass.
+The saved forest includes its drift/warning detectors, background trees and RNG.
+At every test level, deep-copy the trained forest; do not use River `clone()`,
+which would instead construct an untrained estimator.
+
+ARF predicts before feedback and calls `learn_one` ONLY on paid uniform query
+positions, shared with the AF/DFE baselines. The global cap is exact. Endpoint
+observers only predict; unqueried labels cannot update trees or detectors.
+`--arf-trees` and `--arf-train-passes` configure training and are saved together
+with the River version and samples/pass. Unlike the old standalone benchmark's
+hard-coded 0/3/12 source levels, this runner takes the final AMCAL training levels.
+ARF is a CPU algorithm; using `--device cpu` avoids unnecessary GPU allocation.
+
 ## DFE-Burst-adapted: paper audit
 
 Reference: Wang et al., *DFE: Deep Flow Embedding for Robust Network Traffic
@@ -132,18 +149,19 @@ No claim of exact reproduction of the paper's original dataset results is made.
 ```powershell
 git pull --ff-only origin experiment/amcal-protocol
 python -m pip install psutil
+python -m pip install river==0.26.1
 ```
 
 Training only (fresh output):
 
 ```powershell
-python AMCAL/amcal_burst_baselines.py train --source-run AMCAL/ANT_Burst_IAT_TEST/protocol_runs/structured_bank3_policy_lr0p0005_seed42 --burst-dir AMCAL/ANT_Burst_IAT_TEST/Dataset_official_v1/AdvBurst_FTSC-IAT --output AMCAL/ANT_Burst_IAT_TEST/protocol_runs/baselines_levels1_3_seed42 --methods cnn ral af dfe --train-levels 0 1 3 --seed 42 --af-epochs 30 --dfe-epochs 200 --patience 10 --device cuda
+python AMCAL/amcal_burst_baselines.py train --source-run AMCAL/ANT_Burst_IAT_TEST/protocol_runs/structured_bank3_policy_lr0p0005_seed42 --burst-dir AMCAL/ANT_Burst_IAT_TEST/Dataset_official_v1/AdvBurst_FTSC-IAT --output AMCAL/ANT_Burst_IAT_TEST/protocol_runs/baselines_levels1_3_seed42 --methods cnn ral af dfe arf --train-levels 0 1 3 --seed 42 --af-epochs 30 --dfe-epochs 200 --patience 10 --arf-trees 10 --arf-train-passes 1 --device cuda
 ```
 
 Testing only (after training):
 
 ```powershell
-python AMCAL/amcal_burst_baselines.py evaluate --burst-dir AMCAL/ANT_Burst_IAT_TEST/Dataset_official_v1/AdvBurst_FTSC-IAT --output AMCAL/ANT_Burst_IAT_TEST/protocol_runs/baselines_levels1_3_seed42 --methods cnn ral af dfe --levels 5 7 10 12 15 17 20 --budget-fraction 0.2 --seed 42 --device cuda
+python AMCAL/amcal_burst_baselines.py evaluate --burst-dir AMCAL/ANT_Burst_IAT_TEST/Dataset_official_v1/AdvBurst_FTSC-IAT --output AMCAL/ANT_Burst_IAT_TEST/protocol_runs/baselines_levels1_3_seed42 --methods cnn ral af dfe arf --levels 5 7 10 12 15 17 20 --budget-fraction 0.2 --seed 42 --device cuda
 ```
 
 To run one method in another tab, use `--methods af` or `--methods dfe` with
@@ -163,3 +181,5 @@ These test math, architecture, template voting/replacement, label causality,
 budget enforcement, AF GRL/paid-only DANN, frozen DFE weights and all four
 train/save/load/evaluate paths on a tiny fixture. They are not benchmark
 performance measurements; full CUDA training/testing is run by the researcher.
+The additional ARF check uses a real River forest to verify save/load, independent
+clones, observer isolation, exact query cap and invariance to unqueried labels.

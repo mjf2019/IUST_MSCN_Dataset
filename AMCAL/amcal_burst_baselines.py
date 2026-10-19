@@ -1,4 +1,4 @@
-"""Matched official-Burst baselines: existing CNN/RAL, causal AF and DFE.
+"""Matched official-Burst baselines: existing CNN/RAL, causal AF, DFE and River ARF.
 
 Training and evaluation are separate. All methods use the AMCAL source-row
 partitions, train domains, global label cap and predict-score-query-update.
@@ -33,10 +33,32 @@ from baselines.dfe_burst import (DFEBackbone,FlowImages,GaussianCompression,
 
 core=shared.core
 METHOD_NAMES={'cnn':'1D-CNN-existing-frozen','ral':'RAL-existing-global-budget',
-              'af':'AF-Burst-causal','dfe':'DFE-Burst-adapted'}
+              'af':'AF-Burst-causal','dfe':'DFE-Burst-adapted','arf':'River-ARFClassifier'}
 
 
 def cpu_state(model):return {k:v.detach().cpu().clone() for k,v in model.state_dict().items()}
+
+
+def river_arf(trees,seed):
+    try:
+        from river import forest
+        import river
+    except ImportError as error:
+        raise ImportError('ARF requires River: python -m pip install river==0.26.1') from error
+    return forest.ARFClassifier(n_models=trees,seed=seed),river.__version__
+
+
+def river_row(x):return {i:float(value) for i,value in enumerate(x)}
+
+
+def train_arf(a,train):
+    x,y=train;model,version=river_arf(a.arf_trees,a.seed)
+    for epoch in range(a.arf_train_passes):
+        for i in np.random.default_rng(a.seed+epoch).permutation(len(y)):
+            model.learn_one(river_row(x[i]),int(y[i]))
+        print(f'ARF training pass {epoch+1}/{a.arf_train_passes} | samples {len(y)} | trees {a.arf_trees}',flush=True)
+    return dict(model=model,river_version=version,trees=a.arf_trees,train_passes=a.arf_train_passes,
+                training_samples_per_pass=len(y))
 
 
 def af_module():
@@ -154,6 +176,10 @@ class Learner:
             for p in self.model.parameters():p.requires_grad_(False)
         elif method=='ral':
             self.model=deepcopy(saved['model']);self.model._budget=None
+        elif method=='arf':
+            # Deep-copy trained trees, detectors, metrics and RNG; River clone()
+            # would create an unfitted forest rather than restore this checkpoint.
+            self.model=deepcopy(saved['model'])
         elif method=='dfe':
             self.model=DFEBackbone().to(core.device);self.model.load_state_dict(saved['state']);self.model.eval()
             for p in self.model.parameters():p.requires_grad_(False)
@@ -185,6 +211,10 @@ class Learner:
                 return np.concatenate([self.model(torch.as_tensor(x[i:i+128],device=core.device).unsqueeze(1)).argmax(1).cpu().numpy()
                                        for i in range(0,len(x),128)])
         if self.method=='ral':return self.model._committee_classifier.predict(x)
+        if self.method=='arf':
+            predictions=[self.model.predict_one(river_row(row)) for row in x]
+            if any(value is None for value in predictions):raise RuntimeError('ARF produced no prediction after source training.')
+            return np.asarray(predictions,dtype=np.int64)
         if self.method=='dfe':z=embed(self.model,self.saved['transform'].transform(x),core.device)
         else:z=af_embed(self.model,x,core.device)
         return knn_vote(self.support_z,self.support_y,z,self.saved['k'])[0]
@@ -201,6 +231,8 @@ class Learner:
             self.model.acquire_label(x,y,committee,decisions)
         elif self.method=='dfe':
             self.library.add(self.saved['transform'].transform(x[None,:])[0],y);self.refresh()
+        elif self.method=='arf':
+            self.model.learn_one(river_row(x),int(y))
         elif self.method=='af':
             self.paid_x.append(x.copy());self.paid_y.append(int(y))
             source=self.saved['dann_source_x'];ys=self.saved['dann_source_y']
@@ -249,6 +281,10 @@ def evaluate_level(a,method,saved,domain,reference,observer=True):
                  labels=used,label_cap=cap,online_seconds=elapsed,online_gradient_steps=learner.steps,
                  query_protocol='none' if method=='cnn' else 'RAL committee/greedy with external global cap' if method=='ral' else 'label-blind uniform exact cap',
                  protocol='predict-score-query-update; fresh model per level; reference/same-level observers never feed learning')
+    if method=='arf':
+        metrics.update(river_version=saved['river_version'],trees=saved['trees'],
+                       train_passes=saved['train_passes'],online_learn_one_calls=used,
+                       training_samples_per_pass=saved['training_samples_per_pass'])
     if observer:
         final=learner.predict(x);ref_final=learner.predict(reference_x)
         metrics['same_level']=dict(all_rows=summary_pair(initial,final,y,np.ones(n,dtype=bool)),
@@ -291,6 +327,7 @@ def train(a,artifact):
             model.fit(*train);saved=dict(model=model)
             print(f'RAL trained on {len(train[1])} rows; existing committee/alpha/threshold rules retained.',flush=True)
         elif method=='dfe':saved=train_dfe(a,train,validation)
+        elif method=='arf':saved=train_arf(a,train)
         else:
             if 0 not in parts or len(parts)<2:raise ValueError('AF DANN requires clean source and training shift domains.')
             clean=(parts[0][0].squeeze(1).cpu().numpy(),parts[0][1])
@@ -371,10 +408,13 @@ def main():
     parser.add_argument('--dfe-lambda',type=float,default=1.)
     parser.add_argument('--dfe-betas',type=float,nargs=6,default=[.01,.02,.03,.04,.05,.05])
     parser.add_argument('--templates',type=int,default=20)
+    parser.add_argument('--arf-trees',type=int,default=10)
+    parser.add_argument('--arf-train-passes',type=int,default=1)
     parser.add_argument('--jobs',type=int,default=-1)
     parser.add_argument('--device',choices=['auto','cpu','cuda'],default='auto')
     a=parser.parse_args()
     if not 0<=a.budget_fraction<=1 or min(a.dfe_epochs,a.af_epochs,a.patience,a.templates)<1 or a.batch_size<2:parser.error('Invalid budget/epochs/batch/templates.')
+    if min(a.arf_trees,a.arf_train_passes)<1:parser.error('ARF trees and train passes must be positive.')
     if any(not np.isfinite(v) or v<=0 for v in [a.dfe_lr,a.af_lr]):parser.error('Learning rates must be finite and positive.')
     if any(not np.isfinite(v) or v<0 for v in [a.dfe_alpha1,a.dfe_alpha2,a.dfe_eta,a.dfe_lambda,*a.dfe_betas]):parser.error('Invalid DFE objective weights.')
     if len(set(a.methods))!=len(a.methods) or any(len(set(values))!=len(values) or min(values)<0

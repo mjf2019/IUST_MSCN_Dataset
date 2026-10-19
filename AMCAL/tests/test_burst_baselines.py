@@ -1,6 +1,7 @@
 """Scientific and causal checks for matched Burst baseline runners."""
 from copy import deepcopy
 import ast
+import importlib.util
 import contextlib
 import io
 from pathlib import Path
@@ -118,6 +119,34 @@ class BurstBaselineTests(unittest.TestCase):
         self.assertEqual(result['labels'],3)
         self.assertEqual(sum(row['queried'] for row in trace),3)
         self.assertEqual(result['same_level']['unqueried']['n'],9)
+
+    @unittest.skipUnless(importlib.util.find_spec('river'),'River is optional except for ARF runs')
+    def test_arf_real_forest_causal_budget_reset_and_observer_isolation(self):
+        self.a.arf_trees=2;self.a.arf_train_passes=1
+        with contextlib.redirect_stdout(io.StringIO()):saved=m.train_arf(self.a,(self.x,self.y))
+        self.assertEqual(saved['trees'],2)
+        self.assertEqual(saved['training_samples_per_pass'],12)
+        domain=(torch.tensor(self.x).unsqueeze(1),self.y,np.arange(12))
+        result,trace=m.evaluate_level(self.a,'arf',saved,domain,domain[:2])
+        plain,trace2=m.evaluate_level(self.a,'arf',saved,domain,domain[:2],observer=False)
+        self.assertEqual(trace,trace2)
+        self.assertEqual(result['labels'],3)
+        self.assertEqual(result['online_learn_one_calls'],3)
+        self.assertEqual(result['same_level']['unqueried']['n'],9)
+        queried={r['source_row'] for r in trace if r['queried']}
+        changed=self.y.copy()
+        for i in range(len(changed)):
+            if i not in queried:changed[i]=1-changed[i]
+        _,other=m.evaluate_level(self.a,'arf',saved,(domain[0],changed,domain[2]),domain[:2])
+        self.assertEqual([r['prediction'] for r in trace],[r['prediction'] for r in other])
+        self.assertEqual([r['queried'] for r in trace],[r['queried'] for r in other])
+        learner0=m.Learner('arf',saved,self.a);learner1=m.Learner('arf',saved,self.a)
+        self.assertIsNot(learner0.model,learner1.model)
+        self.assertIsNot(learner0.model.models[0],learner1.model.models[0])
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'arf.joblib';joblib.dump(saved,path)
+            restored=joblib.load(path)
+            self.assertTrue(np.array_equal(m.Learner('arf',restored,self.a).predict(self.x),learner0.predict(self.x)))
 
     def test_all_four_train_save_load_evaluate_integration(self):
         self.a.dfe_epochs=1;self.a.af_epochs=1;self.a.patience=1;self.a.templates=3
