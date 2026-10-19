@@ -45,10 +45,11 @@ def masked_q(q, states):
 
 
 class StructuredQ(nn.Module):
-    def __init__(self, route_width, budget_aware=False):
+    def __init__(self, route_width, budget_aware=False, decoupled_query=False):
         super().__init__()
         self.route_width = route_width
         self.budget_aware = budget_aware
+        self.decoupled_query = decoupled_query
         # This scorer is shared by all routes, with an explicit frozen-route flag.
         self.correctness = nn.Sequential(nn.Linear(route_width,128),nn.ReLU(),
                                          nn.Linear(128,64),nn.ReLU(),nn.Linear(64,1))
@@ -77,14 +78,14 @@ class StructuredQ(nn.Module):
         context_x = torch.cat([route_x[:,1:],pooled[:,None,:].expand(-1,SLOTS,-1)],dim=2)
         if self.budget_aware:context_x=torch.cat([context_x,slots[:,1:]],dim=2)
         update = self.update_value(context_x).squeeze(-1)
-        query_reward=reward.max(1,keepdim=True).values if self.budget_aware else reward[:,1:]
+        query_reward=reward.max(1,keepdim=True).values if (self.budget_aware or self.decoupled_query) else reward[:,1:]
         return torch.cat([future+reward,future+query_reward+update],dim=1)
 
 
 class Agent:
-    def __init__(self, route_width, device, seed, offline=False, policy_state=None, gamma=.95, budget_aware=False):
+    def __init__(self, route_width, device, seed, offline=False, policy_state=None, gamma=.95, budget_aware=False, decoupled_query=False):
         self.device, self.gamma, self.offline = device,gamma,offline
-        self.policy = StructuredQ(route_width,budget_aware=budget_aware).to(device)
+        self.policy = StructuredQ(route_width,budget_aware=budget_aware,decoupled_query=decoupled_query).to(device)
         if policy_state is not None:self.policy.load_state_dict(policy_state)
         self.target = deepcopy(self.policy).eval()
         self.route_optimizer = torch.optim.Adam(self.policy.correctness.parameters(),lr=.001,weight_decay=1e-4)
@@ -363,10 +364,10 @@ def budget_probe_after(cnn,bank,selected,batch,before):
     return float(delta.clamp_min(0).mean()),float((-delta).clamp_min(0).mean())
 
 
-def action_route(action,values,budget_aware):
+def action_route(action,values,budget_aware,decoupled_query=False):
     # Query destination and pre-feedback prediction destination are separate
-    # in v2. The latter is selected by the same learned correctness scorer.
-    return int(values[:ROUTES].argmax().item()) if budget_aware and action>=ROUTES else base.route_index(action,SLOTS)
+    # in v2 or the isolated v1 ablation. Neither uses the current true label.
+    return int(values[:ROUTES].argmax().item()) if (budget_aware or decoupled_query) and action>=ROUTES else base.route_index(action,SLOTS)
 
 
 def reference_observer(cnn,bank,agent,x,y,history,used,cap,clock,mode,seed,
@@ -418,9 +419,11 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
     x,y,source_ids=x[order],np.asarray(y)[order],np.asarray(source_ids)[order]
     n=len(y);cap=int(np.floor(a.budget_fraction*n))
     budget_aware=getattr(a,'budget_aware_policy',False)
+    decoupled=getattr(a,'decoupled_query',False)
     if budget_aware and (a.query_schedule!='policy' or a.update_policy!='learned'):
         raise ValueError('Budget-aware RL requires policy queries and learned destinations; no external gate.')
     if agent.policy.budget_aware!=budget_aware:raise ValueError('Budget policy/state mismatch.')
+    if agent.policy.decoupled_query!=decoupled:raise ValueError('Query prediction semantics mismatch.')
     schedule=set(np.random.default_rng(seed+819003).choice(n,cap,replace=False).tolist()) if a.query_schedule=='uniform' else None
     quality=None
     if a.query_schedule=='quality':
@@ -437,6 +440,7 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
         return 2+int(fixed_destinations[pos]) if a.update_policy=='fixed' and gate(pos)==1 else gate(pos)
     rng=np.random.default_rng(seed+719003)
     quality_route_rng=np.random.default_rng(seed+601037) if quality is not None else None
+    query_route_rng=np.random.default_rng(seed+601089) if decoupled else None
     history=Reliability(len(a.classes))
     if budget_aware:
         history.budget=BudgetState(a.budget_priors,**budget_settings(a))
@@ -485,7 +489,8 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
                     # forced update-slot prediction can be weak even when the
                     # system's no-query route is good; do not confuse these.
                     quality_probe_route=int(quality_route_rng.integers(ROUTES)) if mode=='random' or quality_route_rng.random()<epsilon else int(values[:ROUTES].argmax().item())
-        route=action_route(action,values,budget_aware)
+        route=action_route(action,values,budget_aware,decoupled)
+        if decoupled and mode=='random' and action>=ROUTES:route=int(query_route_rng.integers(ROUTES))
         if budget_aware and mode=='random' and action>=ROUTES:route=int(rng.integers(ROUTES))
         predictions=outputs[0].argmax(2).squeeze(0).cpu().numpy()
         prediction_rows.append(predictions.copy())
@@ -494,7 +499,7 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
         prediction=int(predictions[route]);paid=action>=4
         truth=int(y[pos]);correct=(predictions==truth)
         oracle_all+=bool(correct.any())
-        legal_routes=set(range(ROUTES)) if budget_aware else {base.route_index(v,SLOTS) for v in allowed}
+        legal_routes=set(range(ROUTES)) if (budget_aware or (decoupled and any(v>=ROUTES for v in allowed))) else {base.route_index(v,SLOTS) for v in allowed}
         oracle_legal+=any(correct[r] for r in legal_routes)
         actions[action]+=1
         agent.clock+=1
@@ -517,7 +522,7 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
             used_before=used
             if paid:
                 assert used<cap
-                selected=action-ROUTES if budget_aware else route-1
+                selected=action-ROUTES if (budget_aware or decoupled) else route-1
                 label=torch.tensor([truth],device=x.device)
                 if not warmup or budget_aware:
                     batch=reward_reference.sample(inputs)
@@ -578,6 +583,7 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
         if getattr(a,'balanced_reward_reference',False):
             probe_labels=[] if batch is None else batch[1].detach().cpu().numpy().reshape(-1).tolist()
             row['reference_class_counts']=json.dumps({str(int(c)):probe_labels.count(c) for c in sorted(set(probe_labels))})
+        if decoupled:row['update_slot']=selected if paid else None
         if budget_aware:
             row.update(query_propensity=propensity,update_slot=selected if paid else None,
                        budget_price_before=float(state[0,ROUTES*agent.policy.route_width+4].item())*history.budget.price_max)
@@ -609,6 +615,9 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
                  oracle_protocol='observer only, along this policy bank trajectory; legal oracle obeys uniform gate and fixed-destination control',
                  fixed_skip_protocol='retrospective control: keep actual query actions/destinations; use one fixed route on all non-query rows')
     metrics.update(timer.metrics(n,used))
+    if decoupled:
+        metrics['query_prediction']='best learned pre-feedback route; random baseline uses independent random query routes; update slot is action minus four'
+        metrics['oracle_protocol']='observer only along this bank trajectory; any query action permits all four prediction routes; no oracle labels used by policy'
     if quality is not None:
         assert quality.labels==used<=cap
         metrics['quality_budget']=quality.statistics()
@@ -749,7 +758,7 @@ def prepare_budget(a,cnn,bank,artifact,saved=None):
 def train(a,models,artifact):
     cnn,bank,initial,route_width=models_from_source(models,artifact)
     aware=getattr(a,'budget_aware_policy',False)
-    agent=Agent(route_width,core.device,a.seed,offline=True,gamma=a.gamma,budget_aware=aware)
+    agent=Agent(route_width,core.device,a.seed,offline=True,gamma=a.gamma,budget_aware=aware,decoupled_query=a.decoupled_query)
     if getattr(a,'resume_selector',False):
         previous=torch.load(models/'structured_bank_ddqn.pth',map_location='cpu',weights_only=False)
         if previous.get('version')!=1 or aware or previous['route_width']!=route_width:
@@ -763,6 +772,8 @@ def train(a,models,artifact):
         print('Resuming all selector weights; fresh optimizers/replay. Frozen CNN and initial Context unchanged.')
     if getattr(a,'balanced_reward_reference',False):
         print('Balanced reward reference: at most 32 unique rows; equal class-weight gain/damage. Online: previous paid labels only.')
+    if a.decoupled_query:
+        print('Decoupled query: current prediction uses best learned route; paid label updates the action-selected Context. Seven actions; original transfer reward.')
     if aware:
         prepare_budget(a,cnn,bank,artifact)
         prior=models/'structured_bank_ddqn.pth'
@@ -797,7 +808,7 @@ def train(a,models,artifact):
         with torch.random.fork_rng(devices=list(range(torch.cuda.device_count()))):
             snapshot=deepcopy(agent.policy.state_dict())
             for validation_level in a.levels:
-                temporary=Agent(route_width,core.device,a.seed,policy_state=snapshot,gamma=a.gamma,budget_aware=aware)
+                temporary=Agent(route_width,core.device,a.seed,policy_state=snapshot,gamma=a.gamma,budget_aware=aware,decoupled_query=a.decoupled_query)
                 result,_=episode(a,cnn,bank,initial,temporary,domains[validation_level,'val_ids'])
                 scores.append(result['accuracy'])
                 validation_labels.append(result['labels'])
@@ -816,6 +827,8 @@ def train(a,models,artifact):
                             protocol='Qskip=B+2p-1; Qquery=B+2p_context-1+U; correctness BCE isolated from TD; shared expert scorer',
                             supervision='offline: existing TRAIN labels on all rows; online/validation: queried labels only',
                             initial_context='three independent clones of unchanged healthy source checkpoint')
+            if a.decoupled_query:
+                checkpoint['protocol']='Qskip=B+2p-1; Qquery=B+max(2p-1)+U; seven actions; query destination independent of current prediction; original transfer reward'
             if aware:
                 checkpoint.update(budget_version=BUDGET_VERSION,budget_priors=a.budget_priors,
                     budget_anchor_source_rows=a.budget_anchor_source_rows,
@@ -836,6 +849,8 @@ def evaluate(a,models,artifact):
     if aware!=(saved['version']==2):raise ValueError('Checkpoint uses a different budget policy; pass --budget-aware-policy only for a v2 trained run.')
     if bool(saved.get('config',{}).get('balanced_reward_reference',False))!=a.balanced_reward_reference:
         raise ValueError('Reward reference differs from training; use --balanced-reward-reference for a matching checkpoint.')
+    if bool(saved.get('config',{}).get('decoupled_query',False))!=a.decoupled_query:
+        raise ValueError('Query semantics differ from training; use --decoupled-query only with a matching trained checkpoint.')
     if aware:
         if saved.get('budget_version')!=BUDGET_VERSION:raise ValueError('Unsupported RL budget policy version.')
         config=saved['config']
@@ -859,6 +874,7 @@ def evaluate(a,models,artifact):
     execution={key:getattr(a,key) for key in ('seed','context_lr','budget_fraction','selection_cost','gain_weight','retention_weight','gamma','eval_epsilon','query_schedule','update_policy','bank_utility')}
     execution['same_level_diagnostics_version']=1
     if a.balanced_reward_reference:execution['reward_reference']='class_balanced_macro_v1'
+    if a.decoupled_query:execution['query_prediction']='decoupled_best_route_v1'
     execution['budget_report_version']=1
     execution['timing_version']=1
     if aware:
@@ -874,7 +890,7 @@ def evaluate(a,models,artifact):
         pair={}
         for mode in a.modes:
             core.set_seed(a.seed)
-            agent=Agent(route_width,core.device,a.seed,policy_state=saved['policy_state_dict'],gamma=a.gamma,budget_aware=aware)
+            agent=Agent(route_width,core.device,a.seed,policy_state=saved['policy_state_dict'],gamma=a.gamma,budget_aware=aware,decoupled_query=a.decoupled_query)
             m,trace=episode(a,cnn,bank,initial,agent,domain,mode=mode,learning=mode=='learned',reference=reference,same_level=True)
             m.update(level=level,classes=a.classes,execution_config=execution,classifier_unchanged=not cnn.training and all(not p.requires_grad for p in cnn.parameters()))
             tag=f'structured_{mode}_per{level}_seed{a.seed}_lr{a.context_lr:g}_{a.update_policy}_{run_id}'
@@ -914,6 +930,8 @@ def evaluate(a,models,artifact):
     from amcal_burst_results_summary import display
     display(rows,fields)
     print('Legal: permitted-action oracle. All: all-route oracle. FixedRL: best fixed non-query route along the RL update trajectory. Ref: routed clean reference. CtxDrop: mean Context drop.')
+    if a.decoupled_query:
+        print('Decoupled query: learned predicts through best estimated route before feedback, then updates the action-selected Context. Random query prediction routes use a separate random generator.')
     filename=root/f'combined_structured_seed{a.seed}_lr{a.context_lr:g}_eps{a.eval_epsilon:g}_{a.update_policy}_{run_id}.csv'
     base.write_trace(filename,rows)
     print('Saved:',filename)
@@ -973,6 +991,7 @@ def main():
     p.add_argument('--router-warmup-episodes',type=int,default=3)
     p.add_argument('--balanced-reward-reference',action='store_true',help='Class-balanced probe sampling and macro class gain/damage; online uses only previous paid labels.')
     p.add_argument('--resume-selector',action='store_true',help='Continue all original selector weights from --source-run, with fresh replay and optimizers.')
+    p.add_argument('--decoupled-query',action='store_true',help='Isolated seven-action ablation: predict through best learned route when querying, then update action-selected Context; use in train and evaluate.')
     p.add_argument('--context-lr',type=float,default=.0005)
     p.add_argument('--budget-fraction',type=float,default=.2)
     p.add_argument('--selection-cost',type=float,default=.0001)
@@ -1010,6 +1029,8 @@ def main():
         p.error('Balanced reward reference is an isolated v1 selected-Context reward experiment.')
     if a.resume_selector and (a.command!='train' or a.router_warmup_episodes!=0):
         p.error('Resume selector requires train and --router-warmup-episodes 0.')
+    if a.decoupled_query and (a.budget_aware_policy or a.query_schedule=='quality' or a.update_policy!='learned'):
+        p.error('Decoupled query is an isolated v1 experiment with learned update destinations and no external quality gate.')
     if a.budget_aware_policy:
         if a.query_schedule!='policy' or a.update_policy!='learned' or a.bank_utility:
             p.error('Budget-aware RL requires --query-schedule policy --update-policy learned, without --bank-utility or an external gate.')
