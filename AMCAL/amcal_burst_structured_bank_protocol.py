@@ -4,6 +4,7 @@ Frozen CNN and initial Context come from an existing healthy source run.
 Offline correctness targets use existing TRAIN labels densely; Context updates
 remain budgeted. Online learners see only paid labels after the scored prediction.
 Optional evaluation quality/yield feedback control: see QUALITY_BUDGET.md.
+Optional learned budget policy (--budget-aware-policy): see RL_BUDGET_POLICY.md.
 """
 import argparse
 from collections import deque
@@ -23,6 +24,7 @@ import torch.nn.functional as F
 import amcal_burst_context_bank_protocol as base
 from baselines.stream_timing import StreamTimer, timing_row, timing_report
 from baselines.quality_budget import QualityBudget, VERSION as QUALITY_VERSION
+from baselines.rl_budget import BudgetState, GLOBAL_WIDTH, SLOT_WIDTH, VERSION as BUDGET_VERSION
 core = base.core
 SLOTS = 3
 ROUTES = 4
@@ -42,45 +44,53 @@ def masked_q(q, states):
 
 
 class StructuredQ(nn.Module):
-    def __init__(self, route_width):
+    def __init__(self, route_width, budget_aware=False):
         super().__init__()
         self.route_width = route_width
+        self.budget_aware = budget_aware
         # This scorer is shared by all routes, with an explicit frozen-route flag.
         self.correctness = nn.Sequential(nn.Linear(route_width,128),nn.ReLU(),
                                          nn.Linear(128,64),nn.ReLU(),nn.Linear(64,1))
-        pooled = 2*route_width + 2
+        pooled = 2*route_width + 2 + (GLOBAL_WIDTH+2*SLOT_WIDTH if budget_aware else 0)
         self.future = nn.Sequential(nn.Linear(pooled,128),nn.ReLU(),nn.Linear(128,1))
-        self.update_value = nn.Sequential(nn.Linear(pooled+route_width,128),nn.ReLU(),nn.Linear(128,1))
+        self.update_value = nn.Sequential(nn.Linear(pooled+route_width+(SLOT_WIDTH if budget_aware else 0),128),nn.ReLU(),nn.Linear(128,1))
         nn.init.zeros_(self.future[-1].weight); nn.init.zeros_(self.future[-1].bias)
         nn.init.zeros_(self.update_value[-1].weight); nn.init.zeros_(self.update_value[-1].bias)
 
     def route_logits(self, states):
-        route_x = states[:, :-3].reshape(-1,ROUTES,self.route_width)
+        route_x = states[:, :ROUTES*self.route_width].reshape(-1,ROUTES,self.route_width)
         return self.correctness(route_x).squeeze(-1)
 
     def forward(self, states, detach_routes=False):
-        route_x = states[:, :-3].reshape(-1,ROUTES,self.route_width)
+        route_x = states[:, :ROUTES*self.route_width].reshape(-1,ROUTES,self.route_width)
         p = self.correctness(route_x).squeeze(-1).sigmoid()
         reward = 2*p - 1
         if detach_routes: reward = reward.detach()
         # Schedule gate masks actions; it is not a shortcut feature for scoring.
         pooled = torch.cat([route_x.mean(1),route_x.max(1).values,states[:,-2:]],dim=1)
+        if self.budget_aware:
+            extra = states[:,ROUTES*self.route_width:-3]
+            slots = extra[:,GLOBAL_WIDTH:].reshape(-1,ROUTES,SLOT_WIDTH)
+            pooled = torch.cat([pooled,extra[:,:GLOBAL_WIDTH],slots.mean(1),slots.max(1).values],dim=1)
         future = self.future(pooled)
         context_x = torch.cat([route_x[:,1:],pooled[:,None,:].expand(-1,SLOTS,-1)],dim=2)
+        if self.budget_aware:context_x=torch.cat([context_x,slots[:,1:]],dim=2)
         update = self.update_value(context_x).squeeze(-1)
-        return torch.cat([future+reward,future+reward[:,1:]+update],dim=1)
+        query_reward=reward.max(1,keepdim=True).values if self.budget_aware else reward[:,1:]
+        return torch.cat([future+reward,future+query_reward+update],dim=1)
 
 
 class Agent:
-    def __init__(self, route_width, device, seed, offline=False, policy_state=None, gamma=.95):
+    def __init__(self, route_width, device, seed, offline=False, policy_state=None, gamma=.95, budget_aware=False):
         self.device, self.gamma, self.offline = device,gamma,offline
-        self.policy = StructuredQ(route_width).to(device)
+        self.policy = StructuredQ(route_width,budget_aware=budget_aware).to(device)
         if policy_state is not None:self.policy.load_state_dict(policy_state)
         self.target = deepcopy(self.policy).eval()
         self.route_optimizer = torch.optim.Adam(self.policy.correctness.parameters(),lr=.001,weight_decay=1e-4)
         self.td_optimizer = torch.optim.Adam(list(self.policy.future.parameters())+list(self.policy.update_value.parameters()),lr=.0001,weight_decay=1e-4)
         self.route_memory = deque(maxlen=8192 if offline else 256)
         self.td_memory = deque(maxlen=4096 if offline else 512)
+        self.pair_memory = deque(maxlen=4096 if offline else 512)
         self.rng = np.random.default_rng(seed+920017)
         self.clock,self.route_updates,self.td_updates = 0,0,0
         self.policy.eval()
@@ -92,14 +102,17 @@ class Agent:
         weights = torch.tensor(np.maximum(.05,np.exp2(-ages/half_life)),device=self.device,dtype=torch.float32)
         return samples,weights
 
-    def observe_routes(self, state, correct, step_now=True):
-        self.route_memory.append((state.detach().cpu().reshape(-1).clone(),
-                                  correct.detach().cpu().float().reshape(ROUTES).clone(),self.clock))
+    def observe_routes(self, state, correct, step_now=True, importance=1.):
+        row=(state.detach().cpu().reshape(-1).clone(),
+             correct.detach().cpu().float().reshape(ROUTES).clone())
+        self.route_memory.append(row+(float(importance),self.clock) if self.policy.budget_aware else row+(self.clock,))
         if not step_now:return
         samples,weight = self._sample(self.route_memory,4096 if self.offline else 128)
         x = torch.stack([r[0] for r in samples]).to(self.device)
         y = torch.stack([r[1] for r in samples]).to(self.device)
         loss = F.binary_cross_entropy_with_logits(self.policy.route_logits(x),y,reduction='none').mean(1)
+        if self.policy.budget_aware:
+            weight=weight*torch.tensor([r[2] for r in samples],device=self.device)
         loss = (loss*weight).sum()/weight.sum()
         self.route_optimizer.zero_grad();loss.backward()
         nn.utils.clip_grad_norm_(self.policy.correctness.parameters(),1)
@@ -108,6 +121,15 @@ class Agent:
     def push(self, state, action, reward, successor, terminal):
         self.td_memory.append((state.detach().cpu().reshape(-1).clone(),action,float(reward),
                                successor.detach().cpu().reshape(-1).clone(),float(terminal),self.clock))
+
+    def push_pair(self,state,action,utility,actual_next,skip_next,terminal):
+        self.pair_memory.append((state.detach().cpu().reshape(-1).clone(),action,float(utility),
+            actual_next.detach().cpu().reshape(-1).clone(),skip_next.detach().cpu().reshape(-1).clone(),
+            float(terminal),self.clock))
+
+    def _next_values(self,states):
+        chosen=masked_q(self.policy(states),states).argmax(1)
+        return self.target(states).gather(1,chosen[:,None]).squeeze(1)
 
     def learn_td(self):
         if len(self.td_memory)<32:return
@@ -124,6 +146,20 @@ class Agent:
             target = rewards+self.gamma*(1-terminal)*value
         loss = F.smooth_l1_loss(current,target,reduction='none')
         loss = (loss*weight).sum()/weight.sum()
+        if self.policy.budget_aware and self.pair_memory:
+            pairs,pair_weight=self._sample(self.pair_memory,1024 if self.offline else 128)
+            px=torch.stack([r[0] for r in pairs]).to(self.device)
+            pa=torch.tensor([r[1] for r in pairs],device=self.device)
+            pu=torch.tensor([r[2] for r in pairs],device=self.device)
+            pn=torch.stack([r[3] for r in pairs]).to(self.device)
+            ps=torch.stack([r[4] for r in pairs]).to(self.device)
+            terminal_pair=torch.tensor([r[5] for r in pairs],device=self.device)
+            q=self.policy(px,detach_routes=True)
+            advantage=q.gather(1,pa[:,None]).squeeze(1)-q[:,:ROUTES].max(1).values
+            with torch.no_grad():
+                paired_target=pu+self.gamma*(1-terminal_pair)*(self._next_values(pn)-self._next_values(ps))
+            paired_loss=F.smooth_l1_loss(advantage,paired_target,reduction='none')
+            loss=loss+(paired_loss*pair_weight).sum()/pair_weight.sum()
         self.td_optimizer.zero_grad();loss.backward()
         nn.utils.clip_grad_norm_(list(self.policy.future.parameters())+list(self.policy.update_value.parameters()),1)
         self.td_optimizer.step();self.td_updates += 1
@@ -140,6 +176,7 @@ class Reliability:
         self.class_good = np.zeros((ROUTES,classes))
         self.class_count = np.zeros((ROUTES,classes))
         self.paid = 0
+        self.budget = None
 
     def features(self, probs, cap, position, count):
         predicted = probs.argmax(2).detach().cpu().numpy()
@@ -224,6 +261,9 @@ def build_state(outputs,embedding,history,used,cap,position,count,gate):
                          probs.max(1,keepdim=True).values.expand(-1,ROUTES,-1),info,
                          history.features(probs,cap,position,count)],dim=2)
     extra = logits.new_tensor([[gate,(cap-used)/max(cap,1),position/max(count,1)]]).expand(len(logits),-1)
+    if history.budget is not None:
+        bx=logits.new_tensor(history.budget.features(used,cap,position,count)).expand(len(logits),-1)
+        return torch.cat([route_x.flatten(1),bx,extra],dim=1)
     return torch.cat([route_x.flatten(1),extra],dim=1)
 
 
@@ -244,6 +284,59 @@ def utility_after(a,cnn,bank,selected,batch,before):
         after = before.clone()
         after[selected+1] = F.cross_entropy(cnn(bank[selected](batch[0])),batch[1],reduction='none')
     return core.transfer_utility(before.min(0).values.cpu().numpy(),after.min(0).values.cpu().numpy())
+
+
+class MixedBudgetProbe:
+    """Fixed TRAIN anchors plus TRAIN-domain / previous-paid reference rows.
+
+    Only the current paid row receives a Context gradient. Reference rows are
+    used without gradients and feature-identical current rows are excluded.
+    """
+    def __init__(self,anchors,current,seed):
+        ax,ay=anchors
+        self.anchor=core.TrainingProbe(ax,torch.as_tensor(ay),seed+1)
+        self.current=current
+
+    def sample(self,inputs):
+        anchor=self.anchor.sample(inputs)
+        recent=self.current.sample(inputs)
+        if anchor is None:return recent
+        if recent is None:return anchor
+        half=max(1,core.REFERENCE_BATCH_SIZE//2)
+        return (torch.cat([anchor[0][:half],recent[0][:half]]),
+                torch.cat([anchor[1][:half],recent[1][:half]]))
+
+    def add(self,inputs,label):self.current.add(inputs,label)
+
+
+def budget_probe_before(cnn,bank,agent,batch,history,used,cap,pos,count):
+    if batch is None:return None
+    with torch.no_grad():
+        z,h=base_cache(cnn,batch[0])
+        outputs=route_outputs(cnn,bank,batch[0],z)
+        state=build_state(outputs,h,history,used,cap,pos,count,0)
+        # Freeze the pre-update route weights for causal attribution to the
+        # selected Context. A small uniform component keeps dormant routes
+        # represented. This is a loss surrogate, not a label-based oracle.
+        weights=.9*agent.policy.route_logits(state).softmax(1)+.1/ROUTES
+        losses=torch.stack([F.cross_entropy(outputs[0][:,r],batch[1],reduction='none') for r in range(ROUTES)],1)
+    return losses,weights
+
+
+def budget_probe_after(cnn,bank,selected,batch,before):
+    if before is None:return 0.,0.
+    with torch.no_grad():
+        losses,weights=before
+        after=F.cross_entropy(cnn(bank[selected](batch[0])),batch[1],reduction='none')
+        prior=losses[:,selected+1]
+        delta=weights[:,selected+1]*(prior-after)/(prior+after+1e-8)
+    return float(delta.clamp_min(0).mean()),float((-delta).clamp_min(0).mean())
+
+
+def action_route(action,values,budget_aware):
+    # Query destination and pre-feedback prediction destination are separate
+    # in v2. The latter is selected by the same learned correctness scorer.
+    return int(values[:ROUTES].argmax().item()) if budget_aware and action>=ROUTES else base.route_index(action,SLOTS)
 
 
 def reference_observer(cnn,bank,agent,x,y,history,used,cap,clock,mode,seed,
@@ -294,6 +387,10 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
     order=np.random.default_rng(seed).permutation(len(y))
     x,y,source_ids=x[order],np.asarray(y)[order],np.asarray(source_ids)[order]
     n=len(y);cap=int(np.floor(a.budget_fraction*n))
+    budget_aware=getattr(a,'budget_aware_policy',False)
+    if budget_aware and (a.query_schedule!='policy' or a.update_policy!='learned'):
+        raise ValueError('Budget-aware RL requires policy queries and learned destinations; no external gate.')
+    if agent.policy.budget_aware!=budget_aware:raise ValueError('Budget policy/state mismatch.')
     schedule=set(np.random.default_rng(seed+819003).choice(n,cap,replace=False).tolist()) if a.query_schedule=='uniform' else None
     quality=None
     if a.query_schedule=='quality':
@@ -311,7 +408,11 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
     rng=np.random.default_rng(seed+719003)
     quality_route_rng=np.random.default_rng(seed+601037) if quality is not None else None
     history=Reliability(len(a.classes))
+    if budget_aware:
+        history.budget=BudgetState(a.budget_priors,**budget_settings(a))
     reward_reference=core.TrainingProbe(x,torch.tensor(y,device=x.device),seed+910033) if training else core.PaidHistory(seed+910033)
+    if budget_aware:
+        reward_reference=MixedBudgetProbe(a.budget_anchors,reward_reference,seed+910043)
     timer=StreamTimer(x.device,enabled=not training)
     with timer.stage('cache'):
         bz,embedding=base_cache(cnn,x)
@@ -339,17 +440,21 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
                 values=agent.policy(state).squeeze(0)
                 probability=agent.policy.route_logits(state).sigmoid().squeeze(0)
                 epsilon=a.train_epsilon if training else a.eval_epsilon
+                valid=torch.tensor(allowed,device=x.device)
+                greedy=int(valid[values[valid].argmax()].item())
                 if mode=='random' or warmup or rng.random()<epsilon:
                     action=int(rng.choice(allowed))
                 else:
-                    valid=torch.tensor(allowed,device=x.device)
-                    action=int(valid[values[valid].argmax()].item())
+                    action=greedy
+                query_fraction=sum(v>=ROUTES for v in allowed)/len(allowed)
+                propensity=query_fraction if mode=='random' or warmup else epsilon*query_fraction+(1-epsilon)*int(greedy>=ROUTES)
                 if quality is not None:
                     # Shadow the prediction-only router BEFORE feedback. A
                     # forced update-slot prediction can be weak even when the
                     # system's no-query route is good; do not confuse these.
                     quality_probe_route=int(quality_route_rng.integers(ROUTES)) if mode=='random' or quality_route_rng.random()<epsilon else int(values[:ROUTES].argmax().item())
-        route=base.route_index(action,SLOTS)
+        route=action_route(action,values,budget_aware)
+        if budget_aware and mode=='random' and action>=ROUTES:route=int(rng.integers(ROUTES))
         predictions=outputs[0].argmax(2).squeeze(0).cpu().numpy()
         prediction_rows.append(predictions.copy())
         route_probabilities.append(probability.cpu().numpy().copy())
@@ -357,7 +462,8 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
         prediction=int(predictions[route]);paid=action>=4
         truth=int(y[pos]);correct=(predictions==truth)
         oracle_all+=bool(correct.any())
-        oracle_legal+=any(correct[base.route_index(v,SLOTS)] for v in allowed)
+        legal_routes=set(range(ROUTES)) if budget_aware else {base.route_index(v,SLOTS) for v in allowed}
+        oracle_legal+=any(correct[r] for r in legal_routes)
         actions[action]+=1
         agent.clock+=1
         with timer.stage('update'):
@@ -369,30 +475,45 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
             zero=torch.zeros_like(state)
             skip_next=zero
             if successor_output is not None:
-                skip_next=build_state(successor_output,embedding[pos+1:pos+2],history,used,cap,pos+1,n,state_gate(pos+1))
+                skip_history=history
+                if budget_aware:
+                    skip_history=deepcopy(history)
+                    skip_history.budget.advance(False,used,cap,pos,n)
+                skip_next=build_state(successor_output,embedding[pos+1:pos+2],skip_history,used,cap,pos+1,n,state_gate(pos+1))
             reward,gain,harm=None,None,None
-            before=None;batch=None
+            before=None;batch=None;budget_reward=None;importance=1.
+            used_before=used
             if paid:
                 assert used<cap
-                selected=route-1
+                selected=action-ROUTES if budget_aware else route-1
                 label=torch.tensor([truth],device=x.device)
-                if not warmup:
+                if not warmup or budget_aware:
                     batch=reward_reference.sample(inputs)
-                    before=utility_before(a,cnn,bank,selected,batch)
+                    before=budget_probe_before(cnn,bank,agent,batch,history,used,cap,pos,n) if budget_aware else utility_before(a,cnn,bank,selected,batch)
                 history.observe_paid(outputs[0].softmax(2),truth)
                 optimizers[selected].zero_grad()
                 loss=core.context_objective(F.cross_entropy(cnn(bank[selected](inputs)),label),
                                             F.cross_entropy(outputs[0][:,0],label))
                 loss.backward();optimizers[selected].step()
-                utility,gain,harm=(0.0,0.0,0.0) if warmup else utility_after(a,cnn,bank,selected,batch,before)
+                if budget_aware:
+                    gain,harm=budget_probe_after(cnn,bank,selected,batch,before)
+                    budget_reward=history.budget.query_adjustment(selected,gain,harm,used,cap,pos,n,
+                        a.gain_weight,a.retention_weight,a.selection_cost)
+                    utility=budget_reward['utility']
+                    importance=history.budget.observe_paid(correct,int(values[:ROUTES].argmax().item()),propensity,pos)
+                    if before is not None:history.budget.observe_transfer(selected,gain,harm,pos+1)
+                else:
+                    utility,gain,harm=(0.0,0.0,0.0) if warmup else utility_after(a,cnn,bank,selected,batch,before)
                 reward=(1.0 if prediction==truth else -1.0)+utility
                 used+=1;slot_queries[selected]+=1
-                after_current=refresh_slot(cnn,bank,inputs,outputs,route)
-                change=(after_current[0][:,route].softmax(1)-outputs[0][:,route].softmax(1)).abs().mean().item()
-                history.updated(route,pos+1,change)
+                updated_route=selected+1
+                after_current=refresh_slot(cnn,bank,inputs,outputs,updated_route)
+                change=(after_current[0][:,updated_route].softmax(1)-outputs[0][:,updated_route].softmax(1)).abs().mean().item()
+                history.updated(updated_route,pos+1,change)
                 if not training:reward_reference.add(inputs,label)
                 if successor_output is not None:
-                    successor_output=refresh_slot(cnn,bank,x[pos+1:pos+2],successor_output,route)
+                    successor_output=refresh_slot(cnn,bank,x[pos+1:pos+2],successor_output,updated_route)
+            if budget_aware:history.budget.advance(paid,used_before,cap,pos,n)
             if quality is not None:
                 if paid:quality.observe(pos,int(predictions[quality_probe_route])==truth,gain if batch is not None else None,harm if batch is not None else None)
                 if pos+1<n:
@@ -405,7 +526,7 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
             if may_learn:
                 target=torch.tensor(correct,device=x.device,dtype=torch.float32)
                 step_now=(not training) or paid or pos%16==15 or pos+1==n
-                agent.observe_routes(state,target,step_now=step_now)
+                agent.observe_routes(state,target,step_now=step_now,importance=1. if training else importance)
             if may_learn and not warmup:
                 # Non-query actions share the same no-update successor and future value.
                 skip_state=state.clone()
@@ -416,11 +537,16 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
                     successor=zero if successor_output is None else build_state(successor_output,embedding[pos+1:pos+2],history,used,cap,pos+1,n,state_gate(pos+1))
                     # Budget exhaustion masks queries; it does NOT end future prediction value.
                     agent.push(state,action,reward,successor,pos+1==n)
+                    if budget_aware:agent.push_pair(state,action,utility,successor,skip_next,pos+1==n)
                 if paid or pos%16==15 or pos+1==n:agent.learn_td()
         next_cached=successor_output
         row=dict(step=pos+1,source_row=int(source_ids[pos]),truth=truth,prediction=prediction,
                  action=action,route=route,queried=paid,labels_used=used,reward=reward,gain=gain,harm=harm,
-                 oracle_all=bool(correct.any()),oracle_legal=any(correct[base.route_index(v,SLOTS)] for v in allowed))
+                 oracle_all=bool(correct.any()),oracle_legal=any(correct[r] for r in legal_routes))
+        if budget_aware:
+            row.update(query_propensity=propensity,update_slot=selected if paid else None,
+                       budget_price_before=float(state[0,ROUTES*agent.policy.route_width+4].item())*history.budget.price_max)
+            if budget_reward is not None:row.update({'budget_'+k:v for k,v in budget_reward.items()})
         for r in range(ROUTES):
             row[f'prediction_{r}']=int(predictions[r]);row[f'correctness_probability_{r}']=float(probability[r].item())
         for action_id in range(ACTIONS):row[f'q_{action_id}']=float(values[action_id].item())
@@ -452,6 +578,15 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
         assert quality.labels==used<=cap
         metrics['quality_budget']=quality.statistics()
         metrics['oracle_protocol']='observer only along this bank trajectory; legal oracle obeys the external quality gate'
+    if budget_aware:
+        metrics['rl_budget']=history.budget.statistics(used,cap,n,n)
+        paid_rows=[row for row in trace if row['queried']]
+        metrics['rl_budget'].update(
+            mean_query_utility=float(np.mean([row['budget_utility'] for row in paid_rows])) if paid_rows else None,
+            positive_utility_fraction=float(np.mean([row['budget_utility']>0 for row in paid_rows])) if paid_rows else None,
+            first_query_step=paid_rows[0]['step'] if paid_rows else None,
+            last_query_step=paid_rows[-1]['step'] if paid_rows else None)
+        metrics['oracle_protocol']='observer only along this bank trajectory; all four prediction routes are permitted; query destination is independent of pre-feedback prediction route'
     if reference is not None:
         final,per_final=reference_observer(cnn,bank,agent,*reference,history,used,cap,n,mode,a.seed)
         first,per_first=initial_ref
@@ -509,6 +644,9 @@ def report_level(level,mode,m):
     print(f'Level {level} | {mode} | online {100*m["accuracy"]:.2f}% | legal oracle {100*m["oracle_legal"]:.2f}% | all-route oracle {100*m["oracle_all"]:.2f}% | labels {m["labels"]}/{m["label_cap"]}',flush=True)
     print(f'  Label budget: {m["labels"]}/{m["label_cap"]} used | {100*m["actual_label_fraction"]:.2f}% of {m["samples"]} stream rows | {m["budget_utilization_pct"]:.2f}% of cap | remaining {m["labels_remaining"]}')
     print(f'  Slot queries {m["slot_queries"]} | best fixed non-query route {100*m["best_fixed_skip_route_accuracy"]:.2f}% | route updates {m["route_updates"]} | TD updates {m["td_updates"]}')
+    if 'rl_budget' in m:
+        q=m['rl_budget'];values='/'.join(f'{100*v:.1f}' for v in q['estimated_route_accuracies'])
+        print(f'  Learned budget: route accuracy estimates {values}% | effective support {q["effective_support"]:.1f} | resource price {q["resource_price"]:.4f} | no external query gate')
     if 'quality_budget' in m:
         q=m['quality_budget']
         net='unknown' if q['mean_net_transfer'] is None else f'{q["mean_net_transfer"]:+.5f}'
@@ -534,9 +672,61 @@ def report_level(level,mode,m):
                 print(f'  Same-level unqueried Context {k}: {100*before:.2f}% -> {100*after:.2f}% | drop {100*(before-after):+.2f} pp | broken {result["per_route_broken"][k]}')
 
 
+BUDGET_OPTIONS=('window','need_weight','price_step','price_max','propensity_clip')
+
+
+def budget_settings(a):
+    defaults=dict(window=64,need_weight=1.,price_step=.005,price_max=.2,propensity_clip=20.)
+    return {key:getattr(a,'budget_'+key,defaults[key]) for key in BUDGET_OPTIONS}
+
+
+def prepare_budget(a,cnn,bank,artifact,saved=None):
+    """Only source TRAIN rows enter policy priors or reference anchors."""
+    x,y,ids=read_domain(a.burst_dir,artifact,0,'train_ids')
+    if saved is None:
+        with torch.no_grad():
+            frozen,_=base_cache(cnn,x)
+            frozen_accuracy=float(np.mean(frozen.argmax(1).cpu().numpy()==y))
+            cp=[]
+            for start in range(0,len(x),64):cp.extend(cnn(bank[0](x[start:start+64])).argmax(1).cpu().tolist())
+        a.budget_priors=[frozen_accuracy]+[float(np.mean(np.asarray(cp)==y))]*SLOTS
+        rng=np.random.default_rng(a.seed+601079)
+        # Balanced anchors protect small classes without changing stream scores.
+        groups=[rng.permutation(np.flatnonzero(y==c)).tolist() for c in np.unique(y)]
+        chosen=[]
+        while len(chosen)<min(256,len(y)):
+            for group in groups:
+                if group and len(chosen)<256:chosen.append(group.pop())
+                if len(chosen)==min(256,len(y)):break
+        a.budget_anchor_source_rows=np.asarray(ids)[chosen].tolist()
+    else:
+        a.budget_priors=saved['budget_priors']
+        a.budget_anchor_source_rows=saved['budget_anchor_source_rows']
+    row_index={int(v):i for i,v in enumerate(ids)}
+    if len(set(a.budget_anchor_source_rows))!=len(a.budget_anchor_source_rows) or not set(a.budget_anchor_source_rows)<=set(row_index):
+        raise ValueError('Budget reference anchors must be unique source TRAIN IDs.')
+    chosen=[row_index[v] for v in a.budget_anchor_source_rows]
+    a.budget_anchors=x[chosen],np.asarray(y)[chosen]
+    print(f'RL budget v{BUDGET_VERSION}: seven learned actions; {len(chosen)} fixed TRAIN reference anchors; '
+          f'TRAIN Frozen quality prior {100*a.budget_priors[0]:.2f}%; no external query gate.')
+
+
 def train(a,models,artifact):
     cnn,bank,initial,route_width=models_from_source(models,artifact)
-    agent=Agent(route_width,core.device,a.seed,offline=True,gamma=a.gamma)
+    aware=getattr(a,'budget_aware_policy',False)
+    agent=Agent(route_width,core.device,a.seed,offline=True,gamma=a.gamma,budget_aware=aware)
+    if aware:
+        prepare_budget(a,cnn,bank,artifact)
+        prior=models/'structured_bank_ddqn.pth'
+        if prior.exists():
+            previous=torch.load(prior,map_location='cpu',weights_only=False)
+            if previous['route_width']!=route_width:raise ValueError('Warm-start correctness width mismatch.')
+            for name,digest in previous.get('model_hashes',{}).items():
+                if core.file_sha256(models/name)!=digest:raise ValueError('Warm-start source checkpoint mismatch: '+name)
+            weights={k.removeprefix('correctness.'):v for k,v in previous['policy_state_dict'].items() if k.startswith('correctness.')}
+            agent.policy.correctness.load_state_dict(weights)
+            agent.target.load_state_dict(agent.policy.state_dict())
+            print('Reused trained correctness scorer; new budget/update value heads start fresh.')
     domains={(v,s):read_domain(a.burst_dir,artifact,v,s) for v in a.levels for s in ('train_ids','val_ids')}
     for warm in range(a.router_warmup_episodes):
         level=a.levels[warm%len(a.levels)]
@@ -544,35 +734,46 @@ def train(a,models,artifact):
                     rollout_seed=a.seed+100003+1009*warm)
         print(f'Correctness warmup {warm+1}/{a.router_warmup_episodes} | domain {level} | Context labels {m["labels"]}/{m["label_cap"]} | dense TRAIN route targets',flush=True)
     best,stale=-1,0
-    config={k:str(v) if isinstance(v,Path) else v for k,v in vars(a).items()}
+    config={k:str(v) if isinstance(v,Path) else v for k,v in vars(a).items() if k!='budget_anchors'}
     hashes={name:core.file_sha256(models/name) for name in ('initial_cnn_model.pth','adversarial_best_context.pth','protocol_preprocessing.joblib')}
     domain_hashes={str(level):core.file_sha256(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv') for level in a.levels}
     log=[]
     for epoch in range(a.epochs):
         level=a.levels[epoch%len(a.levels)]
         agent.td_memory.clear()  # Context bank reset: do not mix old hidden-bank transitions.
+        agent.pair_memory.clear()
         m,_=episode(a,cnn,bank,initial,agent,domains[level,'train_ids'],training=True,
                     rollout_seed=a.seed+200003+1009*epoch)
-        scores=[]
+        scores=[];validation_labels=[]
         # Validation learners are temporary; no validation parameters/replay survive.
         with torch.random.fork_rng(devices=list(range(torch.cuda.device_count()))):
             snapshot=deepcopy(agent.policy.state_dict())
             for validation_level in a.levels:
-                temporary=Agent(route_width,core.device,a.seed,policy_state=snapshot,gamma=a.gamma)
+                temporary=Agent(route_width,core.device,a.seed,policy_state=snapshot,gamma=a.gamma,budget_aware=aware)
                 result,_=episode(a,cnn,bank,initial,temporary,domains[validation_level,'val_ids'])
                 scores.append(result['accuracy'])
+                validation_labels.append(result['labels'])
         score=float(np.mean(scores))
         log.append(dict(epoch=epoch+1,level=level,train_accuracy=m['accuracy'],validation_accuracy=score,
-                        labels=m['labels'],slot_queries=m['slot_queries']))
+                        labels=m['labels'],slot_queries=m['slot_queries'],validation_labels=validation_labels))
         print(f'Epoch {epoch+1}/{a.epochs} | domain {level} | validation {100*score:.2f}% | labels {m["labels"]}/{m["label_cap"]} | slot queries {m["slot_queries"]}',flush=True)
+        if aware:
+            utility=m['rl_budget']['mean_query_utility'];text='N/A' if utility is None else f'{utility:+.5f}'
+            print(f'  Query utility {text} | validation labels {validation_labels} | training resource price {m["rl_budget"]["resource_price"]:.4f}',flush=True)
         if score>best:
             best,stale=score,0
-            torch.save(dict(version=1,slots=SLOTS,actions=ACTIONS,route_width=route_width,
+            checkpoint=dict(version=2 if aware else 1,slots=SLOTS,actions=ACTIONS,route_width=route_width,
                             policy_state_dict=deepcopy(agent.policy.state_dict()),model_hashes=hashes,
                             training_levels=a.levels,training_domain_sha256=domain_hashes,config=config,validation_accuracy=best,
                             protocol='Qskip=B+2p-1; Qquery=B+2p_context-1+U; correctness BCE isolated from TD; shared expert scorer',
                             supervision='offline: existing TRAIN labels on all rows; online/validation: queried labels only',
-                            initial_context='three independent clones of unchanged healthy source checkpoint'),models/'structured_bank_ddqn.pth')
+                            initial_context='three independent clones of unchanged healthy source checkpoint')
+            if aware:
+                checkpoint.update(budget_version=BUDGET_VERSION,budget_priors=a.budget_priors,
+                    budget_anchor_source_rows=a.budget_anchor_source_rows,
+                    protocol='Qskip=B+2p-1; Qquery=B+max(2p-1)+U; paired DDQN update advantage; '
+                             'isolated correctness head; soft resource cost; bounded routing-weighted transfer')
+            torch.save(checkpoint,models/'structured_bank_ddqn.pth')
         else:
             stale+=1
             if stale>=a.patience:break
@@ -582,12 +783,20 @@ def train(a,models,artifact):
 
 def evaluate(a,models,artifact):
     saved=torch.load(models/'structured_bank_ddqn.pth',map_location='cpu',weights_only=False)
-    if saved.get('version')!=1:raise ValueError('Unsupported structured-bank checkpoint.')
+    if saved.get('version') not in (1,2):raise ValueError('Unsupported structured-bank checkpoint.')
+    aware=getattr(a,'budget_aware_policy',False)
+    if aware!=(saved['version']==2):raise ValueError('Checkpoint uses a different budget policy; pass --budget-aware-policy only for a v2 trained run.')
+    if aware:
+        if saved.get('budget_version')!=BUDGET_VERSION:raise ValueError('Unsupported RL budget policy version.')
+        config=saved['config']
+        matching=('selection_cost','gain_weight','retention_weight','gamma',*['budget_'+key for key in BUDGET_OPTIONS])
+        if any(getattr(a,key)!=config[key] for key in matching):raise ValueError('RL budget/reward settings differ from training; use checkpoint settings.')
     for name,digest in saved['model_hashes'].items():
         if core.file_sha256(models/name)!=digest:raise ValueError('Source checkpoint mismatch: '+name)
     if set(a.levels)&set(saved['training_levels']):raise ValueError('Heldout test levels must exclude training levels.')
     cnn,bank,initial,route_width=models_from_source(models,artifact)
     if route_width!=saved['route_width']:raise ValueError('Router state width mismatch.')
+    if aware:prepare_budget(a,cnn,bank,artifact,saved)
     reference=read_domain(a.burst_dir,artifact,0,'val_ids')[:2]
     if a.query_schedule=='quality':
         # One offline scalar from clean SOURCE validation. No target labels or
@@ -601,6 +810,9 @@ def evaluate(a,models,artifact):
     execution['same_level_diagnostics_version']=1
     execution['budget_report_version']=1
     execution['timing_version']=1
+    if aware:
+        execution.update(budget_policy_version=BUDGET_VERSION,budget_aware_policy=True,
+                         **{'budget_'+key:value for key,value in budget_settings(a).items()})
     if a.query_schedule=='quality':
         execution.update(quality_budget_version=QUALITY_VERSION,quality_reference_accuracy=a.quality_reference_accuracy,
                          **{'quality_'+key:getattr(a,'quality_'+key) for key in QUALITY_OPTIONS})
@@ -611,7 +823,7 @@ def evaluate(a,models,artifact):
         pair={}
         for mode in a.modes:
             core.set_seed(a.seed)
-            agent=Agent(route_width,core.device,a.seed,policy_state=saved['policy_state_dict'],gamma=a.gamma)
+            agent=Agent(route_width,core.device,a.seed,policy_state=saved['policy_state_dict'],gamma=a.gamma,budget_aware=aware)
             m,trace=episode(a,cnn,bank,initial,agent,domain,mode=mode,learning=mode=='learned',reference=reference,same_level=True)
             m.update(level=level,classes=a.classes,execution_config=execution,classifier_unchanged=not cnn.training and all(not p.requires_grad for p in cnn.parameters()))
             tag=f'structured_{mode}_per{level}_seed{a.seed}_lr{a.context_lr:g}_{a.update_policy}_{run_id}'
@@ -688,6 +900,9 @@ def evaluate(a,models,artifact):
     if a.query_schedule=='quality':
         print('Quality is an external feedback controller; routing/update scores and rewards are unchanged. It is not a purely RL query policy.')
         print('Quality trajectories can acquire different rows/counts across modes. Use uniform feedback for the matched-resource routing control.')
+    if aware:
+        print('Budget-aware RL: all seven actions selected by policy/epsilon exploration; only exhausted-budget query masking. No minimum spending guarantee.')
+        print('Query actions predict through the learned best route before feedback, then update their selected Context. Random uses random prediction routes.')
 
 
 QUALITY_OPTIONS=('bootstrap_labels','audit_fraction','window','return_window','min_return_updates',
@@ -714,6 +929,12 @@ def main():
     p.add_argument('--train-epsilon',type=float,default=.2)
     p.add_argument('--eval-epsilon',type=float,default=0)
     p.add_argument('--query-schedule',choices=['uniform','policy','quality'],default='uniform')
+    p.add_argument('--budget-aware-policy',action='store_true',help='Train/use v2 seven-action RL; query prediction and update destination are separate; no external query gate.')
+    p.add_argument('--budget-window',type=int,default=64)
+    p.add_argument('--budget-need-weight',type=float,default=1.)
+    p.add_argument('--budget-price-step',type=float,default=.005)
+    p.add_argument('--budget-price-max',type=float,default=.2)
+    p.add_argument('--budget-propensity-clip',type=float,default=20.)
     p.add_argument('--quality-bootstrap-labels',type=int,default=12)
     p.add_argument('--quality-audit-fraction',type=float,default=.1,help='Fraction of cap reserved for random monitors, in addition to bootstrap.')
     p.add_argument('--quality-window',type=int,default=32)
@@ -732,6 +953,11 @@ def main():
     if not 0<=a.budget_fraction<=1 or not 0<=a.gamma<=1 or not 0<=a.train_epsilon<=1 or not 0<=a.eval_epsilon<=1:p.error('Budget, gamma and epsilon must be in [0,1].')
     if not np.isfinite(a.context_lr) or a.context_lr<=0 or any(not np.isfinite(v) or v<0 for v in (a.selection_cost,a.gain_weight,a.retention_weight)):p.error('Invalid LR/reward.')
     if a.update_policy=='fixed' and a.query_schedule!='uniform':p.error('Fixed-destination control requires uniform feedback.')
+    if a.budget_aware_policy:
+        if a.query_schedule!='policy' or a.update_policy!='learned' or a.bank_utility:
+            p.error('Budget-aware RL requires --query-schedule policy --update-policy learned, without --bank-utility or an external gate.')
+        try:BudgetState([.5]*ROUTES,**budget_settings(a))
+        except ValueError as error:p.error(str(error))
     if a.query_schedule=='quality':
         if a.command!='evaluate':p.error('Quality control uses an existing trained checkpoint; use uniform/policy for training.')
         try:QualityBudget(1,0,.5,**{key:getattr(a,'quality_'+key) for key in QUALITY_OPTIONS})
