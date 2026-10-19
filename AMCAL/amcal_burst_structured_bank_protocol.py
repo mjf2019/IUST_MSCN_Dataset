@@ -3,6 +3,7 @@
 Frozen CNN and initial Context come from an existing healthy source run.
 Offline correctness targets use existing TRAIN labels densely; Context updates
 remain budgeted. Online learners see only paid labels after the scored prediction.
+Optional evaluation quality/yield feedback control: see QUALITY_BUDGET.md.
 """
 import argparse
 from collections import deque
@@ -21,6 +22,7 @@ import torch.nn.functional as F
 
 import amcal_burst_context_bank_protocol as base
 from baselines.stream_timing import StreamTimer, timing_row, timing_report
+from baselines.quality_budget import QualityBudget, VERSION as QUALITY_VERSION
 core = base.core
 SLOTS = 3
 ROUTES = 4
@@ -293,11 +295,21 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
     x,y,source_ids=x[order],np.asarray(y)[order],np.asarray(source_ids)[order]
     n=len(y);cap=int(np.floor(a.budget_fraction*n))
     schedule=set(np.random.default_rng(seed+819003).choice(n,cap,replace=False).tolist()) if a.query_schedule=='uniform' else None
+    quality=None
+    if a.query_schedule=='quality':
+        if training:raise ValueError('Quality control is an evaluation-only ablation on an existing router checkpoint.')
+        quality=QualityBudget(n,cap,a.quality_reference_accuracy,seed=seed,
+            **{key:getattr(a,'quality_'+key) for key in QUALITY_OPTIONS},
+            gain_weight=a.gain_weight,retention_weight=a.retention_weight,cost=a.selection_cost)
+        quality.decide(0,0)
     fixed_destinations=np.random.default_rng(seed+440003).integers(0,SLOTS,n)
-    def gate(pos):return int(pos in schedule) if schedule is not None else -1
+    def gate(pos):
+        if quality is not None:return int(quality.decisions[pos]['query']) if pos in quality.decisions else -1
+        return int(pos in schedule) if schedule is not None else -1
     def state_gate(pos):
         return 2+int(fixed_destinations[pos]) if a.update_policy=='fixed' and gate(pos)==1 else gate(pos)
     rng=np.random.default_rng(seed+719003)
+    quality_route_rng=np.random.default_rng(seed+601037) if quality is not None else None
     history=Reliability(len(a.classes))
     reward_reference=core.TrainingProbe(x,torch.tensor(y,device=x.device),seed+910033) if training else core.PaidHistory(seed+910033)
     timer=StreamTimer(x.device,enabled=not training)
@@ -332,6 +344,11 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
                 else:
                     valid=torch.tensor(allowed,device=x.device)
                     action=int(valid[values[valid].argmax()].item())
+                if quality is not None:
+                    # Shadow the prediction-only router BEFORE feedback. A
+                    # forced update-slot prediction can be weak even when the
+                    # system's no-query route is good; do not confuse these.
+                    quality_probe_route=int(quality_route_rng.integers(ROUTES)) if mode=='random' or quality_route_rng.random()<epsilon else int(values[:ROUTES].argmax().item())
         route=base.route_index(action,SLOTS)
         predictions=outputs[0].argmax(2).squeeze(0).cpu().numpy()
         prediction_rows.append(predictions.copy())
@@ -376,6 +393,13 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
                 if not training:reward_reference.add(inputs,label)
                 if successor_output is not None:
                     successor_output=refresh_slot(cnn,bank,x[pos+1:pos+2],successor_output,route)
+            if quality is not None:
+                if paid:quality.observe(pos,int(predictions[quality_probe_route])==truth,gain if batch is not None else None,harm if batch is not None else None)
+                if pos+1<n:
+                    # Plan once, after current paid feedback. Use the SAME next
+                    # gate for behavior and DDQN backups, without future truth.
+                    quality.decide(pos+1,used)
+                    if successor_output is not None:skip_next[:,-3]=state_gate(pos+1)
             # Offline TRAIN labels supervise all routes; validation/test only paid labels.
             may_learn=training or (learning and mode=='learned' and paid)
             if may_learn:
@@ -385,7 +409,7 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
             if may_learn and not warmup:
                 # Non-query actions share the same no-update successor and future value.
                 skip_state=state.clone()
-                if schedule is not None:skip_state[:,-3]=0
+                if schedule is not None or quality is not None:skip_state[:,-3]=0
                 for r in range(ROUTES):
                     agent.push(skip_state,r,1.0 if correct[r] else -1.0,skip_next,pos+1==n)
                 if paid:
@@ -400,6 +424,9 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
         for r in range(ROUTES):
             row[f'prediction_{r}']=int(predictions[r]);row[f'correctness_probability_{r}']=float(probability[r].item())
         for action_id in range(ACTIONS):row[f'q_{action_id}']=float(values[action_id].item())
+        if quality is not None:
+            row.update({'quality_'+key:value for key,value in quality.decisions[pos].items()})
+            row.update(quality_monitor_route=quality_probe_route,quality_monitor_prediction=int(predictions[quality_probe_route]))
         trace.append(row)
     timer.stop()
     if schedule is not None:assert used==cap
@@ -421,6 +448,10 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
                  oracle_protocol='observer only, along this policy bank trajectory; legal oracle obeys uniform gate and fixed-destination control',
                  fixed_skip_protocol='retrospective control: keep actual query actions/destinations; use one fixed route on all non-query rows')
     metrics.update(timer.metrics(n,used))
+    if quality is not None:
+        assert quality.labels==used<=cap
+        metrics['quality_budget']=quality.statistics()
+        metrics['oracle_protocol']='observer only along this bank trajectory; legal oracle obeys the external quality gate'
     if reference is not None:
         final,per_final=reference_observer(cnn,bank,agent,*reference,history,used,cap,n,mode,a.seed)
         first,per_first=initial_ref
@@ -478,6 +509,11 @@ def report_level(level,mode,m):
     print(f'Level {level} | {mode} | online {100*m["accuracy"]:.2f}% | legal oracle {100*m["oracle_legal"]:.2f}% | all-route oracle {100*m["oracle_all"]:.2f}% | labels {m["labels"]}/{m["label_cap"]}',flush=True)
     print(f'  Label budget: {m["labels"]}/{m["label_cap"]} used | {100*m["actual_label_fraction"]:.2f}% of {m["samples"]} stream rows | {m["budget_utilization_pct"]:.2f}% of cap | remaining {m["labels_remaining"]}')
     print(f'  Slot queries {m["slot_queries"]} | best fixed non-query route {100*m["best_fixed_skip_route_accuracy"]:.2f}% | route updates {m["route_updates"]} | TD updates {m["td_updates"]}')
+    if 'quality_budget' in m:
+        q=m['quality_budget']
+        net='unknown' if q['mean_net_transfer'] is None else f'{q["mean_net_transfer"]:+.5f}'
+        print(f'  Quality gate: clean frozen target {100*q["reference_accuracy"]:.2f}% | monitored no-query accuracy estimate {100*q["estimated_accuracy"]:.2f}% | recent net transfer {net}')
+        print(f'  Queries bootstrap/audit/adaptive: {q["bootstrap_labels"]}/{q["audit_labels"]}/{q["adaptive_labels"]} | need {q["need"]:.2f} | yield factor {q["efficiency"]:.2f}')
     ref=m.get('reference')
     if ref:
         print(f'  Routed clean reference: {100*ref["initial"]:.2f}% -> {100*ref["final"]:.2f}% | drop {ref["drop_pp"]:+.2f} pp')
@@ -553,11 +589,21 @@ def evaluate(a,models,artifact):
     cnn,bank,initial,route_width=models_from_source(models,artifact)
     if route_width!=saved['route_width']:raise ValueError('Router state width mismatch.')
     reference=read_domain(a.burst_dir,artifact,0,'val_ids')[:2]
+    if a.query_schedule=='quality':
+        # One offline scalar from clean SOURCE validation. No target labels or
+        # evolving retention observer outputs enter the controller.
+        with torch.no_grad():
+            logits,_=base_cache(cnn,reference[0])
+            a.quality_reference_accuracy=float(np.mean(logits.argmax(1).cpu().numpy()==reference[1]))
+        print(f'Quality budget reference: frozen CNN clean SOURCE validation {100*a.quality_reference_accuracy:.2f}%')
     root=a.output/'Results';root.mkdir(exist_ok=True)
     execution={key:getattr(a,key) for key in ('seed','context_lr','budget_fraction','selection_cost','gain_weight','retention_weight','gamma','eval_epsilon','query_schedule','update_policy','bank_utility')}
     execution['same_level_diagnostics_version']=1
     execution['budget_report_version']=1
     execution['timing_version']=1
+    if a.query_schedule=='quality':
+        execution.update(quality_budget_version=QUALITY_VERSION,quality_reference_accuracy=a.quality_reference_accuracy,
+                         **{'quality_'+key:getattr(a,'quality_'+key) for key in QUALITY_OPTIONS})
     run_id=hashlib.sha256(json.dumps(execution,sort_keys=True).encode()).hexdigest()[:8]
     rows=[];retention_rows=[];budget_rows=[];time_rows=[]
     for level in a.levels:
@@ -639,6 +685,13 @@ def evaluate(a,models,artifact):
     display([{key:'N/A' if value is None else value for key,value in row.items()} for row in same_rows],same_fields)
     print('Initial/Final: retrospective prediction-only system; CtxDrop: mean of three Context drops. No labels from these rows used for updates.')
     print('Unqueried subsets can differ between policies; these are not independent heldout sets. All-row and unqueried results saved:',retention_file)
+    if a.query_schedule=='quality':
+        print('Quality is an external feedback controller; routing/update scores and rewards are unchanged. It is not a purely RL query policy.')
+        print('Quality trajectories can acquire different rows/counts across modes. Use uniform feedback for the matched-resource routing control.')
+
+
+QUALITY_OPTIONS=('bootstrap_labels','audit_fraction','window','return_window','min_return_updates',
+                 'tolerance','gap_scale','gain_scale','burst')
 
 
 def main():
@@ -660,7 +713,16 @@ def main():
     p.add_argument('--gamma',type=float,default=.95)
     p.add_argument('--train-epsilon',type=float,default=.2)
     p.add_argument('--eval-epsilon',type=float,default=0)
-    p.add_argument('--query-schedule',choices=['uniform','policy'],default='uniform')
+    p.add_argument('--query-schedule',choices=['uniform','policy','quality'],default='uniform')
+    p.add_argument('--quality-bootstrap-labels',type=int,default=12)
+    p.add_argument('--quality-audit-fraction',type=float,default=.1,help='Fraction of cap reserved for random monitors, in addition to bootstrap.')
+    p.add_argument('--quality-window',type=int,default=32)
+    p.add_argument('--quality-return-window',type=int,default=12)
+    p.add_argument('--quality-min-return-updates',type=int,default=8)
+    p.add_argument('--quality-tolerance',type=float,default=.02)
+    p.add_argument('--quality-gap-scale',type=float,default=.15)
+    p.add_argument('--quality-gain-scale',type=float,default=.001)
+    p.add_argument('--quality-burst',type=int,default=4)
     p.add_argument('--update-policy',choices=['learned','fixed'],default='learned',help='fixed: label-blind shared destinations for prediction-routing control.')
     p.add_argument('--bank-utility',action='store_true',help='Optional second-stage experiment: reward best-bank reference loss rather than selected-slot loss.')
     p.add_argument('--modes',nargs='+',choices=['learned','random'],default=['learned','random'])
@@ -670,6 +732,10 @@ def main():
     if not 0<=a.budget_fraction<=1 or not 0<=a.gamma<=1 or not 0<=a.train_epsilon<=1 or not 0<=a.eval_epsilon<=1:p.error('Budget, gamma and epsilon must be in [0,1].')
     if not np.isfinite(a.context_lr) or a.context_lr<=0 or any(not np.isfinite(v) or v<0 for v in (a.selection_cost,a.gain_weight,a.retention_weight)):p.error('Invalid LR/reward.')
     if a.update_policy=='fixed' and a.query_schedule!='uniform':p.error('Fixed-destination control requires uniform feedback.')
+    if a.query_schedule=='quality':
+        if a.command!='evaluate':p.error('Quality control uses an existing trained checkpoint; use uniform/policy for training.')
+        try:QualityBudget(1,0,.5,**{key:getattr(a,'quality_'+key) for key in QUALITY_OPTIONS})
+        except ValueError as error:p.error(str(error))
     if a.device!='auto':core.device=torch.device(a.device)
     core.set_seed(a.seed)
     core.SELECTION_COST,core.GAIN_WEIGHT,core.RETENTION_WEIGHT=a.selection_cost,a.gain_weight,a.retention_weight
@@ -700,4 +766,5 @@ def main():
 
 
 if __name__=='__main__':main()
+
 
