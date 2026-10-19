@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 
-def collect(root, seed, lr, reward_mode, replay_size, continual=False, session_id=None, eval_epsilon=0.2, query_schedule="policy"):
+def collect(root, seed, lr, reward_mode, replay_size, continual=False, session_id=None, eval_epsilon=0.2, query_schedule="policy", router_online_lr=0.0):
     selected = {}
     for path in sorted(root.glob('*_metrics.json'), key=lambda p:p.stat().st_mtime):
         match = re.search(r'AdvBurstTrainedBurst_size_(\d+)_Step', path.name)
@@ -24,6 +24,8 @@ def collect(root, seed, lr, reward_mode, replay_size, continual=False, session_i
         if bool(d.get('continual',False)) != continual or (session_id is not None and d.get('continual_session') != session_id):
             continue
         if d.get('query_schedule','policy') != query_schedule:
+            continue
+        if d.get('router_online_lr',0.0) != router_online_lr:
             continue
         mode = d.get('selector_mode')
         if mode in ('learned','random'):
@@ -52,8 +54,9 @@ def main():
     p.add_argument('--session-id')
     p.add_argument('--eval-epsilon',type=float,default=0.2)
     p.add_argument('--query-schedule',choices=['policy','uniform'],default='policy')
+    p.add_argument('--router-online-lr',type=float,default=0.0)
     a=p.parse_args();root=a.output/'Results'
-    selected=collect(root,a.seed,a.lr,a.routing_reward_mode,a.context_replay_size,a.continual,a.session_id,a.eval_epsilon,a.query_schedule)
+    selected=collect(root,a.seed,a.lr,a.routing_reward_mode,a.context_replay_size,a.continual,a.session_id,a.eval_epsilon,a.query_schedule,a.router_online_lr)
     if not selected:p.error('No matching metrics found in '+str(root))
     rows=[]
     for level in a.levels:
@@ -84,6 +87,7 @@ def main():
     missing=[f'{n}/{m}' for n in a.levels for m in ('learned','random') if (n,m) not in selected]
     if missing:print('Missing evaluations (shown as -): '+', '.join(missing))
     suffix=('_continual_'+(a.session_id or 'latest')) if a.continual else ''
+    if a.router_online_lr > 0:suffix += f'_routeronline{a.router_online_lr:g}'
     target=root/f'combined_seed{a.seed}_lr{a.lr:g}_replay{a.context_replay_size}_{a.routing_reward_mode}_eps{a.eval_epsilon:g}_query{a.query_schedule}{suffix}.csv'
     with target.open('w',newline='',encoding='utf-8-sig') as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
