@@ -187,17 +187,20 @@ def independent_baseline_source(a):
             x=torch.cat([value[0] for value in values])
             y=torch.as_tensor(np.concatenate([value[1] for value in values]),dtype=torch.long,device=core.device)
             return DataLoader(TensorDataset(x,y),batch_size=64,shuffle=shuffle)
-        cnn=core.CNN1D(len(artifact['feature_names']),len(encoder.classes_)).to(core.device)
-        print('Independent CNN stage 1: clean TRAIN; validation-only selection.',flush=True)
-        cnn=core.train_initial_cnn(cnn,loader([0],'train_ids',True),loader([0],'val_ids',False),counts,a.base_epochs,15)
-        print('Independent CNN stage 2: clean + level-2 TRAIN; no Context/RL dependency.',flush=True)
-        cnn=core.train_initial_cnn(cnn,loader([0,2],'train_ids',True),loader([0,2],'val_ids',False),counts,a.cnn_epochs,10)
-        torch.save(dict(model_state_dict=cnn.state_dict(),input_length=len(artifact['feature_names']),
-                        num_classes=len(encoder.classes_),training_levels=[0,2],
-                        preprocessing_sha256=digest(artifact_path)),source/'Models/initial_cnn_model.pth')
-    record=dict(training_levels=[0,2],independent_cnn=True,seed=a.seed,
-                model_hashes={name:digest(source/'Models'/name) for name in ('initial_cnn_model.pth','protocol_preprocessing.joblib')},
-                cnn_stages=['clean','clean + level 2'],test_used=False)
+        if 'cnn' in a.methods:
+            cnn=core.CNN1D(len(artifact['feature_names']),len(encoder.classes_)).to(core.device)
+            print('Independent CNN stage 1: clean TRAIN; validation-only selection.',flush=True)
+            cnn=core.train_initial_cnn(cnn,loader([0],'train_ids',True),loader([0],'val_ids',False),counts,a.base_epochs,15)
+            print('Independent CNN stage 2: clean + level-2 TRAIN; no Context/RL dependency.',flush=True)
+            cnn=core.train_initial_cnn(cnn,loader([0,2],'train_ids',True),loader([0,2],'val_ids',False),counts,a.cnn_epochs,10)
+            torch.save(dict(model_state_dict=cnn.state_dict(),input_length=len(artifact['feature_names']),
+                            num_classes=len(encoder.classes_),training_levels=[0,2],
+                            preprocessing_sha256=digest(artifact_path)),source/'Models/initial_cnn_model.pth')
+        else:print('CNN benchmark omitted: prepare shared preprocessing only; use AMCAL Frozen results.',flush=True)
+    names=['protocol_preprocessing.joblib']+(['initial_cnn_model.pth'] if 'cnn' in a.methods else [])
+    record=dict(training_levels=[0,2],independent_cnn='cnn' in a.methods,seed=a.seed,
+                model_hashes={name:digest(source/'Models'/name) for name in names},
+                cnn_stages=['clean','clean + level 2'] if 'cnn' in a.methods else [],test_used=False)
     (source/'baseline_source.json').write_text(json.dumps(record,indent=2))
     manifest.update(status='complete',purpose='independent_baselines',baseline_source='BaselineSource')
     (a.output/'supplied_attack_training.json').write_text(json.dumps(manifest,indent=2))
