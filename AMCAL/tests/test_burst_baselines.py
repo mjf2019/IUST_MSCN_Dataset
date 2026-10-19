@@ -119,6 +119,36 @@ class BurstBaselineTests(unittest.TestCase):
         self.assertEqual(result['labels'],3)
         self.assertEqual(sum(row['queried'] for row in trace),3)
         self.assertEqual(result['same_level']['unqueried']['n'],9)
+        self.assertEqual([row['step'] for row in trace if row['queried']],[1,5,9])
+        self.assertEqual(result['ral_seen'],12)
+        self.assertEqual(result['actual_label_fraction'],.25)
+        self.assertEqual(result['budget_utilization_pct'],100)
+        self.assertEqual(result['labels_remaining'],0)
+
+    def test_ral_paper_reward_exp4_threshold_and_exploration(self):
+        model=m.RAL([m.KNeighborsClassifier(1),m.DecisionTreeClassifier(),m.DecisionTreeClassifier()],.9,1.,.01,budget=.2)
+        model.fit(self.x,self.y)
+        self.assertEqual(model.reward(0,1),1);self.assertEqual(model.reward(1,1),-1)
+        model._update_alpha(1,[True,False,True],True)
+        expected=np.array([np.exp(.01),1,np.exp(.01)]);expected/=expected.sum()
+        self.assertTrue(np.allclose(model._alpha,expected))
+        model._update_uncertainty_threshold(1)
+        self.assertAlmostEqual(model._threshold_uncertainty,.9045)
+        model._update_uncertainty_threshold(-1)
+        self.assertAlmostEqual(model._threshold_uncertainty,.9045*.99)
+        alpha=list(model._alpha);threshold=model._threshold_uncertainty
+        model.acquire_label(self.x[0],int(self.y[0]),False,[False]*3)
+        self.assertEqual(model._alpha,alpha);self.assertEqual(model._threshold_uncertainty,threshold)
+
+    def test_ral_global_guard_prevents_prefix_rounding_overshoot(self):
+        model=m.RAL([m.KNeighborsClassifier(1),m.DecisionTreeClassifier(random_state=42)],1.,1.,.01,budget=None)
+        model.fit(self.x,self.y)
+        self.a.budget_fraction=.2
+        domain=(torch.tensor(self.x).unsqueeze(1),self.y,np.arange(12))
+        metrics,trace=m.evaluate_level(self.a,'ral',dict(model=model),domain,domain[:2])
+        self.assertEqual(metrics['labels'],2)  # floor(.2*12), not ceil(.2*12).
+        self.assertEqual([row['step'] for row in trace if row['queried']],[1,6])
+        self.assertAlmostEqual(metrics['actual_label_fraction'],2/12)
 
     @unittest.skipUnless(importlib.util.find_spec('river'),'River is optional except for ARF runs')
     def test_arf_real_forest_causal_budget_reset_and_observer_isolation(self):
@@ -169,6 +199,11 @@ class BurstBaselineTests(unittest.TestCase):
             self.assertIn('Combined baselines',output.getvalue())
             self.assertEqual(len(list((self.a.output/'Results').glob('*_metrics.json'))),4)
             self.assertTrue(list((self.a.output/'Results').glob('*_same_level.csv')))
+            saved=joblib.load(self.a.output/'Models/ral.joblib')
+            forests=[c for c in saved['model']._committee_classifiers if isinstance(c,m.RandomForestClassifier)]
+            self.assertEqual(forests[0].n_estimators,10)
+            self.assertEqual(saved['ral_protocol_version'],2)
+            self.assertIn('CapUsed%',output.getvalue())
 
 
 if __name__=='__main__':unittest.main()

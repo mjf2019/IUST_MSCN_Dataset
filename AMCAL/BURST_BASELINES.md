@@ -17,7 +17,7 @@ notebooks and CDR_MLC implementations are not modified.
   every test level. Stream permutation is NumPy default_rng(seed), identical
   to structured AMCAL. Score each prediction before feedback.
 - Global label cap is floor(0.2*n), not per class or per-flow. Unique source
-  IDs occur once per level. RAL chooses labels by its existing policy. AF/DFE
+  IDs occur once per level. RAL chooses labels by its existing policy. AF/DFE/ARF
   use label-blind uniform query positions with the same scheduler seed as the
   structured uniform diagnostic. CNN is a static zero-label baseline. Equal
   cap does not imply equal actual query positions/counts; record both.
@@ -25,6 +25,11 @@ notebooks and CDR_MLC implementations are not modified.
   clean-reference retention and paired initial/final same-level retention on
   all rows and unqueried rows. Final scores are retrospective, not online.
   Unqueried subsets differ by policy and are not an independent fixed holdout.
+- All five methods report actual acquired `Labels`, allowed `Cap`, `Label%`
+  (100*Labels/stream rows), and `CapUsed%` (100*Labels/Cap), per level and in
+  the combined table. CNN uses zero labels. Metrics also save remaining labels;
+  zero-cap utilization is defined as zero. A floor cap of 214/1073 is 19.94%
+  of rows, not exactly 20%. These reporting additions require evaluation only.
 - `online_seconds` excludes the endpoint observers. AF's DANN/re-embedding
   work is included; it is not presented as free inference.
 
@@ -40,17 +45,27 @@ uses zero target labels. This is the static baseline, not CNN fine-tuning.
 ## RAL
 
 `baselines/ral_existing.py` contains the two classes extracted unchanged from
-`ANT_Burst_TEST/RAL.ipynb`. Retain its k-NN / RF / decision-tree committee,
+`ANT_Burst_TEST/RAL.ipynb`, checked against the author's `SAWassermann/RAL`
+implementation. Use the paper's k-NN (k=5) / RF (10 trees) / decision-tree committee,
 soft vote, uncertainty threshold 0.9, greedy probability 0.025, eta 0.01,
 reward +1 / penalty -1, multiplicative alpha/threshold updates and refitting
 on all source plus acquired rows after every query. Estimator seeds are fixed.
 
 The old notebook's evaluation called only `evaluate_metrics`, so did not
 perform online acquisition at all. The new runner calls `ask_committee`,
-`should_label`, and `acquire_label` after the scored prediction. Disable the
-class's original prefix-ratio budget and enforce the common global cap outside
-it; this is an explicit budget-protocol adaptation, not a silent algorithm
-change. Endpoint observers call predict only, never refit or acquire labels.
+`should_label`, and `acquire_label` after the scored prediction. By default,
+retain the paper's prefix-ratio gate: acquired labels / samples seen must be
+less than the budget fraction before a new query. Also enforce the shared
+floor(fraction*n) total cap externally, preventing a final rounding overshoot.
+`--ral-budget-mode global` disables the prefix gate for an explicit ablation.
+Endpoint observers call predict only, never refit or acquire labels.
+
+The earlier wrapper inherited modern sklearn's default RF=100; older sklearn
+used 10, as in the paper's committee. Retrain RAL in a fresh output directory;
+old RAL checkpoints are rejected. The other methods need no retraining for this
+correction. Hyperparameters above follow the paper's MAWI configuration, with
+the common Burst 20% budget and splits. Predict-before-feedback and retention
+are shared benchmark metrics, additional to the paper's validation evaluation.
 
 ## AF-Burst-causal
 
@@ -167,9 +182,10 @@ python AMCAL/amcal_burst_baselines.py evaluate --burst-dir AMCAL/ANT_Burst_IAT_T
 To run one method in another tab, use `--methods af` or `--methods dfe` with
 a distinct fresh output directory, and use the identical output when testing.
 Do not change AF online LR between comparisons without recording it (included
-in execution hashes). RAL refits a 100-tree RF twice per acquired sample, as
-in the supplied implementation; CPU runtime is expected to exceed a single
-neural minibatch. Keep update frequency 1 for the main comparison.
+in execution hashes). RAL fits its 10-tree RF both separately and inside the
+soft-voting committee after every acquired sample, as in the author code.
+Keep update frequency 1 for the main comparison. Progress prints every 200
+stream rows; set `--progress-every 0` to disable it.
 
 CPU correctness checks:
 

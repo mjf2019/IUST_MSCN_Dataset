@@ -185,6 +185,10 @@ class StructuredBankTests(unittest.TestCase):
         self.assertEqual(original['accuracy'],metrics['accuracy'])
         self.assertEqual(metrics['same_level']['all_rows']['samples'],16)
         self.assertEqual(metrics['same_level']['unqueried']['samples'],8)
+        self.assertEqual(metrics['samples'],16)
+        self.assertEqual(metrics['actual_label_fraction'],.5)
+        self.assertEqual(metrics['budget_utilization_pct'],100)
+        self.assertEqual(metrics['labels_remaining'],0)
         self.assertEqual(metrics['same_level']['unqueried']['per_route_initial'][0],
                          metrics['same_level']['unqueried']['per_route_final'][0])
         self.assertEqual(metrics['same_level']['unqueried']['per_route_broken'][0],0)
@@ -207,6 +211,8 @@ class StructuredBankTests(unittest.TestCase):
                  patch.object(m,'read_domain',return_value=domain),redirect_stdout(io.StringIO()) as output:
                 m.evaluate(a,models,{})
             self.assertIn('Same-level retention on unqueried rows',output.getvalue())
+            self.assertIn('Label budget consumption',output.getvalue())
+            self.assertTrue(list((a.output/'Results').glob('*_budget.csv')))
             path=next((a.output/'Results').glob('*_same_level.csv'))
             with path.open(newline='',encoding='utf-8-sig') as stream:rows=list(csv.DictReader(stream))
             self.assertEqual(len(rows),4)

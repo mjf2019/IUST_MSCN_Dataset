@@ -32,7 +32,7 @@ from baselines.dfe_burst import (DFEBackbone,FlowImages,GaussianCompression,
     TemplateLibrary,constrained_triplet,triplet_indices,knn_vote,embed)
 
 core=shared.core
-METHOD_NAMES={'cnn':'1D-CNN-existing-frozen','ral':'RAL-existing-global-budget',
+METHOD_NAMES={'cnn':'1D-CNN-existing-frozen','ral':'RAL-paper-core',
               'af':'AF-Burst-causal','dfe':'DFE-Burst-adapted','arf':'River-ARFClassifier'}
 
 
@@ -175,7 +175,11 @@ class Learner:
             self.model.load_state_dict(saved['state']);self.model.eval()
             for p in self.model.parameters():p.requires_grad_(False)
         elif method=='ral':
-            self.model=deepcopy(saved['model']);self.model._budget=None
+            self.model=deepcopy(saved['model'])
+            # Paper / author code: q_so_far / seen_so_far < budget BEFORE
+            # deciding to acquire the current sample. The wrapper additionally
+            # retains the shared strict floor(budget*n) total ceiling.
+            self.model._budget=a.budget_fraction if getattr(a,'ral_budget_mode','prefix')=='prefix' else None
         elif method=='arf':
             # Deep-copy trained trees, detectors, metrics and RNG; River clone()
             # would create an unfitted forest rather than restore this checkpoint.
@@ -274,13 +278,28 @@ def evaluate_level(a,method,saved,domain,reference,observer=True):
         predictions.append(prediction)
         trace.append(dict(step=pos+1,source_row=int(ids[pos]),truth=int(y[pos]),prediction=prediction,
                           queried=paid,labels_used=used))
+        every=getattr(a,'progress_every',0)
+        if method=='ral' and every>0 and (pos+1)%every==0:
+            print(f'  RAL progress {pos+1}/{n} | labels {used}/{cap} | elapsed {time.perf_counter()-start:.1f}s',flush=True)
     elapsed=time.perf_counter()-start
     metrics=dict(method=METHOD_NAMES[method],accuracy=float(accuracy_score(y,predictions)),
                  macro_f1=float(f1_score(y,predictions,average='macro',zero_division=0)),
                  weighted_f1=float(f1_score(y,predictions,average='weighted',zero_division=0)),
-                 labels=used,label_cap=cap,online_seconds=elapsed,online_gradient_steps=learner.steps,
-                 query_protocol='none' if method=='cnn' else 'RAL committee/greedy with external global cap' if method=='ral' else 'label-blind uniform exact cap',
+                 samples=n,labels=used,label_cap=cap,actual_label_fraction=used/n,
+                 budget_utilization_pct=100*used/cap if cap else 0.,labels_remaining=cap-used,
+                 online_seconds=elapsed,online_gradient_steps=learner.steps,
+                 query_protocol='none' if method=='cnn' else
+                    ('RAL paper prefix-ratio gate plus strict global cap' if getattr(a,'ral_budget_mode','prefix')=='prefix'
+                     else 'RAL committee/greedy with global cap only') if method=='ral' else 'label-blind uniform exact cap',
                  protocol='predict-score-query-update; fresh model per level; reference/same-level observers never feed learning')
+    if method=='ral':
+        metrics.update(ral_budget_mode=getattr(a,'ral_budget_mode','prefix'),
+                       ral_protocol_version=saved.get('ral_protocol_version',0),
+                       ral_trees=next((member.n_estimators for member in learner.model._committee_classifiers
+                                       if isinstance(member,RandomForestClassifier)),None),
+                       ral_seen=learner.model._n_seen,
+                       ral_final_threshold=learner.model._threshold_uncertainty,
+                       ral_final_decision_powers=list(learner.model._alpha))
     if method=='arf':
         metrics.update(river_version=saved['river_version'],trees=saved['trees'],
                        train_passes=saved['train_passes'],online_learn_one_calls=used,
@@ -321,11 +340,13 @@ def train(a,artifact):
                        source_cnn_sha256=core.file_sha256(a.source_run/'Models/initial_cnn_model.pth'))
             print('1D-CNN: reused identical frozen CNN checkpoint; no redundant retraining.',flush=True)
         elif method=='ral':
-            model=RAL([KNeighborsClassifier(),RandomForestClassifier(random_state=a.seed,n_jobs=a.jobs),
+            model=RAL([KNeighborsClassifier(n_neighbors=5),RandomForestClassifier(n_estimators=10,random_state=a.seed,n_jobs=a.jobs),
                        DecisionTreeClassifier(random_state=a.seed)],.9,.025,.01,
-                       reward=1,penalty=-1,budget=None,model_update_frequency=1)
-            model.fit(*train);saved=dict(model=model)
-            print(f'RAL trained on {len(train[1])} rows; existing committee/alpha/threshold rules retained.',flush=True)
+                       reward=1,penalty=-1,budget=a.budget_fraction,model_update_frequency=1)
+            model.fit(*train);saved=dict(model=model,ral_protocol_version=2,ral_trees=10,
+                                        algorithm_reference='Wassermann et al. 2021 Algorithm 2; kNN5, DT, RF10; source-code prefix ratio gate',
+                                        budget_protocol='paper prefix ratio plus common strict total cap')
+            print(f'RAL trained on {len(train[1])} rows | kNN k=5, decision tree, RF=10 | paper reward/EXP4/threshold updates.',flush=True)
         elif method=='dfe':saved=train_dfe(a,train,validation)
         elif method=='arf':saved=train_arf(a,train)
         else:
@@ -346,10 +367,14 @@ def evaluate(a,artifact):
     root=a.output/'Results';root.mkdir(exist_ok=True)
     reference=shared.read_domain(a.burst_dir,artifact,0,'val_ids')[:2]
     config=dict(seed=a.seed,budget=a.budget_fraction,af_online_lr=a.af_lr,protocol_version=1)
+    if 'ral' in a.methods:
+        config.update(ral_protocol_version=2,ral_budget_mode=getattr(a,'ral_budget_mode','prefix'))
     tag=hashlib.sha256(json.dumps(config,sort_keys=True).encode()).hexdigest()[:8]
     rows=[];same_rows=[]
     for method in a.methods:
         saved=joblib.load(a.output/'Models'/f'{method}.joblib');p=saved['provenance']
+        if method=='ral' and saved.get('ral_protocol_version',0)<2:
+            raise ValueError('Old RAL checkpoint used default RF=100. Retrain --methods ral in a fresh output for paper RF=10.')
         if p['source_preprocessing_sha256']!=core.file_sha256(a.output/'Models/protocol_preprocessing.joblib'):raise ValueError('Baseline preprocessing changed.')
         if set(a.levels)&set(p['train_levels']):raise ValueError('Test levels overlap training levels.')
         for level,digest in p['training_domains_sha256'].items():
@@ -357,6 +382,8 @@ def evaluate(a,artifact):
         for level in a.levels:
             core.set_seed(a.seed)
             domain=shared.read_domain(a.burst_dir,artifact,level,'test_ids')
+            if method=='ral':
+                print(f'RAL | PER {level} | starting {len(domain[1])} rows | RF=10 | budget {getattr(a,"ral_budget_mode","prefix")} | strict cap {int(a.budget_fraction*len(domain[1]))}',flush=True)
             metrics,trace=evaluate_level(a,method,saved,domain,reference)
             metrics.update(level=level,execution_config=config,training_provenance=p,
                            target_sha256=core.file_sha256(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv'))
@@ -365,17 +392,20 @@ def evaluate(a,artifact):
             shared.base.write_trace(root/(stem+'_trace.csv'),trace)
             ref=metrics['reference'];same=metrics['same_level']['unqueried']
             row=dict(Method=method,PER=level,Online=100*metrics['accuracy'],MacroF1=100*metrics['macro_f1'],
-                     Labels=metrics['labels'],Ref0=100*ref['initial'],RefFinal=100*ref['final'],RefDrop=ref['drop_pp'])
+                     Labels=metrics['labels'],Cap=metrics['label_cap'],
+                     **{'Label%':100*metrics['actual_label_fraction'],'CapUsed%':metrics['budget_utilization_pct']},
+                     Ref0=100*ref['initial'],RefFinal=100*ref['final'],RefDrop=ref['drop_pp'])
             rows.append(row)
             same_rows.append(dict(Method=method,PER=level,N=same['n'],Initial=None if same['initial'] is None else 100*same['initial'],
                                   Final=None if same['final'] is None else 100*same['final'],Drop=same['drop_pp'],Broken=same['broken'],Fixed=same['fixed']))
-            print(f'{method.upper()} | PER {level} | online {row["Online"]:.2f}% | labels {metrics["labels"]}/{metrics["label_cap"]} | clean {row["Ref0"]:.2f}% -> {row["RefFinal"]:.2f}% | drop {row["RefDrop"]:+.2f} pp',flush=True)
+            print(f'{method.upper()} | PER {level} | online {row["Online"]:.2f}% | labels {metrics["labels"]}/{metrics["label_cap"]} ({row["Label%"]:.2f}% of stream; {row["CapUsed%"]:.2f}% of cap) | clean {row["Ref0"]:.2f}% -> {row["RefFinal"]:.2f}% | drop {row["RefDrop"]:+.2f} pp',flush=True)
             if same['n']:print(f'  Same-level unqueried: {100*same["initial"]:.2f}% -> {100*same["final"]:.2f}% | drop {same["drop_pp"]:+.2f} pp | broken {same["broken"]} | fixed {same["fixed"]}')
     for method in a.methods:
         own=[r for r in rows if r['Method']==method]
         rows.append(dict(Method=method,PER='Mean',**{key:float(np.mean([r[key] for r in own])) for key in rows[0] if key not in ('Method','PER')}))
     print('\nCombined baselines (%; Drop in pp; positive Drop = net forgetting):')
     display(rows,list(rows[0]));shared.base.write_trace(root/f'combined_baselines_seed{a.seed}_{tag}.csv',rows)
+    print('Labels: acquired labels; Cap: maximum allowed labels; Label%: percentage of stream; CapUsed%: percentage of cap used (0 if cap is zero).')
     for method in a.methods:
         own=[r for r in same_rows if r['Method']==method and r['N']>0]
         if own:same_rows.append(dict(Method=method,PER='Mean',**{
@@ -410,11 +440,15 @@ def main():
     parser.add_argument('--templates',type=int,default=20)
     parser.add_argument('--arf-trees',type=int,default=10)
     parser.add_argument('--arf-train-passes',type=int,default=1)
+    parser.add_argument('--ral-budget-mode',choices=['prefix','global'],default='prefix',
+                        help='prefix: paper ratio gate plus common global cap; global: previous budget ablation.')
+    parser.add_argument('--progress-every',type=int,default=200,help='RAL progress interval in stream rows; 0 disables.')
     parser.add_argument('--jobs',type=int,default=-1)
     parser.add_argument('--device',choices=['auto','cpu','cuda'],default='auto')
     a=parser.parse_args()
     if not 0<=a.budget_fraction<=1 or min(a.dfe_epochs,a.af_epochs,a.patience,a.templates)<1 or a.batch_size<2:parser.error('Invalid budget/epochs/batch/templates.')
     if min(a.arf_trees,a.arf_train_passes)<1:parser.error('ARF trees and train passes must be positive.')
+    if a.progress_every<0:parser.error('Progress interval must be nonnegative.')
     if any(not np.isfinite(v) or v<=0 for v in [a.dfe_lr,a.af_lr]):parser.error('Learning rates must be finite and positive.')
     if any(not np.isfinite(v) or v<0 for v in [a.dfe_alpha1,a.dfe_alpha2,a.dfe_eta,a.dfe_lambda,*a.dfe_betas]):parser.error('Invalid DFE objective weights.')
     if len(set(a.methods))!=len(a.methods) or any(len(set(values))!=len(values) or min(values)<0

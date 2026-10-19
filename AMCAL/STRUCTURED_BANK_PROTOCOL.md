@@ -82,6 +82,13 @@ Full per-route numbers are in each metrics JSON under `same_level` and individua
 Context drops are printed per level. A diagnostics-version hash separates these
 files from old evaluations. The existing clean-reference and online table remain.
 
+Actual label consumption is printed per level and in a separate compact budget
+table for learned and random policies. Columns are stream rows (N), acquired
+Labels, allowed Cap, Label% (100*Labels/N), CapUsed% (100*Labels/Cap), and Left
+(Cap-Labels), plus per-mode means. A zero cap has zero utilization. This table
+is saved as `combined_structured_..._budget.csv`; metrics contain the same fields.
+Reporting changes require evaluation only, with no retraining.
+
 Only concise reports and the combined table are printed. Metrics JSON and detailed
 CSV traces are saved to Results. Trace files contain all route predictions and legal
 oracle outcomes; they are never replay inputs. Configuration hashes separate outputs.

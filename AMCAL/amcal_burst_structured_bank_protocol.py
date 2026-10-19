@@ -404,7 +404,9 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
                  frozen_accuracy=float(np.mean(matrix[:,0]==y)),oracle_all=oracle_all/n,oracle_legal=oracle_legal/n,
                  best_fixed_skip_route_accuracy=max(fixed_skip),fixed_skip_route_accuracies=fixed_skip,
                  route_brier=float(np.mean((np.asarray(route_probabilities)-route_correct)**2)),
-                 labels=used,label_cap=cap,slot_queries=slot_queries.tolist(),action_counts=actions.tolist(),
+                 samples=n,labels=used,label_cap=cap,actual_label_fraction=used/n,
+                 budget_utilization_pct=100*used/cap if cap else 0.,labels_remaining=cap-used,
+                 slot_queries=slot_queries.tolist(),action_counts=actions.tolist(),
                  route_updates=agent.route_updates-route_updates0,td_updates=agent.td_updates-td_updates0,
                  mode=mode,context_lr=a.context_lr,query_schedule=a.query_schedule,update_policy=a.update_policy,
                  bank_utility=a.bank_utility,seed=a.seed,
@@ -465,6 +467,7 @@ def models_from_source(models,artifact):
 
 def report_level(level,mode,m):
     print(f'Level {level} | {mode} | online {100*m["accuracy"]:.2f}% | legal oracle {100*m["oracle_legal"]:.2f}% | all-route oracle {100*m["oracle_all"]:.2f}% | labels {m["labels"]}/{m["label_cap"]}',flush=True)
+    print(f'  Label budget: {m["labels"]}/{m["label_cap"]} used | {100*m["actual_label_fraction"]:.2f}% of {m["samples"]} stream rows | {m["budget_utilization_pct"]:.2f}% of cap | remaining {m["labels_remaining"]}')
     print(f'  Slot queries {m["slot_queries"]} | best fixed non-query route {100*m["best_fixed_skip_route_accuracy"]:.2f}% | route updates {m["route_updates"]} | TD updates {m["td_updates"]}')
     ref=m.get('reference')
     if ref:
@@ -544,8 +547,9 @@ def evaluate(a,models,artifact):
     root=a.output/'Results';root.mkdir(exist_ok=True)
     execution={key:getattr(a,key) for key in ('seed','context_lr','budget_fraction','selection_cost','gain_weight','retention_weight','gamma','eval_epsilon','query_schedule','update_policy','bank_utility')}
     execution['same_level_diagnostics_version']=1
+    execution['budget_report_version']=1
     run_id=hashlib.sha256(json.dumps(execution,sort_keys=True).encode()).hexdigest()[:8]
-    rows=[];retention_rows=[]
+    rows=[];retention_rows=[];budget_rows=[]
     for level in a.levels:
         domain=read_domain(a.burst_dir,artifact,level,'test_ids')
         pair={}
@@ -558,6 +562,9 @@ def evaluate(a,models,artifact):
             (root/(tag+'_metrics.json')).write_text(json.dumps(m,indent=2))
             base.write_trace(root/(tag+'_trace.csv'),trace)
             report_level(level,mode,m);pair[mode]=m
+            budget_rows.append(dict(PER=level,Mode=mode,N=m['samples'],Labels=m['labels'],Cap=m['label_cap'],
+                **{'Label%':100*m['actual_label_fraction'],'CapUsed%':m['budget_utilization_pct']},
+                Left=m['labels_remaining']))
             for subset,label in [('all_rows','All'),('unqueried','Unqueried')]:
                 current=m['same_level'][subset]
                 retention_rows.append(dict(PER=level,Mode=mode,Subset=label,N=current['samples'],
@@ -589,6 +596,14 @@ def evaluate(a,models,artifact):
     filename=root/f'combined_structured_seed{a.seed}_lr{a.context_lr:g}_eps{a.eval_epsilon:g}_{a.update_policy}_{run_id}.csv'
     base.write_trace(filename,rows)
     print('Saved:',filename)
+    budget_file=filename.with_name(filename.stem+'_budget.csv')
+    for mode in a.modes:
+        own=[row for row in budget_rows if row['Mode']==mode]
+        budget_rows.append(dict(PER='Mean',Mode=mode,**{
+            key:float(np.mean([row[key] for row in own])) for key in budget_rows[0] if key not in ('PER','Mode')}))
+    print('\nLabel budget consumption (Label%: stream percentage; CapUsed%: cap percentage):')
+    display(budget_rows,list(budget_rows[0]));base.write_trace(budget_file,budget_rows)
+    print('Budget report saved:',budget_file)
     retention_file=filename.with_name(filename.stem+'_same_level.csv')
     base.write_trace(retention_file,retention_rows)
     print('\nSame-level retention on unqueried rows (%; positive Drop = net forgetting):')
