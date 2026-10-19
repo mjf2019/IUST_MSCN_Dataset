@@ -720,6 +720,7 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
     validation_x, validation_y = episode_val.dataset.tensors
     validation_domains = build_training_domains(cnn_model, validation_x, validation_y)
     print("Training domain IDs:", TRAIN_PERTURBATIONS, "; see domain manifest for construction; no target/test files used.")
+    source_train_y = train_y
     episode_initial_context = deepcopy(context_model.state_dict())
     print("Starting budget-aware episodic training...")
     # Eq. (18): offline target synchronization every 15 epochs.
@@ -743,7 +744,8 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         context_model.eval()
         context_optimizer = optim.Adam(context_model.parameters(), lr=ONLINE_TRAIN_LR, weight_decay=1e-4)
         episode_level = TRAIN_PERTURBATIONS[epoch % len(TRAIN_PERTURBATIONS)]
-        train_x = train_domains[episode_level]
+        domain = train_domains[episode_level]
+        train_x, train_y = domain if isinstance(domain, tuple) else (domain, source_train_y)
         print(f"  Training perturbation: {episode_level:g}")
         order = np.random.default_rng(RUN_SEED + epoch).permutation(len(train_y))
         cap, used = int(np.floor(TRAIN_BUDGET_FRACTION * len(order))), 0
@@ -847,7 +849,9 @@ def train_adversarial_system(cnn_model, dqn_agent, context_model, full_loader, v
         # Validation
         domain_results = []
         for validation_level in TRAIN_PERTURBATIONS:
-            domain_loader = DataLoader(TensorDataset(validation_domains[validation_level], validation_y), batch_size=64)
+            domain = validation_domains[validation_level]
+            domain_x, domain_y = domain if isinstance(domain, tuple) else (domain, validation_y)
+            domain_loader = DataLoader(TensorDataset(domain_x, domain_y), batch_size=64)
             result = budget_validation(cnn_model, episode_initial_context, dqn_agent, domain_loader, input_length)
             print(f"  Validation perturbation {validation_level:g}: online accuracy {result['Accuracy']:.4f}")
             domain_results.append(result)

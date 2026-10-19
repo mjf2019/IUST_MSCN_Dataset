@@ -655,7 +655,9 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
 def read_domain(root,artifact,level,split):
     frame,ids,_=base.official.mapped_domain(root/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv',artifact,root,False)
     lookup={int(v):i for i,v in enumerate(ids)}
-    selected=np.asarray(artifact[split])
+    selected=np.asarray([i for i in artifact[split] if int(i) in lookup],dtype=np.int64)
+    if len(selected)!=len(artifact[split]) and not artifact.get('allow_partial_domains',False):raise ValueError('Domain does not cover partition: '+split)
+    if not len(selected):raise ValueError('No supplied-domain rows in partition: '+split)
     frame=frame.iloc[[lookup[int(i)] for i in selected]]
     features=frame.iloc[:,:-1]
     scaler=artifact['scaler']

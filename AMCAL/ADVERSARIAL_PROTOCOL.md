@@ -147,3 +147,40 @@ Existing per-attack Results also retain timing, same-level retention and traces.
 Attacks are fixed source-CNN transfer attacks, not model-specific direct attacks.
 Baseline source CNN and attack generation are reused; there is no redundant CNN
 training, data download, or modification to the approved AMCAL RL method.
+
+## Supplied Dense-generated attacks (no new attack generation)
+
+`amcal_supplied_attack_protocol.py` uses the existing original CSV and the five
+CSV files in each FGSM/PGD/CW/DeepFool folder, byte-for-byte. The dataset owner
+specifies that these attacks targeted a generic Dense surrogate. Use a fresh
+output root, separate from the generated-CNN-attack experiments above.
+
+Commands: `train`, `evaluate`, `train-baselines`, `evaluate-baselines`; default
+`--attack all` runs all four sequentially. Source CNN/Context use the same
+clean-first, multishift second-stage engine. The final structured bank retains
+the approved coupled seven actions and class-balanced reward reference, policy
+queries, learned update destinations, LR .0005, gamma .95 and cost .0001.
+No decoupled query, external controller or budget-v2 policy is enabled.
+
+Alignment assumption: supplied attack rows are assigned the historical
+stratified 80/20 original-source pool order (random_state=42). Previous label
+sequence matching supports this candidate, but does not establish provenance.
+This assumption, and the owner's Dense-surrogate statement, are recorded in
+`supplied_attack_training.json`. They must not be described as independently
+verified generation provenance. Existing data are never overwritten.
+
+The 1200-row SDNCampus attack pool is split 720 TRAIN / 240 validation / 240
+TEST, with corresponding source IDs kept together across intensities. The
+remaining clean source rows enter only clean TRAIN/validation. Exact-feature
+cross-partition overlap is removed by the existing official loader. Consequently
+TEST may contain slightly fewer than 240 rows after that filter. This experiment
+has a different split/test size from the earlier generated-attack experiment;
+its scores must not be mixed into that experiment's results.
+
+Only clean and ordinal attack level 2 enter training (FGSM/PGD .05;
+CW/DeepFool .5). Other intensities are scored only on TEST source IDs.
+Clean and level 2 can also be scored on their TEST rows as seen intensities.
+All baselines reuse these exact partitions and domains, and CNN reuses the final
+Frozen CNN. Source and attack domains may have different partition sizes; the
+optional partial-domain artifact flag enables this without weakening the default
+full-coverage checks for existing Burst experiments.

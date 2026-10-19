@@ -144,6 +144,9 @@ def main():
             ap=Path('Models/protocol_preprocessing.joblib');artifact=joblib.load(ap)
             artifact['reference_csv']=str(ref.resolve());artifact['reference_sha256']=core.file_sha256(ref)
             artifact['base_split_protocol']='official train/validation/test; exact-feature overlap removed from later partitions; no oversampling'
+            if partitions.get('allow_partial_domains',False):
+                artifact['allow_partial_domains']=True
+                artifact['supplied_domain_alignment']=partitions.get('alignment_assumption','supplied subset')
             joblib.dump(artifact,ap)
             manifest=Path('Models/protocol_manifest.json');m=json.loads(manifest.read_text());m['split_rule']=artifact['base_split_protocol'];manifest.write_text(json.dumps(m,indent=2))
             def loader(ids,shuffle=False):
@@ -170,16 +173,19 @@ def main():
                 continue
             frame, ids, alignment = mapped_domain(path, artifact, maps, extra.burst_assume_row_aligned)
             lookup = {int(source_id): position for position, source_id in enumerate(ids)}
-            if any(int(i) not in lookup for i in selected_ids):
+            positions = [j for j,i in enumerate(selected_ids) if int(i) in lookup]
+            if len(positions)!=len(selected_ids) and not artifact.get('allow_partial_domains',False):
                 raise ValueError(f'{path.name} does not cover all {split} rows.')
-            subset = frame.iloc[[lookup[int(i)] for i in selected_ids]]
+            if not positions:raise ValueError(f'{path.name} has no {split} rows.')
+            subset = frame.iloc[[lookup[int(selected_ids[j])] for j in positions]]
             encoded = artifact['label_encoder'].transform(subset.iloc[:, -1].to_numpy())
-            if not np.array_equal(encoded, labels.detach().cpu().numpy()):
+            if not np.array_equal(encoded, labels.detach().cpu().numpy()[positions]):
                 raise ValueError('Domain labels do not match clean partition.')
             x = artifact['scaler'].transform(subset.iloc[:, :-1].to_numpy()).astype(np.float32)
             if not np.isfinite(x).all():
                 raise ValueError('Nonfinite Burst features.')
-            domains[level] = torch.tensor(x, device=features.device).reshape_as(features)
+            domain_x = torch.tensor(x, device=features.device).unsqueeze(1)
+            domains[level] = domain_x if len(positions)==len(selected_ids) else (domain_x, torch.as_tensor(encoded, dtype=torch.long, device=features.device))
             manifest.append(dict(level=level, sha256=core.file_sha256(path), alignment=alignment))
         report = Path('burst_training_domains.json')
         current = json.loads(report.read_text()) if report.exists() else {}

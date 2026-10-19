@@ -89,7 +89,10 @@ def main():
                 path=root/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv'
                 frame,source_ids,_=official.mapped_domain(path,art,root,False)
                 lookup={int(v):i for i,v in enumerate(source_ids)}
-                frames.append(frame.iloc[[lookup[int(i)] for i in ids]])
+                selected=[lookup[int(i)] for i in ids if int(i) in lookup]
+                if len(selected)!=len(ids) and not art.get('allow_partial_domains',False):raise ValueError('Supplied domain does not cover partition')
+                if not selected:raise ValueError('No supplied-domain rows in this partition')
+                frames.append(frame.iloc[selected])
             frame=pd.concat(frames,ignore_index=True)
             x=art['scaler'].transform(frame.iloc[:,:-1].to_numpy()).astype(np.float32)
             if not np.isfinite(x).all():raise ValueError('Non-finite domain features')
