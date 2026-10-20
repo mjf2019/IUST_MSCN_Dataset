@@ -1,0 +1,19 @@
+{
+  "base": {
+    "Test Loss": 0.3389820880882921,
+    "Accuracy": 0.8805346700083542,
+    "Precision": 0.8820571208224025,
+    "Recall": 0.8805346700083542,
+    "F1 Score": 0.8806626731574864
+  },
+  "frozen_context": {
+    "Test Loss": 0.42483975544708813,
+    "Accuracy": 0.9030910609857978,
+    "Precision": 0.9030353449132066,
+    "Recall": 0.9030910609857978,
+    "F1 Score": 0.9027618002713546
+  },
+  "seed": 42,
+  "evaluation": "held-out clean; no adaptation",
+  "note": "Pilot results do not constitute revised manuscript results."
+}

@@ -1,0 +1,84 @@
+{
+  "accuracy": 0.7092264678471575,
+  "macro_f1": 0.6989344586525834,
+  "frozen_accuracy": 0.6980428704566636,
+  "oracle_all": 0.907735321528425,
+  "oracle_legal": 0.8890959925442684,
+  "best_fixed_skip_route_accuracy": 0.6952469711090401,
+  "fixed_skip_route_accuracies": [
+    0.6952469711090401,
+    0.4930102516309413,
+    0.6001863932898416,
+    0.4296365330848089
+  ],
+  "route_brier": 0.15464875102043152,
+  "labels": 214,
+  "label_cap": 214,
+  "slot_queries": [
+    58,
+    102,
+    54
+  ],
+  "action_counts": [
+    495,
+    79,
+    180,
+    105,
+    58,
+    102,
+    54
+  ],
+  "route_updates": 214,
+  "td_updates": 208,
+  "mode": "learned",
+  "context_lr": 0.001,
+  "query_schedule": "uniform",
+  "update_policy": "learned",
+  "bank_utility": false,
+  "seed": 42,
+  "oracle_protocol": "observer only, along this policy bank trajectory; legal oracle obeys uniform gate and fixed-destination control",
+  "fixed_skip_protocol": "retrospective control: keep actual query actions/destinations; use one fixed route on all non-query rows",
+  "reference": {
+    "initial": 0.7166821994408201,
+    "final": 0.684995340167754,
+    "drop_pp": 3.1686859273066137,
+    "broken": 81,
+    "per_route_initial": [
+      0.6961789375582479,
+      0.706430568499534,
+      0.706430568499534,
+      0.706430568499534
+    ],
+    "per_route_final": [
+      0.6961789375582479,
+      0.42684063373718545,
+      0.23485554520037277,
+      0.31873252562907733
+    ],
+    "mean_context_drop_pp": 37.96210003106556,
+    "protocol": "observer only; current bank reliability/query-count state retained; gate set to prediction-only"
+  },
+  "level": 5,
+  "classes": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5"
+  ],
+  "execution_config": {
+    "seed": 42,
+    "context_lr": 0.001,
+    "budget_fraction": 0.2,
+    "selection_cost": 0.0001,
+    "gain_weight": 1,
+    "retention_weight": 1,
+    "gamma": 0.95,
+    "eval_epsilon": 0.0,
+    "query_schedule": "uniform",
+    "update_policy": "learned",
+    "bank_utility": false
+  },
+  "classifier_unchanged": true
+}

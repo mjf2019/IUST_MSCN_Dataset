@@ -1,0 +1,211 @@
+{
+  "method": "MicFoal-paper-weighted-ARF",
+  "accuracy": 0.8455284552845529,
+  "macro_f1": 0.8505366425810459,
+  "weighted_f1": 0.8449215314583876,
+  "samples": 123,
+  "labels": 24,
+  "label_cap": 24,
+  "actual_label_fraction": 0.1951219512195122,
+  "budget_utilization_pct": 100.0,
+  "labels_remaining": 0,
+  "online_gradient_steps": 0,
+  "query_protocol": "paper hybrid random/uncertainty/selective with native ratio gate and strict global cap",
+  "protocol": "predict-score-query-update; fresh model per level; reference/same-level observers never feed learning",
+  "online_seconds": 0.07526049995794892,
+  "prediction_seconds": 0.02129549958044663,
+  "selection_seconds": 0.020840300188865513,
+  "update_seconds": 0.03211250004824251,
+  "cache_seconds": 0.0,
+  "other_seconds": 0.0010122001403942704,
+  "online_ms_per_sample": 0.6118739833979587,
+  "samples_per_second": 1634.3234507972318,
+  "update_ms_per_label": 1.338020835343438,
+  "timing_device": "cpu",
+  "timing_protocol": "synchronized wall time; prediction includes frozen-cache construction; update includes Context/classifier, reward probes and selector learning; excludes model loading, initialization, endpoint retention observers, file I/O and human label latency; other includes stream bookkeeping, oracle scoring and progress output",
+  "active_learning": {
+    "implementation_version": 1,
+    "native_budget_final": 0.2,
+    "native_budget_initial": 0.2,
+    "stream_seen": 123,
+    "acquired_labels": 24,
+    "query_counts": {
+      "uncertain": 16,
+      "random": 9
+    },
+    "last_training_weight": 3.645583606116534,
+    "periodic_evaluations": 0,
+    "last_period_macro_f1": null,
+    "drifts": 0,
+    "random_window_labels": 386,
+    "current_window_classes": 5,
+    "threshold_vector": {
+      "3": 0.5904900000000001,
+      "1": 0.4782969000000001,
+      "0": 0.7290000000000001,
+      "2": 0.6561000000000001,
+      "4": 0.81
+    },
+    "adaptive_budget": true,
+    "backend_drifts": 39,
+    "bagging_protocol": "sample weight times one ARF Poisson(6) draw; foreground and background",
+    "bootstrap_protocol": "all available TRAIN labels; native ARF initialization"
+  },
+  "river_version": "0.26.1",
+  "online_update_calls": 24,
+  "source_initialization": "all available source TRAIN rows; no test bootstrap labels",
+  "same_level": {
+    "all_rows": {
+      "n": 123,
+      "initial": 0.8536585365853658,
+      "final": 0.8617886178861789,
+      "drop_pp": -0.8130081300813052,
+      "broken": 0,
+      "fixed": 1
+    },
+    "unqueried": {
+      "n": 99,
+      "initial": 0.8585858585858586,
+      "final": 0.8585858585858586,
+      "drop_pp": 0.0,
+      "broken": 0,
+      "fixed": 0
+    }
+  },
+  "reference": {
+    "n": 765,
+    "initial": 0.8326797385620915,
+    "final": 0.8444444444444444,
+    "drop_pp": -1.17647058823529,
+    "broken": 3,
+    "fixed": 12
+  },
+  "level": 0,
+  "execution_config": {
+    "seed": 42,
+    "budget": 0.2,
+    "af_online_lr": 1e-05,
+    "protocol_version": 1,
+    "timing_version": 1,
+    "ral_protocol_version": 2,
+    "ral_budget_mode": "prefix",
+    "active_protocol_version": 1
+  },
+  "training_provenance": {
+    "version": 1,
+    "train_levels": [
+      0,
+      2
+    ],
+    "training_domains_sha256": {
+      "0": "b802624fdcec195e8d59cf3563c92c8bd91f5030e056499196b41d653aa6c2ac",
+      "2": "710282275015e57f3d9184d2a8306043871e7621409f48d61aa1e90ba5b69cc9"
+    },
+    "source_preprocessing_sha256": "f89c2a97902e3424f634efbe664d158f0b6bc81f2998c502db9a98f5cb40e09c",
+    "partition_sha256": {
+      "train_ids": "3b416de0f922239ca1f5c8737ab704b0f21b6d9b01e623349f2dc3d87147d0ef",
+      "val_ids": "30421814672914d00ed9c34c357ddda6edce0176d7b9befce2d4c7b19bf47888",
+      "test_ids": "a77046e37457c7406cba1ea857157820dedd6db3cd61cbdfad6f614e48c87ec7"
+    },
+    "config": {
+      "command": "train",
+      "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\supplied_dense_baselines_level2_seed42\\CW\\BaselineSource",
+      "independent_source": true,
+      "training_domain_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\supplied_dense_baselines_level2_seed42\\CW\\Domains",
+      "include_seen_levels": false,
+      "burst_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\supplied_dense_baselines_level2_seed42\\CW\\Domains",
+      "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\supplied_dense_baselines_level2_seed42\\CW\\Baselines",
+      "methods": [
+        "ral",
+        "af",
+        "dfe",
+        "arf",
+        "calmid",
+        "micfoal"
+      ],
+      "train_levels": [
+        0,
+        2
+      ],
+      "levels": [
+        5,
+        7,
+        10,
+        12,
+        15,
+        17,
+        20
+      ],
+      "seed": 42,
+      "budget_fraction": 0.2,
+      "dfe_epochs": 200,
+      "af_epochs": 30,
+      "patience": 10,
+      "batch_size": 32,
+      "dfe_lr": 0.001,
+      "af_lr": 1e-05,
+      "dfe_alpha1": 0.5,
+      "dfe_alpha2": 2.0,
+      "dfe_eta": 0.5,
+      "dfe_lambda": 1.0,
+      "dfe_betas": [
+        0.01,
+        0.02,
+        0.03,
+        0.04,
+        0.05,
+        0.05
+      ],
+      "templates": 20,
+      "arf_trees": 10,
+      "arf_train_passes": 1,
+      "active_models": 10,
+      "active_window": 500,
+      "active_random_ratio": 0.1,
+      "calmid_threshold": 0.5,
+      "calmid_step": 0.01,
+      "micfoal_threshold": 0.9,
+      "micfoal_step": 0.1,
+      "micfoal_fixed_budget": false,
+      "ral_budget_mode": "prefix",
+      "progress_every": 200,
+      "jobs": -1,
+      "device": "cuda",
+      "classes": [
+        "AmazonEcho",
+        "BelkinCamera",
+        "NetatmoWeatherStation",
+        "PhilipsHue",
+        "iHome"
+      ]
+    },
+    "classes": [
+      "AmazonEcho",
+      "BelkinCamera",
+      "NetatmoWeatherStation",
+      "PhilipsHue",
+      "iHome"
+    ],
+    "feature_names": [
+      "flowSeqNum",
+      "srcNumPackets",
+      "dstNumPackets",
+      "srcPayloadSize",
+      "dstPayloadSize",
+      "srcAvgPayloadSize",
+      "dstAvgPayloadSize",
+      "srcMaxPayloadSize",
+      "dstMaxPayloadSize",
+      "srcStdDevPayloadSize",
+      "dstStdDevPayloadSize",
+      "flowDuration",
+      "srcAvgInterarrivalTime",
+      "dstAvgInterarrivalTime",
+      "avgInterarrivalTime",
+      "srcStdDevInterarrivalTime",
+      "dstStdDevInterarrivalTime",
+      "stdDevInterarrivalTime"
+    ]
+  },
+  "target_sha256": "b802624fdcec195e8d59cf3563c92c8bd91f5030e056499196b41d653aa6c2ac"
+}

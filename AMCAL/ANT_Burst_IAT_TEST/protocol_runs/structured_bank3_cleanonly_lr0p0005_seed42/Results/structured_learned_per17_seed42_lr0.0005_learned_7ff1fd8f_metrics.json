@@ -1,0 +1,84 @@
+{
+  "accuracy": 0.3504193849021435,
+  "macro_f1": 0.3298905028985927,
+  "frozen_accuracy": 0.35414725069897485,
+  "oracle_all": 0.7185461323392358,
+  "oracle_legal": 0.6579683131407269,
+  "best_fixed_skip_route_accuracy": 0.33271202236719477,
+  "fixed_skip_route_accuracies": [
+    0.33271202236719477,
+    0.293569431500466,
+    0.28890959925442683,
+    0.2954333643988816
+  ],
+  "route_brier": 0.2382728010416031,
+  "labels": 214,
+  "label_cap": 214,
+  "slot_queries": [
+    42,
+    82,
+    90
+  ],
+  "action_counts": [
+    637,
+    35,
+    72,
+    115,
+    42,
+    82,
+    90
+  ],
+  "route_updates": 214,
+  "td_updates": 208,
+  "mode": "learned",
+  "context_lr": 0.0005,
+  "query_schedule": "uniform",
+  "update_policy": "learned",
+  "bank_utility": false,
+  "seed": 42,
+  "oracle_protocol": "observer only, along this policy bank trajectory; legal oracle obeys uniform gate and fixed-destination control",
+  "fixed_skip_protocol": "retrospective control: keep actual query actions/destinations; use one fixed route on all non-query rows",
+  "reference": {
+    "initial": 0.6989748369058714,
+    "final": 0.6728797763280522,
+    "drop_pp": 2.6095060577819185,
+    "broken": 66,
+    "per_route_initial": [
+      0.6756756756756757,
+      0.4725069897483691,
+      0.4725069897483691,
+      0.4725069897483691
+    ],
+    "per_route_final": [
+      0.6756756756756757,
+      0.36905871388630007,
+      0.33737185461323393,
+      0.2907735321528425
+    ],
+    "mean_context_drop_pp": 14.010562286424355,
+    "protocol": "observer only; current bank reliability/query-count state retained; gate set to prediction-only"
+  },
+  "level": 17,
+  "classes": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5"
+  ],
+  "execution_config": {
+    "seed": 42,
+    "context_lr": 0.0005,
+    "budget_fraction": 0.2,
+    "selection_cost": 0.0001,
+    "gain_weight": 1,
+    "retention_weight": 1,
+    "gamma": 0.95,
+    "eval_epsilon": 0.0,
+    "query_schedule": "uniform",
+    "update_policy": "learned",
+    "bank_utility": false
+  },
+  "classifier_unchanged": true
+}

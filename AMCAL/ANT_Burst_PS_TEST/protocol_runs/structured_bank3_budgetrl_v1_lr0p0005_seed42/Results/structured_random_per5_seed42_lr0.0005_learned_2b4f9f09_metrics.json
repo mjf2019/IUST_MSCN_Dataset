@@ -1,0 +1,199 @@
+{
+  "accuracy": 0.636568848758465,
+  "macro_f1": 0.6316410588841145,
+  "frozen_accuracy": 0.5191873589164786,
+  "oracle_all": 0.891647855530474,
+  "oracle_legal": 0.891647855530474,
+  "best_fixed_skip_route_accuracy": 0.6862302483069977,
+  "fixed_skip_route_accuracies": [
+    0.5507900677200903,
+    0.6862302483069977,
+    0.6839729119638827,
+    0.6241534988713319
+  ],
+  "route_brier": 0.3240717351436615,
+  "samples": 886,
+  "labels": 177,
+  "label_cap": 177,
+  "actual_label_fraction": 0.19977426636568849,
+  "budget_utilization_pct": 100.0,
+  "labels_remaining": 0,
+  "slot_queries": [
+    61,
+    58,
+    58
+  ],
+  "action_counts": [
+    182,
+    164,
+    187,
+    176,
+    61,
+    58,
+    58
+  ],
+  "route_updates": 0,
+  "td_updates": 0,
+  "mode": "random",
+  "context_lr": 0.0005,
+  "query_schedule": "policy",
+  "update_policy": "learned",
+  "bank_utility": false,
+  "seed": 42,
+  "oracle_protocol": "observer only along this bank trajectory; all four prediction routes are permitted; query destination is independent of pre-feedback prediction route",
+  "fixed_skip_protocol": "retrospective control: keep actual query actions/destinations; use one fixed route on all non-query rows",
+  "online_seconds": 18.656275600020308,
+  "prediction_seconds": 5.412487598659936,
+  "selection_seconds": 2.6419034994905815,
+  "update_seconds": 10.155618499789853,
+  "cache_seconds": 0.019578900013584644,
+  "other_seconds": 0.4462660020799376,
+  "online_ms_per_sample": 21.05674446954888,
+  "samples_per_second": 47.490722103131645,
+  "update_ms_per_label": 57.376375705027414,
+  "timing_device": "cuda:0",
+  "timing_protocol": "synchronized wall time; prediction includes frozen-cache construction; update includes Context/classifier, reward probes and selector learning; excludes model loading, initialization, endpoint retention observers, file I/O and human label latency; other includes stream bookkeeping, oracle scoring and progress output",
+  "rl_budget": {
+    "version": 1,
+    "reference_accuracy": 0.8705882352941177,
+    "estimated_route_accuracies": [
+      0.5049358524158646,
+      0.6890143014429227,
+      0.6857099854004867,
+      0.6734298334267507
+    ],
+    "estimated_system_accuracy": 0.5146975217703059,
+    "effective_support": 60.09308006600098,
+    "last_feedback_age_fraction": 0.4525959367945824,
+    "resource_price": 0.2,
+    "labels": 177,
+    "cap": 177,
+    "protocol": "learned seven-action policy; no external query schedule; clipped inverse-propensity paid pre-feedback estimates; source TRAIN priors; soft budget price, hard upper cap",
+    "mean_query_utility": -0.12890302498059117,
+    "positive_utility_fraction": 0.011299435028248588,
+    "first_query_step": 1,
+    "last_query_step": 486
+  },
+  "reference": {
+    "initial": 0.6762790697674419,
+    "final": 0.5972093023255814,
+    "drop_pp": 7.906976744186045,
+    "broken": 153,
+    "per_route_initial": [
+      0.7032558139534884,
+      0.6697674418604651,
+      0.6697674418604651,
+      0.6697674418604651
+    ],
+    "per_route_final": [
+      0.7032558139534884,
+      0.5720930232558139,
+      0.5720930232558139,
+      0.5255813953488372
+    ],
+    "mean_context_drop_pp": 11.31782945736436,
+    "protocol": "observer only; current bank reliability/query-count state retained; gate set to prediction-only"
+  },
+  "same_level": {
+    "all_rows": {
+      "samples": 886,
+      "initial": 0.5744920993227991,
+      "final": 0.6388261851015802,
+      "drop_pp": -6.433408577878108,
+      "broken": 50,
+      "fixed": 107,
+      "per_route_initial": [
+        0.5191873589164786,
+        0.5880361173814899,
+        0.5880361173814899,
+        0.5880361173814899
+      ],
+      "per_route_final": [
+        0.5191873589164786,
+        0.7313769751693002,
+        0.7720090293453724,
+        0.5790067720090294
+      ],
+      "per_route_broken": [
+        0,
+        49,
+        57,
+        103
+      ],
+      "per_route_fixed": [
+        0,
+        176,
+        220,
+        95
+      ],
+      "mean_context_drop_pp": -10.609480812641081
+    },
+    "unqueried": {
+      "samples": 709,
+      "initial": 0.5895627644569816,
+      "final": 0.6389280677009873,
+      "drop_pp": -4.936530324400568,
+      "broken": 41,
+      "fixed": 76,
+      "per_route_initial": [
+        0.53737658674189,
+        0.5980253878702397,
+        0.5980253878702397,
+        0.5980253878702397
+      ],
+      "per_route_final": [
+        0.53737658674189,
+        0.7320169252468265,
+        0.7602256699576869,
+        0.5825105782792666
+      ],
+      "per_route_broken": [
+        0,
+        39,
+        47,
+        83
+      ],
+      "per_route_fixed": [
+        0,
+        134,
+        162,
+        72
+      ],
+      "mean_context_drop_pp": -9.35590032910203
+    },
+    "protocol": "observer only; initial/final prediction-only routed system and each route; same rows at both endpoints; final score is retrospective, not online accuracy; unqueried subset selected by this policy after the stream, not an independent holdout; no observer labels, states or predictions enter learning or action selection"
+  },
+  "level": 5,
+  "classes": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5"
+  ],
+  "execution_config": {
+    "seed": 42,
+    "context_lr": 0.0005,
+    "budget_fraction": 0.2,
+    "selection_cost": 0.0001,
+    "gain_weight": 1.0,
+    "retention_weight": 1.0,
+    "gamma": 0.99,
+    "eval_epsilon": 0.05,
+    "query_schedule": "policy",
+    "update_policy": "learned",
+    "bank_utility": false,
+    "same_level_diagnostics_version": 1,
+    "budget_report_version": 1,
+    "timing_version": 1,
+    "budget_policy_version": 1,
+    "budget_aware_policy": true,
+    "budget_window": 64,
+    "budget_need_weight": 1.0,
+    "budget_price_step": 0.005,
+    "budget_price_max": 0.2,
+    "budget_propensity_clip": 20.0
+  },
+  "classifier_unchanged": true
+}

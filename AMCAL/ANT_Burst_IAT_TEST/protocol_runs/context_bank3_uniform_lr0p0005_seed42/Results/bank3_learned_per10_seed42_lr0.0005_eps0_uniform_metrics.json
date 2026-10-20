@@ -1,0 +1,59 @@
+{
+  "accuracy": 0.6309412861136999,
+  "macro_f1": 0.5930424101068009,
+  "frozen_accuracy": 0.5675675675675675,
+  "oracle_accuracy": 0.8341099720410066,
+  "labels": 214,
+  "label_cap": 214,
+  "slot_queries": [
+    214,
+    0,
+    0
+  ],
+  "slot_routes": [
+    485,
+    134,
+    331
+  ],
+  "actions": {
+    "3": 331,
+    "0": 123,
+    "2": 134,
+    "4": 214,
+    "1": 271
+  },
+  "selector_updates": 208,
+  "mean_dqn_loss": 2.480621768304935,
+  "mean_paid_reward": 0.37389877229214225,
+  "protocol": "pre-feedback score; 1+2K actions; shared label cap; no oracle Context routing",
+  "query_schedule": "uniform",
+  "context_lr": 0.0005,
+  "mode": "learned",
+  "seed": 42,
+  "reference": {
+    "initial": 0.7036346691519105,
+    "final": 0.6561043802423113,
+    "drop_pp": 4.7530288909599205,
+    "broken": 104,
+    "per_route_initial": [
+      0.6961789375582479,
+      0.706430568499534,
+      0.706430568499534,
+      0.706430568499534
+    ],
+    "per_route_final": [
+      0.6961789375582479,
+      0.5591798695246971,
+      0.706430568499534,
+      0.706430568499534
+    ],
+    "protocol": "observer-only routed clean validation; per-route Context scores also saved"
+  },
+  "final_current_per_route": [
+    0.5675675675675675,
+    0.7260018639328985,
+    0.5778191985088537,
+    0.5778191985088537
+  ],
+  "level": 10
+}
