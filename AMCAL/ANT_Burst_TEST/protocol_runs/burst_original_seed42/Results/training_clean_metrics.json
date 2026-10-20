@@ -1,0 +1,19 @@
+{
+  "base": {
+    "Test Loss": 0.7766538439570246,
+    "Accuracy": 0.7138863000931966,
+    "Precision": 0.7172344349092974,
+    "Recall": 0.7138863000931966,
+    "F1 Score": 0.7127737337525748
+  },
+  "frozen_context": {
+    "Test Loss": 1.0711960171497767,
+    "Accuracy": 0.7045666356011183,
+    "Precision": 0.7084389837722994,
+    "Recall": 0.7045666356011183,
+    "F1 Score": 0.7056649372955186
+  },
+  "seed": 42,
+  "evaluation": "existing oversampled test CSV; no adaptation",
+  "note": "Pilot results do not constitute revised manuscript results."
+}
