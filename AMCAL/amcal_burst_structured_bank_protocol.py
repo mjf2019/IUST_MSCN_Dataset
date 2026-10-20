@@ -529,8 +529,8 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
                     before=budget_probe_before(cnn,bank,agent,batch,history,used,cap,pos,n) if budget_aware else utility_before(a,cnn,bank,selected,batch)
                 history.observe_paid(outputs[0].softmax(2),truth)
                 optimizers[selected].zero_grad()
-                loss=core.context_objective(F.cross_entropy(cnn(bank[selected](inputs)),label),
-                                            F.cross_entropy(outputs[0][:,0],label))
+                loss=context_objective(F.cross_entropy(cnn(bank[selected](inputs)),label),
+                                       F.cross_entropy(outputs[0][:,0],label),getattr(a,'context_alpha',.8))
                 loss.backward();optimizers[selected].step()
                 if budget_aware:
                     gain,harm=budget_probe_after(cnn,bank,selected,batch,before)
@@ -849,6 +849,8 @@ def train(a,models,artifact):
 def evaluate(a,models,artifact):
     saved=torch.load(models/'structured_bank_ddqn.pth',map_location='cpu',weights_only=False)
     if saved.get('version') not in (1,2):raise ValueError('Unsupported structured-bank checkpoint.')
+    if abs(float(saved.get('config',{}).get('context_alpha',.8))-a.context_alpha)>1e-12:
+        raise ValueError('Context alpha differs from training; pass the matching --context-alpha.')
     aware=getattr(a,'budget_aware_policy',False)
     if aware!=(saved['version']==2):raise ValueError('Checkpoint uses a different budget policy; pass --budget-aware-policy only for a v2 trained run.')
     if bool(saved.get('config',{}).get('balanced_reward_reference',False))!=a.balanced_reward_reference:
@@ -883,6 +885,7 @@ def evaluate(a,models,artifact):
         attack_artifact,scaler_info=notebook_scaler(a.burst_dir,artifact,a.levels)
         execution['test_scaler']=scaler_info
         print(f'Notebook test scaler: fitted once on complete level {scaler_info["fit_level"]} ({scaler_info["fit_rows"]} rows); checkpoint unchanged.',flush=True)
+    if a.context_alpha!=.8:execution['context_alpha']=a.context_alpha
     execution['same_level_diagnostics_version']=1
     if a.balanced_reward_reference:execution['reward_reference']='class_balanced_macro_v1'
     if a.decoupled_query:execution['query_prediction']='decoupled_best_route_v1'
@@ -995,6 +998,14 @@ QUALITY_OPTIONS=('bootstrap_labels','audit_fraction','window','return_window','m
                  'tolerance','gap_scale','gain_scale','burst')
 
 
+def context_objective(context_loss, original_loss, alpha=.8):
+    """Context adaptation loss; original-route CE is a detached reference."""
+    if alpha == .8:
+        return core.context_objective(context_loss, original_loss)
+    relative = 1. / (1. + original_loss.detach() / (context_loss + 1e-8))
+    return alpha * context_loss + (1. - alpha) * relative
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('command',choices=['train','evaluate'])
@@ -1013,6 +1024,7 @@ def main():
     p.add_argument('--resume-selector',action='store_true',help='Continue all original selector weights from --source-run, with fresh replay and optimizers.')
     p.add_argument('--decoupled-query',action='store_true',help='Isolated seven-action ablation: predict through best learned route when querying, then update action-selected Context; use in train and evaluate.')
     p.add_argument('--context-lr',type=float,default=.0005)
+    p.add_argument('--context-alpha',type=float,default=.8,help='Weight of Context CE during episodic training and online adaptation; source pretraining remains fixed.')
     p.add_argument('--budget-fraction',type=float,default=.2)
     p.add_argument('--selection-cost',type=float,default=.0001)
     p.add_argument('--gain-weight',type=float,default=1)
@@ -1041,6 +1053,7 @@ def main():
     p.add_argument('--modes',nargs='+',choices=['learned','random'],default=['learned','random'])
     p.add_argument('--device',choices=['auto','cpu','cuda'],default='auto')
     a=p.parse_args()
+    if not np.isfinite(a.context_alpha) or not 0<=a.context_alpha<=1:p.error('Context alpha must be in [0,1].')
     if min(a.epochs,a.patience)<1 or a.router_warmup_episodes<0:p.error('Invalid epochs/patience/warmup.')
     if a.test_scaler!='training' and a.command!='evaluate':p.error('--test-scaler notebook is evaluation only.')
     if a.full_unseen_levels and a.command!='evaluate':p.error('--full-unseen-levels is evaluation only.')
