@@ -31,3 +31,11 @@ AdaptiveFingerprinting/
 CTU-Experiment/
 ISCX-Experiment/
 AMCAL/ANT_Burst_TEST/Models/
+
+# Ignore experiment artifacts; keep result directories accessible
+/AMCAL/**/protocol_runs/**
+!/AMCAL/**/protocol_runs/**/
+
+# Track only per-run metrics and combined result tables
+!/AMCAL/**/protocol_runs/**/Results/*_metrics.json
+!/AMCAL/**/protocol_runs/**/Results/combined*.csv
