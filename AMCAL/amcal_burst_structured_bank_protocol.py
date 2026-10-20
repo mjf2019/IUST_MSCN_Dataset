@@ -877,6 +877,12 @@ def evaluate(a,models,artifact):
         print(f'Quality budget reference: frozen CNN clean SOURCE validation {100*a.quality_reference_accuracy:.2f}%')
     root=a.output/'Results';root.mkdir(exist_ok=True)
     execution={key:getattr(a,key) for key in ('seed','context_lr','budget_fraction','selection_cost','gain_weight','retention_weight','gamma','eval_epsilon','query_schedule','update_policy','bank_utility')}
+    attack_artifact=artifact
+    if getattr(a,'test_scaler','training')=='notebook':
+        from baselines.evaluation_scaling import notebook_scaler
+        attack_artifact,scaler_info=notebook_scaler(a.burst_dir,artifact,a.levels)
+        execution['test_scaler']=scaler_info
+        print(f'Notebook test scaler: fitted once on complete level {scaler_info["fit_level"]} ({scaler_info["fit_rows"]} rows); checkpoint unchanged.',flush=True)
     execution['same_level_diagnostics_version']=1
     if a.balanced_reward_reference:execution['reward_reference']='class_balanced_macro_v1'
     if a.decoupled_query:execution['query_prediction']='decoupled_best_route_v1'
@@ -894,7 +900,7 @@ def evaluate(a,models,artifact):
     rows=[];retention_rows=[];budget_rows=[];time_rows=[];evaluation_results=[]
     for level in a.levels:
         full=getattr(a,'full_unseen_levels',False) and level not in saved['training_levels']
-        domain=read_domain(a.burst_dir,artifact,level,'test_ids',full_domain=full)
+        domain=read_domain(a.burst_dir,attack_artifact if level>0 else artifact,level,'test_ids',full_domain=full)
         pair={}
         for mode in a.modes:
             core.set_seed(a.seed)
@@ -993,6 +999,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('command',choices=['train','evaluate'])
     p.add_argument('--source-run',type=Path)
+    p.add_argument('--test-scaler',choices=('training','notebook'),default='training',help='Evaluation-only ablation: fit once on first requested positive attack file, like the old notebook.')
     p.add_argument('--full-unseen-levels',action='store_true',help='Evaluation only: score every supplied row at unseen intensities; source IDs may have appeared at training intensities.')
     p.add_argument('--include-seen-levels',action='store_true',help='Evaluation only: include seen intensities on disjoint TEST source IDs; reported separately from unseen domains.')
     p.add_argument('--output',type=Path,required=True)
@@ -1035,6 +1042,7 @@ def main():
     p.add_argument('--device',choices=['auto','cpu','cuda'],default='auto')
     a=p.parse_args()
     if min(a.epochs,a.patience)<1 or a.router_warmup_episodes<0:p.error('Invalid epochs/patience/warmup.')
+    if a.test_scaler!='training' and a.command!='evaluate':p.error('--test-scaler notebook is evaluation only.')
     if a.full_unseen_levels and a.command!='evaluate':p.error('--full-unseen-levels is evaluation only.')
     if a.include_seen_levels and a.command!='evaluate':p.error('--include-seen-levels is evaluation only.')
     if not 0<=a.budget_fraction<=1 or not 0<=a.gamma<=1 or not 0<=a.train_epsilon<=1 or not 0<=a.eval_epsilon<=1:p.error('Budget, gamma and epsilon must be in [0,1].')

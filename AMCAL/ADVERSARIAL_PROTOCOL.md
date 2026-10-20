@@ -217,3 +217,27 @@ in the supplied-data section. The new protocol is included in metric execution
 configurations and result filename hashes so old metrics/traces remain available.
 Generic bank/baseline commands retain their previous heldout behavior unless the
 explicit flag is supplied. Training rejects the full-file flag.
+
+## Old notebook scaler comparison (evaluation only)
+
+Pass `--test-scaler notebook` to the supplied-data wrapper, structured evaluator,
+or baseline evaluator. This reproduces the old CNN notebook's attack-input rule:
+fit a new StandardScaler **once on the entire first requested positive attack
+file**, then transform every subsequent attack file using that same scaler.
+For levels 1..5, the fit file is FGSM/PGD .01 or CW/DeepFool .1. It is not a
+separate fit at every level, and no labels enter scaler fitting.
+
+CNN/Context/selector checkpoints and preprocessing joblib files are unchanged.
+Clean level 0 and clean-reference observers retain the original TRAIN scaler,
+because the old attack-evaluation notebook did not define a clean-reference
+observer. Only positive attack inputs use the notebook fit. Test row selection,
+budget, seed and initial model weights are unchanged relative to the same command
+without this flag. Online adaptation can consequently follow a different path.
+
+This is an explicit transductive preprocessing ablation, not the standard
+train-fitted preprocessing protocol. The default remains `--test-scaler training`.
+Fit file digest, level and row count enter metrics and filename hashes, so traces
+and combined bank/baseline tables do not overwrite the normal-scaler results.
+The friendly supplied summary adds `_scalernotebook` to its filename.
+Training rejects the notebook-scaler flag. Compare Frozen columns to isolate
+inference preprocessing without online adaptation or policy effects.

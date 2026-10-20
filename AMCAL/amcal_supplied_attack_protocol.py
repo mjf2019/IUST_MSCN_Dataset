@@ -139,10 +139,10 @@ def evaluate(a):
                         '--query-schedule','policy','--update-policy','learned',
                         '--gamma',.95,'--selection-cost',.0001,'--gain-weight',1,'--retention-weight',1,
                         '--eval-epsilon',a.eval_epsilon,'--modes','learned','random',
-                        '--seed',a.seed,'--device',a.device]):bank.main()
+                        '--seed',a.seed,'--device',a.device,'--test-scaler',a.test_scaler]):bank.main()
     finally:bank.evaluate=original
     rows=summary_rows(a.attack,metrics)
-    target=a.output/'Results'/f'supplied_summary_seed{a.seed}.csv'
+    target=a.output/'Results'/(f'supplied_summary_seed{a.seed}'+('_scalernotebook' if a.test_scaler=='notebook' else '')+'.csv')
     write_csv(target,rows)
     display(rows)
     print('Saved:',target,flush=True)
@@ -221,7 +221,7 @@ def baseline(a):
             '--methods',*a.methods,'--budget-fraction',str(a.budget_fraction),
             '--seed',str(a.seed),'--device',a.device]
     if independent and command=='train':values+=['--independent-source']
-    if command=='evaluate':values+=['--include-seen-levels','--full-unseen-levels','--levels',*map(str,a.levels)]
+    if command=='evaluate':values+=['--include-seen-levels','--full-unseen-levels','--levels',*map(str,a.levels),'--test-scaler',a.test_scaler]
     subprocess.run(values,check=True)
 
 
@@ -240,6 +240,7 @@ def main():
     p.add_argument('--context-lr',type=float,default=.0005)
     p.add_argument('--budget-fraction',type=float,default=.2)
     p.add_argument('--eval-epsilon',type=float,default=.05)
+    p.add_argument('--test-scaler',choices=('training','notebook'),default='training')
     p.add_argument('--base-epochs',type=int,default=100)
     p.add_argument('--stage1-epochs',type=int,default=12)
     p.add_argument('--cnn-epochs',type=int,default=30)
@@ -250,6 +251,7 @@ def main():
     if any(v not in range(6) for v in a.levels) or len(set(a.levels))!=len(a.levels):p.error('Distinct levels 0..5 required.')
     if not 0<=a.budget_fraction<=1 or not 0<=a.eval_epsilon<=1 or not np.isfinite(a.context_lr) or a.context_lr<=0:p.error('Invalid budget, epsilon or LR.')
     if min(a.base_epochs,a.stage1_epochs,a.cnn_epochs,a.source_epochs,a.bank_epochs)<1:p.error('Epochs must be positive.')
+    if a.test_scaler!='training' and a.command not in ('evaluate','evaluate-baselines'):p.error('--test-scaler notebook is evaluation only.')
     if a.independent_baselines and a.command not in ('train-baselines','evaluate-baselines'):p.error('--independent-baselines is baseline-only.')
     if a.attack=='all':
         for attack in LEVELS:
@@ -259,6 +261,7 @@ def main():
                     '--levels',*map(str,a.levels),'--methods',*a.methods]
             for key in ('context_lr','budget_fraction','eval_epsilon','base_epochs','stage1_epochs','cnn_epochs','source_epochs','bank_epochs'):
                 values+=['--'+key.replace('_','-'),str(getattr(a,key))]
+            values+=['--test-scaler',a.test_scaler]
             if a.independent_baselines:values+=['--independent-baselines']
             subprocess.run(values,check=True)
         return
