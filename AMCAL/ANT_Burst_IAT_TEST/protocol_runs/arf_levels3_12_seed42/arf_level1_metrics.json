@@ -1,0 +1,47 @@
+{
+  "perturbation_level": 1,
+  "method": "River ARFClassifier",
+  "accuracy": 0.43988816402609504,
+  "macro_f1": 0.3404901892770409,
+  "weighted_f1": 0.39380930667534264,
+  "no_adaptation_accuracy": 0.45200372786579684,
+  "labels_used": 214,
+  "label_cap": 214,
+  "forgetting": {
+    "same_level": {
+      "initial_accuracy": 0.45200372786579684,
+      "final_accuracy": 0.4603914259086673,
+      "drop_pp": -0.8387698042870428,
+      "correct_to_wrong": 104,
+      "wrong_to_correct": 113
+    },
+    "source_validation": {
+      "initial_accuracy": 0.4277726001863933,
+      "final_accuracy": 0.3979496738117428,
+      "drop_pp": 2.9822926374650507,
+      "correct_to_wrong": 113,
+      "wrong_to_correct": 81
+    }
+  },
+  "stream_seconds": 0.5682576000108384,
+  "seed": 42,
+  "river_version": "0.26.1",
+  "trees": 10,
+  "train_levels": [
+    0,
+    3,
+    12
+  ],
+  "train_passes": 1,
+  "training_samples_per_pass": 9663,
+  "train_seconds": 16.502292799996212,
+  "clean_heldout": {
+    "accuracy": 0.42590866728797766,
+    "macro_f1": 0.3149204928970601,
+    "weighted_f1": 0.3582209073249538
+  },
+  "source_sha256": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+  "attack_sha256": "bf92f8d8088d7199d1a83187c2f04079c13aa0fb115878e3649c5bd85d8a6cc6",
+  "preprocessing_sha256": "8d75460c6c6cf08add73d3f8b630f5bf94f0b37e946f4e6578fb0b5de716d3e2",
+  "protocol": "predict-score-query-update; identical saved AMCAL split and random-control query schedule; reset model each level; reference observer only"
+}

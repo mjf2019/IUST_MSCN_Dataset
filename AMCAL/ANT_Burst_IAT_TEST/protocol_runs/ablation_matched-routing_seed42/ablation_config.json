@@ -1,0 +1,21 @@
+{
+  "source_run": "AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\structured_bank3_balancedref_lr0p0005_seed42",
+  "output": "AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\ablation_matched-routing_seed42",
+  "burst_dir": "AMCAL\\ANT_Burst_IAT_TEST\\Dataset_official_v1\\AdvBurst_FTSC-IAT",
+  "variant": "matched-routing",
+  "levels": [
+    5,
+    7,
+    10,
+    12,
+    15,
+    17,
+    20
+  ],
+  "seed": 42,
+  "device": "cuda",
+  "context_lr": 0.0005,
+  "budget_fraction": 0.2,
+  "eval_epsilon": 0.05,
+  "source_models_unchanged": true
+}

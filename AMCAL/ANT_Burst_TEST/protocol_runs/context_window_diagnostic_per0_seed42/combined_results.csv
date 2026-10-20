@@ -1,0 +1,3 @@
+accuracy,macro_f1,weighted_f1,perturbation_level,seed,context_window,context_lr,labels_used,label_cap,retrospective_is_online_score,schedule_sha256,source_loss_mode,protocol
+0.22180801491146318,0.14566965213204572,0.19422894247763173,0,42,1,0.25,214,214,False,7e0acad9b8b85b0b068b4f29b437b9d6d25aecb46915aa3d4263932fca8bae54,aligned,fixed uniform label-blind query positions; shared Context; no RL; before feedback
+0.21062441752096925,0.14985181138438716,0.19660169185498108,0,42,5,0.25,214,214,False,7e0acad9b8b85b0b068b4f29b437b9d6d25aecb46915aa3d4263932fca8bae54,aligned,fixed uniform label-blind query positions; shared Context; no RL; before feedback

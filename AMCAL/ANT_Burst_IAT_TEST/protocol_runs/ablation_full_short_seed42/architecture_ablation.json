@@ -1,0 +1,32 @@
+{
+  "architecture": "full",
+  "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\structured_bank3_balancedref_lr0p0005_seed42",
+  "train_levels": [
+    0,
+    1,
+    3
+  ],
+  "context_pretrain_epochs": 5,
+  "router_epochs": 6,
+  "patience": 3,
+  "seed": 42,
+  "refinement_log": [
+    {
+      "epoch": 1,
+      "validation_ce": 0.9974861494611235
+    },
+    {
+      "epoch": 2,
+      "validation_ce": 1.0347336537721699
+    },
+    {
+      "epoch": 3,
+      "validation_ce": 1.0711171679631566
+    },
+    {
+      "epoch": 4,
+      "validation_ce": 1.0953434883122415
+    }
+  ],
+  "test_used": false
+}
