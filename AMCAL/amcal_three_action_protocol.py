@@ -81,7 +81,7 @@ class CNN1D(nn.Module):
 # Define ContextAwareNetwork
 class ContextAwareNetwork(nn.Module):
     def __init__(self, input_size, num_layers=4, dim_feedforward=1024):
-        super(ContextAwareNetwork, self).__init__()
+        super().__init__()
         self.input_size = input_size
         
         # One token per feature. Identity embeddings preserve column semantics.
