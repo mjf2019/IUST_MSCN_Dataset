@@ -438,6 +438,10 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
         quality.decide(0,0)
     fixed_destinations=np.random.default_rng(seed+440003).integers(0,SLOTS,n)
     def gate(pos):
+        if getattr(a,'uncertainty_threshold',None) is not None:
+            # Only current frozen probabilities; threshold calibrated on SOURCE validation.
+            uncertainty = 1. - float(bz[pos].softmax(0).max().item())
+            return int(uncertainty > a.uncertainty_threshold)
         if quality is not None:return int(quality.decisions[pos]['query']) if pos in quality.decisions else -1
         return int(pos in schedule) if schedule is not None else -1
     def state_gate(pos):
@@ -579,7 +583,7 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
             if may_learn and not warmup:
                 # Non-query actions share the same no-update successor and future value.
                 skip_state=state.clone()
-                if schedule is not None or quality is not None:skip_state[:,-3]=0
+                if schedule is not None or quality is not None or getattr(a,'uncertainty_threshold',None) is not None:skip_state[:,-3]=0
                 for r in range(ROUTES):
                     agent.push(skip_state,r,1.0 if correct[r] else -1.0,skip_next,pos+1==n)
                 if paid:
@@ -903,6 +907,9 @@ def evaluate(a,models,artifact):
         attack_artifact,scaler_info=notebook_scaler(a.burst_dir,artifact,a.levels)
         execution['test_scaler']=scaler_info
         print(f'Notebook test scaler: fitted once on complete level {scaler_info["fit_level"]} ({scaler_info["fit_rows"]} rows); checkpoint unchanged.',flush=True)
+    if getattr(a,'uncertainty_threshold',None) is not None:
+        execution['uncertainty_query_threshold']=a.uncertainty_threshold
+        execution['uncertainty_query_protocol']='source-validation quantile; current frozen least confidence; original RL prediction/update-destination heads'
     if a.context_alpha!=.8:execution['context_alpha']=a.context_alpha
     execution['same_level_diagnostics_version']=1
     if a.balanced_reward_reference:execution['reward_reference']='class_balanced_macro_v1'
