@@ -409,12 +409,16 @@ def retention_summary(before,after,y,mask):
 
 
 def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
-            learning=True,warmup=False,rollout_seed=None,reference=None,same_level=False):
+            learning=True,warmup=False,rollout_seed=None,reference=None,same_level=False,continuation=None):
     x,y,source_ids=domain
     seed=a.seed if rollout_seed is None else rollout_seed
-    for context in bank:
-        context.load_state_dict(initial);context.eval()
-    optimizers=[torch.optim.Adam(c.parameters(),lr=a.context_lr,weight_decay=1e-4) for c in bank]
+    continuing = continuation is not None and bool(continuation)
+    if continuing:
+        optimizers = continuation['optimizers']
+    else:
+        for context in bank:
+            context.load_state_dict(initial);context.eval()
+        optimizers=[torch.optim.Adam(c.parameters(),lr=a.context_lr,weight_decay=1e-4) for c in bank]
     order=np.random.default_rng(seed).permutation(len(y))
     x,y,source_ids=x[order],np.asarray(y)[order],np.asarray(source_ids)[order]
     n=len(y);cap=int(np.floor(a.budget_fraction*n))
@@ -441,14 +445,22 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
     rng=np.random.default_rng(seed+719003)
     quality_route_rng=np.random.default_rng(seed+601037) if quality is not None else None
     query_route_rng=np.random.default_rng(seed+601089) if decoupled else None
-    history=Reliability(len(a.classes))
-    if budget_aware:
-        history.budget=BudgetState(a.budget_priors,**budget_settings(a))
-    reward_reference=core.TrainingProbe(x,torch.tensor(y,device=x.device),seed+910033) if training else core.PaidHistory(seed+910033)
-    if getattr(a,'balanced_reward_reference',False):
-        reward_reference=BalancedRewardReference(reward_reference)
-    if budget_aware:
-        reward_reference=MixedBudgetProbe(a.budget_anchors,reward_reference,seed+910043)
+    if continuation is not None and (training or budget_aware or decoupled or a.query_schedule != 'policy'):
+        raise ValueError('Continual control currently supports original v1 policy evaluation only.')
+    if continuing:
+        history=continuation['history']
+        # Local stream positions restart; retain nonnegative elapsed ages.
+        history.last_update -= continuation['previous_count']
+        reward_reference=continuation['reward_reference']
+    else:
+        history=Reliability(len(a.classes))
+        if budget_aware:
+            history.budget=BudgetState(a.budget_priors,**budget_settings(a))
+        reward_reference=core.TrainingProbe(x,torch.tensor(y,device=x.device),seed+910033) if training else core.PaidHistory(seed+910033)
+        if getattr(a,'balanced_reward_reference',False):
+            reward_reference=BalancedRewardReference(reward_reference)
+        if budget_aware:
+            reward_reference=MixedBudgetProbe(a.budget_anchors,reward_reference,seed+910043)
     timer=StreamTimer(x.device,enabled=not training)
     with timer.stage('cache'):
         bz,embedding=base_cache(cnn,x)
@@ -649,6 +661,12 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
                      'same rows at both endpoints; final score is retrospective, not online accuracy; '
                      'unqueried subset selected by this policy after the stream, not an independent holdout; '
                      'no observer labels, states or predictions enter learning or action selection')
+    if continuation is not None:
+        continuation.update(optimizers=optimizers,history=history,
+                            reward_reference=reward_reference,previous_count=n,
+                            last_used=used,last_cap=cap)
+        metrics['continual']=True
+        metrics['continual_budget_protocol']='per-domain cap; same identity charged again at each domain; Context/selector/optimizers/replay/paid reference retained'
     return metrics,trace
 
 
