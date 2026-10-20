@@ -196,3 +196,11 @@ def generate(torch, model, scaled, labels, attack, radius, device, seed, **setti
             result.append(output.squeeze(1).cpu().numpy())
             print(f'  {attack} radius {radius:g}: {min(start+64,len(labels))}/{len(labels)} rows', flush=True) if start % 1024 == 0 else None
     return np.concatenate(result)
+
+
+def evaluation_row_ids(available, partition, full_domain=False):
+    """Full supplied domain, or the original heldout source-ID intersection."""
+    available=np.asarray(available,dtype=np.int64)
+    if full_domain:return available.copy()
+    lookup=set(available.tolist())
+    return np.asarray([i for i in partition if int(i) in lookup],dtype=np.int64)

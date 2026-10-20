@@ -412,6 +412,7 @@ def evaluate(a,artifact):
     root=a.output/'Results';root.mkdir(exist_ok=True)
     reference=shared.read_domain(a.burst_dir,artifact,0,'val_ids')[:2]
     config=dict(seed=a.seed,budget=a.budget_fraction,af_online_lr=a.af_lr,protocol_version=1,timing_version=1)
+    if getattr(a,'full_unseen_levels',False):config['unseen_rows']='all supplied rows; source IDs may occur in training at other intensities'
     if 'ral' in a.methods:
         config.update(ral_protocol_version=2,ral_budget_mode=getattr(a,'ral_budget_mode','prefix'))
     if set(a.methods)&{'calmid','micfoal'}:config['active_protocol_version']=ACTIVE_VERSION
@@ -432,7 +433,8 @@ def evaluate(a,artifact):
             if core.file_sha256(a.training_domain_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv')!=digest:raise ValueError('Training domain provenance changed.')
         for level in a.levels:
             core.set_seed(a.seed)
-            domain=shared.read_domain(a.burst_dir,artifact,level,'test_ids')
+            full=getattr(a,'full_unseen_levels',False) and level not in p['train_levels']
+            domain=shared.read_domain(a.burst_dir,artifact,level,'test_ids',full_domain=full)
             if method=='ral':
                 print(f'RAL | PER {level} | starting {len(domain[1])} rows | RF=10 | budget {getattr(a,"ral_budget_mode","prefix")} | strict cap {int(a.budget_fraction*len(domain[1]))}',flush=True)
             metrics,trace=evaluate_level(a,method,saved,domain,reference)
@@ -485,6 +487,7 @@ def main():
     parser.add_argument('--source-run',type=Path)
     parser.add_argument('--independent-source',action='store_true',help='Use a separately trained matched-domain CNN/preprocessing source, without an AMCAL selector.')
     parser.add_argument('--training-domain-dir',type=Path,help='Original training files when evaluation domains are stored separately.')
+    parser.add_argument('--full-unseen-levels',action='store_true',help='Evaluate complete supplied files at unseen intensities, including source IDs seen at training intensities.')
     parser.add_argument('--include-seen-levels',action='store_true',help='Score seen intensities on disjoint TEST source IDs only.')
     parser.add_argument('--burst-dir',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path)
@@ -535,6 +538,7 @@ def main():
     a.output=a.output.resolve();a.burst_dir=a.burst_dir.resolve()
     a.training_domain_dir=(a.training_domain_dir or a.burst_dir).resolve()
     if a.command=='train' and a.training_domain_dir!=a.burst_dir:parser.error('Training domain directory must match --burst-dir during training.')
+    if a.command=='train' and a.full_unseen_levels:parser.error('--full-unseen-levels is evaluation only.')
     if a.command=='train' and a.include_seen_levels:parser.error('--include-seen-levels is evaluation only.')
     if a.command=='train':
         if a.source_run is None:parser.error('Training requires --source-run from the final structured AMCAL run.')

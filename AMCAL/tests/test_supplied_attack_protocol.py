@@ -58,4 +58,16 @@ class SuppliedTests(unittest.TestCase):
             self.assertFalse((root/'Bank').exists())
 
 
+    def test_full_unseen_keeps_entire_file_and_seen_keeps_holdout(self):
+        from baselines.adversarial_domains import evaluation_row_ids
+        available=np.arange(1200)
+        heldout=np.arange(960,1200)
+        full=evaluation_row_ids(available,heldout,True)
+        seen=evaluation_row_ids(available,heldout,False)
+        self.assertEqual(full.tolist(),list(range(1200)))
+        self.assertEqual(seen.tolist(),list(range(960,1200)))
+        self.assertEqual(int(.2*len(full)),240)
+        self.assertEqual(int(.2*len(seen)),48)
+
+
 if __name__=='__main__':unittest.main()

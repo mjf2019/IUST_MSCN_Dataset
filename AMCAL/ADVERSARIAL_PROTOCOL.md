@@ -199,3 +199,21 @@ records independent CNN initialization. No architectural/reward change is made
 to AMCAL. `evaluate-baselines` detects that source from its saved manifest.
 For final runtime comparisons run methods sequentially without concurrent GPU
 jobs; parallel execution is useful for initial accuracy experiments.
+
+### Full-file testing at other intensities (updated supplied-data protocol)
+
+The supplied-data wrapper now passes `--full-unseen-levels` automatically for
+both AMCAL and baseline evaluation. Levels 1, 3, 4, 5 are scored on **all rows of
+each supplied CSV**, not just the source TEST-ID intersection. Clean and training
+level 2 still use only their saved TEST source IDs. Training, validation and model
+weights are unchanged; existing models can be evaluated again without retraining.
+For SDNCampus, unseen-level streams therefore contain 1200 rows and have a 240
+label cap, whereas the previous default scored about 239 rows with a 47 label cap.
+
+This evaluates generalization to unseen **intensities**, with source sample IDs
+allowed to recur from training at level 2. It must not be called source-disjoint
+heldout testing. It supersedes the earlier TEST-only statement for unseen levels
+in the supplied-data section. The new protocol is included in metric execution
+configurations and result filename hashes so old metrics/traces remain available.
+Generic bank/baseline commands retain their previous heldout behavior unless the
+explicit flag is supplied. Training rejects the full-file flag.

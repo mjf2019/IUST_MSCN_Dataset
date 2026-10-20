@@ -652,11 +652,13 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
     return metrics,trace
 
 
-def read_domain(root,artifact,level,split):
+def read_domain(root,artifact,level,split,full_domain=False):
+    from baselines.adversarial_domains import evaluation_row_ids
+    if full_domain and split!='test_ids':raise ValueError('Full-domain loading is evaluation only.')
     frame,ids,_=base.official.mapped_domain(root/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv',artifact,root,False)
     lookup={int(v):i for i,v in enumerate(ids)}
-    selected=np.asarray([i for i in artifact[split] if int(i) in lookup],dtype=np.int64)
-    if len(selected)!=len(artifact[split]) and not artifact.get('allow_partial_domains',False):raise ValueError('Domain does not cover partition: '+split)
+    selected=evaluation_row_ids(ids,artifact[split],full_domain)
+    if not full_domain and len(selected)!=len(artifact[split]) and not artifact.get('allow_partial_domains',False):raise ValueError('Domain does not cover partition: '+split)
     if not len(selected):raise ValueError('No supplied-domain rows in partition: '+split)
     frame=frame.iloc[[lookup[int(i)] for i in selected]]
     features=frame.iloc[:,:-1]
@@ -881,6 +883,7 @@ def evaluate(a,models,artifact):
     execution['budget_report_version']=1
     execution['timing_version']=1
     if getattr(a,'include_seen_levels',False):execution['include_seen_levels']=True
+    if getattr(a,'full_unseen_levels',False):execution['unseen_rows']='all supplied rows; source IDs may occur in training at other intensities'
     if aware:
         execution.update(budget_policy_version=BUDGET_VERSION,budget_aware_policy=True,
                          **{'budget_'+key:value for key,value in budget_settings(a).items()})
@@ -890,7 +893,8 @@ def evaluate(a,models,artifact):
     run_id=hashlib.sha256(json.dumps(execution,sort_keys=True).encode()).hexdigest()[:8]
     rows=[];retention_rows=[];budget_rows=[];time_rows=[];evaluation_results=[]
     for level in a.levels:
-        domain=read_domain(a.burst_dir,artifact,level,'test_ids')
+        full=getattr(a,'full_unseen_levels',False) and level not in saved['training_levels']
+        domain=read_domain(a.burst_dir,artifact,level,'test_ids',full_domain=full)
         pair={}
         for mode in a.modes:
             core.set_seed(a.seed)
@@ -989,6 +993,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('command',choices=['train','evaluate'])
     p.add_argument('--source-run',type=Path)
+    p.add_argument('--full-unseen-levels',action='store_true',help='Evaluation only: score every supplied row at unseen intensities; source IDs may have appeared at training intensities.')
     p.add_argument('--include-seen-levels',action='store_true',help='Evaluation only: include seen intensities on disjoint TEST source IDs; reported separately from unseen domains.')
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--burst-dir',type=Path,required=True)
@@ -1030,6 +1035,7 @@ def main():
     p.add_argument('--device',choices=['auto','cpu','cuda'],default='auto')
     a=p.parse_args()
     if min(a.epochs,a.patience)<1 or a.router_warmup_episodes<0:p.error('Invalid epochs/patience/warmup.')
+    if a.full_unseen_levels and a.command!='evaluate':p.error('--full-unseen-levels is evaluation only.')
     if a.include_seen_levels and a.command!='evaluate':p.error('--include-seen-levels is evaluation only.')
     if not 0<=a.budget_fraction<=1 or not 0<=a.gamma<=1 or not 0<=a.train_epsilon<=1 or not 0<=a.eval_epsilon<=1:p.error('Budget, gamma and epsilon must be in [0,1].')
     if not np.isfinite(a.context_lr) or a.context_lr<=0 or not np.isfinite(a.selection_cost) or any(not np.isfinite(v) or v<0 for v in (a.gain_weight,a.retention_weight)):p.error('Invalid LR/reward.')

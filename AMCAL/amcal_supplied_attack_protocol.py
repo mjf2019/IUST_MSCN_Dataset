@@ -134,7 +134,7 @@ def evaluate(a):
     bank.evaluate=capture
     try:
         with arguments(['evaluate','--burst-dir',roots,'--output',a.output/'Bank',
-                        '--levels',*a.levels,'--include-seen-levels','--balanced-reward-reference',
+                        '--levels',*a.levels,'--include-seen-levels','--full-unseen-levels','--balanced-reward-reference',
                         '--context-lr',a.context_lr,'--budget-fraction',a.budget_fraction,
                         '--query-schedule','policy','--update-policy','learned',
                         '--gamma',.95,'--selection-cost',.0001,'--gain-weight',1,'--retention-weight',1,
@@ -221,7 +221,7 @@ def baseline(a):
             '--methods',*a.methods,'--budget-fraction',str(a.budget_fraction),
             '--seed',str(a.seed),'--device',a.device]
     if independent and command=='train':values+=['--independent-source']
-    if command=='evaluate':values+=['--include-seen-levels','--levels',*map(str,a.levels)]
+    if command=='evaluate':values+=['--include-seen-levels','--full-unseen-levels','--levels',*map(str,a.levels)]
     subprocess.run(values,check=True)
 
 
