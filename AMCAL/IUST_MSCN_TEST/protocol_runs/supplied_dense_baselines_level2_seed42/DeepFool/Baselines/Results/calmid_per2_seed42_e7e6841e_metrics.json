@@ -1,0 +1,259 @@
+{
+  "method": "CALMID-paper-River",
+  "accuracy": 0.862453531598513,
+  "macro_f1": 0.9003912085865678,
+  "weighted_f1": 0.8624205606706286,
+  "samples": 269,
+  "labels": 53,
+  "label_cap": 53,
+  "actual_label_fraction": 0.1970260223048327,
+  "budget_utilization_pct": 100.0,
+  "labels_remaining": 0,
+  "online_gradient_steps": 0,
+  "query_protocol": "paper hybrid random/uncertainty/selective with native ratio gate and strict global cap",
+  "protocol": "predict-score-query-update; fresh model per level; reference/same-level observers never feed learning",
+  "online_seconds": 0.22236459999112412,
+  "prediction_seconds": 0.0856889002607204,
+  "selection_seconds": 0.0766800994751975,
+  "update_seconds": 0.057153299858327955,
+  "cache_seconds": 0.0,
+  "other_seconds": 0.0028423003968782723,
+  "online_ms_per_sample": 0.8266342007104986,
+  "samples_per_second": 1209.7249292861245,
+  "update_ms_per_label": 1.0783641482703388,
+  "timing_device": "cpu",
+  "timing_protocol": "synchronized wall time; prediction includes frozen-cache construction; update includes Context/classifier, reward probes and selector learning; excludes model loading, initialization, endpoint retention observers, file I/O and human label latency; other includes stream bookkeeping, oracle scoring and progress output",
+  "active_learning": {
+    "implementation_version": 1,
+    "native_budget_final": 0.2,
+    "native_budget_initial": 0.2,
+    "stream_seen": 269,
+    "acquired_labels": 53,
+    "query_counts": {
+      "uncertain": 20,
+      "random": 33
+    },
+    "last_training_weight": 0.526955547745114,
+    "periodic_evaluations": 0,
+    "last_period_macro_f1": null,
+    "drifts": 0,
+    "random_window_labels": 264,
+    "current_window_classes": 5,
+    "threshold_matrix": [
+      [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.4089534687986153
+      ],
+      [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      [
+        0.43437290638448905,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ]
+    ],
+    "per_class_cache_size": 10,
+    "cached_samples": 50,
+    "bootstrap_protocol": "available TRAIN labels; Poisson(6); neutral source-cache weights",
+    "bagging_protocol": "paper Poisson(computed weight), including age-decayed replacement"
+  },
+  "river_version": "0.26.1",
+  "online_update_calls": 53,
+  "source_initialization": "all available source TRAIN rows; no test bootstrap labels",
+  "same_level": {
+    "all_rows": {
+      "n": 269,
+      "initial": 0.8698884758364313,
+      "final": 0.8736059479553904,
+      "drop_pp": -0.371747211895912,
+      "broken": 5,
+      "fixed": 6
+    },
+    "unqueried": {
+      "n": 216,
+      "initial": 0.9027777777777778,
+      "final": 0.9027777777777778,
+      "drop_pp": 0.0,
+      "broken": 4,
+      "fixed": 4
+    }
+  },
+  "reference": {
+    "n": 1642,
+    "initial": 0.8788063337393422,
+    "final": 0.8800243605359318,
+    "drop_pp": -0.12180267965895553,
+    "broken": 15,
+    "fixed": 17
+  },
+  "level": 2,
+  "execution_config": {
+    "seed": 42,
+    "budget": 0.2,
+    "af_online_lr": 1e-05,
+    "protocol_version": 1,
+    "timing_version": 1,
+    "ral_protocol_version": 2,
+    "ral_budget_mode": "prefix",
+    "active_protocol_version": 1
+  },
+  "training_provenance": {
+    "version": 1,
+    "train_levels": [
+      0,
+      2
+    ],
+    "training_domains_sha256": {
+      "0": "4ab98b57627ca15f8fbdba768efdcb43902a7fbda5e17a67d34da7fe966b6267",
+      "2": "ee0649176bf8b492264aa79e14f6525aaf70ef07de7b084ff7619702a1274482"
+    },
+    "source_preprocessing_sha256": "a0a75a329907df8e4ad8c94d1186f3b2d054acc411dc4fc1c241b13d9ccb2645",
+    "partition_sha256": {
+      "train_ids": "6ed1a5f6cbfdca96c907ca4461a5814152e6f5c387ae35004cee90354108bedd",
+      "val_ids": "1de9c8f092e959320fb9c94634bdad17f83f0dbb72fa396e48254ed331d99d0c",
+      "test_ids": "65ef3e46f8a73cda34175b140a40cfceb8eebf2868a81a2c13e82133501bdb41"
+    },
+    "config": {
+      "command": "train",
+      "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\supplied_dense_baselines_level2_seed42\\DeepFool\\BaselineSource",
+      "independent_source": true,
+      "training_domain_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\supplied_dense_baselines_level2_seed42\\DeepFool\\Domains",
+      "include_seen_levels": false,
+      "burst_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\supplied_dense_baselines_level2_seed42\\DeepFool\\Domains",
+      "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\supplied_dense_baselines_level2_seed42\\DeepFool\\Baselines",
+      "methods": [
+        "ral",
+        "af",
+        "dfe",
+        "arf",
+        "calmid",
+        "micfoal"
+      ],
+      "train_levels": [
+        0,
+        2
+      ],
+      "levels": [
+        5,
+        7,
+        10,
+        12,
+        15,
+        17,
+        20
+      ],
+      "seed": 42,
+      "budget_fraction": 0.2,
+      "dfe_epochs": 200,
+      "af_epochs": 30,
+      "patience": 10,
+      "batch_size": 32,
+      "dfe_lr": 0.001,
+      "af_lr": 1e-05,
+      "dfe_alpha1": 0.5,
+      "dfe_alpha2": 2.0,
+      "dfe_eta": 0.5,
+      "dfe_lambda": 1.0,
+      "dfe_betas": [
+        0.01,
+        0.02,
+        0.03,
+        0.04,
+        0.05,
+        0.05
+      ],
+      "templates": 20,
+      "arf_trees": 10,
+      "arf_train_passes": 1,
+      "active_models": 10,
+      "active_window": 500,
+      "active_random_ratio": 0.1,
+      "calmid_threshold": 0.5,
+      "calmid_step": 0.01,
+      "micfoal_threshold": 0.9,
+      "micfoal_step": 0.1,
+      "micfoal_fixed_budget": false,
+      "ral_budget_mode": "prefix",
+      "progress_every": 200,
+      "jobs": -1,
+      "device": "cuda",
+      "classes": [
+        "HTTP",
+        "SFTP",
+        "SMTP",
+        "SSH",
+        "VIDEO"
+      ]
+    },
+    "classes": [
+      "HTTP",
+      "SFTP",
+      "SMTP",
+      "SSH",
+      "VIDEO"
+    ],
+    "feature_names": [
+      "pRetran",
+      "SrcRetra",
+      "PCRatio",
+      "SrcWin",
+      "SrcLoss",
+      "DstRate",
+      "SrcLoad",
+      "Load",
+      "DstLoad",
+      "TcpRtt",
+      "Sum",
+      "AckDat",
+      "dTtl",
+      "Min",
+      "pLoss",
+      "DstLoss",
+      "Loss",
+      "StdDev",
+      "Rate",
+      "SrcRate",
+      "IdleTime",
+      "Dur",
+      "SrcPkts",
+      "SrcGap",
+      "DstBytes",
+      "DstGap",
+      "sTtl",
+      "DstWin",
+      "TotPkts",
+      "DstPkts",
+      "Mean",
+      "SrcBytes",
+      "TotBytes",
+      "dMeanPktSz",
+      "DstRetra",
+      "SynAck"
+    ]
+  },
+  "target_sha256": "ee0649176bf8b492264aa79e14f6525aaf70ef07de7b084ff7619702a1274482"
+}
