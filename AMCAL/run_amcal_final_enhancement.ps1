@@ -5,7 +5,7 @@ param(
     [string]$SourceRun = 'AMCAL/ANT_Burst_IAT_TEST/protocol_runs/structured_bank3_balancedref_lr0p0005_seed42',
     [string]$OutputRun = '',
     [int]$TrainingSeed = 42,
-    [int[]]$Seeds = @(42,48,54,62,72),
+    [int[]]$Seeds = @(42),
     [ValidateSet('cpu','cuda','auto')][string]$Device = 'cuda'
 )
 $ErrorActionPreference = 'Stop'

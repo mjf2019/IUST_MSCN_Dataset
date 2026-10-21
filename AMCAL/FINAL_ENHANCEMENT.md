@@ -42,7 +42,7 @@ python AMCAL/amcal_final_enhancement.py evaluate `
 ```
 
 If the local branch already exists, use `git switch AMCAL_final_enhancement`.
-The PowerShell launcher below handles the same paths, five online seeds and the
+The PowerShell launcher below handles the same paths, one online seed (42) and the
 persistent audit:
 
 ```powershell
@@ -53,7 +53,8 @@ persistent audit:
 
 Use `-Profile accuracy`, `shared` or `cascade` for separate runs. `-OutputRun`
 can override the generated path. Repeated training seeds require separate paths;
-the launcher's default five evaluation seeds reuse one trained checkpoint.
+the launcher's default evaluation seed is 42 and reuses one trained checkpoint.
+Multiple evaluation seeds remain optional via `-Seeds @(42,48,54,62,72)`.
 
 ## What changed
 
