@@ -764,3 +764,49 @@ git add -f -- "$run/Results"
 git commit -m "Add two-Context RL-feedback tests seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## Single-Context evaluation ablation (three actions)
+
+```powershell
+git pull origin AMCAL_final_enhancement
+./AMCAL/run_amcal_one_context.ps1 -Seed 42
+```
+
+This is the next bank-size removal test: one real Context, two prediction routes
+(frozen CNN and Context), and three coupled actions (predict CNN, predict Context,
+query/update Context). The default uses **uniform feedback**, seed 42, the same
+20% cap, and both persistent forgetting and independent per-level evaluation on
+5, 7, 10, 12, 15, 17, 20. It reuses the selected counterfactual-trained checkpoint
+without offline retraining. Shared selector/utility tensors load unchanged;
+state aggregates, reliability, TD masks and paired advantages use only the two
+active prediction routes. No inactive Context is created or scored. With one
+Context there is no competition between alternative update destinations; the
+selector still decides the prediction route, and `policy` feedback can additionally
+choose whether to query. Context-min adaptation and closed-loop feedback remain.
+
+Use the matching uniform-feedback sequential results as references: three Contexts
+78.63818% final audit, 73.47414% online, 1.71340 pp forgetting; two Contexts 76.16822%,
+73.20805%, 3.27103 pp. Both used 1,197 labels. Their independent metrics must be
+compared separately. This removal ablation does not measure the best performance
+of a model trained specifically with one Context.
+
+`-QuerySchedule policy` is an optional separate evaluation against policy-feedback
+runs; it is not the default. `-EvaluationSet Independent` or `Sequential` resumes
+one unfinished test. The source checkpoint and previous results are unchanged.
+Output directories under the same run's `Results/evaluation_*` record
+`context_count: 1`, `action_count: 3`, `query_schedule`, `continual` and checkpoint
+SHA. Traces have two route predictions, three Q values + two probabilities in
+`scores` (length 5), actions 0..2, and one slot-query count. No training command,
+counterfactual simulation or normalization is enabled by the launcher.
+
+CPU tests verify shared-checkpoint compatibility, one-Context masks and online
+TD/paired learning, unqueried-label invariance, and both real CLI evaluation
+protocols with unchanged checkpoint bytes and exact uniform caps. PowerShell
+is reviewed statically; GPU accuracy and speed require the experiment.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_accuracy_counterfactual_trainseed42"
+git add -f -- "$run/Results"
+git commit -m "Add one-Context uniform-feedback tests seed 42"
+git push origin AMCAL_final_enhancement
+```

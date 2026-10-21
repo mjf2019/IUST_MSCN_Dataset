@@ -690,6 +690,37 @@ class FinalEnhancementTests(unittest.TestCase):
                 traces=pd.read_csv(result/'learned_level5_trace.csv')
                 self.assertTrue(traces.action.between(0,4).all())
             self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
+            # Single Context, uniform feedback: same checkpoint, both protocols.
+            existing=set((cf_output/'Results').glob('evaluation_*'))
+            single_common=['evaluate','--output',str(cf_output),'--burst-dir',str(burst),
+                '--device','cpu','--query-schedule','uniform','--update-policy','learned',
+                '--modes','learned','--seed','42','--levels','5','7','--context-count','1']
+            with redirect_stdout(io.StringIO()), \
+                    patch('enhancements.stream.alternatives',side_effect=AssertionError('No TEST simulation')):
+                runner.main([*single_common,'--continual'])
+                runner.main(single_common)
+            single_results=set((cf_output/'Results').glob('evaluation_*'))-existing
+            self.assertEqual(len(single_results),2)
+            kinds=set()
+            for result in single_results:
+                execution=json.loads((result/'execution.json').read_text())
+                self.assertEqual(execution['context_count'],1)
+                self.assertEqual(execution['action_count'],3)
+                self.assertEqual(execution['checkpoint_sha256'],cf_hash)
+                self.assertEqual(execution['query_schedule'],'uniform')
+                kinds.add(execution['continual'])
+                for level in (5,7):
+                    measured=json.loads((result/f'learned_level{level}_metrics.json').read_text())
+                    self.assertEqual(len(measured['slot_queries']),1)
+                    self.assertEqual(len(measured['action_counts']),3)
+                    self.assertEqual(measured['labels'],measured['label_cap'])
+                    self.assertEqual(measured['samples'],16 if execution['continual'] else 20)
+                traces=pd.read_csv(result/'learned_level5_trace.csv')
+                self.assertTrue(traces.action.between(0,2).all())
+                self.assertTrue(all(len(json.loads(x))==2 for x in traces.predictions))
+                self.assertTrue(all(len(json.loads(x))==5 for x in traces.scores))
+            self.assertEqual(kinds,{True,False})
+            self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
             self.assertEqual(legacy.core.file_sha256(checkpoint_path),checkpoint_hash)
 
 
