@@ -123,3 +123,71 @@ Same-level checks additionally verify paired-row damage/fix counts, empty subset
 unchanged actions/rewards/weights with the observer enabled, and evaluate/save/table
 integration on a small CPU fixture.
 
+## Persistent training for the finalized balanced-reference method
+
+The new standalone entry point `amcal_balanced_sequence_training.py` continues
+the ORIGINAL coupled v1 selector from
+`structured_bank3_balancedref_lr0p0005_seed42`. The original `train` command
+remains available with its previous episodic behavior. This separate experiment
+does not use the enhancement agent, joint attention, ranking loss, protected
+source-anchor replay, residual architecture, or changed utility formula.
+
+One epoch is a complete TRAIN pass through 0, 1, 3. Context weights, Adam
+optimizer states, the original balanced PaidHistory reference, reliability and
+selector replay survive the 0-to-1 and 1-to-3 transitions. At the next epoch,
+the Context/optimizer/reference state resets to the source initial checkpoint;
+selector weights are retained and stale replay is cleared. Initial Context/CNN
+training is not repeated. The CNN is frozen throughout.
+
+TRAIN rollouts deliberately invoke the original online paid-feedback mechanics:
+only acquired labels train the selector or enter its reference reservoir, using
+the original online optimizer/replay settings. The reservoir capacity remains
+256 and balanced reference sampling remains at most 32 rows. There is no new
+memory implementation. The default uniform schedule consumes 20% per domain;
+`-QuerySchedule policy` instead retains selective query decisions in both
+training and evaluation, with a separate output directory.
+
+VAL uses a fixed 20% source-identity audit subset, excluded from adaptation at
+EVERY validation intensity and from clean adaptation. A fresh temporary model
+adapts sequentially on the other VAL rows. Checkpoint selection maximizes mean
+FINAL audit accuracy across validation domains, including epoch zero as a
+candidate. VAL learner parameters never return to TRAIN. The original balanced
+method has no added retention-selection penalty; clean drop, forgetting, BWT,
+intermediate audit matrices and label usage are recorded separately. No TEST
+rows are read by the trainer. Source hashes, TRAIN domain provenance and disjoint
+train/val/test identities are checked before fitting.
+
+From the repository root in PowerShell, run two complete passes then the
+original sequential forgetting audit, learned mode only, seed 42:
+
+```powershell
+git pull origin AMCAL_final_enhancement
+./AMCAL/run_amcal_balanced_sequence.ps1 -Action All
+```
+
+For evaluation alone after training, use `-Action Evaluate`. The original audit
+script now accepts `--query-schedule uniform` and `--modes learned`; its defaults
+remain policy queries and learned/random modes. Coupled v1 continuation allows
+uniform gates; the old dense-TRAIN continuation guard is retained. This training
+entry point uses paid-only rollout semantics instead of carrying a full-domain
+TrainingProbe into another intensity.
+
+Outputs go to
+`AMCAL/ANT_Burst_IAT_TEST/protocol_runs/structured_bank3_balancedref_sequence_uniform_seed42`.
+The checkpoint is `Models/structured_bank_ddqn.pth`, fitting logs are
+`structured_sequence_training.json`, and the audit tables/traces are under
+`Results`. Source models and existing experiments are not overwritten. Compare
+uniform-query results under equal feedback schedules; the historical policy
+query audit used 431 labels, so it is not an equal-label comparator to 1197-label
+uniform runs. Additional continuation training and the changed protocol both
+contribute to any measured gain.
+
+Validation: 54 CPU tests passed, including original balanced-memory/optimizer object persistence,
+paid-only TRAIN label invariance, independent audit-label invariance, and real
+CNN/Context/source-checkpoint train-save-load-sequential-evaluate integration.
+The integration test checks that TRAIN never reads TEST, source and copied model
+hashes are unchanged, old v1 policy format is retained, exact uniform caps hold,
+and no comparison-head parameters appear. PowerShell is unavailable in the CPU
+environment; the launcher received static review. Full dataset/GPU results must
+be produced on the machine holding the source checkpoints.
+

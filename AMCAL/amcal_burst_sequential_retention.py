@@ -23,6 +23,8 @@ def main():
     p.add_argument("--levels",nargs="+",type=int,default=[5,7,10,12,15,17,20])
     p.add_argument("--audit-fraction",type=float,default=.2)
     p.add_argument("--seed",type=int,default=42)
+    p.add_argument("--query-schedule",choices=["policy","uniform"],default="policy")
+    p.add_argument("--modes",nargs="+",choices=["learned","random"],default=["learned","random"])
     p.add_argument("--device",choices=["cpu","cuda","auto"],default="cuda")
     a=p.parse_args()
     if not .05<=a.audit_fraction<=.5:p.error("Audit fraction must be .05.. .5.")
@@ -46,7 +48,7 @@ def main():
     cfg=dict(saved["config"])
     cfg.update(seed=a.seed,classes=[str(c) for c in artifact["label_encoder"].classes_],
                context_lr=.0005,budget_fraction=.2,eval_epsilon=.05,
-               query_schedule="policy",update_policy="learned",bank_utility=False,
+               query_schedule=a.query_schedule,update_policy="learned",bank_utility=False,
                budget_aware_policy=False,decoupled_query=False,context_alpha=cfg.get("context_alpha",.8))
     settings=SimpleNamespace(**cfg)
     core.SELECTION_COST=settings.selection_cost
@@ -71,11 +73,12 @@ def main():
         "source_run":str(a.source_run.resolve()),"seed":a.seed,"levels":a.levels,
         "audit_ids":sorted(audit_ids),"audit_fraction":a.audit_fraction,
         "context_lr":.0005,"epsilon":.05,"budget_fraction":.2,
+        "query_schedule":a.query_schedule,"modes":a.modes,
         "protocol":"per-domain budget; source identity charged again per domain; all adaptive state retained",
         "audit_protocol":"fixed source IDs excluded from EVERY adaptation domain; observer-only labels",
-        "training_config":cfg},default=str,indent=2))
+        "training_config":cfg,"training_protocol":saved.get("training_protocol")},default=str,indent=2))
     observer_rows=[];stream_rows=[];summary=[]
-    for mode in ["learned","random"]:
+    for mode in a.modes:
         core.set_seed(a.seed)
         cnn,contexts,initial,width=bank.models_from_source(models,artifact)
         agent=bank.Agent(width,core.device,a.seed,policy_state=saved["policy_state_dict"],gamma=settings.gamma)

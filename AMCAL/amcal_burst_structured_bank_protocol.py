@@ -449,8 +449,8 @@ def episode(a,cnn,bank,initial,agent,domain,mode='learned',training=False,
     rng=np.random.default_rng(seed+719003)
     quality_route_rng=np.random.default_rng(seed+601037) if quality is not None else None
     query_route_rng=np.random.default_rng(seed+601089) if decoupled else None
-    if continuation is not None and (training or budget_aware or decoupled or a.query_schedule != 'policy'):
-        raise ValueError('Continual control currently supports original v1 policy evaluation only.')
+    if continuation is not None and (training or budget_aware or decoupled or a.query_schedule not in ('policy','uniform')):
+        raise ValueError('Continual control supports coupled v1 paid-feedback rollouts with policy or uniform queries only.')
     if continuing:
         history=continuation['history']
         # Local stream positions restart; retain nonnegative elapsed ages.
