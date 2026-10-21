@@ -233,7 +233,7 @@ def train(a):
     else:
         initial = pretrain_context(a, models, artifact, cnn, domains)
         torch.save({'architecture': a.config.architecture, 'initial_state_dict': initial}, models/'enhanced_context.pth')
-    bank = build_bank(models, artifact, a.config, initial)
+    bank = build_bank(models, artifact, a.config, initial, slots=a.context_count)
     agent = new_agent(a, cnn, artifact, offline=not a.aligned_sequence, saved=warm)
     if a.warm_start_selector:
         old = torch.load(source/'structured_bank_ddqn.pth', map_location='cpu', weights_only=False)
@@ -256,12 +256,22 @@ def train(a):
         calibration_x = clean_validation_domain[0][np.array([
             int(source_id) not in val_audit_set for source_id in clean_validation_domain[2]])]
         training_protocol = dict(version=1, mode='aligned_sequence', levels=a.levels,
-            query_schedule='uniform', update_policy='learned', paid_only_supervision=True,
+            query_schedule=a.query_schedule, update_policy='learned', paid_only_supervision=True,
             agent_optimizer='online settings', train_epsilon=a.eval_epsilon,
             validation_audit_source_ids=val_audit_ids, audit_fraction=a.audit_fraction,
             validation_adaptation_source_ids={str(level): list(map(int, d[2])) for level, d in val_streams.items()},
             selection_metric='final persistent VAL audit accuracy minus excess clean-drop penalty',
             reset='bank/memory reset per TRAIN pass; all adaptive state retained within each sequence')
+        if a.one_context_rl_training:
+            training_protocol['context_count'] = 1
+            training_protocol['selector_specialization'] = dict(
+                version=1, mode='one_context_policy_feedback',
+                warm_start='inherited shared selector weights and initial Context',
+                trained_parameters='correctness, future and update_value heads',
+                context='paid-label adaptation within each sequence; reset to inherited initial state per epoch',
+                supervision='TRAIN anchors and acquired labels only; no unqueried-label supervision',
+                validation='temporary policy-feedback learner; disjoint observer-only VAL audit',
+                damage_guard=False)
     if a.counterfactual_utility:
         training_protocol['utility_supervision'] = dict(version=1, scope='paid TRAIN only',
             alternatives=3, trained_parameters='update_value only', learning_rate=.0001,
@@ -305,7 +315,7 @@ def train(a):
         with torch.random.fork_rng(devices=list(range(torch.cuda.device_count()))):
             if a.aligned_sequence:
                 temporary = new_agent(a, cnn, artifact, saved=snapshot)
-                validation_bank = build_bank(models, artifact, a.config, initial)
+                validation_bank = build_bank(models, artifact, a.config, initial, slots=a.context_count)
                 val_sequence = validate_sequence(a, cnn, validation_bank, initial, temporary,
                     val_streams, val_audits, val_clean, anchors)
                 accuracy, drop = val_sequence['accuracy'], val_sequence['drop_pp']
@@ -337,6 +347,8 @@ def train(a):
                     penalty_weight=a.retention_selection_weight), **snapshot)
             if a.warm_start_enhancement:
                 saved['parent_checkpoint_sha256'] = legacy.core.file_sha256(source/'final_enhancement.pth')
+            if a.one_context_rl_training:
+                saved['training_context_count'] = 1
             if training_protocol is not None: saved['training_protocol'] = training_protocol
             torch.save(saved, models/'final_enhancement.pth')
         else:
@@ -367,6 +379,8 @@ def summary_row(level, mode, m):
 def evaluate(a):
     models = a.output / 'Models'
     saved = torch.load(models/'final_enhancement.pth', map_location='cpu', weights_only=False)
+    if saved.get('training_context_count') is not None and a.context_count != saved['training_context_count']:
+        raise ValueError('Context count must match this specialized training checkpoint.')
     if saved['format_version'] != FORMAT_VERSION: raise ValueError('Unsupported enhancement checkpoint format.')
     config = EnhancementConfig(**saved['config']).validated()
     if a.profile is not None and a.profile != config.profile: raise ValueError('Profile differs from training.')
@@ -440,6 +454,8 @@ def evaluate(a):
         execution['context_count'] = a.context_count
         execution['action_count'] = 2*a.context_count+1
         execution['context_count_protocol'] = 'evaluation-only bank reduction; inherited shared weights; aggregates use active routes only'
+        if saved.get('training_context_count') == a.context_count:
+            execution['context_count_protocol'] = 'matched Context count from dedicated policy-feedback sequence training'
         if a.context_count > 3:
             execution['context_count_protocol'] = 'evaluation-only bank expansion; inherited shared weights; aggregates use active routes only'
     if a.continual:
@@ -542,6 +558,8 @@ def parser():
                    help='Train a zero-initialized cross-route attention residual in the correctness head.')
     p.add_argument('--aligned-sequence', action='store_true',
                    help='Continue training with paid-only persistent TRAIN sequences and independent persistent VAL audits.')
+    p.add_argument('--one-context-rl-training', action='store_true',
+                   help='Specialize an inherited accuracy selector using one-Context paid-only policy-feedback sequences.')
     p.add_argument('--counterfactual-utility', action='store_true',
                    help='TRAIN only: fit update values using three isolated paid-label Context updates; freeze other selector heads.')
     p.add_argument('--distill-weight', type=float, default=.2)
@@ -561,7 +579,7 @@ def parser():
     p.add_argument('--retention-selection-weight', type=float, default=1.)
     p.add_argument('--bank-executor', choices=['sequential', 'vmap'])
     p.add_argument('--routed-utility', action='store_true')
-    p.add_argument('--context-count', type=int, choices=[1,2,3,4,5], default=3, help='Evaluation-only Context-count ablation; shared selector weights are reused.')
+    p.add_argument('--context-count', type=int, choices=[1,2,3,4,5], default=3, help='Context-count evaluation ablation, or one-Context dedicated RL training.')
     p.add_argument('--context-damage-guard', action='store_true', help='Single-Context evaluation: accept only protected-reference-safe online Context steps.')
     p.add_argument('--online-memory-ce-weight', type=float,
                    help='Single-Context uniform-feedback evaluation: override protected-replay CE weight online only.')
@@ -583,6 +601,13 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.one_context_rl_training:
+        if (a.command != 'train' or not a.warm_start_enhancement or not a.aligned_sequence
+                or a.context_count != 1 or a.query_schedule != 'policy' or a.update_policy != 'learned'):
+            p.error('One-Context RL training requires train --warm-start-enhancement --aligned-sequence --context-count 1 --query-schedule policy --update-policy learned.')
+        if (a.profile != 'accuracy' or a.joint_router or a.disable or a.routed_utility
+                or a.counterfactual_utility or a.utility_calibration is not None):
+            p.error('Specialize the unchanged accuracy selector without other architecture or utility ablations.')
     if a.context_damage_guard:
         if a.command != 'evaluate' or a.context_count != 1 or a.update_policy != 'learned':
             p.error('Damage guard is a single-Context evaluation ablation with learned updates.')
@@ -595,7 +620,7 @@ def main(argv=None):
             p.error('Online replay weighting is a single-Context uniform-feedback evaluation ablation.')
         if a.utility_calibration is not None or a.router_refresh or a.router_informative_weight != 1.:
             p.error('Test online replay weighting separately from other routing/utility ablations.')
-    if a.context_count != 3 and (a.command != 'evaluate' or a.utility_calibration is not None):
+    if a.context_count != 3 and not a.one_context_rl_training and (a.command != 'evaluate' or a.utility_calibration is not None):
         p.error('--context-count other than 3 is an evaluation ablation without utility normalization.')
     if a.counterfactual_utility:
         if a.command != 'train' or not a.warm_start_enhancement or not a.aligned_sequence:
@@ -615,7 +640,7 @@ def main(argv=None):
         p.error('Utility normalization weights require --utility-calibration.')
     if a.aligned_sequence and (a.command != 'train' or not a.warm_start_enhancement):
         p.error('--aligned-sequence requires train --warm-start-enhancement.')
-    if a.aligned_sequence and (a.query_schedule != 'uniform' or a.update_policy != 'learned'):
+    if a.aligned_sequence and not a.one_context_rl_training and (a.query_schedule != 'uniform' or a.update_policy != 'learned'):
         p.error('Aligned sequences require uniform queries and learned update destinations.')
     if a.warm_start_enhancement and (a.command != 'train' or a.warm_start_selector):
         p.error('--warm-start-enhancement is train-only and cannot combine with --warm-start-selector.')

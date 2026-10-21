@@ -1042,3 +1042,75 @@ git add -f -- "$run/Results"
 git commit -m "Add one-Context RL baseline and damage-guard tests seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+
+### Dedicated single-Context RL sequence training
+
+```powershell
+git pull --ff-only origin AMCAL_final_enhancement
+if ($LASTEXITCODE -eq 0) {
+    .\AMCAL\run_amcal_one_context_rl_training.ps1 -Action All -Seed 42
+}
+```
+
+This is a separate TRAIN run, not another evaluation of the transferred
+three-Context selector. It warm-starts the shared selector and initial Context
+from `final_enhancement_accuracy_counterfactual_trainseed42`, then specializes
+the correctness, future and update-value heads using one Context, policy-chosen
+queries and paid-only supervision. The Context continues to minimize current
+and protected replay loss on acquired labels inside each rollout. The selector
+maximizes the existing correctness/transfer return with paired Double-DQN
+updates; the reward, selection cost, memory layout and replay weight 0.1 are
+unchanged. No damage guard, counterfactual simulations or utility normalization
+is applied. The frozen CNN and the inherited initial Context artifact are
+unchanged. Only acquired labels and source TRAIN anchors supervise the learner.
+Unqueried labels are used solely for observer metrics.
+
+TRAIN follows levels 0, 1, 3. Within each epoch, Context, Context Adam state,
+selector state, reliability history and protected memory persist across levels.
+At the next epoch, Context/Context Adam/history/memory reset; learned selector
+weights and its optimizer state persist. This follows the existing aligned
+sequence protocol. The effective TRAIN exploration is 0.05, matching validation
+and TEST. The label cap is 20% per domain, not a forced consumption target.
+
+Each candidate selector is validated by a fresh temporary one-Context learner
+with policy queries. Fixed source IDs are held out for observer-only VAL audits
+at every intensity and are excluded from VAL adaptation and novelty calibration.
+The existing selection score is final persistent VAL audit accuracy minus
+excess clean-drop penalty. The inherited epoch-zero candidate is also eligible;
+if training does not improve that score, it remains selected. This possibility
+is reported explicitly in `enhancement_training.json`. There is no TEST-based
+checkpoint or epoch selection.
+
+The launcher defaults to 12 epochs, patience 5 and seed 42. It writes a fresh
+run at `final_enhancement_one_context_rl_trainseed42`, preserving the source
+checkpoint and all previous results. `-Action All` performs one training run
+(including VAL selection), then exactly two held-out TEST evaluations: independent
+per-level and sequential forgetting, both learned RL mode and without damage
+guard. `-Action Train`, `Evaluate` (independent) or `Audit` (sequential) can run an
+individual stage. An existing output directory is never overwritten by training;
+use the evaluation actions to resume after training, or choose a new `-OutputRun`.
+
+Specialized checkpoints record `training_context_count: 1` and the policy-feedback
+training protocol; evaluation rejects a mismatched Context count. Existing
+three-Context checkpoints retain their count-ablation behavior. Validation now
+constructs its initial reliability history from the active bank size; the old
+default of four routes was only valid for three Contexts.
+
+Compare this run against the one-Context transferred RL baseline
+(`evaluation_5a3414a8f372` sequential and `evaluation_525c2e425df9` independent).
+Report selected epoch, actual labels per level, online and final audit accuracy,
+forgetting, BWT, clean drop and runtime. Equal caps do not imply equal label
+consumption. CPU tests cover TRAIN unqueried-label invariance, one-Context
+training and validation, persistent cross-level state, actual TD learning,
+VAL-audit exclusion, both real CLI TEST protocols and artifact immutability.
+PowerShell is reviewed statically; accuracy effects require the user-host run.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_one_context_rl_trainseed42"
+git add -f -- "$run/enhancement_training.json" "$run/Results"
+git commit -m "Add dedicated one-Context RL training and evaluation results seed 42"
+git push origin AMCAL_final_enhancement
+```
+
+Large checkpoint files do not need to be pushed for result analysis.

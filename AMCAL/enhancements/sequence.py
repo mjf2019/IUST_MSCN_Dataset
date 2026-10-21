@@ -51,7 +51,7 @@ def validate_sequence(a, cnn, bank, initial, agent, streams, audits, clean, anch
         pred, _, _ = observer(cnn, bank, agent, *clean, history, used, cap,
                                position, a.seed, a.config)
         matrix.append(scores); clean_scores.append(float(np.mean(pred == clean[1])))
-    observe_stage(DeviceReliability(len(a.classes), streams[a.levels[0]][0].device),
+    observe_stage(DeviceReliability(len(a.classes), streams[a.levels[0]][0].device, len(bank)+1),
                   0, int(a.budget_fraction*len(streams[a.levels[0]][1])), 0)
     for level in a.levels:
         m, _ = episode(a, cnn, bank, initial, agent, streams[level], anchors,
