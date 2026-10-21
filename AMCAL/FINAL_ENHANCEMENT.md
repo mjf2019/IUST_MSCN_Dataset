@@ -1157,3 +1157,69 @@ git add -f -- "$run/Results"
 git commit -m "Add uniform-feedback diagnostic of dedicated one-Context RL checkpoint seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+
+### Single-Context query-value-only RL training
+
+```powershell
+git pull --ff-only origin AMCAL_final_enhancement
+if ($LASTEXITCODE -eq 0) {
+    .\AMCAL\run_amcal_one_context_rl_query_value_only.ps1 -Action All -Seed 42
+}
+```
+
+This isolated run restarts from the original counterfactual-trained checkpoint
+(`final_enhancement_accuracy_counterfactual_trainseed42`, SHA
+`c7cc1e00f9eeda6a68c1583cb41ad1a52f30cb6226dddef453092c857a88b66d`),
+not from the all-head single-Context specialization. It adds
+`--query-value-only-training` to the dedicated one-Context policy-feedback
+sequence protocol. During TRAIN, all correctness and future-head parameters
+are frozen at their inherited values. Only `update_value` requires gradients
+and belongs to the TD Adam optimizer. Routing supervision is skipped during
+TRAIN, so route update counters are zero. The existing TD and paired query
+objectives, target-network synchronization, reward and selection cost are
+unchanged. Every epoch checks exact equality of all non-update-value selector
+weights with the parent; the training log records `frozen_selector_unchanged`.
+
+Context-min adaptation still updates the single Context on acquired labels
+using the original protected-memory loss. Adaptive Context, Adam, history and
+memory persist across TRAIN levels 0, 1, 3 and reset at the next epoch; selector
+weights and its optimizer persist. Only acquired labels and source TRAIN anchors
+supervise learning. No damage guard, utility normalization or three-alternative
+TRAIN simulation is enabled. The initial Context artifact and frozen CNN are
+unchanged. This is a parameter-isolation experiment, not a new reward formula
+or a claim that feedback scheduling or forgetting has already improved.
+
+The frozen-head restriction applies only to the TRAIN learner. Each temporary
+VAL learner and each TEST learner uses ordinary paid-feedback online adaptation
+of all selector heads, matching the previous evaluation protocol. Best-epoch
+selection uses the existing disjoint persistent VAL audit and clean-drop penalty,
+including epoch zero. The selected checkpoint therefore preserves the parent's
+correctness/future weights at evaluation start; those heads may subsequently
+adapt online on paid labels. Audit and unqueried labels never train the learner.
+
+The default output is
+`final_enhancement_one_context_rl_query_value_only_trainseed42`. The launcher
+uses seed 42, epsilon 0.05, a 20% per-domain label cap, Context LR 0.0005,
+12 maximum epochs and patience 5. `-Action All` performs one training run with
+VAL selection, then exactly two held-out TEST evaluations: independent and
+sequential forgetting, both with RL query decisions. Use `-Action Train`,
+`Evaluate` (independent), or `Audit` (sequential) to run individual stages.
+Existing runs are never overwritten. Compare first against the original
+transferred RL runs (`evaluation_525c2e425df9` independent and
+`evaluation_5a3414a8f372` sequential), reporting actual labels alongside accuracy,
+forgetting, BWT, clean drop and runtime. No benefit should be attributed to the
+new training without accounting for changed label consumption.
+
+CPU tests verify exclusive optimizer ownership, exact frozen-head equality
+after real TD updates and checkpoint selection, update-value weight changes,
+TRAIN unqueried-label invariance, unfrozen temporary VAL learners, both real
+CLI TEST protocols and source/checkpoint immutability. The launcher is reviewed
+statically; numerical accuracy effects require the user-host GPU experiment.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_one_context_rl_query_value_only_trainseed42"
+git add -f -- "$run/enhancement_training.json" "$run/Results"
+git commit -m "Add one-Context query-value-only RL training results seed 42"
+git push origin AMCAL_final_enhancement
+```

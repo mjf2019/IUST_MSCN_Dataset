@@ -36,20 +36,27 @@ class OneContextRLTrainingTests(unittest.TestCase):
                 '--context-count','1','--query-schedule','policy','--update-policy','learned']
         variants = [base+['--context-count','2'], base+['--query-schedule','uniform'],
                     base+['--counterfactual-utility'],base+['--joint-router'],
-                    [x for x in base if x!='--warm-start-enhancement']]
+                    [x for x in base if x!='--warm-start-enhancement'],
+                    [x for x in base if x!='--one-context-rl-training']+['--query-value-only-training']]
         with patch.object(runner,'train') as train, redirect_stderr(io.StringIO()):
             for argv in variants:
                 with self.subTest(argv=argv), self.assertRaises(SystemExit): runner.main(argv)
             train.assert_not_called()
 
     def test_policy_train_never_learns_from_unqueried_labels(self):
+        self.check_policy_causality(False)
+
+    def test_query_value_only_train_never_learns_from_unqueried_labels(self):
+        self.check_policy_causality(True)
+
+    def check_policy_causality(self, query_only):
         torch.manual_seed(12)
         cnn,bank,initial,a,domain,anchors,parent = fixtures.FinalEnhancementTests().fixture(query='policy',policy='learned')
         bank = bank[:1]; a.train_epsilon = 1.
         start = deepcopy(parent.policy.state_dict())
         def run(labels):
             torch.manual_seed(71)
-            agent=EnhancementAgent(34,12,2,torch.device('cpu'),42,a.config,policy_state=start,slots=1)
+            agent=EnhancementAgent(34,12,2,torch.device('cpu'),42,a.config,policy_state=start,slots=1,query_value_only=query_only)
             continuation={}
             metrics,traces=episode(a,cnn,bank,initial,agent,(domain[0],labels,domain[2]),anchors,
                 training=True,paid_supervision=True,continuation=continuation)
@@ -57,7 +64,7 @@ class OneContextRLTrainingTests(unittest.TestCase):
         m,trace,policy,context,continuation=run(domain[1])
         self.assertGreater(m['labels'],0)
         self.assertLessEqual(m['labels'],m['label_cap'])
-        self.assertEqual(m['route_updates'],m['labels'])
+        self.assertEqual(m['route_updates'],0 if query_only else m['labels'])
         self.assertEqual(len(continuation['history'].updates),2)
         altered=domain[1].copy(); paid=set(m['queried_source_ids'])
         for i,identity in enumerate(domain[2]):
@@ -68,6 +75,12 @@ class OneContextRLTrainingTests(unittest.TestCase):
             for key in left: self.assertTrue(torch.equal(left[key],right[key]),key)
 
     def test_real_cli_train_select_and_both_evaluations(self):
+        self.check_real_cli(False)
+
+    def test_real_cli_query_value_only_train_and_both_evaluations(self):
+        self.check_real_cli(True)
+
+    def check_real_cli(self, query_only):
         torch.manual_seed(42)
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); source=root/'source'; models=source/'Models'; models.mkdir(parents=True)
@@ -102,7 +115,7 @@ class OneContextRLTrainingTests(unittest.TestCase):
             common=['--output',str(output),'--burst-dir',str(burst),'--device','cpu',
                 '--context-count','1','--query-schedule','policy','--update-policy','learned',
                 '--budget-fraction','0.5','--eval-epsilon','0.05']
-            original=runner.episode; train_stages=[]
+            original=runner.episode; train_stages=[]; trained_states=[]
             def checked_episode(*args,**kwargs):
                 a,_,bank,_,agent,domain=args[:6]
                 self.assertEqual(len(bank),1); self.assertEqual(agent.slots,1)
@@ -111,19 +124,32 @@ class OneContextRLTrainingTests(unittest.TestCase):
                 self.assertFalse(ids & set(artifact['test_ids']) if a.command=='train' else False)
                 if kwargs.get('training'):
                     self.assertTrue(kwargs['paid_supervision'])
+                    self.assertEqual(agent.query_value_only,query_only)
+                    if query_only:
+                        expected={id(p) for p in agent.policy.update_value.parameters()}
+                        actual={id(p) for group in agent.td_optimizer.param_groups for p in group['params']}
+                        self.assertEqual(expected,actual)
+                        for name,parameter in agent.policy.named_parameters():
+                            self.assertEqual(parameter.requires_grad,name.startswith('update_value.'))
                     continuing=bool(kwargs.get('continuation'))
                     if continuing:
                         self.assertGreater(kwargs['continuation']['history'].paid,0)
                         self.assertTrue(kwargs['continuation']['optimizers'][0].state)
                     train_stages.append(continuing)
                     self.assertTrue(ids.issubset(set(artifact['train_ids'])))
-                return original(*args,**kwargs)
+                else:
+                    self.assertFalse(agent.query_value_only)
+                    self.assertTrue(all(p.requires_grad for p in agent.policy.parameters()))
+                result=original(*args,**kwargs)
+                if kwargs.get('training'): trained_states.append(deepcopy(agent.policy.state_dict()))
+                return result
             with redirect_stdout(io.StringIO()), patch.object(runner,'episode',checked_episode), \
                     patch('enhancements.sequence.episode',checked_episode), \
                     patch('enhancements.stream.alternatives',side_effect=AssertionError('No counterfactual simulation')):
                 runner.main(['train',*common,'--source-run',str(source),'--profile','accuracy',
                     '--warm-start-enhancement','--aligned-sequence','--one-context-rl-training',
-                    '--levels','0','1','--epochs','1'])
+                    '--levels','0','1','--epochs','1',
+                    *(['--query-value-only-training'] if query_only else [])])
             self.assertEqual(train_stages,[False,True])
             saved=torch.load(output/'Models'/'final_enhancement.pth',weights_only=False)
             report=json.loads((output/'enhancement_training.json').read_text())
@@ -137,7 +163,16 @@ class OneContextRLTrainingTests(unittest.TestCase):
             for ids in protocol['validation_adaptation_source_ids'].values(): self.assertFalse(audits & set(ids))
             trained=report['epochs'][1]
             self.assertGreater(sum(r['td_updates'] for r in trained['train_stages']),0)
-            self.assertTrue(all(r['route_updates']==r['labels'] for r in trained['train_stages']))
+            self.assertTrue(all(r['route_updates']==(0 if query_only else r['labels']) for r in trained['train_stages']))
+            if query_only:
+                self.assertEqual(protocol['selector_specialization']['trained_parameters'],'update_value only')
+                self.assertTrue(all(row['frozen_selector_unchanged'] for row in report['epochs']))
+                for key in parent_state:
+                    if not key.startswith('update_value.'):
+                        self.assertTrue(torch.equal(parent_state[key],trained_states[-1][key]),key)
+                        self.assertTrue(torch.equal(parent_state[key],saved['policy_state_dict'][key]),key)
+                self.assertTrue(any(not torch.equal(parent_state[key],trained_states[-1][key])
+                    for key in parent_state if key.startswith('update_value.')))
             self.assertLessEqual(saved['selected_epoch'],1)
             digest=legacy.core.file_sha256(output/'Models'/'final_enhancement.pth')
             with redirect_stdout(io.StringIO()):

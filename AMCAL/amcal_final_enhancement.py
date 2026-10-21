@@ -137,13 +137,14 @@ def pretrain_context(a, models, artifact, cnn, domains):
     return best_state
 
 
-def new_agent(a, cnn, artifact, offline=False, saved=None):
+def new_agent(a, cnn, artifact, offline=False, saved=None, query_value_only=False):
     classes = len(artifact['label_encoder'].classes_); embedding_width = cnn.dense_layers[-1].in_features
     agent = EnhancementAgent(embedding_width + 4*classes + 14, embedding_width, classes,
         legacy.core.device, a.seed, a.config, offline=offline,
         policy_state=None if saved is None else saved['policy_state_dict'],
         prerouter_state=None if saved is None else saved.get('prerouter_state_dict'), gamma=a.gamma,
-        informative_weight=getattr(a, 'router_informative_weight', 1.), slots=getattr(a, 'context_count', 3))
+        informative_weight=getattr(a, 'router_informative_weight', 1.), slots=getattr(a, 'context_count', 3),
+        query_value_only=query_value_only)
     agent.policy.utility_normalization = getattr(a, 'utility_normalization', None)
     return agent
 
@@ -234,7 +235,8 @@ def train(a):
         initial = pretrain_context(a, models, artifact, cnn, domains)
         torch.save({'architecture': a.config.architecture, 'initial_state_dict': initial}, models/'enhanced_context.pth')
     bank = build_bank(models, artifact, a.config, initial, slots=a.context_count)
-    agent = new_agent(a, cnn, artifact, offline=not a.aligned_sequence, saved=warm)
+    agent = new_agent(a, cnn, artifact, offline=not a.aligned_sequence, saved=warm,
+                      query_value_only=a.query_value_only_training)
     if a.warm_start_selector:
         old = torch.load(source/'structured_bank_ddqn.pth', map_location='cpu', weights_only=False)
         if old.get('version') != 1 or old.get('route_width') != agent.policy.route_width:
@@ -272,6 +274,12 @@ def train(a):
                 supervision='TRAIN anchors and acquired labels only; no unqueried-label supervision',
                 validation='temporary policy-feedback learner; disjoint observer-only VAL audit',
                 damage_guard=False)
+            if a.query_value_only_training:
+                training_protocol['selector_specialization'].update(
+                    mode='one_context_query_value_only', trained_parameters='update_value only',
+                    frozen_parameters='correctness and future heads; exact inherited weights',
+                    optimizer='Adam update_value only; existing TD and paired objectives',
+                    evaluation='ordinary paid-feedback online adaptation of all selector heads')
     if a.counterfactual_utility:
         training_protocol['utility_supervision'] = dict(version=1, scope='paid TRAIN only',
             alternatives=3, trained_parameters='update_value only', learning_rate=.0001,
@@ -311,6 +319,10 @@ def train(a):
                                training=True, rollout_seed=a.seed+200003+1009*epoch)
         snapshot = dict(policy_state_dict=deepcopy(agent.policy.state_dict()),
                         prerouter_state_dict=deepcopy(agent.pre_router.state_dict()))
+        if a.query_value_only_training:
+            frozen_unchanged = all(torch.equal(value.detach().cpu(), warm['policy_state_dict'][key].detach().cpu())
+                for key, value in snapshot['policy_state_dict'].items() if not key.startswith('update_value.'))
+            if not frozen_unchanged: raise RuntimeError('A frozen selector head changed during TRAIN.')
         validation = []
         with torch.random.fork_rng(devices=list(range(torch.cuda.device_count()))):
             if a.aligned_sequence:
@@ -332,6 +344,8 @@ def train(a):
                         reference_drop_pp=drop, selection_score=score, train_labels=m['labels']))
         if a.aligned_sequence:
             log[-1].update(validation_sequence=val_sequence, train_stages=m.get('stages', []))
+        if a.query_value_only_training:
+            log[-1]['frozen_selector_unchanged'] = frozen_unchanged
         if a.counterfactual_utility:
             log[-1]['counterfactual_updates_total'] = agent.counterfactual_updates
             log[-1]['counterfactual_loss'] = agent.last_losses.get('counterfactual')
@@ -560,6 +574,8 @@ def parser():
                    help='Continue training with paid-only persistent TRAIN sequences and independent persistent VAL audits.')
     p.add_argument('--one-context-rl-training', action='store_true',
                    help='Specialize an inherited accuracy selector using one-Context paid-only policy-feedback sequences.')
+    p.add_argument('--query-value-only-training', action='store_true',
+                   help='Dedicated one-Context TRAIN: fit only update_value; freeze inherited correctness and future heads.')
     p.add_argument('--counterfactual-utility', action='store_true',
                    help='TRAIN only: fit update values using three isolated paid-label Context updates; freeze other selector heads.')
     p.add_argument('--distill-weight', type=float, default=.2)
@@ -601,6 +617,8 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.query_value_only_training and not a.one_context_rl_training:
+        p.error('--query-value-only-training requires --one-context-rl-training.')
     if a.one_context_rl_training:
         if (a.command != 'train' or not a.warm_start_enhancement or not a.aligned_sequence
                 or a.context_count != 1 or a.query_schedule != 'policy' or a.update_policy != 'learned'):

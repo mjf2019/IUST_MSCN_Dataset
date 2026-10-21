@@ -118,7 +118,7 @@ def routing_objective(logits, correct, weights, rank_weight, informative_weight=
 class EnhancementAgent(legacy.Agent):
     def __init__(self, route_width, embedding_width, classes, device, seed, config,
                  offline=False, policy_state=None, prerouter_state=None, gamma=.95,
-                 informative_weight=1., slots=3):
+                 informative_weight=1., slots=3, query_value_only=False):
         base_state = ({k: v for k, v in policy_state.items() if not k.startswith('comparison.')}
                       if config.joint_router and policy_state is not None else policy_state)
         super().__init__(route_width, device, seed, offline=offline, policy_state=base_state, gamma=gamma)
@@ -127,12 +127,18 @@ class EnhancementAgent(legacy.Agent):
         load_policy_state(policy, self.policy.state_dict() if policy_state is None else policy_state)
         self.policy = policy.eval()
         self.target = deepcopy(policy).eval()
+        self.query_value_only = query_value_only
+        if query_value_only:
+            self.policy.requires_grad_(False)
+            self.policy.update_value.requires_grad_(True)
         self.config = config
         self.informative_weight = informative_weight
         self.versions = np.zeros(slots, dtype=np.int64)
         self.route_optimizer = torch.optim.Adam(self.policy.routing_parameters(),
             lr=.001 if offline else config.route_lr_online, weight_decay=1e-4)
-        self.td_optimizer = torch.optim.Adam(list(self.policy.future.parameters()) + list(self.policy.update_value.parameters()),
+        td_parameters = list(self.policy.update_value.parameters())
+        if not query_value_only: td_parameters = list(self.policy.future.parameters()) + td_parameters
+        self.td_optimizer = torch.optim.Adam(td_parameters,
                                              lr=.0001, weight_decay=1e-4)
         self.prior = {name: value.detach().clone() for name, value in self.policy.named_routing_parameters()}
         self.pre_router = PreRouter(embedding_width, classes).to(device).eval()
@@ -157,6 +163,7 @@ class EnhancementAgent(legacy.Agent):
         Inputs must be reconstructed from previously available reference labels.
         This optimizer owns correctness parameters only; Context/TD heads are fixed.
         """
+        if self.query_value_only: raise RuntimeError('Routing is frozen during query-value-only training.')
         logits = self.policy.route_logits(states.detach())
         correct = correct.detach().float()
         loss = F.binary_cross_entropy_with_logits(logits, correct)
@@ -182,6 +189,7 @@ class EnhancementAgent(legacy.Agent):
         return samples, weights
 
     def observe_routes(self, state, correct, step_now=True, importance=1., versions=None):
+        if self.query_value_only: return
         version = tuple(self.versions if versions is None else versions)
         self.route_memory.append((state.detach().cpu().reshape(-1).clone(),
             correct.detach().cpu().float().reshape(self.slots+1).clone(), float(importance), version, self.clock))
