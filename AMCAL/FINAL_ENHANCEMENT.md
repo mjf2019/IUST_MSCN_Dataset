@@ -1114,3 +1114,46 @@ git push origin AMCAL_final_enhancement
 ```
 
 Large checkpoint files do not need to be pushed for result analysis.
+
+
+### Uniform-feedback diagnostic of the dedicated one-Context RL checkpoint
+
+```powershell
+git pull --ff-only origin AMCAL_final_enhancement
+if ($LASTEXITCODE -eq 0) {
+    .\AMCAL\run_amcal_one_context_rl_uniform_diagnostic.ps1 -Seed 42
+}
+```
+
+This runs exactly two evaluations of the existing selected checkpoint in
+`final_enhancement_one_context_rl_trainseed42`: independent per-level and
+sequential forgetting. It does not train or modify the checkpoint. Relative to
+the dedicated RL evaluations, only the query schedule changes from `policy`
+to `uniform`. The learned prediction router remains active. Context count 1,
+seed 42, epsilon 0.05, budget cap 20%, Context LR 0.0005, saved memory/reward
+settings and audit protocol remain unchanged; damage guard is off.
+
+The purpose is to assess how much the new model's low feedback rate contributes
+to poor accuracy. Uniform feedback changes both label count and selected label
+identities, and therefore the subsequent closed-loop adaptation trajectory;
+this is a diagnostic, not a comparison at equal consumed labels. Compare first
+with specialized policy-feedback runs `evaluation_d6d83a0d2044` (independent)
+and `evaluation_7370c9a6cbb2` (sequential). Also compare against the original
+transferred one-Context uniform runs `evaluation_5aaf0ac447aa` and
+`evaluation_c5d2890f1f23` at matched uniform budgets (1498 and 1197 labels).
+A recovery would implicate feedback scheduling; a remaining gap would justify
+further investigation of the changed selector and adaptation interaction.
+
+The source checkpoint SHA should remain
+`e1131d1b07d764c5ccb590c5d84f88ca5113b75e5f5be7ebaeffb21d9b118e91`.
+New execution JSONs record `query_schedule: uniform`; existing Results
+directories and policy-feedback results are preserved. Use
+`-EvaluationSet Independent` or `Sequential` to resume one unfinished case.
+The launcher is reviewed statically; no numerical result is assumed.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_one_context_rl_trainseed42"
+git add -f -- "$run/Results"
+git commit -m "Add uniform-feedback diagnostic of dedicated one-Context RL checkpoint seed 42"
+git push origin AMCAL_final_enhancement
+```
