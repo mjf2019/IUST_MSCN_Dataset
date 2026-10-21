@@ -98,14 +98,23 @@ class DamageGuardTests(unittest.TestCase):
         self.equal_nested(before,(c.state_dict(),opt.state_dict()))
 
     def test_guarded_stream_charges_labels_and_only_versions_committed_updates(self):
+        self.check_guarded_stream('uniform')
+
+    def test_rl_guarded_stream_preserves_budget_versions_and_unpaid_label_causality(self):
+        self.check_guarded_stream('policy')
+
+    def check_guarded_stream(self, query):
         cnn,bank,initial,a,domain,anchors,source=fixtures.FinalEnhancementTests().fixture(policy='learned')
-        bank=bank[:1]; a.context_damage_guard=True
+        bank=bank[:1]; a.context_damage_guard=True; a.query_schedule=query
+        if query=='policy': a.eval_epsilon=1.  # Exercise paid and unpaid legal policy actions.
         agent=EnhancementAgent(34,12,2,torch.device('cpu'),42,a.config,
             policy_state=source.policy.state_dict(),slots=1)
         start=deepcopy(agent.policy.state_dict()); continuation={}
         m,trace=episode(a,cnn,bank,initial,agent,domain,anchors,continuation=continuation)
         stats=m['damage_guard']
-        self.assertEqual(m['labels'],m['label_cap'])
+        self.assertLessEqual(m['labels'],m['label_cap'])
+        self.assertGreater(m['labels'],0)
+        if query=='uniform': self.assertEqual(m['labels'],m['label_cap'])
         self.assertEqual(stats['accepted']+stats['rejected'],m['labels'])
         self.assertEqual(int(agent.versions[0]),32+stats['accepted'])
         self.assertEqual(float(continuation['history'].updates[1]),stats['accepted'])

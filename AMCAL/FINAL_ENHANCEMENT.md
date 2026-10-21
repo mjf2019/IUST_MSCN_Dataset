@@ -978,8 +978,8 @@ unqueried labels enter the guard, gradients, references or acceptance rule.
 This preserves the paid-feedback closed loop while constraining Context-min
 adaptation; there is no new learned selector head or reward formula.
 
-`--context-damage-guard` is restricted to single-Context protected uniform-feedback
-evaluation without routing/normalization ablations or the replay-weight override.
+`--context-damage-guard` is restricted to single-Context protected evaluation with learned updates
+(uniform or policy feedback) without routing/normalization ablations or the replay-weight override.
 All unflagged paths remain unchanged. The new execution metadata records the
 threshold, LR multipliers, reference scope, optimizer transaction and unchanged
 checkpoint SHA. Fresh `Results/evaluation_*` directories contain per-domain
@@ -1002,5 +1002,43 @@ scientific effects require the user-host GPU run.
 $run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_accuracy_counterfactual_trainseed42"
 git add -f -- "$run/Results"
 git commit -m "Add one-Context damage-guard retention tests seed 42"
+git push origin AMCAL_final_enhancement
+```
+
+
+### Single-Context RL feedback with and without damage guard
+
+```powershell
+git pull --ff-only origin AMCAL_final_enhancement
+if ($LASTEXITCODE -eq 0) {
+    .\AMCAL\run_amcal_one_context_rl_damage_guard.ps1 -Seed 42
+}
+```
+
+This launcher runs four evaluations: RL baseline and RL damage guard, each with
+sequential forgetting and independent per-level tests. It reuses the same
+counterfactual-trained checkpoint; no offline training occurs. Both variants use
+`--context-count 1 --query-schedule policy --update-policy learned --modes learned`,
+epsilon 0.05, a 20% label cap, Context LR 0.0005 and the saved replay weight 0.1.
+The guard has exactly the previous acceptance rule, reference scope and Adam
+transaction semantics; only the uniform-only restriction is relaxed. RL chooses
+whether to acquire a label as well as the prediction route; with one Context
+there is only one possible Context-update destination. Paid labels still count
+even when their Context step is rejected. The actual number and identities of
+queried labels can differ between variants because their closed loops diverge.
+Report actual labels together with accuracy, forgetting and runtime; equal caps
+do not imply equal consumed budgets. No unqueried or audit labels supervise RL
+or the guard. Each independent level starts afresh; sequential levels preserve
+Context, selector, optimizer and memory state under the existing protocol.
+
+Use `-Variant Baseline` or `Guard` and `-EvaluationSet Sequential` or `Independent`
+to run only an unfinished case. Existing evaluation directories are preserved.
+The execution JSON records `query_schedule: policy` and, for guarded runs only,
+`context_damage_guard`; both record the same checkpoint SHA.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_accuracy_counterfactual_trainseed42"
+git add -f -- "$run/Results"
+git commit -m "Add one-Context RL baseline and damage-guard tests seed 42"
 git push origin AMCAL_final_enhancement
 ```

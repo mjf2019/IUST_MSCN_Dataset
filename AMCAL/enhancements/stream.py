@@ -85,8 +85,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         raise ValueError('Counterfactual TRAIN requires uniform learned destinations and protected legacy Contexts.')
     damage_guard = getattr(a, 'context_damage_guard', False)
     if damage_guard and (training or warmup or slots != 1 or config.routed_utility
-            or not config.protected_reference or a.query_schedule != 'uniform'):
-        raise ValueError('Damage guard requires single-Context protected uniform-feedback evaluation.')
+            or not config.protected_reference or a.update_policy != 'learned'):
+        raise ValueError('Damage guard requires single-Context protected evaluation with learned updates.')
     guard_records = []
     counterfactual0 = agent.counterfactual_updates
     seed = a.seed if rollout_seed is None else rollout_seed

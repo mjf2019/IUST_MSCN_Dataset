@@ -584,8 +584,8 @@ def parser():
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
     if a.context_damage_guard:
-        if a.command != 'evaluate' or a.context_count != 1 or a.query_schedule != 'uniform' or a.update_policy != 'learned':
-            p.error('Damage guard is a single-Context uniform-feedback evaluation ablation.')
+        if a.command != 'evaluate' or a.context_count != 1 or a.update_policy != 'learned':
+            p.error('Damage guard is a single-Context evaluation ablation with learned updates.')
         if a.online_memory_ce_weight is not None or a.utility_calibration is not None or a.router_refresh or a.router_informative_weight != 1.:
             p.error('Test damage guard separately, retaining the original replay weight and routing settings.')
     if a.online_memory_ce_weight is not None:
