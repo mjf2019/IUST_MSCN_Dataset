@@ -129,14 +129,15 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             outputs = next_cached if next_cached is not None else executor.outputs(inputs, frozen[pos:pos+1], slots)
             next_cached = None
         with timer.stage('selection'):
-            state = None; values = None; route_logits = None
+            state = None; values = None; raw_values = None; update_values = None; route_logits = None
             if full:
                 state = legacy.build_state(outputs, embeddings[pos:pos+1], history, used, cap, pos, n, state_gate)
                 allowed = legacy.base.legal_actions(3, cap-used, gate)
                 if a.update_policy == 'fixed': allowed = [v for v in allowed if v < 4 or v == 4 + int(destinations[pos])]
                 with torch.no_grad():
-                    values, route_logits = agent.policy.forward_with_logits(state)
+                    values, route_logits, raw_values, update_values = agent.policy.forward_for_action(state)
                     values, route_logits = values[0], route_logits[0]
+                    raw_values, update_values = raw_values[0], update_values[0]
                     valid = torch.tensor(allowed, device=x.device)
                     greedy = int(valid[values[valid].argmax()])
                 epsilon = a.train_epsilon if training else a.eval_epsilon
@@ -248,12 +249,16 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         next_cached = successor_output
         predictions_all.append(route_predictions); known_all.append(observed)
         # One batched observer transfer replaces individual scalar .item() calls.
-        scores = None if values is None else torch.cat([values, route_logits.sigmoid()]).detach().cpu().tolist()
+        scores = None if raw_values is None else torch.cat([raw_values, route_logits.sigmoid()]).detach().cpu().tolist()
         traces.append(dict(step=pos+1, source_row=int(source_ids[pos]), truth=truth, prediction=prediction,
             action=action, route=route, queried=paid, labels_used=used, full_bank=full,
             reward=reward, gain=gain, harm=harm, reference_counts=reference_counts,
             predictions=[int(v) if known else None for v, known in zip(route_predictions, observed)],
             scores=scores))
+        if getattr(a, 'collect_utility_calibration', False) or agent.policy.utility_normalization is not None:
+            traces[-1]['raw_update_values'] = None if update_values is None else update_values.detach().cpu().tolist()
+        if agent.policy.utility_normalization is not None:
+            traces[-1]['selection_scores'] = None if values is None else values.detach().cpu().tolist()
         row_times.append(1000 * (time.perf_counter() - row_start))
     timer.stop()
     if schedule is not None and used != cap: raise RuntimeError('Uniform feedback failed to acquire its exact cap.')

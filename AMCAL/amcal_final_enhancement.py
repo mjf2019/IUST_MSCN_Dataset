@@ -25,6 +25,7 @@ from enhancements.config import EnhancementConfig
 from enhancements.models import ResidualContext, residual_bank
 from enhancements.stream import episode, observer
 from enhancements.sequence import split_validation, fit_sequence, validate_sequence
+from enhancements.utility_normalization import fit_scale, validate_calibration
 
 FORMAT_VERSION = 1
 SOURCE_FILES = ('initial_cnn_model.pth', 'adversarial_best_context.pth', 'protocol_preprocessing.joblib')
@@ -138,11 +139,58 @@ def pretrain_context(a, models, artifact, cnn, domains):
 
 def new_agent(a, cnn, artifact, offline=False, saved=None):
     classes = len(artifact['label_encoder'].classes_); embedding_width = cnn.dense_layers[-1].in_features
-    return EnhancementAgent(embedding_width + 4*classes + 14, embedding_width, classes,
+    agent = EnhancementAgent(embedding_width + 4*classes + 14, embedding_width, classes,
         legacy.core.device, a.seed, a.config, offline=offline,
         policy_state=None if saved is None else saved['policy_state_dict'],
         prerouter_state=None if saved is None else saved.get('prerouter_state_dict'), gamma=a.gamma,
         informative_weight=getattr(a, 'router_informative_weight', 1.))
+    agent.policy.utility_normalization = getattr(a, 'utility_normalization', None)
+    return agent
+
+
+def calibrate_utility(a):
+    if a.utility_calibration is None: raise ValueError('--utility-calibration output path is required.')
+    if a.utility_calibration.exists(): raise ValueError('Calibration already exists; use evaluation or a fresh path.')
+    models = a.output/'Models'
+    saved = torch.load(models/'final_enhancement.pth', map_location='cpu', weights_only=False)
+    if saved['format_version'] != FORMAT_VERSION: raise ValueError('Unsupported checkpoint format.')
+    a.config = EnhancementConfig(**saved['config']).validated()
+    if not set(a.levels).issubset(saved['training_levels']): raise ValueError('Calibration must use TRAIN intensities only.')
+    for name, digest in saved['model_hashes'].items():
+        if legacy.core.file_sha256(models/name) != digest: raise ValueError('Model provenance mismatch: '+name)
+    artifact = load_artifact(models, a.burst_dir)
+    a.classes = [str(c) for c in artifact['label_encoder'].classes_]
+    for key, value in saved['training_args'].items():
+        if key not in ('seed', 'budget_fraction'): setattr(a, key, value)
+    legacy.core.SELECTION_COST = a.selection_cost
+    legacy.core.GAIN_WEIGHT, legacy.core.RETENTION_WEIGHT = a.gain_weight, a.retention_weight
+    a.utility_normalization = None; a.collect_utility_calibration = True
+    cnn = load_cnn(models, artifact)
+    initial = torch.load(models/'enhanced_context.pth', map_location='cpu', weights_only=False)['initial_state_dict']
+    bank = build_bank(models, artifact, a.config, initial)
+    agent = new_agent(a, cnn, artifact, saved=saved)
+    anchors = legacy.read_domain(a.burst_dir, artifact, 0, 'train_ids')[:2]
+    continuation = {}; updates = []; probabilities = []; source_ids = set(); stages = []
+    for level in a.levels:
+        domain = legacy.read_domain(a.burst_dir, artifact, level, 'train_ids')
+        if legacy.core.file_sha256(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv') != saved['training_domain_sha256'][str(level)]:
+            raise ValueError('Calibration TRAIN provenance mismatch.')
+        result, traces = episode(a, cnn, bank, initial, agent, domain, anchors, continuation=continuation)
+        for row in traces:
+            if row['raw_update_values'] is not None:
+                updates.append(row['raw_update_values']); probabilities.append(row['scores'][8:11])
+        source_ids.update(map(int, domain[2]))
+        stages.append(dict(level=level, rows=result['samples'], labels=result['labels']))
+        print(f'Utility calibration TRAIN level {level} | rows {result["samples"]}', flush=True)
+    calibration = fit_scale(updates, probabilities)
+    calibration.update(checkpoint_sha256=legacy.core.file_sha256(models/'final_enhancement.pth'),
+        levels=a.levels, seed=a.seed, stages=stages, model_hashes=saved['model_hashes'],
+        source_ids_sha256=hashlib.sha256(json.dumps(sorted(source_ids)).encode()).hexdigest(),
+        query_schedule=a.query_schedule, update_policy=a.update_policy,
+        protocol='temporary persistent TRAIN rollout, paid feedback only; no VAL/TEST; original checkpoint unchanged')
+    a.utility_calibration.parent.mkdir(parents=True, exist_ok=True)
+    write_json(a.utility_calibration, calibration)
+    print(f'TRAIN utility scale: {calibration["scale"]:.6g} | saved {a.utility_calibration}', flush=True)
 
 
 def train(a):
@@ -312,6 +360,11 @@ def evaluate(a):
     if a.joint_router and not config.joint_router: raise ValueError('Joint router requires a separately trained checkpoint.')
     if a.disable: raise ValueError('Use separate TRAIN runs for enhancement ablations; evaluation loads saved settings.')
     a.config = config
+    calibration = None
+    if a.utility_calibration is not None:
+        calibration = validate_calibration(json.loads(a.utility_calibration.read_text()),
+            legacy.core.file_sha256(models/'final_enhancement.pth'), saved['training_levels'])
+        a.utility_normalization = dict(scale=calibration['scale'], weight=a.utility_weight, clip=a.utility_clip)
     if a.router_refresh and not config.protected_reference:
         raise ValueError('Router refresh requires protected TRAIN/paid-label references.')
     for key, value in saved['training_args'].items():
@@ -354,6 +407,9 @@ def evaluate(a):
         execution['audit_protocol'] = 'seed+8121 fixed source IDs excluded from every adaptation domain; observer-only labels'
         execution['continuation_protocol'] = 'all adaptive state retained; label budget recharged per domain'
     if 'training_protocol' in saved: execution['training_protocol'] = saved['training_protocol']
+    if calibration is not None:
+        execution['utility_normalization'] = dict(calibration=calibration,
+            weight=a.utility_weight, clip=a.utility_clip, application='actor only; raw reward and critic units retained')
     if a.router_refresh:
         execution['router_refresh'] = dict(version=1, batch='existing pre-update reward reference',
             targets='current bank after paid Context update', steps_per_paid_label=1,
@@ -426,7 +482,7 @@ def evaluate(a):
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=['train', 'evaluate'])
+    p.add_argument('command', choices=['train', 'evaluate', 'calibrate-utility'])
     p.add_argument('--source-run', type=Path)
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--burst-dir', type=Path, required=True)
@@ -470,6 +526,10 @@ def parser():
                    help='After paid feedback, recalibrate routing on existing references with current-bank targets.')
     p.add_argument('--router-informative-weight', type=float, default=1.,
                    help='Online routing loss multiplier for paid rows with both correct and incorrect routes (default 1).')
+    p.add_argument('--utility-calibration', type=Path,
+                   help='TRAIN-only scale JSON: output for calibrate-utility, input for evaluate.')
+    p.add_argument('--utility-weight', type=float, default=1.)
+    p.add_argument('--utility-clip', type=float, default=1.)
     for name, value_type in CONFIG_OPTIONS.items():
         p.add_argument('--'+name.replace('_', '-'), type=value_type)
     return p
@@ -477,6 +537,15 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if not np.isfinite(a.utility_weight) or a.utility_weight < 0 or not np.isfinite(a.utility_clip) or a.utility_clip <= 0:
+        p.error('Utility weight must be finite/nonnegative; clip finite/positive.')
+    if a.utility_calibration is not None or a.command == 'calibrate-utility':
+        if a.command == 'train' or a.query_schedule != 'uniform' or a.update_policy != 'learned':
+            p.error('Utility normalization requires uniform feedback, learned destinations and an existing checkpoint.')
+        if a.router_refresh or a.router_informative_weight != 1.:
+            p.error('Test utility normalization separately from routing ablations.')
+    elif a.utility_weight != 1. or a.utility_clip != 1.:
+        p.error('Utility normalization weights require --utility-calibration.')
     if a.aligned_sequence and (a.command != 'train' or not a.warm_start_enhancement):
         p.error('--aligned-sequence requires train --warm-start-enhancement.')
     if a.aligned_sequence and (a.query_schedule != 'uniform' or a.update_policy != 'learned'):
@@ -508,12 +577,14 @@ def main(argv=None):
     legacy.core.set_seed(a.seed)
     a.output, a.burst_dir = a.output.resolve(), a.burst_dir.resolve()
     if a.source_run is not None: a.source_run = a.source_run.resolve()
-    a.levels = a.levels or ([0, 1, 3] if a.command == 'train' else [5, 7, 10, 12, 15, 17, 20])
+    a.levels = a.levels or ([0, 1, 3] if a.command in ('train','calibrate-utility') else [5, 7, 10, 12, 15, 17, 20])
     if len(a.levels) != len(set(a.levels)) or min(a.levels) < 0: p.error('Levels must be unique nonnegative integers.')
     if a.continual and len(a.levels) < 2: p.error('A continual audit requires at least two domains.')
     if a.aligned_sequence and len(a.levels) < 2: p.error('Aligned training requires at least two TRAIN domains.')
     a.bank_utility = False; a.balanced_reward_reference = True
-    if a.command == 'train':
+    if a.command == 'calibrate-utility':
+        calibrate_utility(a)
+    elif a.command == 'train':
         from dataclasses import replace
         config = EnhancementConfig.preset(a.profile or 'compact')
         config = replace(config, bank_executor=a.bank_executor or config.bank_executor, routed_utility=a.routed_utility,

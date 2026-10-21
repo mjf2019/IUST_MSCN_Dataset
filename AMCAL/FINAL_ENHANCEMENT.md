@@ -470,3 +470,47 @@ The CLI integration checks that saved selection uses the final audit matrix and
 that training protocol metadata survives evaluation. PowerShell is unavailable
 here; the launcher received static review. Scientific performance requires the
 full dataset/GPU run on the machine holding the checkpoints.
+
+## Fixed TRAIN calibration of relative utility
+
+`run_amcal_utility_normalization.ps1` tests relative utility scaling on the existing
+accuracy checkpoint, with seed 42, uniform feedback and learned Context destinations.
+`-Action All` first calibrates on TRAIN levels 0, 1, 3 and then evaluates the persistent
+held-out sequence 5, 7, 10, 12, 15, 17, 20. It does not retrain or overwrite the checkpoint.
+Calibration makes one temporary baseline-policy rollout with online adaptation on TRAIN;
+that adaptation is discarded. It reads neither validation nor test splits. Its runtime
+cost and paid TRAIN feedback are additional calibration work, recorded in the JSON.
+The held-out label budget and Context-min / selector-max feedback loop stay the same.
+
+For each row let `U_j` be the three raw update-value predictions and `R_j = 2*p_j - 1`
+the three Context correctness rewards. Calibration takes the 75th percentile of the
+rowwise centered RMS of each component over TRAIN. The fixed multiplier is
+`scale = max(Q75(RMS(R)), 1e-4) / max(Q75(RMS(U)), 1e-4)`.
+The actor uses `mean(U) + d / max(1, max(abs(d))/clip)`, where
+`d = weight * scale * (U - mean(U))`, with default `weight=1`, `clip=1`.
+Thus only differences between Context utilities are scaled; their common mean is
+preserved. Clipping shrinks large relative contributions, and does not stretch each
+individual row to unit range. Similar typical TRAIN magnitudes do not imply equal
+predictive reliability or guarantee improved accuracy.
+
+Only actor action scores change. Recorded rewards, raw critic predictions, TD losses
+and paired update targets retain their original units. Double-DQN chooses its successor
+action with normalized actor scores and evaluates that action using the raw target
+critic. There are no new learned parameters or state-dict keys. `scores` in traces
+retains raw Q/correctness semantics; `raw_update_values` and `selection_scores` record
+both components for normalized runs. Execution metadata includes the complete fixed
+calibration, checkpoint SHA, TRAIN source provenance and weight/clip. Evaluation never
+refits the scale. A mismatched checkpoint or existing calibration output is rejected.
+Without `--utility-calibration`, existing behavior is preserved.
+
+```powershell
+git pull origin AMCAL_final_enhancement
+./AMCAL/run_amcal_utility_normalization.ps1 -Action All -Seed 42
+```
+
+If calibration completed but evaluation was interrupted, resume with `-Action Evaluate`.
+Do not rerun `All` over an existing calibration. Results use a configuration-specific
+`Results/evaluation_*` directory under the original accuracy run. Keep the calibration
+JSON with the results. CPU checks cover TRAIN-only calibration, unchanged checkpoint,
+raw bootstrap units, destination changes, clipping and unqueried-label invariance;
+PowerShell is reviewed statically. GPU accuracy and runtime require the experiment.

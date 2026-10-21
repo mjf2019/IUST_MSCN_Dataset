@@ -6,6 +6,7 @@ from torch import nn
 import torch.nn.functional as F
 import amcal_burst_structured_bank_protocol as legacy
 from .models import PreRouter
+from .utility_normalization import relative_utility
 
 
 class JointRouteComparison(nn.Module):
@@ -51,6 +52,7 @@ class EfficientQ(legacy.StructuredQ):
     def __init__(self, route_width, joint_router=False):
         super().__init__(route_width)
         self.comparison = JointRouteComparison(route_width) if joint_router else None
+        self.utility_normalization = None
 
     def route_logits(self, states):
         route_x = states[:, :4*self.route_width].reshape(-1, 4, self.route_width)
@@ -64,7 +66,7 @@ class EfficientQ(legacy.StructuredQ):
 
     def routing_parameters(self): return [p for _, p in self.named_routing_parameters()]
 
-    def forward_with_logits(self, states, detach_routes=False):
+    def forward_components(self, states, detach_routes=False):
         route_x = states[:, :4 * self.route_width].reshape(-1, 4, self.route_width)
         logits = self.route_logits(states)
         reward = 2 * logits.sigmoid() - 1
@@ -73,7 +75,19 @@ class EfficientQ(legacy.StructuredQ):
         future = self.future(pooled)
         features = torch.cat([route_x[:, 1:], pooled[:, None].expand(-1, 3, -1)], 2)
         update = self.update_value(features).squeeze(-1)
-        return torch.cat([future + reward, future + reward[:, 1:] + update], 1), logits
+        return torch.cat([future + reward, future + reward[:, 1:] + update], 1), logits, update
+
+    def forward_with_logits(self, states, detach_routes=False):
+        values, logits, _ = self.forward_components(states, detach_routes)
+        return values, logits
+
+    def forward_for_action(self, states):
+        raw, logits, update = self.forward_components(states)
+        if self.utility_normalization is None: return raw, logits, raw, update
+        normalized = relative_utility(update, **self.utility_normalization)
+        selected = raw.clone()
+        selected[:, 4:] = raw[:, 4:] - update + normalized
+        return selected, logits, raw, update
 
     def forward(self, states, detach_routes=False):
         return self.forward_with_logits(states, detach_routes)[0]
@@ -122,6 +136,13 @@ class EnhancementAgent(legacy.Agent):
         self.last_losses = {}
         self.fresh_route_updates = 0
         self.fresh_route_rows = 0
+
+    def _next_values(self, states):
+        if self.policy.utility_normalization is None: return super()._next_values(states)
+        selection, _, _, _ = self.policy.forward_for_action(states)
+        chosen = legacy.masked_q(selection, states).argmax(1)
+        # Choose using the normalized actor, evaluate using the RAW target critic.
+        return self.target(states).gather(1, chosen[:, None]).squeeze(1)
 
     def refresh_routes(self, states, correct):
         """Fit current-bank labels directly, without replaying obsolete targets.

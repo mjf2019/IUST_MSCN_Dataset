@@ -571,6 +571,39 @@ class FinalEnhancementTests(unittest.TestCase):
             result_dir = next((aligned_output/'Results').glob('evaluation_*'))
             execution = json.loads((result_dir/'execution.json').read_text())
             self.assertEqual(execution['training_protocol'], protocol)
+            # Calibrate using TRAIN only, without persisting temporary adaptation.
+            calibration_path = sequence_source/'Calibration'/'utility_train_seed42.json'
+            checkpoint_path = sequence_source/'Models'/'final_enhancement.pth'
+            checkpoint_hash = legacy.core.file_sha256(checkpoint_path)
+            read_splits = []; original_read = legacy.read_domain
+            def read_train(*args, **kwargs):
+                read_splits.append(args[3])
+                return original_read(*args, **kwargs)
+            utility_common = ['--output', str(sequence_source), '--burst-dir', str(burst),
+                '--device', 'cpu', '--query-schedule', 'uniform', '--update-policy', 'learned',
+                '--utility-calibration', str(calibration_path)]
+            with redirect_stdout(io.StringIO()), patch.object(legacy, 'read_domain', read_train):
+                runner.main(['calibrate-utility', *utility_common, '--levels', '0', '1'])
+            self.assertEqual(set(read_splits), {'train_ids'})
+            calibration = json.loads(calibration_path.read_text())
+            self.assertEqual(calibration['scope'], 'TRAIN')
+            self.assertEqual(calibration['levels'], [0,1])
+            self.assertEqual(calibration['rows'], 80)
+            self.assertEqual(calibration['checkpoint_sha256'], checkpoint_hash)
+            with self.assertRaises(ValueError), redirect_stdout(io.StringIO()):
+                runner.main(['calibrate-utility', *utility_common, '--levels', '0', '1'])
+            with redirect_stdout(io.StringIO()):
+                runner.main(['evaluate', *utility_common, '--continual', '--modes', 'learned',
+                    '--levels', '5', '7'])
+            normalized_results = next((sequence_source/'Results').glob('evaluation_*'))
+            metadata = json.loads((normalized_results/'execution.json').read_text())
+            self.assertEqual(metadata['utility_normalization']['calibration'], calibration)
+            trace = pd.read_csv(normalized_results/'learned_level5_trace.csv')
+            self.assertIn('raw_update_values', trace.columns)
+            self.assertIn('selection_scores', trace.columns)
+            metrics = json.loads((normalized_results/'learned_level5_metrics.json').read_text())
+            self.assertEqual(metrics['labels'], metrics['label_cap'])
+            self.assertEqual(legacy.core.file_sha256(checkpoint_path), checkpoint_hash)
 
 
 if __name__ == '__main__': unittest.main()
