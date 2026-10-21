@@ -245,3 +245,49 @@ Validation: 40 CPU tests passed after this change, including the real CLI smoke
 test checking stage 0, clean-drop and forgetting/BWT arithmetic, the exact split,
 and exclusion of audit IDs from both adaptation stages. The full dataset/GPU
 audit must be run on the machine holding the trained checkpoint and data.
+
+## Current-bank router refresh (evaluation adaptation, opt-in)
+
+`--router-refresh` addresses stale correctness labels: replay entries describe
+Context versions that may no longer produce the same predictions. After each
+paid Context update, the enhanced runner reuses the already sampled reward
+reference batch (up to 32 existing TRAIN anchors / previously paid rows),
+recomputes all four routes using the current bank, and takes one direct BCE plus
+pairwise-ranking step on the correctness head. Old targets are not substituted
+for these refreshed targets and refreshed states are not added to stale replay.
+The regular pre-feedback routing and TD/paired-update learning remain active.
+
+Reference labels were already available before the current feedback. The current
+input is excluded by the reference sampler. Reliability features use a snapshot
+from before observing the current label; Context output targets use the bank
+after its update. Tensors are detached, and the additional optimizer step owns
+only correctness parameters. It cannot change Contexts, CNN, TD heads, the label
+schedule, or reference sampling RNG. There is no additional label storage beyond
+the existing 256-row memory. Only learned mode adapts the router; random mode
+does not. The extra forward/backward work is timed and can increase runtime.
+
+First compare against the fixed-destination evaluation `evaluation_a952e57562db`
+(seed 42, final audit 78.3712%, online 73.4741%, 1197 labels). This holds the bank
+updates and paid-label schedule fixed while testing router adaptation:
+
+```powershell
+python AMCAL/amcal_final_enhancement.py evaluate `
+  --output AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_accuracy_trainseed42 `
+  --burst-dir AMCAL/ANT_Burst_IAT_TEST/Dataset_official_v1/AdvBurst_FTSC-IAT `
+  --continual --query-schedule uniform --update-policy fixed `
+  --router-refresh --seed 42 --device cuda
+```
+
+This reuses the existing checkpoint without retraining or overwriting previous
+evaluations. The flag is evaluation-only; execution metadata records version,
+target timing, steps and zero extra label capacity. Per-level metrics report
+`fresh_route_updates` and `fresh_route_rows`, separately from ordinary routing
+updates. If routing improves under fixed destinations, follow with learned
+destinations using the same flag to measure its interaction with the full loop.
+
+Validation: 41 CPU tests pass, including refreshed-target agreement with the
+current bank, routing-only parameter changes, exactly unchanged Context/CNN
+trajectories under fixed feedback, no learning from unqueried labels, zero-budget
+behavior, no refresh in random mode, and the real CLI uniform-query audit with
+serialization. Accuracy gains require the full dataset experiment; none are
+claimed from the synthetic tests.

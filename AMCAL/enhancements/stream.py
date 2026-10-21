@@ -109,6 +109,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     action_counts = np.zeros(7, dtype=int)
     slot_queries = np.zeros(3, dtype=int)
     route_updates0, td_updates0 = agent.route_updates, agent.td_updates
+    fresh_updates0, fresh_rows0 = agent.fresh_route_updates, agent.fresh_route_rows
     full_correct, full_legal_correct, full_rows = 0, 0, 0
     briers, row_times, response_times = [], [], []
     timer.start()
@@ -175,6 +176,11 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 selected = action - 4
                 label = torch.tensor([truth], device=x.device)
                 batch = memory.sample(inputs)
+                # Keep reliability features from before this label was observed.
+                # The fresh batch reuses the reward reference; no extra sampling
+                # or label storage can change a fixed-destination bank trajectory.
+                fresh_history = (deepcopy(history) if getattr(a, 'router_refresh', False)
+                                 and mode == 'learned' and batch is not None else None)
                 if config.protected_reference:
                     before, route_weight = probe_before(a, cnn, bank, selected, batch, agent, history, used, cap, pos, n)
                     replay = batch.protected(config.memory_replay_size, memory.replay_rng) if batch is not None else None
@@ -218,6 +224,14 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 target = torch.tensor(correct, dtype=torch.float32, device=x.device)
                 agent.observe_routes(state, target, step_now=not training or paid or pos % 16 == 15 or pos+1 == n,
                                      versions=versions)
+                if paid and getattr(a, 'router_refresh', False) and fresh_history is not None:
+                    with torch.no_grad():
+                        fresh_z, fresh_h = legacy.base_cache(cnn, batch.x)
+                        fresh_outputs = executor.outputs(batch.x, fresh_z)
+                        fresh_states = legacy.build_state(fresh_outputs, fresh_h, fresh_history,
+                            used-1, cap, pos, n, state_gate)
+                        fresh_correct = fresh_outputs[0].argmax(2) == batch.y[:, None]
+                    agent.refresh_routes(fresh_states, fresh_correct)
                 if config.cascade: agent.observe_pre_router(embeddings[pos:pos+1], frozen[pos:pos+1], target, route_logits)
                 if not warmup:
                     skip_state = state.clone()
@@ -249,6 +263,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         frozen_accuracy=float(np.mean(matrix[:, 0] == y)), samples=n, labels=used, label_cap=cap,
         actual_label_fraction=used/n, slot_queries=slot_queries.tolist(), action_counts=action_counts.tolist(),
         route_updates=agent.route_updates-route_updates0, td_updates=agent.td_updates-td_updates0,
+        fresh_route_updates=agent.fresh_route_updates-fresh_updates0,
+        fresh_route_rows=agent.fresh_route_rows-fresh_rows0,
         oracle_all=full_correct/n if full_rows == n else None,
         oracle_legal=full_legal_correct/n if full_rows == n else None,
         oracle_on_full_rows=full_correct/full_rows if full_rows else None, oracle_full_rows=full_rows,

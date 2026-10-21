@@ -49,6 +49,30 @@ class EnhancementAgent(legacy.Agent):
         if prerouter_state is not None: self.pre_router.load_state_dict(prerouter_state)
         self.pre_optimizer = torch.optim.Adam(self.pre_router.parameters(), lr=.001 if offline else config.route_lr_online)
         self.last_losses = {}
+        self.fresh_route_updates = 0
+        self.fresh_route_rows = 0
+
+    def refresh_routes(self, states, correct):
+        """Fit current-bank labels directly, without replaying obsolete targets.
+
+        Inputs must be reconstructed from previously available reference labels.
+        This optimizer owns correctness parameters only; Context/TD heads are fixed.
+        """
+        logits = self.policy.route_logits(states.detach())
+        correct = correct.detach().float()
+        loss = F.binary_cross_entropy_with_logits(logits, correct)
+        loss = loss + self.config.rank_weight * ranking_loss(logits, correct).mean()
+        if not self.offline and self.config.route_prior_weight:
+            loss = loss + self.config.route_prior_weight * sum(
+                (value-self.prior[name]).square().mean()
+                for name, value in self.policy.correctness.named_parameters())
+        self.route_optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        nn.utils.clip_grad_norm_(self.policy.correctness.parameters(), 1)
+        self.route_optimizer.step()
+        self.fresh_route_updates += 1
+        self.fresh_route_rows += len(states)
+        self.last_losses['fresh_routing'] = float(loss.detach())
 
     def _sample(self, memory, half_life):
         samples, weights = super()._sample(memory, half_life)

@@ -9,6 +9,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 from contextlib import redirect_stdout
 
 import joblib
@@ -188,12 +189,15 @@ class FinalEnhancementTests(unittest.TestCase):
 
     def test_matched_feedback_keeps_banks_identical_and_cnn_frozen(self):
         cnn, bank, initial, a, domain, anchors, agent = self.fixture()
+        a.router_refresh = True
         snapshot = deepcopy(agent.policy.state_dict()); cnn_before = deepcopy(cnn.state_dict())
         learned, trace = episode(a, cnn, bank, initial, agent, domain, anchors)
         first = [deepcopy(context.state_dict()) for context in bank]
         other = EnhancementAgent(34, 12, 2, torch.device('cpu'), 42, a.config, policy_state=snapshot)
         random, _ = episode(a, cnn, bank, initial, other, domain, anchors, mode='random')
         self.assertEqual(learned['labels'], 8); self.assertEqual(random['labels'], 8)
+        self.assertEqual(learned['fresh_route_updates'], 8)
+        self.assertEqual(random['fresh_route_updates'], 0)
         self.assertEqual(learned['slot_queries'], random['slot_queries'])
         for before, context in zip(first, bank):
             for name, value in before.items(): self.assertTrue(torch.equal(value, context.state_dict()[name]))
@@ -202,6 +206,7 @@ class FinalEnhancementTests(unittest.TestCase):
 
     def test_unqueried_labels_cannot_change_learning_or_actions(self):
         cnn, bank, initial, a, domain, anchors, agent = self.fixture()
+        a.router_refresh = True
         snapshot = deepcopy(agent.policy.state_dict())
         _, trace = episode(a, cnn, bank, initial, agent, domain, anchors)
         weights = deepcopy(agent.policy.state_dict()); context_weights = [deepcopy(c.state_dict()) for c in bank]
@@ -219,10 +224,43 @@ class FinalEnhancementTests(unittest.TestCase):
 
     def test_zero_budget_never_acquires_or_updates(self):
         cnn, bank, initial, a, domain, anchors, agent = self.fixture()
+        a.router_refresh = True
         a.budget_fraction = 0
         m, trace = episode(a, cnn, bank, initial, agent, domain, anchors)
         self.assertEqual(m['labels'], 0); self.assertEqual(m['route_updates'], 0); self.assertEqual(m['td_updates'], 0)
+        self.assertEqual(m['fresh_route_updates'], 0)
         self.assertTrue(all(not row['queried'] for row in trace))
+
+    def test_refresh_relabels_current_bank_and_only_changes_routing_parameters(self):
+        cnn, bank, initial, a, domain, anchors, agent = self.fixture()
+        a.router_refresh = True
+        sample_original = ProtectedMemory.sample
+        refresh_original = agent.refresh_routes
+        captured = {}; checked = []
+        def sample(memory, current):
+            batch = sample_original(memory, current)
+            captured['batch'] = batch
+            return batch
+        def refresh(states, correct):
+            batch = captured['batch']
+            with torch.no_grad():
+                expected = torch.stack([cnn(batch.x), *[cnn(c(batch.x)) for c in bank]], 1).argmax(2)
+            self.assertTrue(torch.equal(correct, expected == batch.y[:, None]))
+            self.assertFalse(states.requires_grad)
+            before = [deepcopy(c.state_dict()) for c in bank]
+            heads = [deepcopy(agent.policy.future.state_dict()), deepcopy(agent.policy.update_value.state_dict())]
+            route_before = deepcopy(agent.policy.correctness.state_dict())
+            refresh_original(states, correct)
+            self.assertTrue(any(not torch.equal(v, agent.policy.correctness.state_dict()[k]) for k, v in route_before.items()))
+            for saved, context in zip(before, bank):
+                for k, v in saved.items(): self.assertTrue(torch.equal(v, context.state_dict()[k]))
+            for saved, head in zip(heads, [agent.policy.future, agent.policy.update_value]):
+                for k, v in saved.items(): self.assertTrue(torch.equal(v, head.state_dict()[k]))
+            checked.append(len(states))
+        with patch.object(ProtectedMemory, 'sample', sample), patch.object(agent, 'refresh_routes', refresh):
+            m, _ = episode(a, cnn, bank, initial, agent, domain, anchors)
+        self.assertEqual(len(checked), 8)
+        self.assertEqual(m['fresh_route_rows'], sum(checked))
 
     def test_sparse_execution_never_invents_routes_targets_or_complete_oracle(self):
         c = self.config('cascade', cascade_audit_fraction=0., cascade_max_gap=100)
@@ -283,13 +321,15 @@ class FinalEnhancementTests(unittest.TestCase):
                 runner.main(['train', *common, '--source-run', str(source), '--profile', 'cascade',
                     '--warm-start-selector', '--epochs', '1', '--context-epochs', '1',
                     '--warmup-episodes', '1', '--levels', '0'])
-                runner.main(['evaluate', *common, '--levels', '5', '7', '--modes', 'learned', '--continual'])
+                runner.main(['evaluate', *common, '--levels', '5', '7', '--modes', 'learned', '--continual', '--router-refresh', '--query-schedule', 'uniform'])
             results = next((output/'Results').glob('evaluation_*'))
             m = json.loads((results/'learned_level5_metrics.json').read_text())
             self.assertTrue(m['classifier_unchanged'])
             self.assertLessEqual(m['labels'], m['label_cap'])
             self.assertTrue((results/'sequential_summary.csv').is_file())
             config = json.loads((results/'execution.json').read_text())
+            self.assertEqual(config['router_refresh']['extra_label_capacity'], 0)
+            self.assertGreater(m['fresh_route_updates'], 0)
             audit = set(config['audit_source_ids'])
             self.assertFalse(audit & set(m['source_ids']))
             expected_audit = set(np.random.default_rng(42+8121).permutation(np.arange(60, 80))[:4])
@@ -310,7 +350,7 @@ class FinalEnhancementTests(unittest.TestCase):
             self.assertEqual(m['config_fingerprint'], EnhancementConfig(**config['config']).fingerprint)
             # Preexisting results and training runs are protected from accidental overwrite.
             with self.assertRaises(ValueError), redirect_stdout(io.StringIO()):
-                runner.main(['evaluate', *common, '--levels', '5', '7', '--modes', 'learned', '--continual'])
+                runner.main(['evaluate', *common, '--levels', '5', '7', '--modes', 'learned', '--continual', '--router-refresh', '--query-schedule', 'uniform'])
 
 
 if __name__ == '__main__': unittest.main()

@@ -245,6 +245,8 @@ def evaluate(a):
     if a.profile is not None and a.profile != config.profile: raise ValueError('Profile differs from training.')
     if a.disable: raise ValueError('Use separate TRAIN runs for enhancement ablations; evaluation loads saved settings.')
     a.config = config
+    if a.router_refresh and not config.protected_reference:
+        raise ValueError('Router refresh requires protected TRAIN/paid-label references.')
     for key, value in saved['training_args'].items():
         if key in ('seed', 'budget_fraction'): continue
         if key in ('context_lr', 'context_alpha') and getattr(a, key) is not None: continue
@@ -284,6 +286,10 @@ def evaluate(a):
         execution['retention_protocol_version'] = 2
         execution['audit_protocol'] = 'seed+8121 fixed source IDs excluded from every adaptation domain; observer-only labels'
         execution['continuation_protocol'] = 'all adaptive state retained; label budget recharged per domain'
+    if a.router_refresh:
+        execution['router_refresh'] = dict(version=1, batch='existing pre-update reward reference',
+            targets='current bank after paid Context update', steps_per_paid_label=1,
+            history='snapshot before current feedback', extra_label_capacity=0)
     run_id = hashlib.sha256(json.dumps(execution, sort_keys=True).encode()).hexdigest()[:12]
     root = a.output / 'Results' / ('evaluation_'+run_id)
     if root.exists(): raise ValueError('This exact evaluation already exists; change --seed or use a fresh run copy.')
@@ -383,6 +389,8 @@ def parser():
     p.add_argument('--continual', action='store_true')
     p.add_argument('--audit-fraction', type=float, default=.2)
     p.add_argument('--evaluation-tag', default='', help='Unique repeat label for identical-trajectory timing repetitions.')
+    p.add_argument('--router-refresh', action='store_true',
+                   help='After paid feedback, recalibrate routing on existing references with current-bank targets.')
     for name, value_type in CONFIG_OPTIONS.items():
         p.add_argument('--'+name.replace('_', '-'), type=value_type)
     return p
@@ -390,6 +398,7 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.router_refresh and a.command != 'evaluate': p.error('--router-refresh is an online evaluation adaptation ablation.')
     if a.update_policy == 'fixed' and a.query_schedule != 'uniform': p.error('Fixed destinations require uniform feedback.')
     if not 0 <= a.budget_fraction <= 1 or not 0 <= a.gamma <= 1: p.error('Budget and gamma must be in [0,1].')
     if any(not np.isfinite(v) or not 0 <= v <= 1 for v in (a.train_epsilon, a.eval_epsilon)):
