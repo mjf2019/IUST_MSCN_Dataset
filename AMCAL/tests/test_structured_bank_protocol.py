@@ -59,7 +59,8 @@ class StructuredBankTests(unittest.TestCase):
         for context in bank:context.load_state_dict(initial)
         a=SimpleNamespace(seed=42,classes=['0','1'],context_lr=.001,budget_fraction=.5,
                           query_schedule='uniform',update_policy='fixed',bank_utility=False,
-                          train_epsilon=.2,eval_epsilon=0)
+                          train_epsilon=.2,eval_epsilon=0,context_alpha=.8,
+                          balanced_reward_reference=False,decoupled_query=False)
         x=torch.randn(16,1,8);y=np.arange(16)%2
         return cnn,bank,initial,a,(x,y,np.arange(16))
 
@@ -243,4 +244,5 @@ class StructuredBankTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
 

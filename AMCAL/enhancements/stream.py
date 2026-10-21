@@ -1,0 +1,274 @@
+"""Predict-before-feedback closed loop, including optional sparse inference.
+
+Only TRAIN anchors and previously paid labels enter memory. Sparse rows never
+create targets for unexecuted routes. Complete routing oracles are deliberately
+unavailable for a sparse stream; full-row-only diagnostics are named explicitly.
+"""
+from copy import deepcopy
+import time
+import numpy as np
+import torch
+from torch import nn
+import torch.nn.functional as F
+import amcal_burst_structured_bank_protocol as legacy
+from baselines.stream_timing import StreamTimer
+from .agent import DeviceReliability
+from .memory import ProtectedMemory, transfer
+from .models import BankExecutor
+
+
+def cascade_decision(agent, embedding, frozen, config, rng, gap):
+    with torch.no_grad():
+        probabilities = agent.pre_router(embedding, frozen).sigmoid().squeeze(0)
+        top = probabilities.topk(2)
+        candidate = int(top.indices[0])
+        force = (float(top.values[0]) < config.cascade_confidence
+                 or float(top.values[0] - top.values[1]) < config.cascade_margin
+                 or float(agent.pre_router.novelty(embedding)[0]) > float(agent.pre_router.novelty_limit)
+                 or float(agent.pre_router.fallback_value(embedding, frozen)[0]) > 0
+                 or gap >= config.cascade_max_gap
+                 or rng.random() < config.cascade_audit_fraction)
+    return force, candidate
+
+
+def observer(cnn, bank, agent, x, y, history, used, cap, position, seed, config, mode='learned'):
+    """Observer-only endpoints; identical independent audit draws at both ends."""
+    z, h = legacy.base_cache(cnn, x)
+    executor = BankExecutor(cnn, bank, config.bank_executor)
+    predictions, all_predictions = [], []
+    rng = np.random.default_rng(seed + 30003)
+    with torch.no_grad():
+        for start in range(0, len(x), 64):
+            bx = x[start:start + 64]
+            outputs = executor.outputs(bx, z[start:start + 64])
+            state = legacy.build_state(outputs, h[start:start + 64], history, used, cap,
+                                       position, max(position, 1), 0)
+            routes = agent.policy.route_logits(state).argmax(1)
+            if mode == 'random': routes = torch.tensor(rng.integers(0, 4, len(bx)), device=x.device)
+            elif config.cascade:
+                for k in range(len(bx)):
+                    full, candidate = cascade_decision(agent, h[start+k:start+k+1], z[start+k:start+k+1],
+                                                       config, rng, (start + k) % (config.cascade_max_gap + 1))
+                    if not full: routes[k] = candidate
+            per_route = outputs[0].argmax(2)
+            predictions.extend(per_route[torch.arange(len(bx), device=x.device), routes].cpu().tolist())
+            all_predictions.append(per_route.cpu().numpy())
+    matrix = np.concatenate(all_predictions)
+    return np.asarray(predictions), (matrix == np.asarray(y)[:, None]).mean(0).tolist(), matrix
+
+
+def probe_before(a, cnn, bank, selected, batch, agent, history, used, cap, position, count):
+    if batch is None: return None, None
+    if not getattr(a.config, 'routed_utility', False):
+        return legacy.core.probe_losses(cnn, bank[selected], (batch.x, batch.y)), None
+    with torch.no_grad():
+        z, h = legacy.base_cache(cnn, batch.x)
+        out = BankExecutor(cnn, bank).outputs(batch.x, z)
+        state = legacy.build_state(out, h, history, used, cap, position, count, 0)
+        weights = (.9 * agent.policy.route_logits(state).softmax(1) + .1 / 4)[:, selected + 1]
+        loss = F.cross_entropy(out[0][:, selected + 1], batch.y, reduction='none')
+    return loss.cpu().numpy(), weights.cpu().numpy()
+
+
+def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', training=False,
+            warmup=False, rollout_seed=None, reference=None, same_level=False, continuation=None):
+    config = a.config
+    seed = a.seed if rollout_seed is None else rollout_seed
+    x, y, source_ids = domain
+    order = np.random.default_rng(seed).permutation(len(y))
+    x, y, source_ids = x[order], np.asarray(y)[order], np.asarray(source_ids)[order]
+    n, cap = len(y), int(np.floor(a.budget_fraction * len(y)))
+    continuing = bool(continuation)
+    if continuing:
+        optimizers, history, memory = (continuation[key] for key in ('optimizers', 'history', 'memory'))
+        history.last_update -= continuation['previous_count']
+    else:
+        for context in bank: context.load_state_dict(initial); context.eval()
+        agent.versions += 32  # A reset is a new hidden-bank generation for replay weighting.
+        optimizers = [torch.optim.Adam([p for p in c.parameters() if p.requires_grad],
+                                      lr=a.context_lr, weight_decay=1e-4) for c in bank]
+        history = DeviceReliability(len(a.classes), x.device)
+        if config.protected_reference:
+            memory = ProtectedMemory(anchors, len(a.classes), config, seed + 910033)
+        else:
+            # The reference-only ablation uses the original paid-history sampler.
+            source = legacy.core.TrainingProbe(x, torch.tensor(y), seed + 910033) if training else legacy.core.PaidHistory(seed + 910033)
+            memory = legacy.BalancedRewardReference(source)
+    executor = BankExecutor(cnn, bank, config.bank_executor)
+    schedule = set(np.random.default_rng(seed + 819003).choice(n, cap, replace=False).tolist()) if a.query_schedule == 'uniform' else None
+    destinations = np.random.default_rng(seed + 440003).integers(0, 3, n)
+    rng = np.random.default_rng(seed + 719003)
+    audit_rng = np.random.default_rng(seed + 260917)
+    timer = StreamTimer(x.device, enabled=not training)
+    with timer.stage('cache'): frozen, embeddings = legacy.base_cache(cnn, x)
+    first_ref = observer(cnn, bank, agent, *reference, history, 0, cap, 0, a.seed, config, mode) if reference is not None else None
+    first_current = observer(cnn, bank, agent, x, y, history, 0, cap, 0, a.seed, config, mode) if same_level else None
+    used = 0; gap = 0; next_cached = None
+    traces, predictions_all, known_all = [], [], []
+    labels_mask = np.zeros(n, dtype=bool)
+    action_counts = np.zeros(7, dtype=int)
+    slot_queries = np.zeros(3, dtype=int)
+    route_updates0, td_updates0 = agent.route_updates, agent.td_updates
+    full_correct, full_legal_correct, full_rows = 0, 0, 0
+    briers, row_times, response_times = [], [], []
+    timer.start()
+    for pos in range(n):
+        row_start = time.perf_counter()
+        inputs = x[pos:pos+1]
+        versions = agent.versions.copy()
+        gate = int(pos in schedule) if schedule is not None else -1
+        state_gate = 2 + int(destinations[pos]) if a.update_policy == 'fixed' and gate == 1 else gate
+        with timer.stage('selection'):
+            full = True; candidate = 0
+            if config.cascade and not training and mode == 'learned' and next_cached is None and gate != 1:
+                full, candidate = cascade_decision(agent, embeddings[pos:pos+1], frozen[pos:pos+1], config, audit_rng, gap)
+        with timer.stage('prediction'):
+            slots = (0, 1, 2) if full else (() if candidate == 0 else (candidate - 1,))
+            outputs = next_cached if next_cached is not None else executor.outputs(inputs, frozen[pos:pos+1], slots)
+            next_cached = None
+        with timer.stage('selection'):
+            state = None; values = None; route_logits = None
+            if full:
+                state = legacy.build_state(outputs, embeddings[pos:pos+1], history, used, cap, pos, n, state_gate)
+                allowed = legacy.base.legal_actions(3, cap-used, gate)
+                if a.update_policy == 'fixed': allowed = [v for v in allowed if v < 4 or v == 4 + int(destinations[pos])]
+                with torch.no_grad():
+                    values, route_logits = agent.policy.forward_with_logits(state)
+                    values, route_logits = values[0], route_logits[0]
+                    valid = torch.tensor(allowed, device=x.device)
+                    greedy = int(valid[values[valid].argmax()])
+                epsilon = a.train_epsilon if training else a.eval_epsilon
+                action = int(rng.choice(allowed)) if mode == 'random' or warmup or rng.random() < epsilon else greedy
+                route = legacy.base.route_index(action, 3)
+                gap = 0
+            else:
+                route = action = candidate
+                gap += 1
+        response_times.append(1000 * (time.perf_counter() - row_start))
+        # No current label has entered the policy, pre-router or state above.
+        observed = torch.isfinite(outputs[0]).all(2)[0].cpu().numpy()
+        route_predictions = outputs[0].nan_to_num().argmax(2)[0].cpu().numpy()
+        prediction = int(route_predictions[route])
+        truth = int(y[pos]); paid = action >= 4
+        correct = route_predictions == truth
+        if full:
+            full_rows += 1; full_correct += bool(correct.any())
+            legal_routes = {legacy.base.route_index(v, 3) for v in allowed}
+            full_legal_correct += any(correct[r] for r in legal_routes)
+            briers.append(float(np.mean((route_logits.sigmoid().detach().cpu().numpy() - correct) ** 2)))
+        action_counts[action] += 1; agent.clock += 1
+        reward = gain = harm = None
+        reference_counts = None
+        with timer.stage('update'):
+            successor_output = None
+            if pos + 1 < n and not warmup and (paid or training):
+                successor_output = executor.outputs(x[pos+1:pos+2], frozen[pos+1:pos+2])
+            zero = torch.zeros_like(state) if state is not None else None
+            skip_next = zero
+            next_gate = int(pos+1 in schedule) if schedule is not None else -1
+            next_state_gate = 2 + int(destinations[min(pos+1, n-1)]) if a.update_policy == 'fixed' and next_gate == 1 else next_gate
+            if successor_output is not None:
+                skip_next = legacy.build_state(successor_output, embeddings[pos+1:pos+2], history,
+                                                used, cap, pos+1, n, next_state_gate)
+            if paid:
+                if used >= cap: raise RuntimeError('A query exceeded the hard label cap.')
+                selected = action - 4
+                label = torch.tensor([truth], device=x.device)
+                batch = memory.sample(inputs)
+                if config.protected_reference:
+                    before, route_weight = probe_before(a, cnn, bank, selected, batch, agent, history, used, cap, pos, n)
+                    replay = batch.protected(config.memory_replay_size, memory.replay_rng) if batch is not None else None
+                    reference_counts = memory.counts()
+                else:
+                    before = legacy.core.probe_losses(cnn, bank[selected], batch)
+                    route_weight = None; replay = None
+                history.observe_paid(outputs[0].softmax(2), truth)
+                rx, ry = (inputs, label) if replay is None else (torch.cat([inputs, replay[0]]), torch.cat([label, replay[1]]))
+                optimizers[selected].zero_grad(set_to_none=True)
+                transformed = bank[selected](rx)
+                ce = F.cross_entropy(cnn(transformed), ry, reduction='none')
+                loss = legacy.context_objective(ce[0], F.cross_entropy(outputs[0][:, 0], label), a.context_alpha)
+                if replay is not None: loss = loss + config.memory_ce_weight * ce[1:].mean()
+                loss = loss + config.residual_weight * (transformed - rx).square().mean()
+                loss.backward(); nn.utils.clip_grad_norm_([p for p in bank[selected].parameters() if p.requires_grad], 1)
+                optimizers[selected].step(); agent.versions[selected] += 1; executor.refresh(selected)
+                if config.protected_reference:
+                    after = legacy.core.probe_losses(cnn, bank[selected], (batch.x, batch.y)) if batch is not None else None
+                    if route_weight is not None:
+                        # Multiply signed normalized transfer without changing its denominator.
+                        delta = route_weight * (before-after) / (before+after+1e-8)
+                        before, after = 1 + delta, 1 - delta
+                    utility, gain, harm = transfer(before, after, batch, a.gain_weight,
+                                                   a.retention_weight, a.selection_cost, config)
+                else:
+                    utility, gain, harm = legacy.utility_after(a, cnn, bank, selected, batch, before)
+                if warmup: utility = 0.
+                reward = (1. if prediction == truth else -1.) + utility
+                used += 1; slot_queries[selected] += 1; labels_mask[pos] = True
+                changed = executor.refresh_output(inputs, outputs, selected)
+                change = (changed[0][:, selected+1].softmax(1) - outputs[0][:, selected+1].softmax(1)).abs().mean()
+                history.updated(selected+1, pos+1, change)
+                # TRAIN episodes reproduce the online availability of protected memory.
+                if config.protected_reference or not training: memory.add(inputs, label)
+                if successor_output is not None:
+                    successor_output = executor.refresh_output(x[pos+1:pos+2], successor_output, selected)
+            may_learn = training or (mode == 'learned' and paid)
+            if may_learn:
+                if not full: raise RuntimeError('Sparse routes cannot supervise unexecuted predictions.')
+                target = torch.tensor(correct, dtype=torch.float32, device=x.device)
+                agent.observe_routes(state, target, step_now=not training or paid or pos % 16 == 15 or pos+1 == n,
+                                     versions=versions)
+                if config.cascade: agent.observe_pre_router(embeddings[pos:pos+1], frozen[pos:pos+1], target, route_logits)
+                if not warmup:
+                    skip_state = state.clone()
+                    if schedule is not None: skip_state[:, -3] = 0
+                    for r in range(4):
+                        agent.push(skip_state, r, 1. if correct[r] else -1., skip_next, pos+1 == n, versions)
+                    if paid:
+                        successor = zero if successor_output is None else legacy.build_state(successor_output,
+                            embeddings[pos+1:pos+2], history, used, cap, pos+1, n, next_state_gate)
+                        agent.push(state, action, reward, successor, pos+1 == n, versions)
+                        agent.push_pair(state, action, utility, successor, skip_next, pos+1 == n, versions)
+                    if paid or pos % 16 == 15 or pos+1 == n: agent.learn_td()
+        next_cached = successor_output
+        predictions_all.append(route_predictions); known_all.append(observed)
+        # One batched observer transfer replaces individual scalar .item() calls.
+        scores = None if values is None else torch.cat([values, route_logits.sigmoid()]).detach().cpu().tolist()
+        traces.append(dict(step=pos+1, source_row=int(source_ids[pos]), truth=truth, prediction=prediction,
+            action=action, route=route, queried=paid, labels_used=used, full_bank=full,
+            reward=reward, gain=gain, harm=harm, reference_counts=reference_counts,
+            predictions=[int(v) if known else None for v, known in zip(route_predictions, observed)],
+            scores=scores))
+        row_times.append(1000 * (time.perf_counter() - row_start))
+    timer.stop()
+    if schedule is not None and used != cap: raise RuntimeError('Uniform feedback failed to acquire its exact cap.')
+    chosen = np.asarray([row['prediction'] for row in traces])
+    matrix = np.asarray(predictions_all)
+    metrics = dict(accuracy=float(legacy.core.accuracy_score(y, chosen)),
+        macro_f1=float(legacy.core.f1_score(y, chosen, average='macro', zero_division=0)),
+        frozen_accuracy=float(np.mean(matrix[:, 0] == y)), samples=n, labels=used, label_cap=cap,
+        actual_label_fraction=used/n, slot_queries=slot_queries.tolist(), action_counts=action_counts.tolist(),
+        route_updates=agent.route_updates-route_updates0, td_updates=agent.td_updates-td_updates0,
+        oracle_all=full_correct/n if full_rows == n else None,
+        oracle_legal=full_legal_correct/n if full_rows == n else None,
+        oracle_on_full_rows=full_correct/full_rows if full_rows else None, oracle_full_rows=full_rows,
+        full_bank_fraction=full_rows/n, route_brier_on_full_rows=float(np.mean(briers)) if briers else None,
+        stream_context_forwards=executor.context_forwards, stream_trunk_forwards=executor.trunk_forwards,
+        memory=memory.counts() if config.protected_reference else {'paid_history_only': True},
+        oracle_protocol='observer on executed full-bank rows only; complete oracle is null for sparse streams',
+        mode=mode, source_ids=source_ids.tolist(), queried_source_ids=source_ids[labels_mask].tolist(),
+        latency_protocol='synchronized finite-stream runner with frozen cache and one-input lookahead TD; no annotation delay; not a live-service benchmark')
+    metrics.update(timer.metrics(n, used))
+    if not training:
+        metrics['response_ms_percentiles'] = dict(zip(('p50', 'p95', 'p99'), np.percentile(response_times, [50, 95, 99]).tolist()))
+        metrics['row_ms_percentiles'] = dict(zip(('p50', 'p95', 'p99'), np.percentile(row_times, [50, 95, 99]).tolist()))
+    if reference is not None:
+        final_ref = observer(cnn, bank, agent, *reference, history, used, cap, n, a.seed, config, mode)
+        metrics['reference'] = legacy.retention_summary(first_ref, final_ref, reference[1], np.ones(len(reference[1]), dtype=bool))
+    if same_level:
+        final_current = observer(cnn, bank, agent, x, y, history, used, cap, n, a.seed, config, mode)
+        metrics['same_level'] = {name: legacy.retention_summary(first_current, final_current, y, mask)
+                                for name, mask in [('all_rows', np.ones(n, dtype=bool)), ('unqueried', ~labels_mask)]}
+    if continuation is not None:
+        continuation.update(optimizers=optimizers, history=history, memory=memory, previous_count=n)
+    return metrics, traces
