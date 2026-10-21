@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import amcal_burst_structured_bank_protocol as legacy
 from .models import PreRouter
 from .utility_normalization import relative_utility
+from .state import masked_q
 
 
 class JointRouteComparison(nn.Module):
@@ -50,13 +51,15 @@ def load_policy_state(policy, state):
 
 
 class EfficientQ(legacy.StructuredQ):
-    def __init__(self, route_width, joint_router=False):
+    def __init__(self, route_width, joint_router=False, slots=3):
         super().__init__(route_width)
+        self.slots = slots
+        self.routes = slots+1
         self.comparison = JointRouteComparison(route_width) if joint_router else None
         self.utility_normalization = None
 
     def route_logits(self, states):
-        route_x = states[:, :4*self.route_width].reshape(-1, 4, self.route_width)
+        route_x = states[:, :self.routes*self.route_width].reshape(-1, self.routes, self.route_width)
         logits = self.correctness(route_x).squeeze(-1)
         return logits if self.comparison is None else logits + self.comparison(route_x)
 
@@ -68,13 +71,13 @@ class EfficientQ(legacy.StructuredQ):
     def routing_parameters(self): return [p for _, p in self.named_routing_parameters()]
 
     def forward_components(self, states, detach_routes=False):
-        route_x = states[:, :4 * self.route_width].reshape(-1, 4, self.route_width)
+        route_x = states[:, :self.routes * self.route_width].reshape(-1, self.routes, self.route_width)
         logits = self.route_logits(states)
         reward = 2 * logits.sigmoid() - 1
         if detach_routes: reward = reward.detach()
         pooled = torch.cat([route_x.mean(1), route_x.max(1).values, states[:, -2:]], 1)
         future = self.future(pooled)
-        features = torch.cat([route_x[:, 1:], pooled[:, None].expand(-1, 3, -1)], 2)
+        features = torch.cat([route_x[:, 1:], pooled[:, None].expand(-1, self.slots, -1)], 2)
         update = self.update_value(features).squeeze(-1)
         return torch.cat([future + reward, future + reward[:, 1:] + update], 1), logits, update
 
@@ -87,7 +90,7 @@ class EfficientQ(legacy.StructuredQ):
         if self.utility_normalization is None: return raw, logits, raw, update
         normalized = relative_utility(update, **self.utility_normalization)
         selected = raw.clone()
-        selected[:, 4:] = raw[:, 4:] - update + normalized
+        selected[:, self.routes:] = raw[:, self.routes:] - update + normalized
         return selected, logits, raw, update
 
     def forward(self, states, detach_routes=False):
@@ -115,17 +118,18 @@ def routing_objective(logits, correct, weights, rank_weight, informative_weight=
 class EnhancementAgent(legacy.Agent):
     def __init__(self, route_width, embedding_width, classes, device, seed, config,
                  offline=False, policy_state=None, prerouter_state=None, gamma=.95,
-                 informative_weight=1.):
+                 informative_weight=1., slots=3):
         base_state = ({k: v for k, v in policy_state.items() if not k.startswith('comparison.')}
                       if config.joint_router and policy_state is not None else policy_state)
         super().__init__(route_width, device, seed, offline=offline, policy_state=base_state, gamma=gamma)
-        policy = EfficientQ(route_width, config.joint_router).to(device)
+        self.slots = slots
+        policy = EfficientQ(route_width, config.joint_router, slots).to(device)
         load_policy_state(policy, self.policy.state_dict() if policy_state is None else policy_state)
         self.policy = policy.eval()
         self.target = deepcopy(policy).eval()
         self.config = config
         self.informative_weight = informative_weight
-        self.versions = np.zeros(3, dtype=np.int64)
+        self.versions = np.zeros(slots, dtype=np.int64)
         self.route_optimizer = torch.optim.Adam(self.policy.routing_parameters(),
             lr=.001 if offline else config.route_lr_online, weight_decay=1e-4)
         self.td_optimizer = torch.optim.Adam(list(self.policy.future.parameters()) + list(self.policy.update_value.parameters()),
@@ -142,10 +146,9 @@ class EnhancementAgent(legacy.Agent):
         self.counterfactual_updates = 0
 
     def _next_values(self, states):
-        if self.policy.utility_normalization is None: return super()._next_values(states)
         selection, _, _, _ = self.policy.forward_for_action(states)
-        chosen = legacy.masked_q(selection, states).argmax(1)
-        # Choose using the normalized actor, evaluate using the RAW target critic.
+        chosen = masked_q(selection, states, self.slots).argmax(1)
+        # Choose with actor scores; evaluate in raw target-critic units.
         return self.target(states).gather(1, chosen[:, None]).squeeze(1)
 
     def refresh_routes(self, states, correct):
@@ -181,7 +184,7 @@ class EnhancementAgent(legacy.Agent):
     def observe_routes(self, state, correct, step_now=True, importance=1., versions=None):
         version = tuple(self.versions if versions is None else versions)
         self.route_memory.append((state.detach().cpu().reshape(-1).clone(),
-            correct.detach().cpu().float().reshape(4).clone(), float(importance), version, self.clock))
+            correct.detach().cpu().float().reshape(self.slots+1).clone(), float(importance), version, self.clock))
         if not step_now: return
         samples, weight = self._sample(self.route_memory, 4096 if self.offline else 128)
         x = torch.stack([row[0] for row in samples]).to(self.device)
@@ -228,8 +231,8 @@ class EnhancementAgent(legacy.Agent):
             ps = torch.stack([row[4] for row in pairs]).to(self.device)
             pt = torch.tensor([row[5] for row in pairs], device=self.device)
             q = self.policy(px, detach_routes=True)
-            # Coupled query action 4/5/6 predicts through route 1/2/3.
-            advantage = q.gather(1, pa[:, None]).squeeze(1) - q.gather(1, (pa - 3)[:, None]).squeeze(1)
+            # Each coupled query maps to its Context prediction-only route.
+            advantage = q.gather(1, pa[:, None]).squeeze(1) - q.gather(1, (pa - self.slots)[:, None]).squeeze(1)
             with torch.no_grad(): target = pu + self.gamma * (1 - pt) * (self._next_values(pn) - self._next_values(ps))
             pair_loss = (F.smooth_l1_loss(advantage, target, reduction='none') * pw).sum() / pw.sum()
             loss = loss + self.config.paired_weight * pair_loss
@@ -296,14 +299,15 @@ class EnhancementAgent(legacy.Agent):
 
 class DeviceReliability:
     """Original reliability semantics implemented on the inference device."""
-    def __init__(self, classes, device):
-        self.accuracy = torch.full((4,), .5, device=device)
-        self.ce = torch.full((4,), .5, device=device)
-        self.change = torch.zeros(4, device=device)
-        self.updates = torch.zeros(4, device=device)
-        self.last_update = torch.zeros(4, device=device)
-        self.class_good = torch.zeros(4, classes, device=device)
-        self.class_count = torch.zeros(4, classes, device=device)
+    def __init__(self, classes, device, routes=4):
+        self.routes = routes
+        self.accuracy = torch.full((routes,), .5, device=device)
+        self.ce = torch.full((routes,), .5, device=device)
+        self.change = torch.zeros(routes, device=device)
+        self.updates = torch.zeros(routes, device=device)
+        self.last_update = torch.zeros(routes, device=device)
+        self.class_good = torch.zeros(routes, classes, device=device)
+        self.class_count = torch.zeros(routes, classes, device=device)
         self.paid = 0
         self.budget = None
 
@@ -320,14 +324,14 @@ class DeviceReliability:
 
     @torch.no_grad()
     def observe_paid(self, probs, truth):
-        probs = probs.reshape(4, -1)
+        probs = probs.reshape(self.routes, -1)
         predicted = probs.argmax(1)
         good = predicted == truth
         ce = -probs[:, truth].clamp_min(1e-8).log()
         self.accuracy.mul_(.9).add_(good, alpha=.1)
         self.ce.mul_(.9).add_(ce / (1 + ce), alpha=.1)
         self.class_count.mul_(.99); self.class_good.mul_(.99)
-        rows = torch.arange(4, device=probs.device)
+        rows = torch.arange(self.routes, device=probs.device)
         self.class_count[rows, predicted] += 1
         self.class_good[rows, predicted] += good
         self.paid += 1

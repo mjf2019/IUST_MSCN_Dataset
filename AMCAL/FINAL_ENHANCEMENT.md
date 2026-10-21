@@ -702,3 +702,65 @@ git add -f -- "$run/Results"
 git commit -m "Add counterfactual model RL-feedback tests seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## Two-Context evaluation ablation (five actions)
+
+```powershell
+git pull origin AMCAL_final_enhancement
+./AMCAL/run_amcal_two_contexts.ps1 -Seed 42
+```
+
+This evaluates the existing counterfactual-trained accuracy checkpoint with **two
+actual Context modules**, three prediction routes (frozen CNN + Context 1/2), and
+five coupled actions (skip/predict 0/1/2, query/update Context 1/2). There is no
+third module, dummy route, padded state, third-slot update or third-route oracle.
+Current-state probability aggregates, reliability, pooled selector features,
+legal masks, paired advantages, successor values and observer routing all use the
+active route count. The scorer and utility heads are shared across routes, so
+all inherited learned tensors load strictly without slicing or reinitialization.
+Default three-Context operation retains its previous shapes and result metadata.
+
+This is a bank-size removal ablation using weights trained with three Contexts;
+it does not train a new two-Context architecture or establish its best attainable
+accuracy. The frozen CNN, shared selector checkpoint, preprocessing, memory,
+reward, Context learning rate, epsilon 0.05, source partitions and 20% cap are the
+same as in the corresponding three-Context run. Learning still occurs online on
+paid labels, with separate Adam state for each of the two Contexts. The initial
+Context weights are identical across slots, as in the original bank. The cascade
+and joint-router variants are excluded from this initial ablation; utility
+normalization and counterfactual TRAIN fitting with two Contexts are not enabled.
+
+The default `policy` schedule matches the latest three-Context RL-feedback test.
+It runs both sequential forgetting and independent per-level TEST, seed 42, on
+5, 7, 10, 12, 15, 17, 20. No training is run. The sequential protocol retains all
+adaptive state between levels and excludes fixed audit identities; the independent
+protocol restarts from the same inherited checkpoint at every level. Actual label
+spending may differ from the three-Context policy despite equal maximum caps.
+Compare accuracy, forgetting, oracle, actual labels and measured runtime together.
+
+For a comparison to the earlier uniform-feedback result (78.63818% sequential
+final audit), run separately with `-QuerySchedule uniform`. That changes feedback
+scheduling and should be compared to the matching three-Context uniform run.
+Do not compare two-Context independent accuracy directly to sequential final audit.
+`-EvaluationSet Independent` or `Sequential` resumes only the unfinished test.
+
+Results are separate `Results/evaluation_*` directories under the existing
+`final_enhancement_accuracy_counterfactual_trainseed42` run. Execution metadata
+records `context_count: 2`, `action_count: 5`, the shared checkpoint SHA and whether
+state is continual. No prior results or checkpoint files are overwritten. Traces
+have five Q values followed by three route probabilities (`scores` length 8),
+three route predictions and actions 0..4; slot queries have length 2. This differs
+from the three-Context trace schema (seven Q values, four probabilities).
+
+CPU tests cover checkpoint tensor compatibility, five-action masks/bootstrap,
+active-route state/observer shapes, two-slot online TD and paired learning,
+unqueried-label invariance, real CLI execution of both tests and checkpoint
+immutability. GPU accuracy and latency remain experimental; PowerShell is reviewed
+statically.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_accuracy_counterfactual_trainseed42"
+git add -f -- "$run/Results"
+git commit -m "Add two-Context RL-feedback tests seed 42"
+git push origin AMCAL_final_enhancement
+```

@@ -15,6 +15,7 @@ from baselines.stream_timing import StreamTimer
 from .agent import DeviceReliability
 from .memory import ProtectedMemory, transfer
 from .models import BankExecutor
+from .state import build_state
 from .counterfactual import context_step, alternatives
 
 
@@ -42,10 +43,10 @@ def observer(cnn, bank, agent, x, y, history, used, cap, position, seed, config,
         for start in range(0, len(x), 64):
             bx = x[start:start + 64]
             outputs = executor.outputs(bx, z[start:start + 64])
-            state = legacy.build_state(outputs, h[start:start + 64], history, used, cap,
+            state = build_state(outputs, h[start:start + 64], history, used, cap,
                                        position, max(position, 1), 0)
             routes = agent.policy.route_logits(state).argmax(1)
-            if mode == 'random': routes = torch.tensor(rng.integers(0, 4, len(bx)), device=x.device)
+            if mode == 'random': routes = torch.tensor(rng.integers(0, len(bank)+1, len(bx)), device=x.device)
             elif config.cascade:
                 for k in range(len(bx)):
                     full, candidate = cascade_decision(agent, h[start+k:start+k+1], z[start+k:start+k+1],
@@ -65,8 +66,8 @@ def probe_before(a, cnn, bank, selected, batch, agent, history, used, cap, posit
     with torch.no_grad():
         z, h = legacy.base_cache(cnn, batch.x)
         out = BankExecutor(cnn, bank).outputs(batch.x, z)
-        state = legacy.build_state(out, h, history, used, cap, position, count, 0)
-        weights = (.9 * agent.policy.route_logits(state).softmax(1) + .1 / 4)[:, selected + 1]
+        state = build_state(out, h, history, used, cap, position, count, 0)
+        weights = (.9 * agent.policy.route_logits(state).softmax(1) + .1 / (len(bank)+1))[:, selected + 1]
         loss = F.cross_entropy(out[0][:, selected + 1], batch.y, reduction='none')
     return loss.cpu().numpy(), weights.cpu().numpy()
 
@@ -75,6 +76,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             warmup=False, rollout_seed=None, reference=None, same_level=False, continuation=None,
             paid_supervision=False):
     config = a.config
+    slots = len(bank); routes = slots+1
+    if agent.slots != slots: raise ValueError("Selector/bank Context count mismatch.")
     counterfactual = training and not warmup and getattr(a, 'counterfactual_utility', False)
     if counterfactual and (a.query_schedule != 'uniform' or a.update_policy != 'learned'
             or not config.protected_reference or config.routed_utility or config.architecture != 'legacy'):
@@ -94,7 +97,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         agent.versions += 32  # A reset is a new hidden-bank generation for replay weighting.
         optimizers = [torch.optim.Adam([p for p in c.parameters() if p.requires_grad],
                                       lr=a.context_lr, weight_decay=1e-4) for c in bank]
-        history = DeviceReliability(len(a.classes), x.device)
+        history = DeviceReliability(len(a.classes), x.device, routes)
         if config.protected_reference:
             memory = ProtectedMemory(anchors, len(a.classes), config, seed + 910033)
         else:
@@ -103,7 +106,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             memory = legacy.BalancedRewardReference(source)
     executor = BankExecutor(cnn, bank, config.bank_executor)
     schedule = set(np.random.default_rng(seed + 819003).choice(n, cap, replace=False).tolist()) if a.query_schedule == 'uniform' else None
-    destinations = np.random.default_rng(seed + 440003).integers(0, 3, n)
+    destinations = np.random.default_rng(seed + 440003).integers(0, slots, n)
     rng = np.random.default_rng(seed + 719003)
     audit_rng = np.random.default_rng(seed + 260917)
     timer = StreamTimer(x.device, enabled=not training)
@@ -113,8 +116,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     used = 0; gap = 0; next_cached = None
     traces, predictions_all, known_all = [], [], []
     labels_mask = np.zeros(n, dtype=bool)
-    action_counts = np.zeros(7, dtype=int)
-    slot_queries = np.zeros(3, dtype=int)
+    action_counts = np.zeros(2*slots+1, dtype=int)
+    slot_queries = np.zeros(slots, dtype=int)
     route_updates0, td_updates0 = agent.route_updates, agent.td_updates
     fresh_updates0, fresh_rows0 = agent.fresh_route_updates, agent.fresh_route_rows
     full_correct, full_legal_correct, full_rows = 0, 0, 0
@@ -132,15 +135,15 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             if config.cascade and not training and mode == 'learned' and next_cached is None and gate != 1:
                 full, candidate = cascade_decision(agent, embeddings[pos:pos+1], frozen[pos:pos+1], config, audit_rng, gap)
         with timer.stage('prediction'):
-            slots = (0, 1, 2) if full else (() if candidate == 0 else (candidate - 1,))
-            outputs = next_cached if next_cached is not None else executor.outputs(inputs, frozen[pos:pos+1], slots)
+            executed_slots = tuple(range(slots)) if full else (() if candidate == 0 else (candidate - 1,))
+            outputs = next_cached if next_cached is not None else executor.outputs(inputs, frozen[pos:pos+1], executed_slots)
             next_cached = None
         with timer.stage('selection'):
             state = None; values = None; raw_values = None; update_values = None; route_logits = None
             if full:
-                state = legacy.build_state(outputs, embeddings[pos:pos+1], history, used, cap, pos, n, state_gate)
-                allowed = legacy.base.legal_actions(3, cap-used, gate)
-                if a.update_policy == 'fixed': allowed = [v for v in allowed if v < 4 or v == 4 + int(destinations[pos])]
+                state = build_state(outputs, embeddings[pos:pos+1], history, used, cap, pos, n, state_gate)
+                allowed = legacy.base.legal_actions(slots, cap-used, gate)
+                if a.update_policy == 'fixed': allowed = [v for v in allowed if v < routes or v == routes + int(destinations[pos])]
                 with torch.no_grad():
                     values, route_logits, raw_values, update_values = agent.policy.forward_for_action(state)
                     values, route_logits = values[0], route_logits[0]
@@ -149,7 +152,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                     greedy = int(valid[values[valid].argmax()])
                 epsilon = a.train_epsilon if training else a.eval_epsilon
                 action = int(rng.choice(allowed)) if mode == 'random' or warmup or rng.random() < epsilon else greedy
-                route = legacy.base.route_index(action, 3)
+                route = legacy.base.route_index(action, slots)
                 gap = 0
             else:
                 route = action = candidate
@@ -159,11 +162,11 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         observed = torch.isfinite(outputs[0]).all(2)[0].cpu().numpy()
         route_predictions = outputs[0].nan_to_num().argmax(2)[0].cpu().numpy()
         prediction = int(route_predictions[route])
-        truth = int(y[pos]); paid = action >= 4
+        truth = int(y[pos]); paid = action >= routes
         correct = route_predictions == truth
         if full:
             full_rows += 1; full_correct += bool(correct.any())
-            legal_routes = {legacy.base.route_index(v, 3) for v in allowed}
+            legal_routes = {legacy.base.route_index(v, slots) for v in allowed}
             full_legal_correct += any(correct[r] for r in legal_routes)
             briers.append(float(np.mean((route_logits.sigmoid().detach().cpu().numpy() - correct) ** 2)))
         action_counts[action] += 1; agent.clock += 1
@@ -178,11 +181,11 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             next_gate = int(pos+1 in schedule) if schedule is not None else -1
             next_state_gate = 2 + int(destinations[min(pos+1, n-1)]) if a.update_policy == 'fixed' and next_gate == 1 else next_gate
             if successor_output is not None:
-                skip_next = legacy.build_state(successor_output, embeddings[pos+1:pos+2], history,
+                skip_next = build_state(successor_output, embeddings[pos+1:pos+2], history,
                                                 used, cap, pos+1, n, next_state_gate)
             if paid:
                 if used >= cap: raise RuntimeError('A query exceeded the hard label cap.')
-                selected = action - 4
+                selected = action - routes
                 label = torch.tensor([truth], device=x.device)
                 batch = memory.sample(inputs)
                 # Keep reliability features from before this label was observed.
@@ -241,7 +244,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                     with torch.no_grad():
                         fresh_z, fresh_h = legacy.base_cache(cnn, batch.x)
                         fresh_outputs = executor.outputs(batch.x, fresh_z)
-                        fresh_states = legacy.build_state(fresh_outputs, fresh_h, fresh_history,
+                        fresh_states = build_state(fresh_outputs, fresh_h, fresh_history,
                             used-1, cap, pos, n, state_gate)
                         fresh_correct = fresh_outputs[0].argmax(2) == batch.y[:, None]
                     agent.refresh_routes(fresh_states, fresh_correct)
@@ -249,10 +252,10 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 if not warmup:
                     skip_state = state.clone()
                     if schedule is not None: skip_state[:, -3] = 0
-                    for r in range(4):
+                    for r in range(routes):
                         agent.push(skip_state, r, 1. if correct[r] else -1., skip_next, pos+1 == n, versions)
                     if paid:
-                        successor = zero if successor_output is None else legacy.build_state(successor_output,
+                        successor = zero if successor_output is None else build_state(successor_output,
                             embeddings[pos+1:pos+2], history, used, cap, pos+1, n, next_state_gate)
                         agent.push(state, action, reward, successor, pos+1 == n, versions)
                         agent.push_pair(state, action, utility, successor, skip_next, pos+1 == n, versions)

@@ -669,6 +669,27 @@ class FinalEnhancementTests(unittest.TestCase):
                     self.assertEqual(measured['samples'],16 if execution['continual'] else 20)
             self.assertEqual(kinds,{True,False})
             self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
+            # Actual two-Context ablation uses the SAME shared checkpoint.
+            existing=set((cf_output/'Results').glob('evaluation_*'))
+            with redirect_stdout(io.StringIO()), \
+                    patch('enhancements.stream.alternatives',side_effect=AssertionError('No TEST simulation')):
+                runner.main([*policy_common,'--context-count','2','--continual'])
+                runner.main([*policy_common,'--context-count','2'])
+            reduced=set((cf_output/'Results').glob('evaluation_*'))-existing
+            self.assertEqual(len(reduced),2)
+            for result in reduced:
+                execution=json.loads((result/'execution.json').read_text())
+                self.assertEqual(execution['context_count'],2)
+                self.assertEqual(execution['action_count'],5)
+                self.assertEqual(execution['checkpoint_sha256'],cf_hash)
+                for level in (5,7):
+                    measured=json.loads((result/f'learned_level{level}_metrics.json').read_text())
+                    self.assertEqual(len(measured['slot_queries']),2)
+                    self.assertEqual(len(measured['action_counts']),5)
+                    self.assertLessEqual(measured['labels'],measured['label_cap'])
+                traces=pd.read_csv(result/'learned_level5_trace.csv')
+                self.assertTrue(traces.action.between(0,4).all())
+            self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
             self.assertEqual(legacy.core.file_sha256(checkpoint_path),checkpoint_hash)
 
 

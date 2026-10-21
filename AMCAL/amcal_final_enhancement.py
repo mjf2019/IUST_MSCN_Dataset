@@ -79,10 +79,10 @@ def load_cnn(models, artifact):
     return cnn
 
 
-def build_bank(models, artifact, config, initial):
+def build_bank(models, artifact, config, initial, slots=3):
     width = len(artifact['feature_names'])
     if config.architecture != 'legacy': return residual_bank(width, config, initial, legacy.core.device)
-    bank = [legacy.core.ContextAwareNetwork(width).to(legacy.core.device).eval() for _ in range(3)]
+    bank = [legacy.core.ContextAwareNetwork(width).to(legacy.core.device).eval() for _ in range(slots)]
     for context in bank: context.load_state_dict(initial)
     return bank
 
@@ -143,7 +143,7 @@ def new_agent(a, cnn, artifact, offline=False, saved=None):
         legacy.core.device, a.seed, a.config, offline=offline,
         policy_state=None if saved is None else saved['policy_state_dict'],
         prerouter_state=None if saved is None else saved.get('prerouter_state_dict'), gamma=a.gamma,
-        informative_weight=getattr(a, 'router_informative_weight', 1.))
+        informative_weight=getattr(a, 'router_informative_weight', 1.), slots=getattr(a, 'context_count', 3))
     agent.policy.utility_normalization = getattr(a, 'utility_normalization', None)
     return agent
 
@@ -373,6 +373,8 @@ def evaluate(a):
     if a.joint_router and not config.joint_router: raise ValueError('Joint router requires a separately trained checkpoint.')
     if a.disable: raise ValueError('Use separate TRAIN runs for enhancement ablations; evaluation loads saved settings.')
     a.config = config
+    if a.context_count != 3 and (config.architecture != 'legacy' or config.cascade or config.joint_router):
+        raise ValueError('Two-Context evaluation requires the accuracy legacy architecture without cascade or joint routing.')
     calibration = None
     if a.utility_calibration is not None:
         calibration = validate_calibration(json.loads(a.utility_calibration.read_text()),
@@ -415,6 +417,10 @@ def evaluate(a):
                      runtime=dict(python=sys.version.split()[0], torch=str(torch.__version__),
                          numpy=np.__version__, device=str(legacy.core.device), cuda=torch.version.cuda,
                          gpu=torch.cuda.get_device_name(legacy.core.device) if legacy.core.device.type == 'cuda' else None))
+    if a.context_count != 3:
+        execution['context_count'] = a.context_count
+        execution['action_count'] = 2*a.context_count+1
+        execution['context_count_protocol'] = 'evaluation-only bank reduction; inherited shared weights; aggregates use active routes only'
     if a.continual:
         execution['retention_protocol_version'] = 2
         execution['audit_protocol'] = 'seed+8121 fixed source IDs excluded from every adaptation domain; observer-only labels'
@@ -440,7 +446,7 @@ def evaluate(a):
         cnn = load_cnn(models, artifact)
         frozen_weights = {name: value.detach().cpu().clone() for name, value in cnn.state_dict().items()}
         initial = torch.load(models/'enhanced_context.pth', map_location='cpu', weights_only=False)['initial_state_dict']
-        bank = build_bank(models, artifact, config, initial)
+        bank = build_bank(models, artifact, config, initial, slots=a.context_count)
         agent = new_agent(a, cnn, artifact, saved=saved)
         continuation = {} if a.continual else None
         audit_matrix = []
@@ -457,7 +463,7 @@ def evaluate(a):
                 else: scores.append(accuracy)
             audit_matrix.append(scores)
         if audits is not None:
-            observe_stage(0, 0, DeviceReliability(len(a.classes), legacy.core.device),
+            observe_stage(0, 0, DeviceReliability(len(a.classes), legacy.core.device, a.context_count+1),
                           0, int(a.budget_fraction*len(domains[a.levels[0]][1])), 0)
         for stage, level in enumerate(a.levels, start=1):
             if not a.continual: agent = new_agent(a, cnn, artifact, saved=saved)
@@ -534,6 +540,7 @@ def parser():
     p.add_argument('--retention-selection-weight', type=float, default=1.)
     p.add_argument('--bank-executor', choices=['sequential', 'vmap'])
     p.add_argument('--routed-utility', action='store_true')
+    p.add_argument('--context-count', type=int, choices=[2,3], default=3, help='Evaluation-only Context-count ablation; shared selector weights are reused.')
     p.add_argument('--continual', action='store_true')
     p.add_argument('--audit-fraction', type=float, default=.2)
     p.add_argument('--evaluation-tag', default='', help='Unique repeat label for identical-trajectory timing repetitions.')
@@ -552,6 +559,8 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.context_count != 3 and (a.command != 'evaluate' or a.utility_calibration is not None):
+        p.error('--context-count 2 is an evaluation ablation without utility normalization.')
     if a.counterfactual_utility:
         if a.command != 'train' or not a.warm_start_enhancement or not a.aligned_sequence:
             p.error('--counterfactual-utility requires train --warm-start-enhancement --aligned-sequence.')

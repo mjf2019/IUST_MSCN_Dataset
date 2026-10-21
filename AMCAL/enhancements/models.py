@@ -96,14 +96,15 @@ class BankExecutor:
             return list(out.unbind(0))
         return [self.bank[slot](x) for slot in slots]
 
-    def outputs(self, x, frozen_logits, slots=(0, 1, 2)):
+    def outputs(self, x, frozen_logits, slots=None):
+        if slots is None: slots = tuple(range(len(self.bank)))
         with torch.no_grad():
             adapted = self.adapted(x, slots)
             zs = self.cnn(torch.cat(adapted)).reshape(len(slots), len(x), -1).transpose(0, 1) if adapted else None
             # NaN denotes an unexecuted route; it is never a selector input or a target.
-            logits = frozen_logits.new_full((len(x), 4, frozen_logits.shape[-1]), float('nan'))
+            logits = frozen_logits.new_full((len(x), len(self.bank)+1, frozen_logits.shape[-1]), float('nan'))
             logits[:, 0] = frozen_logits
-            distortion = x.new_full((len(x), 4), float('nan')); distortion[:, 0] = 0
+            distortion = x.new_full((len(x), len(self.bank)+1), float('nan')); distortion[:, 0] = 0
             denominator = x.flatten(1).norm(dim=1).clamp_min(1e-6)
             for column, (slot, value) in enumerate(zip(slots, adapted)):
                 logits[:, slot + 1] = zs[:, column]
