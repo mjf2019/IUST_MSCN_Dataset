@@ -292,6 +292,21 @@ class FinalEnhancementTests(unittest.TestCase):
             config = json.loads((results/'execution.json').read_text())
             audit = set(config['audit_source_ids'])
             self.assertFalse(audit & set(m['source_ids']))
+            expected_audit = set(np.random.default_rng(42+8121).permutation(np.arange(60, 80))[:4])
+            self.assertEqual(audit, expected_audit)
+            later = json.loads((results/'learned_level7_metrics.json').read_text())
+            self.assertFalse(audit & set(later['source_ids']))
+            matrix = pd.read_csv(results/'sequential_audit_matrix.csv')
+            self.assertEqual(set(matrix.Stage), {0, 1, 2})
+            self.assertEqual(set(matrix.AuditLevel), {0, 5, 7})
+            self.assertEqual(len(matrix), 9)
+            summary = pd.read_csv(results/'sequential_summary.csv').iloc[0]
+            clean_scores = matrix[matrix.AuditLevel == 0].sort_values('Stage').Accuracy.to_numpy()
+            self.assertAlmostEqual(summary.CleanDrop, clean_scores[0]-clean_scores[-1])
+            first_scores = matrix[matrix.AuditLevel == 5].sort_values('Stage').Accuracy.to_numpy()
+            self.assertAlmostEqual(summary.Forgetting, max(first_scores[1:])-first_scores[-1])
+            self.assertAlmostEqual(summary.BWT, first_scores[-1]-first_scores[1])
+            self.assertEqual(summary.Labels, m['labels']+later['labels'])
             self.assertEqual(m['config_fingerprint'], EnhancementConfig(**config['config']).fingerprint)
             # Preexisting results and training runs are protected from accidental overwrite.
             with self.assertRaises(ValueError), redirect_stdout(io.StringIO()):

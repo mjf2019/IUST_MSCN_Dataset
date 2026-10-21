@@ -195,3 +195,53 @@ For F=100 the real module parameter counts are 7,360,813 for the original Contex
 and 28,933 for one compact Context. A shared three-slot bank has 29,455 unique
 parameters, of which 783 adapter parameters are trainable online. These counts
 do not establish a latency ratio or an accuracy improvement.
+
+## Matched sequential forgetting test (accuracy, seed 42)
+
+The reference implementation is `AMCAL/amcal_burst_sequential_retention.py` on
+`experiment/amcal-protocol` at commit
+`44b907e0da1238d7d75e1fdfc154f4e2fbd8b274`. The current `develop` branch
+does not contain this test. Its committed results are in
+`AMCAL/ANT_Burst_IAT_TEST/protocol_runs/sequential_burst_audit_seed42`.
+
+Reuse the trained accuracy checkpoint; do not run Train or All again:
+
+```powershell
+git pull origin AMCAL_final_enhancement
+./AMCAL/run_amcal_final_enhancement.ps1 -Action Audit -Profile accuracy -Seeds @(42)
+```
+
+The fixed order is 5, 7, 10, 12, 15, 17, 20. Twenty percent of common TEST
+source IDs are reserved using seed+8121, exactly as in the reference test.
+These IDs are excluded from adaptation at every intensity. For the original
+data this gives 214 audit rows and 859 adaptation rows per domain, with a
+171-label cap per domain. Contexts, optimizers, selector, replay, reliability
+and memory continue across stages; the annotation cap is renewed per domain.
+TRAIN source anchors remain available to the enhanced method as designed.
+Audit and clean VAL labels are observer-only and never enter learner memory.
+
+Protocol version 2 records stage 0 and all seven post-adaptation stages,
+including clean VAL accuracy (AuditLevel=0). FinalAudit excludes clean VAL.
+Forgetting is the mean previous-domain best score after learning that domain
+minus its final score; BWT is final minus the score immediately after learning
+that domain. Both exclude the last domain and use percentage points.
+CleanDrop is initial minus final clean VAL accuracy. FinalAudit and
+MeanOnlineAccuracy are distinct: one measures the final model on fixed audit
+rows, the other measures predictions made before feedback along the stream.
+
+Reference learned results: FinalAudit=66.7557%, Forgetting=2.0249 pp,
+BWT=+1.7134 pp, CleanInitial=71.0158%, CleanFinal=66.7288%,
+CleanDrop=4.2870 pp, total labels=431. Reference random results:
+FinalAudit=62.4166%, Forgetting=3.6604 pp, BWT=-2.6480 pp,
+CleanDrop=14.4455 pp, total labels=1197. Compare label usage as well as accuracy;
+equal caps do not guarantee equal paid-label counts.
+
+Read `sequential_summary.csv`, `sequential_audit_matrix.csv`,
+`combined_results.csv`, and `execution.json` under the new evaluation directory
+in `final_enhancement_accuracy_trainseed42/Results`. This audit does not replace
+the existing independent-level evaluation and does not overwrite it.
+
+Validation: 40 CPU tests passed after this change, including the real CLI smoke
+test checking stage 0, clean-drop and forgetting/BWT arithmetic, the exact split,
+and exclusion of audit IDs from both adaptation stages. The full dataset/GPU
+audit must be run on the machine holding the trained checkpoint and data.

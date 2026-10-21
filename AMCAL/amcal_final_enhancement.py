@@ -20,7 +20,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 import amcal_burst_structured_bank_protocol as legacy
-from enhancements.agent import EnhancementAgent
+from enhancements.agent import EnhancementAgent, DeviceReliability
 from enhancements.config import EnhancementConfig
 from enhancements.models import ResidualContext, residual_bank
 from enhancements.stream import episode, observer
@@ -280,6 +280,10 @@ def evaluate(a):
                      runtime=dict(python=sys.version.split()[0], torch=str(torch.__version__),
                          numpy=np.__version__, device=str(legacy.core.device), cuda=torch.version.cuda,
                          gpu=torch.cuda.get_device_name(legacy.core.device) if legacy.core.device.type == 'cuda' else None))
+    if a.continual:
+        execution['retention_protocol_version'] = 2
+        execution['audit_protocol'] = 'seed+8121 fixed source IDs excluded from every adaptation domain; observer-only labels'
+        execution['continuation_protocol'] = 'all adaptive state retained; label budget recharged per domain'
     run_id = hashlib.sha256(json.dumps(execution, sort_keys=True).encode()).hexdigest()[:12]
     root = a.output / 'Results' / ('evaluation_'+run_id)
     if root.exists(): raise ValueError('This exact evaluation already exists; change --seed or use a fresh run copy.')
@@ -294,6 +298,21 @@ def evaluate(a):
         agent = new_agent(a, cnn, artifact, saved=saved)
         continuation = {} if a.continual else None
         audit_matrix = []
+        clean_scores = []
+        def observe_stage(stage, after_level, history, used, cap, position):
+            scores = []
+            for audit_level, (ax, ay) in [(0, clean), *audits.items()]:
+                result = observer(cnn, bank, agent, ax, ay, history, used, cap,
+                                  position, a.seed, config, mode)
+                accuracy = float(np.mean(result[0] == ay))
+                audit_rows.append(dict(Mode=mode, Stage=stage, AfterLevel=after_level,
+                                       AuditLevel=audit_level, N=len(ay), Accuracy=100*accuracy))
+                if audit_level == 0: clean_scores.append(accuracy)
+                else: scores.append(accuracy)
+            audit_matrix.append(scores)
+        if audits is not None:
+            observe_stage(0, 0, DeviceReliability(len(a.classes), legacy.core.device),
+                          0, int(a.budget_fraction*len(domains[a.levels[0]][1])), 0)
         for stage, level in enumerate(a.levels, start=1):
             if not a.continual: agent = new_agent(a, cnn, artifact, saved=saved)
             m, traces = episode(a, cnn, bank, initial, agent, domains[level], anchors,
@@ -307,20 +326,17 @@ def evaluate(a):
             rows.append(summary_row(level, mode, m))
             print(f'Level {level} | {mode}: accuracy {100*m["accuracy"]:.2f}% | labels {m["labels"]}/{m["label_cap"]} | full bank {100*m["full_bank_fraction"]:.1f}% | {m["online_ms_per_sample"]:.2f} ms/row', flush=True)
             if audits is not None:
-                history = continuation['history']; scores = []
-                for audit_level, (ax, ay) in audits.items():
-                    result = observer(cnn, bank, agent, ax, ay, history, m['labels'], m['label_cap'],
-                                      m['samples'], a.seed, config, mode)
-                    accuracy = float(np.mean(result[0] == ay)); scores.append(accuracy)
-                    audit_rows.append(dict(Mode=mode, Stage=stage, AfterLevel=level, AuditLevel=audit_level,
-                                           N=len(ay), Accuracy=100*accuracy))
-                audit_matrix.append(scores)
+                observe_stage(stage, level, continuation['history'], m['labels'],
+                              m['label_cap'], m['samples'])
         if audits is not None:
             matrix = np.asarray(audit_matrix); count = len(a.levels)
-            forgetting = np.mean([matrix[j:, j].max()-matrix[-1, j] for j in range(count-1)])
-            bwt = np.mean([matrix[-1, j]-matrix[j, j] for j in range(count-1)])
+            forgetting = np.mean([matrix[j+1:, j].max()-matrix[-1, j] for j in range(count-1)])
+            bwt = np.mean([matrix[-1, j]-matrix[j+1, j] for j in range(count-1)])
             forgetting_rows.append(dict(Mode=mode, FinalAudit=100*float(matrix[-1].mean()),
                 Forgetting=100*float(forgetting), BWT=100*float(bwt),
+                CleanInitial=100*clean_scores[0], CleanFinal=100*clean_scores[-1],
+                CleanDrop=100*(clean_scores[0]-clean_scores[-1]),
+                MeanOnlineAccuracy=float(np.mean([row['Accuracy'] for row in rows if row['Mode'] == mode])),
                 Labels=sum(row['Labels'] for row in rows if row['Mode'] == mode)))
     write_csv(root/'combined_results.csv', rows)
     if audits is not None:
