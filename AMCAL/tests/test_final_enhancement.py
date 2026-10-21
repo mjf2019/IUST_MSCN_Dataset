@@ -22,7 +22,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import amcal_burst_structured_bank_protocol as legacy
 import amcal_final_enhancement as runner
-from enhancements.agent import EfficientQ, EnhancementAgent, DeviceReliability, ranking_loss
+from enhancements.agent import EfficientQ, EnhancementAgent, DeviceReliability, ranking_loss, routing_objective
 from enhancements.config import EnhancementConfig
 from enhancements.memory import ProtectedMemory, transfer
 from enhancements.models import ResidualContext, residual_bank, BankExecutor
@@ -75,6 +75,40 @@ class FinalEnhancementTests(unittest.TestCase):
         self.assertLess(float(z.grad[0, 0]), 0)
         self.assertGreater(float(z.grad[0, 1]), 0)
         self.assertEqual(float(z.grad[1:].abs().sum()), 0)
+
+    def test_informative_weight_preserves_calibration_and_emphasizes_route_choices(self):
+        y = torch.tensor([[1., 0, 1, 0], [0., 0, 0, 0]])
+        z = torch.zeros(2, 4, requires_grad=True)
+        baseline = routing_objective(z, y, torch.ones(2), .2)
+        expected = (torch.nn.functional.binary_cross_entropy_with_logits(z, y, reduction='none').mean(1)
+                    + .2*ranking_loss(z, y)).mean()
+        self.assertTrue(torch.equal(baseline, expected))
+        g0 = torch.autograd.grad(baseline, z)[0]
+        boosted = routing_objective(z, y, torch.ones(2), .2, 3.)
+        g1 = torch.autograd.grad(boosted, z)[0]
+        self.assertTrue(torch.allclose(g1[0], 1.5*g0[0]))
+        self.assertTrue(torch.allclose(g1[1], .5*g0[1]))
+        self.assertGreater(float(g1[1].abs().sum()), 0)
+        for target in (torch.zeros_like(y), torch.ones_like(y)):
+            self.assertTrue(torch.equal(routing_objective(z, target, torch.ones(2), .2),
+                                        routing_objective(z, target, torch.ones(2), .2, 3.)))
+
+    def test_informative_routing_leaves_td_heads_and_query_objective_independent(self):
+        *_, agent = self.fixture()
+        agent.informative_weight = 3.
+        states = torch.randn(1, 139)
+        before = [deepcopy(h.state_dict()) for h in (agent.policy.future, agent.policy.update_value)]
+        agent.observe_routes(states, torch.tensor([1., 0, 1, 0]))
+        for saved, head in zip(before, (agent.policy.future, agent.policy.update_value)):
+            for k, v in saved.items(): self.assertTrue(torch.equal(v, head.state_dict()[k]))
+        correctness = deepcopy(agent.policy.correctness.state_dict())
+        states[:, -3] = -1
+        for _ in range(40):
+            agent.push(states, 4, .5, states, True)
+            agent.push_pair(states, 4, .5, states, states, True)
+        agent.learn_td()
+        self.assertEqual(agent.td_updates, 1)
+        for k, v in correctness.items(): self.assertTrue(torch.equal(v, agent.policy.correctness.state_dict()[k]))
 
     def test_td_and_pairing_cannot_train_correctness(self):
         _, _, _, a, _, _, agent = self.fixture()
@@ -207,6 +241,7 @@ class FinalEnhancementTests(unittest.TestCase):
     def test_unqueried_labels_cannot_change_learning_or_actions(self):
         cnn, bank, initial, a, domain, anchors, agent = self.fixture()
         a.router_refresh = True
+        agent.informative_weight = 3.
         snapshot = deepcopy(agent.policy.state_dict())
         _, trace = episode(a, cnn, bank, initial, agent, domain, anchors)
         weights = deepcopy(agent.policy.state_dict()); context_weights = [deepcopy(c.state_dict()) for c in bank]
@@ -214,7 +249,8 @@ class FinalEnhancementTests(unittest.TestCase):
         y = domain[1].copy()
         for i in range(len(y)):
             if i not in queried: y[i] = 1-y[i]
-        other = EnhancementAgent(34, 12, 2, torch.device('cpu'), 42, a.config, policy_state=snapshot)
+        other = EnhancementAgent(34, 12, 2, torch.device('cpu'), 42, a.config, policy_state=snapshot,
+                                 informative_weight=3.)
         _, second = episode(a, cnn, bank, initial, other, (domain[0], y, domain[2]), anchors)
         self.assertEqual([r['action'] for r in trace], [r['action'] for r in second])
         self.assertEqual([r['prediction'] for r in trace], [r['prediction'] for r in second])
@@ -351,6 +387,17 @@ class FinalEnhancementTests(unittest.TestCase):
             # Preexisting results and training runs are protected from accidental overwrite.
             with self.assertRaises(ValueError), redirect_stdout(io.StringIO()):
                 runner.main(['evaluate', *common, '--levels', '5', '7', '--modes', 'learned', '--continual', '--router-refresh', '--query-schedule', 'uniform'])
+            with redirect_stdout(io.StringIO()):
+                runner.main(['evaluate', *common, '--levels', '5', '7', '--modes', 'learned',
+                    '--continual', '--query-schedule', 'uniform', '--router-informative-weight', '3'])
+            extra = next(p for p in (output/'Results').glob('evaluation_*') if p != results)
+            meta = json.loads((extra/'execution.json').read_text())
+            self.assertEqual(meta['router_informative_weight'], 3.)
+            self.assertNotIn('router_refresh', meta)
+            measured = json.loads((extra/'learned_level5_metrics.json').read_text())
+            self.assertEqual(measured['fresh_route_updates'], 0)
+            self.assertEqual(measured['labels'], measured['label_cap'])
+            self.assertTrue(measured['classifier_unchanged'])
 
 
 if __name__ == '__main__': unittest.main()

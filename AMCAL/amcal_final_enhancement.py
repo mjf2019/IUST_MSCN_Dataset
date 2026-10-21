@@ -140,7 +140,8 @@ def new_agent(a, cnn, artifact, offline=False, saved=None):
     return EnhancementAgent(embedding_width + 4*classes + 14, embedding_width, classes,
         legacy.core.device, a.seed, a.config, offline=offline,
         policy_state=None if saved is None else saved['policy_state_dict'],
-        prerouter_state=None if saved is None else saved.get('prerouter_state_dict'), gamma=a.gamma)
+        prerouter_state=None if saved is None else saved.get('prerouter_state_dict'), gamma=a.gamma,
+        informative_weight=getattr(a, 'router_informative_weight', 1.))
 
 
 def train(a):
@@ -290,6 +291,9 @@ def evaluate(a):
         execution['router_refresh'] = dict(version=1, batch='existing pre-update reward reference',
             targets='current bank after paid Context update', steps_per_paid_label=1,
             history='snapshot before current feedback', extra_label_capacity=0)
+    if a.router_informative_weight != 1.:
+        execution['router_informative_weight'] = a.router_informative_weight
+        execution['router_objective_version'] = 1
     run_id = hashlib.sha256(json.dumps(execution, sort_keys=True).encode()).hexdigest()[:12]
     root = a.output / 'Results' / ('evaluation_'+run_id)
     if root.exists(): raise ValueError('This exact evaluation already exists; change --seed or use a fresh run copy.')
@@ -391,6 +395,8 @@ def parser():
     p.add_argument('--evaluation-tag', default='', help='Unique repeat label for identical-trajectory timing repetitions.')
     p.add_argument('--router-refresh', action='store_true',
                    help='After paid feedback, recalibrate routing on existing references with current-bank targets.')
+    p.add_argument('--router-informative-weight', type=float, default=1.,
+                   help='Online routing loss multiplier for paid rows with both correct and incorrect routes (default 1).')
     for name, value_type in CONFIG_OPTIONS.items():
         p.add_argument('--'+name.replace('_', '-'), type=value_type)
     return p
@@ -398,6 +404,12 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if not np.isfinite(a.router_informative_weight) or a.router_informative_weight < 1:
+        p.error('--router-informative-weight must be finite and at least 1.')
+    if a.router_informative_weight != 1. and a.command != 'evaluate':
+        p.error('--router-informative-weight is an online evaluation adaptation ablation.')
+    if a.router_informative_weight != 1. and a.router_refresh:
+        p.error('Test informative routing separately from --router-refresh.')
     if a.router_refresh and a.command != 'evaluate': p.error('--router-refresh is an online evaluation adaptation ablation.')
     if a.update_policy == 'fixed' and a.query_schedule != 'uniform': p.error('Fixed destinations require uniform feedback.')
     if not 0 <= a.budget_fraction <= 1 or not 0 <= a.gamma <= 1: p.error('Budget and gamma must be in [0,1].')

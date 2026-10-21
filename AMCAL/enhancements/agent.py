@@ -30,15 +30,29 @@ def ranking_loss(logits, correct):
     return (losses * pairs).sum((1, 2)) / pairs.sum((1, 2)).clamp_min(1)
 
 
+def routing_objective(logits, correct, weights, rank_weight, informative_weight=1.):
+    """Emphasize rows where route selection can change correctness.
+
+    Unanimously correct/incorrect rows retain BCE supervision for calibration.
+    Weights are normalized; the number of optimizer steps does not change.
+    """
+    informative = correct.bool().any(1) & ~correct.bool().all(1)
+    weights = weights * torch.where(informative, informative_weight, 1.)
+    bce = F.binary_cross_entropy_with_logits(logits, correct, reduction='none').mean(1)
+    return ((bce + rank_weight * ranking_loss(logits, correct)) * weights).sum() / weights.sum()
+
+
 class EnhancementAgent(legacy.Agent):
     def __init__(self, route_width, embedding_width, classes, device, seed, config,
-                 offline=False, policy_state=None, prerouter_state=None, gamma=.95):
+                 offline=False, policy_state=None, prerouter_state=None, gamma=.95,
+                 informative_weight=1.):
         super().__init__(route_width, device, seed, offline=offline, policy_state=policy_state, gamma=gamma)
         policy = EfficientQ(route_width).to(device)
         policy.load_state_dict(self.policy.state_dict())
         self.policy = policy.eval()
         self.target = deepcopy(policy).eval()
         self.config = config
+        self.informative_weight = informative_weight
         self.versions = np.zeros(3, dtype=np.int64)
         self.route_optimizer = torch.optim.Adam(self.policy.correctness.parameters(),
             lr=.001 if offline else config.route_lr_online, weight_decay=1e-4)
@@ -91,10 +105,8 @@ class EnhancementAgent(legacy.Agent):
         x = torch.stack([row[0] for row in samples]).to(self.device)
         y = torch.stack([row[1] for row in samples]).to(self.device)
         logits = self.policy.route_logits(x)
-        bce = F.binary_cross_entropy_with_logits(logits, y, reduction='none').mean(1)
-        rank = ranking_loss(logits, y)
         weight *= torch.tensor([row[2] for row in samples], device=self.device)
-        loss = ((bce + self.config.rank_weight * rank) * weight).sum() / weight.sum()
+        loss = routing_objective(logits, y, weight, self.config.rank_weight, self.informative_weight)
         if not self.offline and self.config.route_prior_weight:
             prior = sum((value - self.prior[name]).square().mean()
                         for name, value in self.policy.correctness.named_parameters())

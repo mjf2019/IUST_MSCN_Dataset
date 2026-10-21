@@ -291,3 +291,47 @@ trajectories under fixed feedback, no learning from unqueried labels, zero-budge
 behavior, no refresh in random mode, and the real CLI uniform-query audit with
 serialization. Accuracy gains require the full dataset experiment; none are
 claimed from the synthetic tests.
+
+## Informative-route supervision (online ablation)
+
+The seed-42 current-bank refresh trial reduced final audit accuracy from
+78.3712% to 77.8371% with fixed update destinations. Leave `--router-refresh`
+off for this independent experiment.
+
+`--router-informative-weight 3` multiplies the existing routing loss weight by
+three only when at least one route is correct and another is incorrect. These
+are the rows where choosing a route can change correctness. Replay recency,
+bank-version weights, sample importance and normalized loss remain in effect.
+Unanimously correct/incorrect rows still receive BCE calibration supervision;
+their ranking loss is zero. The existing pairwise ranking term is retained,
+not introduced as a new component. Batch size, optimizer-step count, replay
+capacity, Context architecture and annotation budget do not change.
+
+This is an opt-in online-adaptation experiment, not checkpoint retraining. The
+default multiplier is 1 (the prior behavior); execution metadata records a
+non-default multiplier and produces a separate result directory. Only the
+correctness head receives this weighted loss. Context minimization and the
+DDQN/paired update-return objectives remain unchanged. Training the selector on
+new labels still requires paid feedback. The flag cannot be combined with
+`--router-refresh`, to keep the comparison interpretable.
+
+First run the full learned-destination loop with uniform paid feedback, keeping
+the min-max update decisions active. Compare with `evaluation_728b41beb74a`:
+final audit 77.9039%, online 73.6238%, forgetting 2.0249 pp, 1197 labels.
+Run learned mode only; repeating the unaffected random baseline is unnecessary:
+
+```powershell
+git pull origin AMCAL_final_enhancement
+python AMCAL/amcal_final_enhancement.py evaluate `
+  --output AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_accuracy_trainseed42 `
+  --burst-dir AMCAL/ANT_Burst_IAT_TEST/Dataset_official_v1/AdvBurst_FTSC-IAT `
+  --continual --query-schedule uniform --update-policy learned `
+  --router-informative-weight 3 --modes learned --seed 42 --device cuda
+```
+
+Validation includes exact reproduction of the original routing loss at weight
+1, analytically checked relative gradient emphasis, retained supervision for
+unanimous rows, independent correctness versus TD/paired parameter updates,
+unqueried-label invariance, and a real train-save-load CLI audit checking saved
+execution metadata, disabled refresh, hard caps and a frozen CNN. Scientific
+accuracy improvement is not established until the full dataset trial finishes.
