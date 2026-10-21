@@ -372,6 +372,11 @@ def evaluate(a):
     if a.profile is not None and a.profile != config.profile: raise ValueError('Profile differs from training.')
     if a.joint_router and not config.joint_router: raise ValueError('Joint router requires a separately trained checkpoint.')
     if a.disable: raise ValueError('Use separate TRAIN runs for enhancement ablations; evaluation loads saved settings.')
+    if a.online_memory_ce_weight is not None:
+        if not config.protected_reference or config.memory_replay_size < 1:
+            raise ValueError('Online replay weighting requires protected memory and nonempty replay.')
+        from dataclasses import replace
+        config = replace(config, memory_ce_weight=a.online_memory_ce_weight).validated()
     a.config = config
     if a.context_count != 3 and (config.architecture != 'legacy' or config.cascade or config.joint_router):
         raise ValueError('Context-count ablation requires the accuracy legacy architecture without cascade or joint routing.')
@@ -417,6 +422,10 @@ def evaluate(a):
                      runtime=dict(python=sys.version.split()[0], torch=str(torch.__version__),
                          numpy=np.__version__, device=str(legacy.core.device), cuda=torch.version.cuda,
                          gpu=torch.cuda.get_device_name(legacy.core.device) if legacy.core.device.type == 'cuda' else None))
+    if a.online_memory_ce_weight is not None:
+        execution['online_adaptation_override'] = dict(version=1,
+            memory_ce_weight=dict(checkpoint=saved['config']['memory_ce_weight'], online=config.memory_ce_weight),
+            scope='online Context protected-replay CE only; inherited checkpoint unchanged')
     if a.context_count != 3:
         execution['context_count'] = a.context_count
         execution['action_count'] = 2*a.context_count+1
@@ -543,6 +552,8 @@ def parser():
     p.add_argument('--bank-executor', choices=['sequential', 'vmap'])
     p.add_argument('--routed-utility', action='store_true')
     p.add_argument('--context-count', type=int, choices=[1,2,3,4,5], default=3, help='Evaluation-only Context-count ablation; shared selector weights are reused.')
+    p.add_argument('--online-memory-ce-weight', type=float,
+                   help='Single-Context uniform-feedback evaluation: override protected-replay CE weight online only.')
     p.add_argument('--continual', action='store_true')
     p.add_argument('--audit-fraction', type=float, default=.2)
     p.add_argument('--evaluation-tag', default='', help='Unique repeat label for identical-trajectory timing repetitions.')
@@ -561,6 +572,13 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.online_memory_ce_weight is not None:
+        if not np.isfinite(a.online_memory_ce_weight) or a.online_memory_ce_weight < 0:
+            p.error('Online memory CE weight must be finite and nonnegative.')
+        if a.command != 'evaluate' or a.context_count != 1 or a.query_schedule != 'uniform' or a.update_policy != 'learned':
+            p.error('Online replay weighting is a single-Context uniform-feedback evaluation ablation.')
+        if a.utility_calibration is not None or a.router_refresh or a.router_informative_weight != 1.:
+            p.error('Test online replay weighting separately from other routing/utility ablations.')
     if a.context_count != 3 and (a.command != 'evaluate' or a.utility_calibration is not None):
         p.error('--context-count other than 3 is an evaluation ablation without utility normalization.')
     if a.counterfactual_utility:

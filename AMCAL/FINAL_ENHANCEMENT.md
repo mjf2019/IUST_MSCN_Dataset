@@ -876,3 +876,59 @@ git add -f -- "$run/Results"
 git commit -m "Add four- and five-Context uniform-feedback tests seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## Single-Context retention: protected-replay CE weight 0.1 -> 0.3
+
+```powershell
+git pull origin AMCAL_final_enhancement
+./AMCAL/run_amcal_one_context_retention.ps1 -Seed 42
+```
+
+This runs exactly two evaluations of the same single-Context checkpoint,
+sequential forgetting and independent per-level TEST, with uniform feedback and
+seed 42. No offline training is performed. Only the coefficient of the existing
+protected-replay cross-entropy in the online Context loss changes, from the
+checkpoint value 0.1 to 0.3. The current-row objective, residual loss, reward
+retention/gain weights, routing/utility architecture, CNN, initial Context and
+selector weights, memory capacities and sampling, replay size 8, LR 0.0005,
+epsilon 0.05 and 20% cap are inherited unchanged. The single Context's actual
+online parameters and downstream learned trajectory may change, as intended.
+No extra labels or replay rows are acquired.
+
+The existing Context update is `current_objective + memory_ce_weight *
+mean(protected_replay_CE) + residual_penalty`. The new flag
+`--online-memory-ce-weight 0.3` overrides only `memory_ce_weight` after loading the
+checkpoint, without editing its config or bytes. It is initially restricted to
+single-Context uniform-feedback evaluation with learned routing, protected
+references and positive replay size, independently of other routing/utility
+ablations. Other evaluation defaults and all TRAIN paths are unchanged.
+
+Reference single-Context uniform sequential results with weight 0.1 are:
+final audit 76.30174%, online 73.90654%, forgetting 4.67290 pp, clean-domain drop
+11.64958 pp and 1,197 labels. Independent accuracy was 69.68446% with 1,498
+labels. The objective is reduced forgetting/clean-domain drop while retaining
+online and final accuracy; no benefit is assumed before the experiment.
+
+Results use fresh configuration-specific `Results/evaluation_*` directories under
+`final_enhancement_accuracy_counterfactual_trainseed42`. `execution.json` includes
+the effective config (`memory_ce_weight: 0.3`), the original checkpoint SHA, and
+`online_adaptation_override.memory_ce_weight` with `checkpoint: 0.1` and
+`online: 0.3`. The override participates in the run fingerprint, preventing
+confusion with the previous 0.1 results. Only the sequential run has the fixed
+TEST audit and `sequential_summary.csv`; compare the independent run separately.
+Use `-EvaluationSet Independent` or `Sequential` to resume the unfinished part.
+The optional `-MemoryWeight` parameter accepts a different finite nonnegative
+coefficient, but the default experiment is one coefficient (0.3), not a sweep.
+
+CPU tests verify that the coefficient changes real Context updates with identical
+acquired source IDs and memory capacity, reject invalid/mixed settings, and run
+both CLI protocols with exact caps, effective/original config provenance and
+unchanged checkpoint/CNN. PowerShell is reviewed statically. GPU accuracy and
+retention effects must be measured on the full experiment.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_accuracy_counterfactual_trainseed42"
+git add -f -- "$run/Results"
+git commit -m "Add one-Context replay weight 0.3 retention tests seed 42"
+git push origin AMCAL_final_enhancement
+```

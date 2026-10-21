@@ -753,6 +753,32 @@ class FinalEnhancementTests(unittest.TestCase):
                 self.assertTrue(all(len(json.loads(x))==3*count+2 for x in traces.scores))
             self.assertEqual(cases,{(4,True),(4,False),(5,True),(5,False)})
             self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
+            # Isolated online replay-weight override: same source, both protocols.
+            existing=set((cf_output/'Results').glob('evaluation_*'))
+            with redirect_stdout(io.StringIO()):
+                runner.main([*single_common,'--online-memory-ce-weight','0.3','--continual'])
+                runner.main([*single_common,'--online-memory-ce-weight','0.3'])
+            retention_results=set((cf_output/'Results').glob('evaluation_*'))-existing
+            self.assertEqual(len(retention_results),2)
+            kinds=set()
+            for result in retention_results:
+                execution=json.loads((result/'execution.json').read_text())
+                kinds.add(execution['continual'])
+                self.assertEqual(execution['checkpoint_sha256'],cf_hash)
+                self.assertEqual(execution['config']['memory_ce_weight'],.3)
+                original_config=dict(cf_checkpoint['config']); effective_config=dict(execution['config'])
+                effective_config['memory_ce_weight']=original_config['memory_ce_weight']
+                self.assertEqual(effective_config,original_config)
+                override=execution['online_adaptation_override']['memory_ce_weight']
+                self.assertEqual(override,{'checkpoint':.1,'online':.3})
+                for level in (5,7):
+                    measured=json.loads((result/f'learned_level{level}_metrics.json').read_text())
+                    self.assertEqual(measured['labels'],measured['label_cap'])
+                    self.assertEqual(len(measured['slot_queries']),1)
+                    self.assertTrue(measured['classifier_unchanged'])
+                    self.assertEqual(measured['config_fingerprint'],EnhancementConfig(**execution['config']).fingerprint)
+            self.assertEqual(kinds,{True,False})
+            self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
             self.assertEqual(legacy.core.file_sha256(checkpoint_path),checkpoint_hash)
 
 
