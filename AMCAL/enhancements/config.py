@@ -9,6 +9,7 @@ import math
 class EnhancementConfig:
     profile: str = 'compact'
     architecture: str = 'compact'
+    joint_router: bool = False
     rank_weight: float = .2
     paired_weight: float = .5
     route_prior_weight: float = .001

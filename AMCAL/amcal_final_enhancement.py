@@ -20,7 +20,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 import amcal_burst_structured_bank_protocol as legacy
-from enhancements.agent import EnhancementAgent, DeviceReliability
+from enhancements.agent import EnhancementAgent, DeviceReliability, load_policy_state
 from enhancements.config import EnhancementConfig
 from enhancements.models import ResidualContext, residual_bank
 from enhancements.stream import episode, observer
@@ -162,23 +162,43 @@ def train(a):
     domains = {(level, split): legacy.read_domain(a.burst_dir, artifact, level, split)
                for level in a.levels for split in ('train_ids', 'val_ids')}
     anchors = legacy.read_domain(a.burst_dir, artifact, 0, 'train_ids')[:2]
-    initial = pretrain_context(a, models, artifact, cnn, domains)
-    torch.save({'architecture': a.config.architecture, 'initial_state_dict': initial}, models/'enhanced_context.pth')
+    warm = None
+    if a.warm_start_enhancement:
+        from dataclasses import replace
+        warm = torch.load(source/'final_enhancement.pth', map_location='cpu', weights_only=False)
+        if warm.get('format_version') != FORMAT_VERSION:
+            raise ValueError('Unsupported enhancement warm-start format.')
+        warm_config = EnhancementConfig(**warm['config'])
+        if replace(warm_config, joint_router=a.config.joint_router) != a.config:
+            raise ValueError('Warm-start configuration must match except for the joint-router extension.')
+        if set(warm['training_levels']) != set(a.levels):
+            raise ValueError('Warm-start TRAIN levels differ.')
+        for name, digest in warm['model_hashes'].items():
+            if legacy.core.file_sha256(source/name) != digest:
+                raise ValueError('Enhancement warm-start provenance mismatch: '+name)
+        for level, digest in warm['training_domain_sha256'].items():
+            if legacy.core.file_sha256(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv') != digest:
+                raise ValueError('Enhancement warm-start TRAIN domain mismatch: '+level)
+        initial = torch.load(source/'enhanced_context.pth', map_location='cpu', weights_only=False)['initial_state_dict']
+        shutil.copy2(source/'enhanced_context.pth', models/'enhanced_context.pth')
+    else:
+        initial = pretrain_context(a, models, artifact, cnn, domains)
+        torch.save({'architecture': a.config.architecture, 'initial_state_dict': initial}, models/'enhanced_context.pth')
     bank = build_bank(models, artifact, a.config, initial)
-    agent = new_agent(a, cnn, artifact, offline=True)
+    agent = new_agent(a, cnn, artifact, offline=True, saved=warm)
     if a.warm_start_selector:
         old = torch.load(source/'structured_bank_ddqn.pth', map_location='cpu', weights_only=False)
         if old.get('version') != 1 or old.get('route_width') != agent.policy.route_width:
             raise ValueError('Warm-start selector must be the compatible original v1 bank.')
         for name, digest in old['model_hashes'].items():
             if legacy.core.file_sha256(models/name) != digest: raise ValueError('Warm-start selector provenance mismatch.')
-        agent.policy.load_state_dict(old['policy_state_dict']); agent.target.load_state_dict(agent.policy.state_dict())
+        load_policy_state(agent.policy, old['policy_state_dict']); agent.target.load_state_dict(agent.policy.state_dict())
     # Novelty thresholds use TRAIN statistics and SOURCE validation only.
     _, train_h = legacy.base_cache(cnn, anchors[0])
     source_validation = legacy.read_domain(a.burst_dir, artifact, 0, 'val_ids')[:2]
     _, val_h = legacy.base_cache(cnn, source_validation[0])
     agent.pre_router.calibrate(train_h, val_h)
-    for warm in range(a.warmup_episodes):
+    for warm in range(0 if a.warm_start_enhancement else a.warmup_episodes):
         level = a.levels[warm % len(a.levels)]
         m, _ = episode(a, cnn, bank, initial, agent, domains[level, 'train_ids'], anchors,
             mode='random', training=True, warmup=True, rollout_seed=a.seed+100003+1009*warm)
@@ -187,11 +207,14 @@ def train(a):
     provenance = {str(level): legacy.core.file_sha256(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv')
                   for level in a.levels}
     best = -float('inf'); stale = 0; log = []
-    for epoch in range(a.epochs):
-        agent.td_memory.clear(); agent.pair_memory.clear()
-        level = a.levels[epoch % len(a.levels)]
-        m, _ = episode(a, cnn, bank, initial, agent, domains[level, 'train_ids'], anchors,
-                       training=True, rollout_seed=a.seed+200003+1009*epoch)
+    # Include the inherited selector as an epoch-zero validation candidate.
+    for epoch in range(-int(a.warm_start_enhancement), a.epochs):
+        level = None; m = {'labels': 0}
+        if epoch >= 0:
+            agent.td_memory.clear(); agent.pair_memory.clear()
+            level = a.levels[epoch % len(a.levels)]
+            m, _ = episode(a, cnn, bank, initial, agent, domains[level, 'train_ids'], anchors,
+                           training=True, rollout_seed=a.seed+200003+1009*epoch)
         snapshot = dict(policy_state_dict=deepcopy(agent.policy.state_dict()),
                         prerouter_state_dict=deepcopy(agent.pre_router.state_dict()))
         validation = []
@@ -216,13 +239,18 @@ def train(a):
                 selected_epoch=epoch+1, validation_accuracy=accuracy, selection_score=score,
                 validation_selection=dict(max_reference_drop_pp=a.max_reference_drop,
                     penalty_weight=a.retention_selection_weight), **snapshot)
+            if a.warm_start_enhancement:
+                saved['parent_checkpoint_sha256'] = legacy.core.file_sha256(source/'final_enhancement.pth')
             torch.save(saved, models/'final_enhancement.pth')
         else:
             stale += 1
             if stale >= a.patience: break
     write_json(a.output/'enhancement_training.json', dict(config=a.config.as_dict(), epochs=log,
         source_run=str(a.source_run), model_hashes=hashes, training_domains=provenance,
-        warm_start_selector=a.warm_start_selector, evaluation_policy='source-disjoint, pre-feedback',
+        warm_start_selector=a.warm_start_selector, warm_start_enhancement=a.warm_start_enhancement,
+        selected_epoch=saved['selected_epoch'],
+        parent_checkpoint_sha256=saved.get('parent_checkpoint_sha256'),
+        evaluation_policy='source-disjoint, pre-feedback',
         min_max='selector maximizes correctness/transfer return; selected Context minimizes current and protected-memory loss'))
     print('Saved:', models/'final_enhancement.pth', flush=True)
 
@@ -244,6 +272,7 @@ def evaluate(a):
     if saved['format_version'] != FORMAT_VERSION: raise ValueError('Unsupported enhancement checkpoint format.')
     config = EnhancementConfig(**saved['config']).validated()
     if a.profile is not None and a.profile != config.profile: raise ValueError('Profile differs from training.')
+    if a.joint_router and not config.joint_router: raise ValueError('Joint router requires a separately trained checkpoint.')
     if a.disable: raise ValueError('Use separate TRAIN runs for enhancement ablations; evaluation loads saved settings.')
     a.config = config
     if a.router_refresh and not config.protected_reference:
@@ -373,6 +402,10 @@ def parser():
     p.add_argument('--patience', type=int, default=5)
     p.add_argument('--warmup-episodes', type=int, default=3)
     p.add_argument('--warm-start-selector', action='store_true')
+    p.add_argument('--warm-start-enhancement', action='store_true',
+                   help='Reuse source enhancement Context and selector; skip Context pretraining and routing warmup.')
+    p.add_argument('--joint-router', action='store_true',
+                   help='Train a zero-initialized cross-route attention residual in the correctness head.')
     p.add_argument('--distill-weight', type=float, default=.2)
     p.add_argument('--context-lr', type=float)
     p.add_argument('--context-alpha', type=float)
@@ -404,6 +437,8 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.warm_start_enhancement and (a.command != 'train' or a.warm_start_selector):
+        p.error('--warm-start-enhancement is train-only and cannot combine with --warm-start-selector.')
     if not np.isfinite(a.router_informative_weight) or a.router_informative_weight < 1:
         p.error('--router-informative-weight must be finite and at least 1.')
     if a.router_informative_weight != 1. and a.command != 'evaluate':
@@ -437,6 +472,7 @@ def main(argv=None):
         from dataclasses import replace
         config = EnhancementConfig.preset(a.profile or 'compact')
         config = replace(config, bank_executor=a.bank_executor or config.bank_executor, routed_utility=a.routed_utility,
+                         joint_router=a.joint_router,
                          **{name: getattr(a, name) for name in CONFIG_OPTIONS if getattr(a, name) is not None})
         a.config = config.without(a.disable)
         a.context_lr = .0005 if a.context_lr is None else a.context_lr

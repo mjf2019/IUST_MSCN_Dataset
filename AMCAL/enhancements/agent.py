@@ -8,10 +8,65 @@ import amcal_burst_structured_bank_protocol as legacy
 from .models import PreRouter
 
 
+class JointRouteComparison(nn.Module):
+    """Shared cross-route attention; no Context-slot positional bias.
+
+    Zero output initialization makes the residual neutral at warm start.
+    Each route can inspect every competing route's full state, including its
+    predicted distribution, embedding and reliability, rather than pooled means.
+    """
+    def __init__(self, route_width):
+        super().__init__()
+        self.encode = nn.Sequential(nn.Linear(route_width, 64), nn.GELU())
+        self.attention = nn.MultiheadAttention(64, 4, dropout=0., batch_first=True)
+        self.output = nn.Sequential(nn.Linear(128, 64), nn.GELU(), nn.Linear(64, 1))
+        nn.init.zeros_(self.output[-1].weight)
+        nn.init.zeros_(self.output[-1].bias)
+
+    def forward(self, routes):
+        encoded = self.encode(routes)
+        compared, _ = self.attention(encoded, encoded, encoded, need_weights=False)
+        return self.output(torch.cat([encoded, compared], -1)).squeeze(-1)
+
+
+def load_policy_state(policy, state):
+    """Only an entirely absent new comparison head may be warm-started.
+
+    Missing legacy weights, unexpected keys and partial comparison checkpoints
+    are errors. A zero residual is kept when loading a complete legacy policy.
+    """
+    expected = set(policy.state_dict())
+    supplied = set(state)
+    comparison = {key for key in expected if key.startswith('comparison.')}
+    missing, extra = expected-supplied, supplied-expected
+    if extra or (missing and missing != comparison):
+        raise ValueError('Incompatible selector checkpoint: missing or unexpected policy weights.')
+    if missing:
+        nn.init.zeros_(policy.comparison.output[-1].weight)
+        nn.init.zeros_(policy.comparison.output[-1].bias)
+    policy.load_state_dict(state, strict=not missing)
+
+
 class EfficientQ(legacy.StructuredQ):
+    def __init__(self, route_width, joint_router=False):
+        super().__init__(route_width)
+        self.comparison = JointRouteComparison(route_width) if joint_router else None
+
+    def route_logits(self, states):
+        route_x = states[:, :4*self.route_width].reshape(-1, 4, self.route_width)
+        logits = self.correctness(route_x).squeeze(-1)
+        return logits if self.comparison is None else logits + self.comparison(route_x)
+
+    def named_routing_parameters(self):
+        for name, value in self.correctness.named_parameters(): yield 'correctness.'+name, value
+        if self.comparison is not None:
+            for name, value in self.comparison.named_parameters(): yield 'comparison.'+name, value
+
+    def routing_parameters(self): return [p for _, p in self.named_routing_parameters()]
+
     def forward_with_logits(self, states, detach_routes=False):
         route_x = states[:, :4 * self.route_width].reshape(-1, 4, self.route_width)
-        logits = self.correctness(route_x).squeeze(-1)
+        logits = self.route_logits(states)
         reward = 2 * logits.sigmoid() - 1
         if detach_routes: reward = reward.detach()
         pooled = torch.cat([route_x.mean(1), route_x.max(1).values, states[:, -2:]], 1)
@@ -46,19 +101,21 @@ class EnhancementAgent(legacy.Agent):
     def __init__(self, route_width, embedding_width, classes, device, seed, config,
                  offline=False, policy_state=None, prerouter_state=None, gamma=.95,
                  informative_weight=1.):
-        super().__init__(route_width, device, seed, offline=offline, policy_state=policy_state, gamma=gamma)
-        policy = EfficientQ(route_width).to(device)
-        policy.load_state_dict(self.policy.state_dict())
+        base_state = ({k: v for k, v in policy_state.items() if not k.startswith('comparison.')}
+                      if config.joint_router and policy_state is not None else policy_state)
+        super().__init__(route_width, device, seed, offline=offline, policy_state=base_state, gamma=gamma)
+        policy = EfficientQ(route_width, config.joint_router).to(device)
+        load_policy_state(policy, self.policy.state_dict() if policy_state is None else policy_state)
         self.policy = policy.eval()
         self.target = deepcopy(policy).eval()
         self.config = config
         self.informative_weight = informative_weight
         self.versions = np.zeros(3, dtype=np.int64)
-        self.route_optimizer = torch.optim.Adam(self.policy.correctness.parameters(),
+        self.route_optimizer = torch.optim.Adam(self.policy.routing_parameters(),
             lr=.001 if offline else config.route_lr_online, weight_decay=1e-4)
         self.td_optimizer = torch.optim.Adam(list(self.policy.future.parameters()) + list(self.policy.update_value.parameters()),
                                              lr=.0001, weight_decay=1e-4)
-        self.prior = {name: value.detach().clone() for name, value in self.policy.correctness.named_parameters()}
+        self.prior = {name: value.detach().clone() for name, value in self.policy.named_routing_parameters()}
         self.pre_router = PreRouter(embedding_width, classes).to(device).eval()
         if prerouter_state is not None: self.pre_router.load_state_dict(prerouter_state)
         self.pre_optimizer = torch.optim.Adam(self.pre_router.parameters(), lr=.001 if offline else config.route_lr_online)
@@ -79,10 +136,10 @@ class EnhancementAgent(legacy.Agent):
         if not self.offline and self.config.route_prior_weight:
             loss = loss + self.config.route_prior_weight * sum(
                 (value-self.prior[name]).square().mean()
-                for name, value in self.policy.correctness.named_parameters())
+                for name, value in self.policy.named_routing_parameters())
         self.route_optimizer.zero_grad(set_to_none=True)
         loss.backward()
-        nn.utils.clip_grad_norm_(self.policy.correctness.parameters(), 1)
+        nn.utils.clip_grad_norm_(self.policy.routing_parameters(), 1)
         self.route_optimizer.step()
         self.fresh_route_updates += 1
         self.fresh_route_rows += len(states)
@@ -109,10 +166,10 @@ class EnhancementAgent(legacy.Agent):
         loss = routing_objective(logits, y, weight, self.config.rank_weight, self.informative_weight)
         if not self.offline and self.config.route_prior_weight:
             prior = sum((value - self.prior[name]).square().mean()
-                        for name, value in self.policy.correctness.named_parameters())
+                        for name, value in self.policy.named_routing_parameters())
             loss = loss + self.config.route_prior_weight * prior
         self.route_optimizer.zero_grad(set_to_none=True); loss.backward()
-        nn.utils.clip_grad_norm_(self.policy.correctness.parameters(), 1)
+        nn.utils.clip_grad_norm_(self.policy.routing_parameters(), 1)
         self.route_optimizer.step(); self.route_updates += 1
         self.last_losses['routing'] = float(loss.detach())
 

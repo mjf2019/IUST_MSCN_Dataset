@@ -335,3 +335,78 @@ unanimous rows, independent correctness versus TD/paired parameter updates,
 unqueried-label invariance, and a real train-save-load CLI audit checking saved
 execution metadata, disabled refresh, hard caps and a frozen CNN. Scientific
 accuracy improvement is not established until the full dataset trial finishes.
+
+## Joint four-route comparison (new selector architecture)
+
+The baseline uniform-query trace at seed 42 contains 890 rows with exactly one
+correct route; the selector chooses it on only 30.1124% of these rows. Of 904
+errors with some correct available route, 622 occur in this group. This motivates
+comparing full route states jointly rather than only increasing loss weights.
+
+`--joint-router` adds a residual cross-route scorer to the shared correctness
+network: route-state projection to 64 features, four-head self-attention across
+the four route tokens, and a shared per-route residual output. Each token can
+inspect all competitors' full states. There is no positional embedding or
+majority-vote rule, so exchanging Context tokens exchanges their scores. The
+existing frozen-route flag still distinguishes the frozen classifier. The final
+residual layer starts at exactly zero, reproducing the old policy's logits and
+seven Q values when its weights are loaded. At route width 166 this adds 35,649
+parameters to the 136,963-parameter selector; Context capacity does not change.
+
+Only routing supervision updates the shared scorer and comparison module.
+Context minimization remains unchanged, and DDQN/paired transfer-return updates
+still train the future/update-value heads with detached routing rewards. Thus
+the learned Context-update destination remains part of the max decision. The
+experiment below fixes feedback timing to the existing uniform-query control,
+without fixing the learned prediction route or update destination.
+
+Train in a fresh output directory using `--warm-start-enhancement` to reuse the
+existing accuracy checkpoint, preprocessing, CNN and initial Context. It checks
+all source-model and TRAIN-domain hashes and configuration compatibility. Initial
+Context pretraining and correctness warmup are skipped. TRAIN episodes still
+adapt Contexts and train the selector; temporary VAL episodes select a checkpoint
+and are discarded. TEST is not used for fitting or selection. Epoch zero is
+included as a validation candidate; at most six additional epochs are requested.
+
+The one-command Windows launcher trains then evaluates with seed 42:
+`./AMCAL/run_amcal_joint_router.ps1 -Action All`. To resume evaluation after
+training finishes, use `-Action Evaluate`. It stops on Python failures. The
+equivalent explicit commands are below. PowerShell is unavailable in the CPU
+test environment, so the launcher received static review only.
+
+```powershell
+git pull origin AMCAL_final_enhancement
+$base = 'AMCAL/ANT_Burst_IAT_TEST/protocol_runs'
+$joint = "$base/final_enhancement_accuracy_joint_trainseed42"
+$burst = 'AMCAL/ANT_Burst_IAT_TEST/Dataset_official_v1/AdvBurst_FTSC-IAT'
+
+python AMCAL/amcal_final_enhancement.py train `
+  --source-run "$base/final_enhancement_accuracy_trainseed42" `
+  --output $joint --burst-dir $burst --profile accuracy `
+  --joint-router --warm-start-enhancement --epochs 6 --patience 3 `
+  --seed 42 --device cuda
+
+# Run after successful training. The saved checkpoint enables the joint router.
+python AMCAL/amcal_final_enhancement.py evaluate `
+  --output $joint --burst-dir $burst --continual `
+  --query-schedule uniform --update-policy learned --modes learned `
+  --seed 42 --device cuda
+```
+
+Do not enable refresh or informative weighting for this trial. The original
+checkpoint and its results remain untouched. Compare final audit 77.9039%,
+online 73.6238%, forgetting 2.0249 pp and 1197 labels from the original learned
+uniform-query loop, and inspect the one-correct-route subset in traces. Any
+improvement includes additional selector training; a matched continuation run
+without `--joint-router` is needed before attributing it specifically to the
+architecture. Strict loading rejects partial comparison heads and missing old
+policy weights; saved joint checkpoints are loaded automatically at evaluation.
+
+Validation: 47 CPU tests passed. New checks cover exact neutral initialization,
+cross-route sensitivity, Context-token permutation equivariance, old/new
+checkpoint compatibility and rejection of incomplete states, learning of the
+new head, separation from TD/paired gradients, unqueried-label invariance, and
+real CLI warm continuation / epoch-zero selection / save-load evaluation. The
+synthetic integration test confirms identical copied Context hashes, unchanged
+parent checkpoint, frozen CNN, hard caps and disabled refresh. The full GPU/data
+experiment has not been run in this environment.

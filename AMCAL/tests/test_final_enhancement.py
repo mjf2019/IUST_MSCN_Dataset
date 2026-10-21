@@ -22,7 +22,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import amcal_burst_structured_bank_protocol as legacy
 import amcal_final_enhancement as runner
-from enhancements.agent import EfficientQ, EnhancementAgent, DeviceReliability, ranking_loss, routing_objective
+from enhancements.agent import EfficientQ, EnhancementAgent, DeviceReliability, ranking_loss, routing_objective, load_policy_state
 from enhancements.config import EnhancementConfig
 from enhancements.memory import ProtectedMemory, transfer
 from enhancements.models import ResidualContext, residual_bank, BankExecutor
@@ -65,6 +65,64 @@ class FinalEnhancementTests(unittest.TestCase):
         q, logits = new.forward_with_logits(x)
         self.assertTrue(torch.allclose(q, old(x), atol=1e-7))
         self.assertTrue(torch.allclose(logits, old.route_logits(x), atol=1e-7))
+
+    def test_joint_router_is_neutral_at_start_and_strictly_loads_old_and_new_policies(self):
+        old = EfficientQ(34)
+        joint = EfficientQ(34, joint_router=True)
+        load_policy_state(joint, old.state_dict())
+        x = torch.randn(5, 139)
+        self.assertTrue(torch.equal(old.route_logits(x), joint.route_logits(x)))
+        self.assertTrue(torch.equal(old(x), joint(x)))
+        saved = deepcopy(joint.state_dict())
+        restored = EfficientQ(34, joint_router=True)
+        load_policy_state(restored, saved)
+        self.assertTrue(torch.equal(joint(x), restored(x)))
+        broken = dict(saved); del broken[next(k for k in broken if k.startswith('comparison.'))]
+        with self.assertRaises(ValueError): load_policy_state(restored, broken)
+        broken = dict(old.state_dict()); del broken['correctness.0.weight']
+        with self.assertRaises(ValueError): load_policy_state(restored, broken)
+        with self.assertRaises(ValueError): load_policy_state(old, saved)
+
+    def test_joint_router_compares_other_routes_and_is_permutation_equivariant(self):
+        model = EfficientQ(34, joint_router=True).eval()
+        with torch.no_grad(): model.comparison.output[-1].weight.normal_(0, .1)
+        x = torch.randn(3, 139); altered = x.clone()
+        altered[:, 34:68] += torch.randn(3, 34)*3
+        self.assertFalse(torch.allclose(model.route_logits(x)[:, 0], model.route_logits(altered)[:, 0]))
+        permutation = torch.tensor([0, 3, 1, 2])
+        swapped = torch.cat([x[:, :136].reshape(-1, 4, 34)[:, permutation].flatten(1), x[:, -3:]], 1)
+        self.assertTrue(torch.allclose(model.route_logits(swapped), model.route_logits(x)[:, permutation], atol=1e-6))
+
+    def test_joint_router_learns_from_route_labels_and_is_isolated_from_td(self):
+        *_, agent = self.fixture(self.config(joint_router=True))
+        x = torch.randn(1, 139); x[:, -3] = -1
+        agent.observe_routes(x, torch.tensor([1., 0, 0, 0]))
+        self.assertGreater(float(agent.policy.comparison.output[-1].weight.abs().sum()), 0.)
+        before = {k: v.detach().clone() for k, v in agent.policy.named_routing_parameters()}
+        for _ in range(40):
+            agent.push(x, 4, .5, x, True)
+            agent.push_pair(x, 4, .5, x, x, True)
+        agent.learn_td()
+        self.assertEqual(agent.td_updates, 1)
+        for k, v in agent.policy.named_routing_parameters(): self.assertTrue(torch.equal(v, before[k]))
+
+    def test_joint_router_does_not_learn_from_unqueried_labels(self):
+        cnn, bank, initial, a, domain, anchors, agent = self.fixture(self.config(joint_router=True))
+        start = deepcopy(agent.policy.state_dict())
+        m, trace = episode(a, cnn, bank, initial, agent, domain, anchors)
+        after = deepcopy(agent.policy.state_dict())
+        weights = [deepcopy(c.state_dict()) for c in bank]
+        paid_ids = set(m['queried_source_ids'])
+        labels = domain[1].copy()
+        for i, source_id in enumerate(domain[2]):
+            if source_id not in paid_ids: labels[i] = 1-labels[i]
+        other = EnhancementAgent(34, 12, 2, torch.device('cpu'), 42, a.config, policy_state=start)
+        _, repeated = episode(a, cnn, bank, initial, other, (domain[0], labels, domain[2]), anchors)
+        self.assertEqual([r['action'] for r in trace], [r['action'] for r in repeated])
+        self.assertEqual([r['prediction'] for r in trace], [r['prediction'] for r in repeated])
+        for k, v in after.items(): self.assertTrue(torch.equal(v, other.policy.state_dict()[k]))
+        for saved, context in zip(weights, bank):
+            for k, v in saved.items(): self.assertTrue(torch.equal(v, context.state_dict()[k]))
 
     def test_ranking_ignores_uninformative_rows_and_has_correct_direction(self):
         z = torch.zeros(3, 4, requires_grad=True)
@@ -398,6 +456,30 @@ class FinalEnhancementTests(unittest.TestCase):
             self.assertEqual(measured['fresh_route_updates'], 0)
             self.assertEqual(measured['labels'], measured['label_cap'])
             self.assertTrue(measured['classifier_unchanged'])
+            source_hash = legacy.core.file_sha256(output/'Models'/'final_enhancement.pth')
+            joint_output = root/'joint'
+            joint_common = ['--output', str(joint_output), '--burst-dir', str(burst), '--device', 'cpu']
+            with redirect_stdout(io.StringIO()):
+                runner.main(['train', *joint_common, '--source-run', str(output), '--profile', 'cascade',
+                    '--joint-router', '--warm-start-enhancement', '--epochs', '1', '--levels', '0'])
+                runner.main(['evaluate', *joint_common, '--levels', '5', '7', '--modes', 'learned',
+                    '--continual', '--query-schedule', 'uniform', '--update-policy', 'learned'])
+            checkpoint = torch.load(joint_output/'Models'/'final_enhancement.pth', weights_only=False)
+            self.assertTrue(checkpoint['config']['joint_router'])
+            self.assertEqual(checkpoint['parent_checkpoint_sha256'], source_hash)
+            self.assertIn(checkpoint['selected_epoch'], (0, 1))
+            self.assertTrue(any(k.startswith('comparison.') for k in checkpoint['policy_state_dict']))
+            self.assertEqual(legacy.core.file_sha256(output/'Models'/'enhanced_context.pth'),
+                             legacy.core.file_sha256(joint_output/'Models'/'enhanced_context.pth'))
+            self.assertEqual(legacy.core.file_sha256(output/'Models'/'final_enhancement.pth'), source_hash)
+            training = json.loads((joint_output/'enhancement_training.json').read_text())
+            self.assertEqual(training['epochs'][0]['epoch'], 0)
+            self.assertEqual(training['epochs'][0]['train_labels'], 0)
+            joint_results = next((joint_output/'Results').glob('evaluation_*'))
+            joint_metrics = json.loads((joint_results/'learned_level5_metrics.json').read_text())
+            self.assertTrue(joint_metrics['classifier_unchanged'])
+            self.assertEqual(joint_metrics['labels'], joint_metrics['label_cap'])
+            self.assertEqual(joint_metrics['fresh_route_updates'], 0)
 
 
 if __name__ == '__main__': unittest.main()
