@@ -911,6 +911,11 @@ def evaluate(a,models,artifact):
         execution['uncertainty_query_threshold']=a.uncertainty_threshold
         execution['uncertainty_query_protocol']='source-validation quantile; current frozen least confidence; original RL prediction/update-destination heads'
     if a.context_alpha!=.8:execution['context_alpha']=a.context_alpha
+    if saved.get('training_protocol') is not None:
+        execution['checkpoint_sha256']=core.file_sha256(models/'structured_bank_ddqn.pth')
+        execution['training_protocol']=saved['training_protocol']
+        execution['selected_training_epoch']=saved.get('selected_epoch')
+        execution['evaluation_protocol']='independent levels; bank, selector, optimizers, replay and reference reset per level'
     execution['same_level_diagnostics_version']=1
     if a.balanced_reward_reference:execution['reward_reference']='class_balanced_macro_v1'
     if a.decoupled_query:execution['query_prediction']='decoupled_best_route_v1'

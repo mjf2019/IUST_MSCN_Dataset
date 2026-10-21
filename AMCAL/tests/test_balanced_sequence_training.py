@@ -140,6 +140,53 @@ class BalancedSequenceTests(unittest.TestCase):
             self.assertTrue((output/'Results'/'combined_sequential_summary.csv').is_file())
             metadata = json.loads((output/'Results'/'sequential_config.json').read_text())
             self.assertEqual(metadata['query_schedule'],'uniform')
+            # RL controls all seven actions in TRAIN and both TEST protocols.
+            policy_output = root/'balanced_policy'
+            with redirect_stdout(io.StringIO()), patch.object(bank, 'read_domain', read):
+                observed_splits.clear()
+                runner.main(['--source-run',str(source),'--output',str(policy_output),'--burst-dir',str(burst),
+                    '--levels','0','1','--epochs','1','--query-schedule','policy','--seed','42','--device','cpu'])
+            self.assertNotIn('test_ids',observed_splits)
+            policy_log=json.loads((policy_output/'structured_sequence_training.json').read_text())
+            self.assertEqual(policy_log['config']['query_schedule'],'policy')
+            for stage in policy_log['epochs'][1]['train_stages']:
+                self.assertLessEqual(stage['labels'],stage['cap'])
+                self.assertEqual(stage['route_updates'],stage['labels'])
+            with redirect_stdout(io.StringIO()), patch.object(sys,'argv',['audit','--source-run',str(policy_output),
+                    '--output',str(policy_output/'Results'/'Sequential'),'--burst-dir',str(burst),
+                    '--levels','5','7','--modes','learned','--query-schedule','policy','--seed','42','--device','cpu']):
+                audit_runner.main()
+            seq_meta=json.loads((policy_output/'Results'/'Sequential'/'sequential_config.json').read_text())
+            self.assertEqual(seq_meta['query_schedule'],'policy')
+            policy_saved=torch.load(policy_output/'Models'/'structured_bank_ddqn.pth',weights_only=False)
+            starts=[]; original_episode=bank.episode
+            def independent(*args,**kwargs):
+                agent=args[4]
+                self.assertIsNone(kwargs.get('continuation'))
+                self.assertEqual(len(agent.td_memory),0)
+                self.assertEqual(len(agent.route_memory),0)
+                for key,value in agent.policy.state_dict().items():
+                    self.assertTrue(torch.equal(value,policy_saved['policy_state_dict'][key]))
+                starts.append(agent)
+                return original_episode(*args,**kwargs)
+            with redirect_stdout(io.StringIO()), patch.object(bank,'episode',independent), \
+                    patch.object(sys,'argv',['bank','evaluate','--output',str(policy_output),'--burst-dir',str(burst),
+                        '--levels','5','7','--balanced-reward-reference','--query-schedule','policy',
+                        '--eval-epsilon','0.05','--modes','learned','--seed','42','--device','cpu']):
+                bank.main()
+            self.assertEqual(len(starts),2)
+            self.assertIsNot(starts[0],starts[1])
+            metrics_paths=list((policy_output/'Results').glob('structured_learned*_metrics.json'))
+            self.assertEqual(len(metrics_paths),2)
+            for path in metrics_paths:
+                measured=json.loads(path.read_text())
+                self.assertEqual(measured['samples'],20)
+                self.assertLessEqual(measured['labels'],measured['label_cap'])
+                execution=measured['execution_config']
+                self.assertEqual(execution['query_schedule'],'policy')
+                self.assertEqual(execution['checkpoint_sha256'],bank.core.file_sha256(policy_output/'Models'/'structured_bank_ddqn.pth'))
+                self.assertEqual(execution['selected_training_epoch'],policy_saved['selected_epoch'])
+            self.assertEqual(bank.core.file_sha256(models/'structured_bank_ddqn.pth'),parent_hash)
 
 
 if __name__ == '__main__': unittest.main()

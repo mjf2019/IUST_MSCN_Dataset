@@ -587,3 +587,62 @@ git add -f -- "$run/Results" "$run/enhancement_training.json"
 git commit -m "Add counterfactual utility training and evaluation seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## Original balanced buffer: inter-level training with RL queries, both tests
+
+This experiment uses the finalized original coupled v1 balanced-reference bank,
+`structured_bank3_balancedref_lr0p0005_seed42`, with the existing persistent
+continuation training. It does not use enhancement memory, counterfactual utility,
+actor normalization or the joint router. Use policy queries consistently for
+TRAIN, temporary VAL adaptation, independent TEST and sequential TEST. All seven
+actions are available to RL/epsilon until the 20% per-domain cap is exhausted;
+there is no forced spending or uniform query schedule. Exploration remains 0.05.
+
+```powershell
+git pull origin AMCAL_final_enhancement
+./AMCAL/run_amcal_balanced_sequence.ps1 -Action All -QuerySchedule policy -EvaluationSet Both -Seed 42
+```
+
+This trains once, with two passes over TRAIN 0, 1, 3, then evaluates the same
+selected checkpoint twice using only learned mode and seed 42:
+
+- Sequential forgetting: 5 -> 7 -> 10 -> 12 -> 15 -> 17 -> 20 retains the Contexts,
+  selector, optimizers, replay, reliability and original balanced paid-reference
+  memory. The fixed TEST audit identities are excluded from every adaptation
+  level. Outputs are in `Results/Sequential`, including the full audit matrix,
+  final audit mean, forgetting, BWT, clean-domain drop and actual labels used.
+- Original independent per-level test: the same seven held-out levels use all
+  disjoint TEST rows. Each level restarts the selector from the same selected
+  checkpoint and resets Contexts, optimizers, replay, reliability and reference.
+  It calls the original structured-bank evaluator, with the matching balanced
+  reference flag, LR 0.0005, cap 20%, epsilon 0.05 and training scaler. Outputs
+  are the original `Results/combined_structured_*` CSV reports and
+  `Results/structured_learned_*` traces/metrics. Each sequence-trained independent
+  evaluation records checkpoint SHA, selected epoch and training protocol in its
+  execution metadata and result fingerprint.
+
+The two tests have different adaptation row counts because the sequential audit
+reserves TEST identities. Compare each to its corresponding original protocol,
+including actual labels acquired, rather than comparing their online percentages
+as identical conditions. Within each TRAIN pass the bank/reference survives level
+transitions; between passes they reset while the RL weights continue. Selection
+uses persistent VAL audit only and includes the inherited selector as epoch zero.
+If epoch zero wins, the inherited selector was retained; do not attribute the TEST
+result to successful new training.
+
+Default output is
+`AMCAL/ANT_Burst_IAT_TEST/protocol_runs/structured_bank3_balancedref_sequence_policy_seed42`.
+The existing launcher defaults remain unchanged (`uniform`, sequential only).
+`-Action Evaluate -EvaluationSet Independent -QuerySchedule policy -Seed 42`
+can resume the independent part after the sequential part has finished. A fresh
+output is required for training and for the sequential audit. CPU integration
+covers actual policy-query training and both evaluation entry points, disjoint
+TRAIN/VAL/TEST use, budget caps, and fresh selector/replay at each independent
+level. PowerShell is reviewed statically; GPU experiments run on the user host.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/structured_bank3_balancedref_sequence_policy_seed42"
+git add -f -- "$run/Results" "$run/structured_sequence_training.json"
+git commit -m "Add balanced inter-level RL training and both tests seed 42"
+git push origin AMCAL_final_enhancement
+```
