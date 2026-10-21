@@ -932,3 +932,75 @@ git add -f -- "$run/Results"
 git commit -m "Add one-Context replay weight 0.3 retention tests seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## Single-Context protected-reference damage guard
+
+Increasing the online replay CE weight from 0.1 to 0.3 did not solve the seed-42
+forgetting problem: final sequential audit fell from 76.30174% to 74.16555%,
+forgetting rose from 4.67290 to 8.02181 pp, and online accuracy stayed almost flat
+(73.90654% vs 73.87327%). Clean-domain drop improved from 11.64958 to 9.04007 pp.
+The next isolated experiment retains the original replay weight **0.1** and
+controls the actual Context step instead of increasing that coefficient.
+
+```powershell
+git pull origin AMCAL_final_enhancement
+./AMCAL/run_amcal_one_context_damage_guard.ps1 -Seed 42
+```
+
+This runs two evaluations, sequential forgetting and independent per-level TEST,
+using the same single-Context checkpoint, uniform feedback, seed 42, epsilon 0.05,
+LR 0.0005, replay size 8, fixed memory capacity and 20% label cap. No offline
+training is run. After a paid label is acquired, the ordinary Context-loss
+clipped gradient is computed once on an isolated copy of the selected Context
+and its complete Adam state. Candidate Adam steps use LR multipliers 1, 0.5,
+0.25, each from the same pre-step weights, moments and step counter. The largest
+acceptable candidate is committed. The configured base LR is restored and Adam
+advances exactly once on acceptance. If all candidates fail, the live Context,
+buffers, gradients, Adam state, Context version and update-history counters remain
+unchanged. If no protected reference is available, the Context step is rejected.
+
+Acceptance checks only source/historical rows (`segments != 2`) from the SAME
+already-sampled pre-feedback reward reference. No extra reference or replay draw
+is made. Let `d=(CE_before-CE_after)/(CE_before+CE_after+1e-8)`. Harm is the mean
+across represented classes of `max(-d,0)` on those protected rows. Accept when
+harm is at most the checkpoint's existing `damage_limit` (0.02). Recent-reference
+rows do not determine this guard; the ordinary reward still uses the full
+reference and the actual committed outcome. The threshold is a per-step normalized
+loss constraint on a sampled past reference, not a guarantee of TEST accuracy,
+zero forgetting, or a cumulative bound over the entire sequence.
+
+A rejected step still charges the acquired label, observes paid-label reliability,
+adds the label once to memory and trains the selector normally. Its actual
+transfer gain/harm are zero and its utility is minus the unchanged selection
+cost. It does not fabricate a Context update or advance Adam for a rejected trial.
+The prediction was already scored before this feedback. No VAL, TEST audit or
+unqueried labels enter the guard, gradients, references or acceptance rule.
+This preserves the paid-feedback closed loop while constraining Context-min
+adaptation; there is no new learned selector head or reward formula.
+
+`--context-damage-guard` is restricted to single-Context protected uniform-feedback
+evaluation without routing/normalization ablations or the replay-weight override.
+All unflagged paths remain unchanged. The new execution metadata records the
+threshold, LR multipliers, reference scope, optimizer transaction and unchanged
+checkpoint SHA. Fresh `Results/evaluation_*` directories contain per-domain
+`damage_guard` metrics (accepted/rejected/backtracked steps, total trials, maximum
+accepted harm, accepted step scale and missing-reference counts). Traces attach
+an acceptance decision only to paid rows. Existing timing includes trial probes
+and copy/commit overhead; runtime improvement is not assumed.
+
+Use `-EvaluationSet Independent` or `Sequential` to resume one unfinished test.
+Compare to the original weight-0.1 single-Context results at identical label counts,
+including online accuracy, final audit, forgetting, clean-domain drop and guard
+acceptance rates. CPU checks cover full-step equivalence with populated Adam
+moments, correct backtracking, exact live-state/RNG preservation on rejection,
+protected-vs-recent reference scope, missing-reference rejection, accepted-only
+version/Adam counters, label charging and unqueried-label invariance, plus both
+real CLI protocols and checkpoint immutability. PowerShell is reviewed statically;
+scientific effects require the user-host GPU run.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_accuracy_counterfactual_trainseed42"
+git add -f -- "$run/Results"
+git commit -m "Add one-Context damage-guard retention tests seed 42"
+git push origin AMCAL_final_enhancement
+```

@@ -377,6 +377,9 @@ def evaluate(a):
             raise ValueError('Online replay weighting requires protected memory and nonempty replay.')
         from dataclasses import replace
         config = replace(config, memory_ce_weight=a.online_memory_ce_weight).validated()
+    if a.context_damage_guard and (not config.protected_reference or config.routed_utility
+            or config.memory_replay_size < 1 or config.memory_ce_weight != .1):
+        raise ValueError('Damage-guard ablation requires protected replay with the original CE weight 0.1.')
     a.config = config
     if a.context_count != 3 and (config.architecture != 'legacy' or config.cascade or config.joint_router):
         raise ValueError('Context-count ablation requires the accuracy legacy architecture without cascade or joint routing.')
@@ -422,6 +425,13 @@ def evaluate(a):
                      runtime=dict(python=sys.version.split()[0], torch=str(torch.__version__),
                          numpy=np.__version__, device=str(legacy.core.device), cuda=torch.version.cuda,
                          gpu=torch.cuda.get_device_name(legacy.core.device) if legacy.core.device.type == 'cuda' else None))
+    if a.context_damage_guard:
+        execution['context_damage_guard'] = dict(version=1, max_harm=config.damage_limit,
+            step_scales=[1., .5, .25], reference='source/historical rows of the same pre-feedback reward reference',
+            statistic='class-macro mean negative normalized CE change',
+            optimizer='one accepted Adam step; original moments on every retry; base LR restored',
+            rejected='live Context/Adam/version unchanged; acquired label still charged and stored',
+            missing_reference='reject Context update', scope='online only; no VAL/TEST audit labels')
     if a.online_memory_ce_weight is not None:
         execution['online_adaptation_override'] = dict(version=1,
             memory_ce_weight=dict(checkpoint=saved['config']['memory_ce_weight'], online=config.memory_ce_weight),
@@ -552,6 +562,7 @@ def parser():
     p.add_argument('--bank-executor', choices=['sequential', 'vmap'])
     p.add_argument('--routed-utility', action='store_true')
     p.add_argument('--context-count', type=int, choices=[1,2,3,4,5], default=3, help='Evaluation-only Context-count ablation; shared selector weights are reused.')
+    p.add_argument('--context-damage-guard', action='store_true', help='Single-Context evaluation: accept only protected-reference-safe online Context steps.')
     p.add_argument('--online-memory-ce-weight', type=float,
                    help='Single-Context uniform-feedback evaluation: override protected-replay CE weight online only.')
     p.add_argument('--continual', action='store_true')
@@ -572,6 +583,11 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.context_damage_guard:
+        if a.command != 'evaluate' or a.context_count != 1 or a.query_schedule != 'uniform' or a.update_policy != 'learned':
+            p.error('Damage guard is a single-Context uniform-feedback evaluation ablation.')
+        if a.online_memory_ce_weight is not None or a.utility_calibration is not None or a.router_refresh or a.router_informative_weight != 1.:
+            p.error('Test damage guard separately, retaining the original replay weight and routing settings.')
     if a.online_memory_ce_weight is not None:
         if not np.isfinite(a.online_memory_ce_weight) or a.online_memory_ce_weight < 0:
             p.error('Online memory CE weight must be finite and nonnegative.')

@@ -779,6 +779,33 @@ class FinalEnhancementTests(unittest.TestCase):
                     self.assertEqual(measured['config_fingerprint'],EnhancementConfig(**execution['config']).fingerprint)
             self.assertEqual(kinds,{True,False})
             self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
+            # Protected-reference acceptance: both protocols, original replay weight.
+            existing=set((cf_output/'Results').glob('evaluation_*'))
+            with redirect_stdout(io.StringIO()):
+                runner.main([*single_common,'--context-damage-guard','--continual'])
+                runner.main([*single_common,'--context-damage-guard'])
+            guarded_results=set((cf_output/'Results').glob('evaluation_*'))-existing
+            self.assertEqual(len(guarded_results),2)
+            kinds=set()
+            for result in guarded_results:
+                execution=json.loads((result/'execution.json').read_text())
+                kinds.add(execution['continual'])
+                self.assertEqual(execution['checkpoint_sha256'],cf_hash)
+                self.assertEqual(execution['config'],cf_checkpoint['config'])
+                self.assertEqual(execution['config']['memory_ce_weight'],.1)
+                self.assertNotIn('online_adaptation_override',execution)
+                self.assertEqual(execution['context_damage_guard']['step_scales'],[1.,.5,.25])
+                for level in (5,7):
+                    measured=json.loads((result/f'learned_level{level}_metrics.json').read_text())
+                    guard=measured['damage_guard']
+                    self.assertEqual(guard['accepted']+guard['rejected'],measured['labels'])
+                    self.assertEqual(measured['labels'],measured['label_cap'])
+                    self.assertLessEqual(guard['max_accepted_harm'],guard['max_harm'])
+                    self.assertTrue(measured['classifier_unchanged'])
+                traces=pd.read_csv(result/'learned_level5_trace.csv')
+                self.assertIn('damage_guard',traces.columns)
+            self.assertEqual(kinds,{True,False})
+            self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
             self.assertEqual(legacy.core.file_sha256(checkpoint_path),checkpoint_hash)
 
 

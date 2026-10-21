@@ -1,4 +1,4 @@
-"""TRAIN-only alternative Context updates on isolated model/Adam copies."""
+"""Shared Context-min gradients and TRAIN-only alternative simulations."""
 from copy import deepcopy
 import torch
 from torch import nn
@@ -8,7 +8,7 @@ from .memory import transfer
 from .models import BankExecutor
 
 
-def context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, replay):
+def context_gradients(a, cnn, context, optimizer, inputs, label, frozen_logits, replay):
     rx, ry = (inputs, label) if replay is None else (torch.cat([inputs, replay[0]]), torch.cat([label, replay[1]]))
     optimizer.zero_grad(set_to_none=True)
     transformed = context(rx)
@@ -18,6 +18,10 @@ def context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, repla
     loss = loss + a.config.residual_weight * (transformed-rx).square().mean()
     loss.backward()
     nn.utils.clip_grad_norm_([p for p in context.parameters() if p.requires_grad], 1)
+
+
+def context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, replay):
+    context_gradients(a, cnn, context, optimizer, inputs, label, frozen_logits, replay)
     optimizer.step()
 
 

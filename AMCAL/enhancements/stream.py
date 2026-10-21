@@ -16,6 +16,7 @@ from .agent import DeviceReliability
 from .memory import ProtectedMemory, transfer
 from .models import BankExecutor
 from .state import build_state
+from .damage_guard import guarded_context_step
 from .counterfactual import context_step, alternatives
 
 
@@ -82,6 +83,11 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     if counterfactual and (a.query_schedule != 'uniform' or a.update_policy != 'learned'
             or not config.protected_reference or config.routed_utility or config.architecture != 'legacy'):
         raise ValueError('Counterfactual TRAIN requires uniform learned destinations and protected legacy Contexts.')
+    damage_guard = getattr(a, 'context_damage_guard', False)
+    if damage_guard and (training or warmup or slots != 1 or config.routed_utility
+            or not config.protected_reference or a.query_schedule != 'uniform'):
+        raise ValueError('Damage guard requires single-Context protected uniform-feedback evaluation.')
+    guard_records = []
     counterfactual0 = agent.counterfactual_updates
     seed = a.seed if rollout_seed is None else rollout_seed
     x, y, source_ids = domain
@@ -172,6 +178,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         action_counts[action] += 1; agent.clock += 1
         reward = gain = harm = None
         reference_counts = None; alternative_utilities = None; alternative_successors = None
+        guard_decision = None
         with timer.stage('update'):
             successor_output = None
             if pos + 1 < n and not warmup and (paid or (training and not paid_supervision)):
@@ -206,10 +213,19 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                         successor_output, x[pos+1:pos+2] if successor_output is not None else None,
                         embeddings[pos+1:pos+2] if successor_output is not None else None, next_state_gate)
                 history.observe_paid(outputs[0].softmax(2), truth)
-                context_step(a, cnn, bank[selected], optimizers[selected], inputs, label, outputs[0][:,0], replay)
-                agent.versions[selected] += 1; executor.refresh(selected)
+                committed = True
+                if damage_guard:
+                    guard_decision, after = guarded_context_step(a, cnn, bank[selected], optimizers[selected],
+                        inputs, label, outputs[0][:,0], replay, batch, before)
+                    guard_records.append(guard_decision)
+                    committed = guard_decision['accepted']
+                else:
+                    context_step(a, cnn, bank[selected], optimizers[selected], inputs, label, outputs[0][:,0], replay)
+                if committed:
+                    agent.versions[selected] += 1; executor.refresh(selected)
                 if config.protected_reference:
-                    after = legacy.core.probe_losses(cnn, bank[selected], (batch.x, batch.y)) if batch is not None else None
+                    if not damage_guard:
+                        after = legacy.core.probe_losses(cnn, bank[selected], (batch.x, batch.y)) if batch is not None else None
                     if route_weight is not None:
                         # Multiply signed normalized transfer without changing its denominator.
                         delta = route_weight * (before-after) / (before+after+1e-8)
@@ -223,12 +239,13 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 if warmup: utility = 0.
                 reward = (1. if prediction == truth else -1.) + utility
                 used += 1; slot_queries[selected] += 1; labels_mask[pos] = True
-                changed = executor.refresh_output(inputs, outputs, selected)
-                change = (changed[0][:, selected+1].softmax(1) - outputs[0][:, selected+1].softmax(1)).abs().mean()
-                history.updated(selected+1, pos+1, change)
+                if committed:
+                    changed = executor.refresh_output(inputs, outputs, selected)
+                    change = (changed[0][:, selected+1].softmax(1) - outputs[0][:, selected+1].softmax(1)).abs().mean()
+                    history.updated(selected+1, pos+1, change)
                 # TRAIN episodes reproduce the online availability of protected memory.
                 if config.protected_reference or not training: memory.add(inputs, label)
-                if successor_output is not None:
+                if committed and successor_output is not None:
                     successor_output = executor.refresh_output(x[pos+1:pos+2], successor_output, selected)
             if counterfactual and paid:
                 if alternative_successors is None: alternative_successors = zero.expand(3,-1).clone()
@@ -269,6 +286,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             reward=reward, gain=gain, harm=harm, reference_counts=reference_counts,
             predictions=[int(v) if known else None for v, known in zip(route_predictions, observed)],
             scores=scores))
+        if damage_guard: traces[-1]['damage_guard'] = guard_decision
         if counterfactual:
             traces[-1]['counterfactual_utilities'] = alternative_utilities
         if getattr(a, 'collect_utility_calibration', False) or agent.policy.utility_normalization is not None:
@@ -297,6 +315,16 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         oracle_protocol='observer on executed full-bank rows only; complete oracle is null for sparse streams',
         mode=mode, source_ids=source_ids.tolist(), queried_source_ids=source_ids[labels_mask].tolist(),
         latency_protocol='synchronized finite-stream runner with frozen cache and one-input lookahead TD; no annotation delay; not a live-service benchmark')
+    if damage_guard:
+        accepted = [row for row in guard_records if row['accepted']]
+        metrics['damage_guard'] = dict(paid_rows=len(guard_records), accepted=len(accepted),
+            rejected=len(guard_records)-len(accepted),
+            backtracked=sum(row['scale'] < 1 for row in accepted),
+            trial_steps=sum(row['attempts'] for row in guard_records),
+            no_protected_reference=sum(row['reason'] == 'no_protected_reference' for row in guard_records),
+            max_accepted_harm=max((row['accepted_harm'] for row in accepted), default=0.),
+            mean_accepted_scale=float(np.mean([row['scale'] for row in accepted])) if accepted else None,
+            max_harm=config.damage_limit)
     if counterfactual:
         metrics['counterfactual_rows'] = used
         metrics['counterfactual_context_steps'] = 3*used
