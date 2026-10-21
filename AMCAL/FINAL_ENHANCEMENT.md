@@ -810,3 +810,69 @@ git add -f -- "$run/Results"
 git commit -m "Add one-Context uniform-feedback tests seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## Four- and five-Context evaluation ablation
+
+```powershell
+git pull origin AMCAL_final_enhancement
+./AMCAL/run_amcal_contexts_4_5.ps1 -Seed 42
+```
+
+This performs exactly **four evaluations**, without offline retraining: four
+Contexts with sequential forgetting, four Contexts with independent per-level
+TEST, then the same two protocols with five Contexts. All use seed 42, uniform
+feedback, the same selected counterfactual-trained checkpoint, frozen CNN,
+preprocessing, 20% per-domain cap, epsilon 0.05 and original held-out levels
+5, 7, 10, 12, 15, 17, 20. Sequential runs keep adaptive state between levels and
+exclude the fixed TEST audit identities; independent runs reset at each level.
+The same uniform label schedule is used at each matching stream size/count.
+
+The bank contains four or five actual Context modules, each starting from the
+same saved initial Context weights and maintaining separate online parameters
+and Adam state. Extra Contexts are not new pretrained experts. The inherited
+selector/correctness/utility weights are shared across routes and load strictly
+without parameter duplication, slicing or new random head initialization. State
+aggregates, reliability, masks, paired advantages and observers use every active
+route, with no dummy padding. Four Contexts give five prediction routes and
+nine coupled actions; five give six prediction routes and eleven actions.
+The test measures runtime bank expansion of a model trained with three Contexts,
+not the best performance after dedicated four/five-Context training. More Contexts
+do not guarantee more accuracy or diversity.
+
+Compare sequential results with the matching uniform-feedback references:
+
+| Contexts | Final audit % | Online % | Forgetting pp | Clean drop pp | Labels |
+|---|---:|---:|---:|---:|---:|
+| 1 | 76.30174 | 73.90654 | 4.67290 | 11.64958 | 1197 |
+| 2 | 76.16822 | 73.20805 | 3.27103 | 6.52377 | 1197 |
+| 3 | 78.63818 | 73.47414 | 1.71340 | 5.21901 | 1197 |
+
+Keep independent per-level accuracy separate from final sequential audit. Also
+compare route oracle and measured runtime at the same protocol; these are
+single-seed exploratory comparisons. The optional `-QuerySchedule policy` creates
+separate RL-feedback evaluations with potentially different actual label counts.
+Uniform is the default for a same-budget capacity comparison.
+
+To resume a particular unfinished case, use `-ContextCounts @(4)` or `@(5)` and
+`-EvaluationSet Sequential` or `Independent`. Completed exact configurations are
+rejected by the existing evaluator. No training action is available. Models and
+previous results are preserved; each case gets its own `Results/evaluation_*`
+folder under the counterfactual run. Metadata records context/action counts,
+checkpoint SHA, feedback schedule and continuation flag; expanded banks use a
+separate expansion-protocol descriptor while older result metadata is unchanged.
+
+Trace Q/probability lengths are 14 (9+5) for four Contexts and 17 (11+6) for five;
+actions are 0..8 or 0..10, predictions have five or six entries, and slot-query
+counts have length four or five. No counterfactual TEST simulation, utility
+normalization, cascade or joint-router ablation is mixed into this experiment.
+CPU tests cover both expanded shapes, masks, permutation symmetry, actual
+TD/paired online learning and unqueried-label invariance, plus all four real
+CLI cases with checkpoint immutability and exact caps. PowerShell is reviewed
+statically. Scientific GPU accuracy and speed require the experiment.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_accuracy_counterfactual_trainseed42"
+git add -f -- "$run/Results"
+git commit -m "Add four- and five-Context uniform-feedback tests seed 42"
+git push origin AMCAL_final_enhancement
+```

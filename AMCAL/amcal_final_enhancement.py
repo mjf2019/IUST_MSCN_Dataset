@@ -374,7 +374,7 @@ def evaluate(a):
     if a.disable: raise ValueError('Use separate TRAIN runs for enhancement ablations; evaluation loads saved settings.')
     a.config = config
     if a.context_count != 3 and (config.architecture != 'legacy' or config.cascade or config.joint_router):
-        raise ValueError('Reduced-Context evaluation requires the accuracy legacy architecture without cascade or joint routing.')
+        raise ValueError('Context-count ablation requires the accuracy legacy architecture without cascade or joint routing.')
     calibration = None
     if a.utility_calibration is not None:
         calibration = validate_calibration(json.loads(a.utility_calibration.read_text()),
@@ -421,6 +421,8 @@ def evaluate(a):
         execution['context_count'] = a.context_count
         execution['action_count'] = 2*a.context_count+1
         execution['context_count_protocol'] = 'evaluation-only bank reduction; inherited shared weights; aggregates use active routes only'
+        if a.context_count > 3:
+            execution['context_count_protocol'] = 'evaluation-only bank expansion; inherited shared weights; aggregates use active routes only'
     if a.continual:
         execution['retention_protocol_version'] = 2
         execution['audit_protocol'] = 'seed+8121 fixed source IDs excluded from every adaptation domain; observer-only labels'
@@ -540,7 +542,7 @@ def parser():
     p.add_argument('--retention-selection-weight', type=float, default=1.)
     p.add_argument('--bank-executor', choices=['sequential', 'vmap'])
     p.add_argument('--routed-utility', action='store_true')
-    p.add_argument('--context-count', type=int, choices=[1,2,3], default=3, help='Evaluation-only Context-count ablation; shared selector weights are reused.')
+    p.add_argument('--context-count', type=int, choices=[1,2,3,4,5], default=3, help='Evaluation-only Context-count ablation; shared selector weights are reused.')
     p.add_argument('--continual', action='store_true')
     p.add_argument('--audit-fraction', type=float, default=.2)
     p.add_argument('--evaluation-tag', default='', help='Unique repeat label for identical-trajectory timing repetitions.')
@@ -560,7 +562,7 @@ def parser():
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
     if a.context_count != 3 and (a.command != 'evaluate' or a.utility_calibration is not None):
-        p.error('--context-count 1/2 is an evaluation ablation without utility normalization.')
+        p.error('--context-count other than 3 is an evaluation ablation without utility normalization.')
     if a.counterfactual_utility:
         if a.command != 'train' or not a.warm_start_enhancement or not a.aligned_sequence:
             p.error('--counterfactual-utility requires train --warm-start-enhancement --aligned-sequence.')
