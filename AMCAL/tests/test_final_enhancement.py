@@ -604,6 +604,33 @@ class FinalEnhancementTests(unittest.TestCase):
             metrics = json.loads((normalized_results/'learned_level5_metrics.json').read_text())
             self.assertEqual(metrics['labels'], metrics['label_cap'])
             self.assertEqual(legacy.core.file_sha256(checkpoint_path), checkpoint_hash)
+            cf_output = root/'counterfactual'
+            with redirect_stdout(io.StringIO()):
+                runner.main(['train', '--source-run', str(sequence_source), '--output', str(cf_output),
+                    '--burst-dir', str(burst), '--device', 'cpu', '--profile', 'accuracy',
+                    '--warm-start-enhancement', '--aligned-sequence', '--counterfactual-utility',
+                    '--query-schedule', 'uniform', '--epochs', '1', '--levels', '0', '1'])
+                runner.main(['evaluate', '--output', str(cf_output), '--burst-dir', str(burst),
+                    '--device', 'cpu', '--continual', '--query-schedule', 'uniform',
+                    '--modes', 'learned', '--levels', '5', '7'])
+            cf_log = json.loads((cf_output/'enhancement_training.json').read_text())
+            self.assertEqual(cf_log['training_protocol']['utility_supervision']['alternatives'],3)
+            self.assertGreater(cf_log['epochs'][1]['counterfactual_updates_total'],0)
+            for stage in cf_log['epochs'][1]['train_stages']:
+                self.assertEqual(stage['counterfactual_context_steps'],3*stage['labels'])
+                self.assertEqual(stage['route_updates'],0)
+                self.assertEqual(stage['td_updates'],0)
+            cf_checkpoint = torch.load(cf_output/'Models'/'final_enhancement.pth',weights_only=False)
+            cf_source = torch.load(checkpoint_path,weights_only=False)
+            for key,value in cf_checkpoint['policy_state_dict'].items():
+                if not key.startswith('update_value.'):
+                    self.assertTrue(torch.equal(value,cf_source['policy_state_dict'][key]))
+            self.assertEqual(cf_checkpoint['parent_checkpoint_sha256'],checkpoint_hash)
+            cf_results = next((cf_output/'Results').glob('evaluation_*'))
+            cf_metrics = json.loads((cf_results/'learned_level5_metrics.json').read_text())
+            self.assertNotIn('counterfactual_rows',cf_metrics)
+            self.assertEqual(cf_metrics['labels'],cf_metrics['label_cap'])
+            self.assertEqual(legacy.core.file_sha256(checkpoint_path),checkpoint_hash)
 
 
 if __name__ == '__main__': unittest.main()

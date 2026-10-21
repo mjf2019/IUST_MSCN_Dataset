@@ -15,6 +15,7 @@ from baselines.stream_timing import StreamTimer
 from .agent import DeviceReliability
 from .memory import ProtectedMemory, transfer
 from .models import BankExecutor
+from .counterfactual import context_step, alternatives
 
 
 def cascade_decision(agent, embedding, frozen, config, rng, gap):
@@ -74,6 +75,11 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             warmup=False, rollout_seed=None, reference=None, same_level=False, continuation=None,
             paid_supervision=False):
     config = a.config
+    counterfactual = training and not warmup and getattr(a, 'counterfactual_utility', False)
+    if counterfactual and (a.query_schedule != 'uniform' or a.update_policy != 'learned'
+            or not config.protected_reference or config.routed_utility or config.architecture != 'legacy'):
+        raise ValueError('Counterfactual TRAIN requires uniform learned destinations and protected legacy Contexts.')
+    counterfactual0 = agent.counterfactual_updates
     seed = a.seed if rollout_seed is None else rollout_seed
     x, y, source_ids = domain
     order = np.random.default_rng(seed).permutation(len(y))
@@ -113,6 +119,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     fresh_updates0, fresh_rows0 = agent.fresh_route_updates, agent.fresh_route_rows
     full_correct, full_legal_correct, full_rows = 0, 0, 0
     briers, row_times, response_times = [], [], []
+    counterfactual_errors = []
     timer.start()
     for pos in range(n):
         row_start = time.perf_counter()
@@ -161,7 +168,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             briers.append(float(np.mean((route_logits.sigmoid().detach().cpu().numpy() - correct) ** 2)))
         action_counts[action] += 1; agent.clock += 1
         reward = gain = harm = None
-        reference_counts = None
+        reference_counts = None; alternative_utilities = None; alternative_successors = None
         with timer.stage('update'):
             successor_output = None
             if pos + 1 < n and not warmup and (paid or (training and not paid_supervision)):
@@ -190,16 +197,14 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 else:
                     before = legacy.core.probe_losses(cnn, bank[selected], batch)
                     route_weight = None; replay = None
+                if counterfactual:
+                    alternative_utilities, alternative_successors = alternatives(a, cnn, bank, optimizers,
+                        inputs, label, outputs, batch, replay, history, used, cap, pos, n,
+                        successor_output, x[pos+1:pos+2] if successor_output is not None else None,
+                        embeddings[pos+1:pos+2] if successor_output is not None else None, next_state_gate)
                 history.observe_paid(outputs[0].softmax(2), truth)
-                rx, ry = (inputs, label) if replay is None else (torch.cat([inputs, replay[0]]), torch.cat([label, replay[1]]))
-                optimizers[selected].zero_grad(set_to_none=True)
-                transformed = bank[selected](rx)
-                ce = F.cross_entropy(cnn(transformed), ry, reduction='none')
-                loss = legacy.context_objective(ce[0], F.cross_entropy(outputs[0][:, 0], label), a.context_alpha)
-                if replay is not None: loss = loss + config.memory_ce_weight * ce[1:].mean()
-                loss = loss + config.residual_weight * (transformed - rx).square().mean()
-                loss.backward(); nn.utils.clip_grad_norm_([p for p in bank[selected].parameters() if p.requires_grad], 1)
-                optimizers[selected].step(); agent.versions[selected] += 1; executor.refresh(selected)
+                context_step(a, cnn, bank[selected], optimizers[selected], inputs, label, outputs[0][:,0], replay)
+                agent.versions[selected] += 1; executor.refresh(selected)
                 if config.protected_reference:
                     after = legacy.core.probe_losses(cnn, bank[selected], (batch.x, batch.y)) if batch is not None else None
                     if route_weight is not None:
@@ -210,6 +215,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                                                    a.retention_weight, a.selection_cost, config)
                 else:
                     utility, gain, harm = legacy.utility_after(a, cnn, bank, selected, batch, before)
+                if counterfactual:
+                    counterfactual_errors.append(abs(alternative_utilities[selected]-utility))
                 if warmup: utility = 0.
                 reward = (1. if prediction == truth else -1.) + utility
                 used += 1; slot_queries[selected] += 1; labels_mask[pos] = True
@@ -220,7 +227,11 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 if config.protected_reference or not training: memory.add(inputs, label)
                 if successor_output is not None:
                     successor_output = executor.refresh_output(x[pos+1:pos+2], successor_output, selected)
-            may_learn = (training and not paid_supervision) or (mode == 'learned' and paid)
+            if counterfactual and paid:
+                if alternative_successors is None: alternative_successors = zero.expand(3,-1).clone()
+                agent.observe_counterfactual(state, alternative_utilities, alternative_successors,
+                    skip_next, pos+1 == n, versions)
+            may_learn = not counterfactual and ((training and not paid_supervision) or (mode == 'learned' and paid))
             if may_learn:
                 if not full: raise RuntimeError('Sparse routes cannot supervise unexecuted predictions.')
                 target = torch.tensor(correct, dtype=torch.float32, device=x.device)
@@ -255,6 +266,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             reward=reward, gain=gain, harm=harm, reference_counts=reference_counts,
             predictions=[int(v) if known else None for v, known in zip(route_predictions, observed)],
             scores=scores))
+        if counterfactual:
+            traces[-1]['counterfactual_utilities'] = alternative_utilities
         if getattr(a, 'collect_utility_calibration', False) or agent.policy.utility_normalization is not None:
             traces[-1]['raw_update_values'] = None if update_values is None else update_values.detach().cpu().tolist()
         if agent.policy.utility_normalization is not None:
@@ -281,6 +294,13 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         oracle_protocol='observer on executed full-bank rows only; complete oracle is null for sparse streams',
         mode=mode, source_ids=source_ids.tolist(), queried_source_ids=source_ids[labels_mask].tolist(),
         latency_protocol='synchronized finite-stream runner with frozen cache and one-input lookahead TD; no annotation delay; not a live-service benchmark')
+    if counterfactual:
+        metrics['counterfactual_rows'] = used
+        metrics['counterfactual_context_steps'] = 3*used
+        metrics['counterfactual_updates'] = agent.counterfactual_updates-counterfactual0
+        metrics['counterfactual_loss'] = agent.last_losses.get('counterfactual')
+        metrics['counterfactual_selected_max_error'] = max(counterfactual_errors, default=0.)
+        metrics['supervision_protocol'] = 'paid TRAIN feedback; three isolated alternatives; update-value head only'
     metrics.update(timer.metrics(n, used))
     if not training:
         metrics['response_ms_percentiles'] = dict(zip(('p50', 'p95', 'p99'), np.percentile(response_times, [50, 95, 99]).tolist()))

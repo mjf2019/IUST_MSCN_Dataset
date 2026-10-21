@@ -1,4 +1,5 @@
 """Ranking-supervised routing and paired update advantages; no Context gradients."""
+from collections import deque
 from copy import deepcopy
 import numpy as np
 import torch
@@ -136,6 +137,9 @@ class EnhancementAgent(legacy.Agent):
         self.last_losses = {}
         self.fresh_route_updates = 0
         self.fresh_route_rows = 0
+        self.counterfactual_memory = deque(maxlen=512)
+        self.counterfactual_optimizer = None
+        self.counterfactual_updates = 0
 
     def _next_values(self, states):
         if self.policy.utility_normalization is None: return super()._next_values(states)
@@ -234,6 +238,43 @@ class EnhancementAgent(legacy.Agent):
         nn.utils.clip_grad_norm_(list(self.policy.future.parameters()) + list(self.policy.update_value.parameters()), 1)
         self.td_optimizer.step(); self.td_updates += 1
         if self.td_updates % 15 == 0: self.target.load_state_dict(self.policy.state_dict())
+
+    def observe_counterfactual(self, state, utilities, successors, skip_next, terminal, versions):
+        """Fit only raw update values; routing, future head and target stay fixed.
+
+        Each paid TRAIN row supplies all three alternatives at the same bank
+        version. Centered regression supplies direct between-Context comparisons.
+        """
+        self.counterfactual_memory.append((state.detach().cpu().reshape(-1).clone(),
+            torch.as_tensor(utilities, dtype=state.dtype).cpu().clone(),
+            successors.detach().cpu().clone(), skip_next.detach().cpu().reshape(-1).clone(),
+            float(terminal), tuple(versions), self.clock))
+        if len(self.counterfactual_memory) < 8: return
+        if self.counterfactual_optimizer is None:
+            self.counterfactual_optimizer = torch.optim.Adam(self.policy.update_value.parameters(),
+                                                            lr=.0001, weight_decay=1e-4)
+        rows, weight = self._sample(self.counterfactual_memory, 1024)
+        states = torch.stack([r[0] for r in rows]).to(self.device)
+        utilities = torch.stack([r[1] for r in rows]).to(self.device)
+        successors = torch.stack([r[2] for r in rows]).to(self.device)
+        skipped = torch.stack([r[3] for r in rows]).to(self.device)
+        terminal = torch.tensor([r[4] for r in rows], device=self.device)
+        with torch.no_grad():
+            continuation = self._next_values(successors.flatten(0,1)).reshape(-1,3)
+            baseline = self._next_values(skipped)[:,None]
+            targets = utilities + self.gamma*(1-terminal[:,None])*(continuation-baseline)
+        predicted = self.policy.forward_components(states, detach_routes=True)[2]
+        absolute = F.smooth_l1_loss(predicted, targets, reduction='none').mean(1)
+        relative = F.smooth_l1_loss(predicted-predicted.mean(1,keepdim=True),
+            targets-targets.mean(1,keepdim=True), reduction='none').mean(1)
+        loss = ((absolute + .5*relative)*weight).sum()/weight.sum()
+        self.counterfactual_optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        nn.utils.clip_grad_norm_(self.policy.update_value.parameters(), 1)
+        self.counterfactual_optimizer.step()
+        self.counterfactual_updates += 1
+        self.last_losses['counterfactual'] = float(loss.detach())
+        self.last_losses['counterfactual_relative'] = float(relative.mean().detach())
 
     def observe_pre_router(self, embedding, frozen, correct, teacher_logits):
         logits = self.pre_router(embedding.detach(), frozen.detach())

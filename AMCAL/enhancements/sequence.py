@@ -32,6 +32,10 @@ def fit_sequence(a, cnn, bank, initial, agent, domains, anchors, rollout_seed):
         stages.append(dict(level=level, labels=result['labels'], cap=result['label_cap'],
             online_accuracy=result['accuracy'], route_updates=result['route_updates'],
             td_updates=result['td_updates']))
+        if getattr(a, 'counterfactual_utility', False):
+            stages[-1].update({key: result[key] for key in ('counterfactual_rows',
+                'counterfactual_context_steps', 'counterfactual_updates', 'counterfactual_loss',
+                'counterfactual_selected_max_error')})
     return dict(labels=sum(r['labels'] for r in stages), stages=stages)
 
 

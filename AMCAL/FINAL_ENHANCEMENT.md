@@ -514,3 +514,76 @@ Do not rerun `All` over an existing calibration. Results use a configuration-spe
 JSON with the results. CPU checks cover TRAIN-only calibration, unchanged checkpoint,
 raw bootstrap units, destination changes, clipping and unqueried-label invariance;
 PowerShell is reviewed statically. GPU accuracy and runtime require the experiment.
+
+## Counterfactual TRAIN supervision of update utility
+
+Relative scaling alone did not consistently improve the seed-42 persistent test:
+weight 1 had final audit 78.1709%, online 72.8754%, forgetting 2.4922 pp;
+weight 0.1 had final audit 77.1028%, online 73.4076%, forgetting 4.3614 pp.
+The baseline remains 77.9039%, 73.6238%, 2.0249 pp, respectively. Each used
+1,197 test feedback labels. These are exploratory single-seed results.
+
+The next isolated experiment warm-starts the original accuracy checkpoint and
+fits **only its existing `update_value` head** during TRAIN. Correctness, common
+future value, CNN, initial Context checkpoint and target critic weights remain
+fixed during that fitting. There are no new inference parameters and no utility
+normalization. Normal online learning resumes for temporary validation learners
+and for the final test learner.
+
+On a paid TRAIN row, prediction and action selection precede feedback. The row's
+single acquired label then supports three alternatives. Each alternative copies
+a different Context together with its complete Adam state, makes exactly the
+same Context-min update as the real learner, and measures the original utility
+on the same pre-feedback protected reference. All alternatives reuse the same
+protected replay draw. The current input is excluded from that reward reference.
+Copies never modify the real bank, Adam state, reliability history, memory,
+versions or RNG. After simulation, the real learner updates only its chosen
+Context and inserts the acquired label once into memory. There are three virtual
+Context steps plus one real Context step per paid TRAIN row, without acquiring
+additional labels. Simulation cost is additional offline compute.
+
+For Context j, the target is `utility_j + gamma * (V_target(next_j) - V_target(skip))`.
+The successor uses the alternative's updated Context and reliability, with the
+same next input features and no next label. Double-DQN action selection uses the
+current raw policy; target evaluation uses the inherited frozen critic throughout
+fitting. Terminal transitions have no bootstrap. This is a one-step paired return
+estimate with inherited continuation values, not an oracle for full future return.
+The update head minimizes raw SmoothL1 plus 0.5 times centered SmoothL1 across the
+three Contexts. Both terms retain reward units; no per-row normalization is used.
+A 512-row TRAIN-only counterfactual replay holds states and targets/successors,
+uses the existing version/age weighting, and is cleared between passes. Adam
+learning rate is 1e-4, weight decay 1e-4, batch at most 32, starting at 8 paid rows.
+
+The launcher runs three paid-only persistent TRAIN passes over 0, 1, 3, using the
+existing aligned-sequence protocol. Within each pass Contexts, their optimizers,
+reference memory and reliability continue between levels; they reset between
+passes while update-head weights and its optimizer continue. The selector's
+other heads are frozen only during TRAIN. Checkpoint selection uses the existing
+source-disjoint persistent VAL audit with its clean-retention penalty and includes
+the inherited checkpoint as epoch zero. If epoch zero wins, report that the new
+training was not selected. No TEST labels select a checkpoint.
+
+```powershell
+git pull origin AMCAL_final_enhancement
+./AMCAL/run_amcal_counterfactual_utility.ps1 -Action All -Seed 42
+```
+
+Output: `AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_accuracy_counterfactual_trainseed42`.
+The source run is read-only and the destination must be fresh for training.
+`-Action Evaluate` resumes after successful training. Evaluation runs the usual
+learned min-max closed loop with uniform feedback and the unchanged 20% budget,
+without counterfactual simulations or actor scaling. The selected checkpoint and
+execution JSON retain `training_protocol.utility_supervision`; per-epoch stage
+logs include simulation counts, utility-head update counts, fitting loss and the
+maximum difference between simulated and real utility for the selected Context.
+TEST inference/online adaptation gains require measured results; none are assumed.
+PowerShell is reviewed statically; CPU tests verify Adam-copy fidelity, live-state
+and RNG isolation, unqueried-label invariance, frozen heads, terminal handling,
+TRAIN-only execution, and real CLI serialization/checkpoint provenance.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_accuracy_counterfactual_trainseed42"
+git add -f -- "$run/Results" "$run/enhancement_training.json"
+git commit -m "Add counterfactual utility training and evaluation seed 42"
+git push origin AMCAL_final_enhancement
+```

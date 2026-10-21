@@ -262,6 +262,15 @@ def train(a):
             validation_adaptation_source_ids={str(level): list(map(int, d[2])) for level, d in val_streams.items()},
             selection_metric='final persistent VAL audit accuracy minus excess clean-drop penalty',
             reset='bank/memory reset per TRAIN pass; all adaptive state retained within each sequence')
+    if a.counterfactual_utility:
+        training_protocol['utility_supervision'] = dict(version=1, scope='paid TRAIN only',
+            alternatives=3, trained_parameters='update_value only', learning_rate=.0001,
+            absolute_loss='SmoothL1 raw paired return', relative_loss='0.5 * centered SmoothL1',
+            target='utility + gamma * (raw target V(updated) - raw target V(skip))',
+            target_network='inherited critic fixed throughout offline fitting; Double-DQN action choice',
+            reference='same pre-feedback protected reference and replay for all alternatives',
+            isolation='copied Context and Adam per alternative; original bank/history/RNG unchanged',
+            normalization=False, evaluation_simulations=False)
     _, val_h = legacy.base_cache(cnn, calibration_x)
     agent.pre_router.calibrate(train_h, val_h)
     for warm in range(0 if a.warm_start_enhancement else a.warmup_episodes):
@@ -278,6 +287,7 @@ def train(a):
         level = None; m = {'labels': 0}
         if epoch >= 0:
             agent.td_memory.clear(); agent.pair_memory.clear()
+            agent.counterfactual_memory.clear()
             if a.aligned_sequence:
                 agent.route_memory.clear()
                 rollout_args = copy(a); rollout_args.train_epsilon = a.eval_epsilon
@@ -312,6 +322,9 @@ def train(a):
                         reference_drop_pp=drop, selection_score=score, train_labels=m['labels']))
         if a.aligned_sequence:
             log[-1].update(validation_sequence=val_sequence, train_stages=m.get('stages', []))
+        if a.counterfactual_utility:
+            log[-1]['counterfactual_updates_total'] = agent.counterfactual_updates
+            log[-1]['counterfactual_loss'] = agent.last_losses.get('counterfactual')
         print(f'Epoch {epoch+1}/{a.epochs}: validation {100*accuracy:.2f}% | source drop {drop:+.2f} pp | labels {m["labels"]}', flush=True)
         if score > best:
             best, stale = score, 0
@@ -502,6 +515,8 @@ def parser():
                    help='Train a zero-initialized cross-route attention residual in the correctness head.')
     p.add_argument('--aligned-sequence', action='store_true',
                    help='Continue training with paid-only persistent TRAIN sequences and independent persistent VAL audits.')
+    p.add_argument('--counterfactual-utility', action='store_true',
+                   help='TRAIN only: fit update values using three isolated paid-label Context updates; freeze other selector heads.')
     p.add_argument('--distill-weight', type=float, default=.2)
     p.add_argument('--context-lr', type=float)
     p.add_argument('--context-alpha', type=float)
@@ -537,6 +552,13 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.counterfactual_utility:
+        if a.command != 'train' or not a.warm_start_enhancement or not a.aligned_sequence:
+            p.error('--counterfactual-utility requires train --warm-start-enhancement --aligned-sequence.')
+        if a.profile != 'accuracy' or a.joint_router or a.disable or a.routed_utility:
+            p.error('Counterfactual utility requires the unchanged accuracy architecture and protected references.')
+        if a.utility_calibration is not None or a.router_refresh or a.router_informative_weight != 1.:
+            p.error('Test counterfactual utility independently of actor scaling and routing ablations.')
     if not np.isfinite(a.utility_weight) or a.utility_weight < 0 or not np.isfinite(a.utility_clip) or a.utility_clip <= 0:
         p.error('Utility weight must be finite/nonnegative; clip finite/positive.')
     if a.utility_calibration is not None or a.command == 'calibrate-utility':
