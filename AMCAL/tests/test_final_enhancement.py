@@ -630,6 +630,45 @@ class FinalEnhancementTests(unittest.TestCase):
             cf_metrics = json.loads((cf_results/'learned_level5_metrics.json').read_text())
             self.assertNotIn('counterfactual_rows',cf_metrics)
             self.assertEqual(cf_metrics['labels'],cf_metrics['label_cap'])
+            # The trained utility model supports policy-query RL in both tests.
+            cf_hash = legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth')
+            existing = set((cf_output/'Results').glob('evaluation_*'))
+            policy_common = ['evaluate','--output',str(cf_output),'--burst-dir',str(burst),
+                '--device','cpu','--query-schedule','policy','--update-policy','learned',
+                '--modes','learned','--seed','42','--levels','5','7']
+            original_episode = runner.episode; starts = []
+            def policy_episode(*args,**kwargs):
+                agent = args[4]; continuing = bool(kwargs.get('continuation'))
+                starts.append(continuing)
+                self.assertEqual(agent.counterfactual_updates,0)
+                if not continuing:
+                    self.assertEqual(len(agent.route_memory),0)
+                    self.assertEqual(len(agent.td_memory),0)
+                    for key,value in agent.policy.state_dict().items():
+                        self.assertTrue(torch.equal(value,cf_checkpoint['policy_state_dict'][key]))
+                return original_episode(*args,**kwargs)
+            with redirect_stdout(io.StringIO()), patch.object(runner,'episode',policy_episode), \
+                    patch('enhancements.stream.alternatives',side_effect=AssertionError('No TEST simulation')):
+                runner.main([*policy_common,'--continual'])
+                runner.main(policy_common)
+            self.assertEqual(starts,[False,True,False,False])
+            policy_results=set((cf_output/'Results').glob('evaluation_*'))-existing
+            self.assertEqual(len(policy_results),2)
+            kinds=set()
+            for result in policy_results:
+                execution=json.loads((result/'execution.json').read_text())
+                self.assertEqual(execution['query_schedule'],'policy')
+                self.assertEqual(execution['checkpoint_sha256'],cf_hash)
+                self.assertNotIn('utility_normalization',execution)
+                kinds.add(execution['continual'])
+                self.assertEqual((result/'sequential_summary.csv').exists(),execution['continual'])
+                for level in (5,7):
+                    measured=json.loads((result/f'learned_level{level}_metrics.json').read_text())
+                    self.assertLessEqual(measured['labels'],measured['label_cap'])
+                    self.assertNotIn('counterfactual_rows',measured)
+                    self.assertEqual(measured['samples'],16 if execution['continual'] else 20)
+            self.assertEqual(kinds,{True,False})
+            self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
             self.assertEqual(legacy.core.file_sha256(checkpoint_path),checkpoint_hash)
 
 

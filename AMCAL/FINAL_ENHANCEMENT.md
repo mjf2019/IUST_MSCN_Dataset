@@ -646,3 +646,59 @@ git add -f -- "$run/Results" "$run/structured_sequence_training.json"
 git commit -m "Add balanced inter-level RL training and both tests seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## Evaluate the counterfactual-trained model with RL-controlled feedback
+
+The seed-42 counterfactual training selected pass 3 on VAL (70.40498% final audit).
+Its uniform-feedback sequential TEST gave final audit 78.63818%, online 73.47414%,
+forgetting 1.71340 pp, BWT -0.38941 pp and 1,197 labels. The inherited accuracy
+baseline gave 77.90387%, 73.62382%, 2.02492 pp, +0.93458 pp and 1,197 labels.
+These are single-seed results with mixed tradeoffs, not a uniform improvement.
+
+`run_amcal_counterfactual_rl_tests.ps1` evaluates the existing selected checkpoint
+without training, actor normalization or TEST counterfactual simulation. It
+switches feedback to `--query-schedule policy --update-policy learned`: the
+original coupled seven-action policy chooses query timing, prediction route and
+Context destination, with fixed epsilon 0.05 and a hard 20% cap. A query predicts
+through its chosen Context before seeing the label, then updates that same Context.
+The cap is a maximum, not a required spend. This deliberately tests a checkpoint
+trained with uniform feedback under RL feedback selection; it does not claim the
+checkpoint has been retrained for that schedule.
+
+```powershell
+git pull origin AMCAL_final_enhancement
+./AMCAL/run_amcal_counterfactual_rl_tests.ps1 -Seed 42
+```
+
+The default performs exactly two evaluations on held-out levels 5, 7, 10, 12, 15,
+17, 20, each starting from the same saved checkpoint:
+
+- Sequential forgetting: `--continual`, retains adaptive state across levels and
+  excludes the fixed TEST audit identities from every adaptation stream.
+- Independent per-level: no `--continual`, reloads selector weights and resets
+  Contexts/optimizers/replay/reference/reliability at each level, using all TEST
+  partition rows. It is independent of the preceding sequential run.
+
+Both store their own `Results/evaluation_*` folder in
+`final_enhancement_accuracy_counterfactual_trainseed42`; `execution.json` records
+`query_schedule: policy`, the checkpoint SHA and `continual: true` or `false`.
+Only the sequential folder contains `sequential_summary.csv`. The checkpoint and
+previous uniform-feedback results are never overwritten. Compare each test to
+its matching protocol and include actual feedback counts: independent and
+sequential adaptation streams have different sizes. With epsilon exploration,
+"RL-controlled" does not mean deterministic greedy decisions.
+
+For an interrupted suite, resume only the unfinished part with
+`-EvaluationSet Independent` or `-EvaluationSet Sequential`. Exact repeated
+configurations are rejected by the existing evaluator. No training action is
+provided by this launcher. CPU integration verifies both real evaluation paths,
+shared initial checkpoint, empty replay on independent starts, retention between
+sequential levels, hard caps, no TEST simulation, and unchanged checkpoint bytes.
+PowerShell is reviewed statically; GPU performance is measured on the user host.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_accuracy_counterfactual_trainseed42"
+git add -f -- "$run/Results"
+git commit -m "Add counterfactual model RL-feedback tests seed 42"
+git push origin AMCAL_final_enhancement
+```
