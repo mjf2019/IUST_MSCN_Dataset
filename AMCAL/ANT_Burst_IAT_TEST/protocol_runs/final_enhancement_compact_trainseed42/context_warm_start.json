@@ -1,0 +1,40 @@
+{
+  "teacher_validation_ce": 0.9933473374318469,
+  "selected_validation_ce": 0.7590526196852201,
+  "epochs": [
+    {
+      "epoch": 1,
+      "validation_ce": 0.773501361516293
+    },
+    {
+      "epoch": 2,
+      "validation_ce": 0.7746498277373254
+    },
+    {
+      "epoch": 3,
+      "validation_ce": 0.7590526196852201
+    },
+    {
+      "epoch": 4,
+      "validation_ce": 0.7738553577789279
+    },
+    {
+      "epoch": 5,
+      "validation_ce": 0.7752483539160604
+    },
+    {
+      "epoch": 6,
+      "validation_ce": 0.7773340574218901
+    },
+    {
+      "epoch": 7,
+      "validation_ce": 0.7788847090480268
+    },
+    {
+      "epoch": 8,
+      "validation_ce": 0.774319906492491
+    }
+  ],
+  "selection": "lowest validation CE including identity initialization",
+  "source": "TRAIN labels and unchanged source Context teacher; no TEST data"
+}
