@@ -1326,3 +1326,66 @@ foreach ($variant in @('paironly','connected','longhorizon')) {
 git commit -m "Add parallel query-credit experiments seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+
+### Original paper configuration on three training domains
+
+```powershell
+git pull --ff-only origin AMCAL_final_enhancement
+if ($LASTEXITCODE -eq 0) {
+    .\AMCAL\run_amcal_paper_original.ps1 -Action All -Seed 42
+}
+```
+
+Here "three training datasets" means Burst perturbation levels 0, 1, 3, not
+three independent traffic corpora. The reference is the supplied paper at
+`mjf2019/AMCAL-paper`, branch `revision/reviewer-response`,
+`elsarticle/AMCAL.tex`: three Contexts, seven coupled prediction/query actions,
+structured correctness/future/update heads, balanced transfer reference,
+DDQN with absolute TD plus the existing paired term, and pre-feedback scoring.
+
+The launcher invokes the original `amcal_burst_structured_bank_protocol.py`
+directly. It does not use the enhancement agent or any single-Context,
+protected-source/replay, damage-guard, frozen-head, paired-only or connected-TD
+extension. Selector initialization is fresh: neither resume-selector nor
+warm-start-selector is used. The already-pretrained CNN, initial Context and
+preprocessing are copied from the common original balanced-reference source
+run. Their offline pretraining is reused rather than rerun. Thus this is a
+paper-method selector retraining/evaluation with shared pretrained artifacts,
+not a claim of end-to-end reproduction from random CNN weights.
+
+Original offline supervision is retained: dense TRAIN labels may supervise
+correctness, whereas Context updates follow policy queries under the 20% cap.
+The three correctness warmup episodes visit levels 0, 1, 3. Each subsequent
+epoch visits one of those levels cyclically, resets Contexts and their optimizers,
+and retains the learned selector, as described in the supplied paper. This
+does not apply the later persistent paid-only training modification. Validation
+uses temporary learners; the checkpoint is selected by mean independent VAL
+accuracy. The default is 12 epochs and patience 5. Training levels have disjoint
+TRAIN/VAL/TEST source IDs under the saved preprocessing.
+
+The experiment sets Context LR 0.0005, alpha 0.8, gamma 0.95, label cost 0.0001,
+gain/retention weights 1, TRAIN epsilon 0.2, TEST epsilon 0.05, policy queries,
+learned update destinations and balanced macro transfer. No new source data,
+model architecture, reward formula or algorithm modification is introduced.
+
+`-Action All` performs one selector training job and then two held-out TEST jobs
+on levels 5, 7, 10, 12, 15, 17, 20: independent and persistent sequential
+forgetting, both learned mode and seed 42 only. The independent run resets all
+adaptive state per level; the sequential run uses the existing fixed audit IDs,
+excludes them at every level and retains adaptive state between levels.
+The sequential experiment is an additional diagnostic and does not change the
+original offline training protocol. `-Action Train`, `Evaluate`, or `Audit`
+runs just that stage. Output defaults to `paper_original_levels013_seed42`;
+sequential results go under `Results/Sequential_seed42`. Existing source runs
+and enhancement results are preserved. Pull once before starting concurrent jobs.
+
+Both Python entry-point options were checked; the PowerShell launcher is
+reviewed statically. No GPU accuracy result is implied by preparation.
+
+```powershell
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/paper_original_levels013_seed42"
+git add -f -- "$run/structured_training.json" "$run/Results"
+git commit -m "Add original-paper AMCAL training on levels 0 1 3 seed 42"
+git push origin AMCAL_final_enhancement
+```
