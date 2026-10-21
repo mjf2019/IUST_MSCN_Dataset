@@ -273,11 +273,16 @@ class FinalEnhancementTests(unittest.TestCase):
             context = legacy.core.ContextAwareNetwork(8)
             torch.save({'model_state_dict': cnn.state_dict()}, models/'initial_cnn_model.pth')
             torch.save({'context_model_state_dict': context.state_dict()}, models/'adversarial_best_context.pth')
+            old_router = legacy.StructuredQ(128 + 4*2 + 14)
+            torch.save(dict(version=1, route_width=150, policy_state_dict=old_router.state_dict(),
+                model_hashes={name: legacy.core.file_sha256(models/name) for name in runner.SOURCE_FILES}),
+                models/'structured_bank_ddqn.pth')
             output = root/'enhanced'
             common = ['--output', str(output), '--burst-dir', str(burst), '--device', 'cpu']
             with redirect_stdout(io.StringIO()):
                 runner.main(['train', *common, '--source-run', str(source), '--profile', 'cascade',
-                    '--epochs', '1', '--context-epochs', '1', '--warmup-episodes', '1', '--levels', '0'])
+                    '--warm-start-selector', '--epochs', '1', '--context-epochs', '1',
+                    '--warmup-episodes', '1', '--levels', '0'])
                 runner.main(['evaluate', *common, '--levels', '5', '7', '--modes', 'learned', '--continual'])
             results = next((output/'Results').glob('evaluation_*'))
             m = json.loads((results/'learned_level5_metrics.json').read_text())

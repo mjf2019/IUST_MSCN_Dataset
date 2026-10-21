@@ -16,7 +16,7 @@ materialized or executed for this change.
 
 The new suite executes real Transformer Contexts, a real frozen CNN and a
 source-disjoint synthetic CSV training/save/reload/evaluation/persistent-audit
-workflow. It verifies:
+workflow, including a compatible original-v1 selector warm start. It verifies:
 
 - no change to actions, learned weights or Context weights when only unqueried
   labels change;
