@@ -24,7 +24,7 @@ from enhancements.agent import EnhancementAgent, DeviceReliability, load_policy_
 from enhancements.config import EnhancementConfig
 from enhancements.models import ResidualContext, residual_bank
 from enhancements.stream import episode, observer
-from enhancements.sequence import split_validation, fit_sequence, validate_sequence
+from enhancements.sequence import split_validation, fit_sequence, validate_sequence, next_sequence_features
 from enhancements.utility_normalization import fit_scale, validate_calibration
 
 FORMAT_VERSION = 1
@@ -137,14 +137,14 @@ def pretrain_context(a, models, artifact, cnn, domains):
     return best_state
 
 
-def new_agent(a, cnn, artifact, offline=False, saved=None, query_value_only=False):
+def new_agent(a, cnn, artifact, offline=False, saved=None, query_value_only=False, paired_query_only=False):
     classes = len(artifact['label_encoder'].classes_); embedding_width = cnn.dense_layers[-1].in_features
     agent = EnhancementAgent(embedding_width + 4*classes + 14, embedding_width, classes,
         legacy.core.device, a.seed, a.config, offline=offline,
         policy_state=None if saved is None else saved['policy_state_dict'],
         prerouter_state=None if saved is None else saved.get('prerouter_state_dict'), gamma=a.gamma,
         informative_weight=getattr(a, 'router_informative_weight', 1.), slots=getattr(a, 'context_count', 3),
-        query_value_only=query_value_only)
+        query_value_only=query_value_only, paired_query_only=paired_query_only)
     agent.policy.utility_normalization = getattr(a, 'utility_normalization', None)
     return agent
 
@@ -236,7 +236,7 @@ def train(a):
         torch.save({'architecture': a.config.architecture, 'initial_state_dict': initial}, models/'enhanced_context.pth')
     bank = build_bank(models, artifact, a.config, initial, slots=a.context_count)
     agent = new_agent(a, cnn, artifact, offline=not a.aligned_sequence, saved=warm,
-                      query_value_only=a.query_value_only_training)
+                      query_value_only=a.query_value_only_training, paired_query_only=a.paired_query_only_training)
     if a.warm_start_selector:
         old = torch.load(source/'structured_bank_ddqn.pth', map_location='cpu', weights_only=False)
         if old.get('version') != 1 or old.get('route_width') != agent.policy.route_width:
@@ -280,6 +280,15 @@ def train(a):
                     frozen_parameters='correctness and future heads; exact inherited weights',
                     optimizer='Adam update_value only; existing TD and paired objectives',
                     evaluation='ordinary paid-feedback online adaptation of all selector heads')
+    if a.paired_query_only_training:
+        training_protocol['selector_specialization'].update(
+            optimizer='Adam update_value only; paired objective only; absolute TD diagnostic has no gradient',
+            target='utility + gamma * (V(after query) - V(skip))', paired_weight=a.config.paired_weight)
+        training_protocol['temporal_credit'] = dict(version=1, paired_only=True,
+            connected_levels=a.connected_sequence_td, gamma=a.gamma,
+            boundary='next-domain first adaptation features; budget recharged; no next label',
+            evaluation='ordinary online selector losses; connected boundaries only for persistent sequences',
+            diagnostics='sampled TRAIN replay targets; rows may be counted repeatedly')
     if a.counterfactual_utility:
         training_protocol['utility_supervision'] = dict(version=1, scope='paid TRAIN only',
             alternatives=3, trained_parameters='update_value only', learning_rate=.0001,
@@ -409,6 +418,11 @@ def evaluate(a):
             or config.memory_replay_size < 1 or config.memory_ce_weight != .1):
         raise ValueError('Damage-guard ablation requires protected replay with the original CE weight 0.1.')
     a.config = config
+    temporal_credit = saved.get('training_protocol', {}).get('temporal_credit')
+    if temporal_credit is not None:
+        a.connected_sequence_td = temporal_credit['connected_levels']
+        if a.connected_sequence_td and (a.query_schedule != 'policy' or a.update_policy != 'learned'):
+            raise ValueError('Connected-sequence checkpoints require policy feedback with learned updates.')
     if a.context_count != 3 and (config.architecture != 'legacy' or config.cascade or config.joint_router):
         raise ValueError('Context-count ablation requires the accuracy legacy architecture without cascade or joint routing.')
     calibration = None
@@ -453,6 +467,9 @@ def evaluate(a):
                      runtime=dict(python=sys.version.split()[0], torch=str(torch.__version__),
                          numpy=np.__version__, device=str(legacy.core.device), cuda=torch.version.cuda,
                          gpu=torch.cuda.get_device_name(legacy.core.device) if legacy.core.device.type == 'cuda' else None))
+    if temporal_credit is not None:
+        execution['temporal_credit'] = dict(gamma=a.gamma, connected_levels=a.connected_sequence_td,
+            active_boundary_links=bool(a.continual and a.connected_sequence_td))
     if a.context_damage_guard:
         execution['context_damage_guard'] = dict(version=1, max_harm=config.damage_limit,
             step_scales=[1., .5, .25], reference='source/historical rows of the same pre-feedback reward reference',
@@ -519,7 +536,8 @@ def evaluate(a):
         for stage, level in enumerate(a.levels, start=1):
             if not a.continual: agent = new_agent(a, cnn, artifact, saved=saved)
             m, traces = episode(a, cnn, bank, initial, agent, domains[level], anchors,
-                mode=mode, reference=clean, same_level=True, continuation=continuation)
+                mode=mode, reference=clean, same_level=True, continuation=continuation,
+                next_domain_features=next_sequence_features(a, domains, stage-1, a.seed) if a.continual else None)
             m.update(level=level, config_fingerprint=config.fingerprint, execution=execution,
                      classifier_unchanged=not cnn.training and all(not p.requires_grad for p in cnn.parameters())
                      and all(torch.equal(value.detach().cpu(), frozen_weights[name]) for name, value in cnn.state_dict().items()))
@@ -576,6 +594,10 @@ def parser():
                    help='Specialize an inherited accuracy selector using one-Context paid-only policy-feedback sequences.')
     p.add_argument('--query-value-only-training', action='store_true',
                    help='Dedicated one-Context TRAIN: fit only update_value; freeze inherited correctness and future heads.')
+    p.add_argument('--paired-query-only-training', action='store_true',
+                   help='Query-value-only TRAIN: optimize the paired advantage objective without absolute TD.')
+    p.add_argument('--connected-sequence-td', action='store_true',
+                   help='Paired-only TRAIN: bridge persistent levels using next-domain adaptation features only.')
     p.add_argument('--counterfactual-utility', action='store_true',
                    help='TRAIN only: fit update values using three isolated paid-label Context updates; freeze other selector heads.')
     p.add_argument('--distill-weight', type=float, default=.2)
@@ -617,6 +639,10 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.paired_query_only_training and not a.query_value_only_training:
+        p.error('--paired-query-only-training requires --query-value-only-training.')
+    if a.connected_sequence_td and not a.paired_query_only_training:
+        p.error('--connected-sequence-td is configured through paired-only training checkpoints.')
     if a.query_value_only_training and not a.one_context_rl_training:
         p.error('--query-value-only-training requires --one-context-rl-training.')
     if a.one_context_rl_training:

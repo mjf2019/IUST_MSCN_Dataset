@@ -118,7 +118,9 @@ def routing_objective(logits, correct, weights, rank_weight, informative_weight=
 class EnhancementAgent(legacy.Agent):
     def __init__(self, route_width, embedding_width, classes, device, seed, config,
                  offline=False, policy_state=None, prerouter_state=None, gamma=.95,
-                 informative_weight=1., slots=3, query_value_only=False):
+                 informative_weight=1., slots=3, query_value_only=False, paired_query_only=False):
+        if paired_query_only and (not query_value_only or config.paired_weight <= 0):
+            raise ValueError('Paired-only training requires frozen heads and a positive paired weight.')
         base_state = ({k: v for k, v in policy_state.items() if not k.startswith('comparison.')}
                       if config.joint_router and policy_state is not None else policy_state)
         super().__init__(route_width, device, seed, offline=offline, policy_state=base_state, gamma=gamma)
@@ -128,6 +130,9 @@ class EnhancementAgent(legacy.Agent):
         self.policy = policy.eval()
         self.target = deepcopy(policy).eval()
         self.query_value_only = query_value_only
+        self.paired_query_only = paired_query_only
+        self.paired_target_totals = dict(rows=0, steps=0, utility=0., future=0., target=0.,
+            predicted=0., positive_utility=0, positive_target=0, terminal=0, absolute_loss=0.)
         if query_value_only:
             self.policy.requires_grad_(False)
             self.policy.update_value.requires_grad_(True)
@@ -221,13 +226,15 @@ class EnhancementAgent(legacy.Agent):
 
     def learn_td(self):
         if len(self.td_memory) < 32: return
+        if self.paired_query_only and not self.pair_memory: return
         rows, weight = self._sample(self.td_memory, 1024 if self.offline else 128)
         states = torch.stack([row[0] for row in rows]).to(self.device)
         next_states = torch.stack([row[3] for row in rows]).to(self.device)
         actions = torch.tensor([row[1] for row in rows], device=self.device)
         rewards = torch.tensor([row[2] for row in rows], device=self.device)
         terminal = torch.tensor([row[4] for row in rows], device=self.device)
-        current = self.policy(states, detach_routes=True).gather(1, actions[:, None]).squeeze(1)
+        with torch.set_grad_enabled(not self.paired_query_only):
+            current = self.policy(states, detach_routes=True).gather(1, actions[:, None]).squeeze(1)
         with torch.no_grad(): target = rewards + self.gamma * (1 - terminal) * self._next_values(next_states)
         loss = (F.smooth_l1_loss(current, target, reduction='none') * weight).sum() / weight.sum()
         if self.config.paired_weight and self.pair_memory:
@@ -241,9 +248,22 @@ class EnhancementAgent(legacy.Agent):
             q = self.policy(px, detach_routes=True)
             # Each coupled query maps to its Context prediction-only route.
             advantage = q.gather(1, pa[:, None]).squeeze(1) - q.gather(1, (pa - self.slots)[:, None]).squeeze(1)
-            with torch.no_grad(): target = pu + self.gamma * (1 - pt) * (self._next_values(pn) - self._next_values(ps))
+            with torch.no_grad():
+                future = self.gamma * (1 - pt) * (self._next_values(pn) - self._next_values(ps))
+                target = pu + future
             pair_loss = (F.smooth_l1_loss(advantage, target, reduction='none') * pw).sum() / pw.sum()
-            loss = loss + self.config.paired_weight * pair_loss
+            if self.paired_query_only:
+                totals = self.paired_target_totals
+                totals['rows'] += len(pairs); totals['steps'] += 1
+                for key, values in (('utility',pu),('future',future),('target',target),('predicted',advantage)):
+                    totals[key] += float(values.detach().sum())
+                totals['positive_utility'] += int((pu > 0).sum())
+                totals['positive_target'] += int((target > 0).sum())
+                totals['terminal'] += int(pt.sum())
+                totals['absolute_loss'] += float(loss.detach())
+                loss = self.config.paired_weight * pair_loss
+            else:
+                loss = loss + self.config.paired_weight * pair_loss
             self.last_losses['paired'] = float(pair_loss.detach())
         self.td_optimizer.zero_grad(set_to_none=True); loss.backward()
         nn.utils.clip_grad_norm_(list(self.policy.future.parameters()) + list(self.policy.update_value.parameters()), 1)

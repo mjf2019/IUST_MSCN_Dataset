@@ -1223,3 +1223,106 @@ git add -f -- "$run/enhancement_training.json" "$run/Results"
 git commit -m "Add one-Context query-value-only RL training results seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+
+### Parallel query-credit experiments (three isolated runs)
+
+Pull once before launching jobs; then run the three commands in three separate
+PowerShell tabs from the repository root and the same activated environment:
+
+```powershell
+git pull --ff-only origin AMCAL_final_enhancement
+```
+
+```powershell
+.\AMCAL\run_amcal_query_credit.ps1 -Variant PairOnly -Action All -Seed 42
+```
+
+```powershell
+.\AMCAL\run_amcal_query_credit.ps1 -Variant Connected -Action All -Seed 42
+```
+
+```powershell
+.\AMCAL\run_amcal_query_credit.ps1 -Variant LongHorizon -Action All -Seed 42
+```
+
+| Variant | TRAIN query objective | Persistent TD boundaries | Gamma |
+|---|---|---|---|
+| PairOnly | Paired advantage only | End each level | 0.95 |
+| Connected | Paired advantage only | Bridge to next level | 0.95 |
+| LongHorizon | Paired advantage only | Bridge to next level | 0.99 |
+
+All three start independently from the original counterfactual-trained checkpoint
+`c7cc1e00f9eeda6a68c1583cb41ad1a52f30cb6226dddef453092c857a88b66d`.
+They train only update_value, with correctness/future heads fixed, one Context,
+policy queries, seed 42, epsilon 0.05 and the existing 20% per-domain label cap.
+Context adaptation, protected memory, reward, selection cost and paired loss
+weight 0.5 remain unchanged. The first experiment removes only the absolute
+TD gradient from the previous query-value-only TRAIN loss; its numerical value
+is retained as a diagnostic. The paired target is
+`utility + gamma * (V(after query) - V(skip))`. Existing warmup threshold
+(32 TD replay entries), replay sampling order, gradient clipping and target
+synchronization are retained. Ordinary online learning during temporary VAL
+and TEST still updates all selector heads with its original losses.
+
+The Connected variant preserves a nonterminal successor at each intermediate
+persistent level boundary. That successor uses the first unlabelled adaptation
+input of the next level under its actual deterministic permutation. Its Context
+outputs reflect the hypothetical updated or skipped Context respectively;
+reliability history is shifted into the next level's coordinates on a copy,
+the next level's label cap is recharged, and position is zero. No next input
+label, audit row, extra query or Context update enters this transition. Only
+the last level is terminal. Boundary outputs are discarded after target
+construction, and the ordinary next-level episode recomputes its prediction.
+The same boundary protocol is applied to temporary persistent VAL learners
+and sequential TEST; independent domains remain terminal. Connected checkpoints
+require learned policy feedback. The feature lookahead extends the runner's
+existing one-input TD lookahead across a known sequence boundary; it assumes
+the next adaptation input is available, not an unknown future label.
+
+Gamma 0.99 lengthens discounting relative to 0.95; this is a hypothesis test,
+not a guarantee of long-term retention. Boundaries and gamma are saved in the
+checkpoint training protocol and inherited automatically at evaluation. Existing
+checkpoints and unflagged execution retain their previous behavior.
+
+Each command runs one training job (up to 12 epochs, patience 5, including the
+inherited epoch-zero candidate and VAL-only selection), then two TEST jobs: independent
+and sequential forgetting. There are three training jobs and six TEST jobs
+across the three tabs. Output directories are distinct:
+`final_enhancement_query_credit_paironly_trainseed42`,
+`final_enhancement_query_credit_connected_trainseed42`, and
+`final_enhancement_query_credit_longhorizon_trainseed42`. Source artifacts are
+read-only. If a stage is interrupted after training, use `-Action Evaluate` or
+`-Action Audit` with the same variant to resume. Training never overwrites runs.
+GPU contention means simultaneous-run timing cannot establish speed superiority;
+compare accuracy/retention/actual labels first and time candidates separately
+if needed. Parallel jobs do not guarantee shorter total wall time on one GPU.
+
+Per-domain TRAIN logs now include `paired_target_diagnostics`: sampled replay
+row count, optimizer step count, mean immediate utility, discounted future
+difference, total target and predicted advantage, positive utility/target counts,
+terminal count and the excluded absolute TD loss. Replayed rows are counted
+repeatedly; these are training-distribution diagnostics, not unique-label statistics.
+Connected trace rows additionally mark TD terminal/boundary flags. Existing
+label counts still count each acquired label once.
+
+Compare PairOnly against the prior query-value-only run, Connected against
+PairOnly, and LongHorizon against Connected. Both training rollouts and online
+trajectories can diverge; report actual queried labels alongside accuracy and
+forgetting. CPU tests check loss isolation from arbitrary absolute TD rewards,
+terminal discount masking, agreement within floating-point tolerance between a bridged successor and the
+actual next-level state, absence of successor-label dependence, frozen-head
+identity, TRAIN causal supervision and real CLI train/VAL/both TEST protocols.
+PowerShell is reviewed statically; scientific effects require user-host runs.
+
+After all three finish, push only reports and results (not large checkpoints):
+
+```powershell
+foreach ($variant in @('paironly','connected','longhorizon')) {
+    $run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_query_credit_${variant}_trainseed42"
+    git add -f -- "$run/enhancement_training.json" "$run/Results"
+    if ($LASTEXITCODE -ne 0) { throw "Cannot stage results for $variant" }
+}
+git commit -m "Add parallel query-credit experiments seed 42"
+git push origin AMCAL_final_enhancement
+```

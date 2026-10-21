@@ -80,7 +80,13 @@ class OneContextRLTrainingTests(unittest.TestCase):
     def test_real_cli_query_value_only_train_and_both_evaluations(self):
         self.check_real_cli(True)
 
-    def check_real_cli(self, query_only):
+    def test_real_cli_paired_only_train_and_both_evaluations(self):
+        self.check_real_cli(True,paired=True)
+
+    def test_real_cli_connected_long_horizon_and_both_evaluations(self):
+        self.check_real_cli(True,paired=True,connected=True,gamma=.99)
+
+    def check_real_cli(self, query_only, paired=False, connected=False, gamma=.95):
         torch.manual_seed(42)
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); source=root/'source'; models=source/'Models'; models.mkdir(parents=True)
@@ -114,7 +120,7 @@ class OneContextRLTrainingTests(unittest.TestCase):
             source_hash=legacy.core.file_sha256(models/'final_enhancement.pth')
             common=['--output',str(output),'--burst-dir',str(burst),'--device','cpu',
                 '--context-count','1','--query-schedule','policy','--update-policy','learned',
-                '--budget-fraction','0.5','--eval-epsilon','0.05']
+                '--budget-fraction','0.5','--eval-epsilon','0.05','--gamma',str(gamma)]
             original=runner.episode; train_stages=[]; trained_states=[]
             def checked_episode(*args,**kwargs):
                 a,_,bank,_,agent,domain=args[:6]
@@ -125,6 +131,7 @@ class OneContextRLTrainingTests(unittest.TestCase):
                 if kwargs.get('training'):
                     self.assertTrue(kwargs['paid_supervision'])
                     self.assertEqual(agent.query_value_only,query_only)
+                    self.assertEqual(agent.paired_query_only,paired)
                     if query_only:
                         expected={id(p) for p in agent.policy.update_value.parameters()}
                         actual={id(p) for group in agent.td_optimizer.param_groups for p in group['params']}
@@ -149,7 +156,9 @@ class OneContextRLTrainingTests(unittest.TestCase):
                 runner.main(['train',*common,'--source-run',str(source),'--profile','accuracy',
                     '--warm-start-enhancement','--aligned-sequence','--one-context-rl-training',
                     '--levels','0','1','--epochs','1',
-                    *(['--query-value-only-training'] if query_only else [])])
+                    *(['--query-value-only-training'] if query_only else []),
+                    *(['--paired-query-only-training'] if paired else []),
+                    *(['--connected-sequence-td'] if connected else [])])
             self.assertEqual(train_stages,[False,True])
             saved=torch.load(output/'Models'/'final_enhancement.pth',weights_only=False)
             report=json.loads((output/'enhancement_training.json').read_text())
@@ -164,6 +173,13 @@ class OneContextRLTrainingTests(unittest.TestCase):
             trained=report['epochs'][1]
             self.assertGreater(sum(r['td_updates'] for r in trained['train_stages']),0)
             self.assertTrue(all(r['route_updates']==(0 if query_only else r['labels']) for r in trained['train_stages']))
+            if paired:
+                self.assertEqual(protocol['temporal_credit']['connected_levels'],connected)
+                self.assertEqual(protocol['temporal_credit']['gamma'],gamma)
+                for stage in trained['train_stages']:
+                    d=stage['paired_target_diagnostics']
+                    self.assertGreater(d['sampled_rows'],0)
+                    self.assertAlmostEqual(d['target_mean'],d['utility_mean']+d['future_mean'],places=5)
             if query_only:
                 self.assertEqual(protocol['selector_specialization']['trained_parameters'],'update_value only')
                 self.assertTrue(all(row['frozen_selector_unchanged'] for row in report['epochs']))
@@ -187,6 +203,15 @@ class OneContextRLTrainingTests(unittest.TestCase):
                 self.assertEqual(execution['training_protocol'],protocol)
                 self.assertIn('dedicated',execution['context_count_protocol'])
                 self.assertNotIn('context_damage_guard',execution)
+                if paired:
+                    self.assertEqual(execution['temporal_credit']['gamma'],gamma)
+                    self.assertEqual(execution['temporal_credit']['active_boundary_links'],connected and execution['continual'])
+                if connected:
+                    trace=pd.read_csv(result/'learned_level5_trace.csv')
+                    self.assertEqual(bool(trace.iloc[-1]['td_boundary_successor']),execution['continual'])
+                    self.assertEqual(bool(trace.iloc[-1]['td_terminal']),not execution['continual'])
+                    final=pd.read_csv(result/'learned_level7_trace.csv')
+                    self.assertTrue(bool(final.iloc[-1]['td_terminal']))
                 for level in (5,7):
                     metrics=json.loads((result/f'learned_level{level}_metrics.json').read_text())
                     self.assertLessEqual(metrics['labels'],metrics['label_cap'])

@@ -75,8 +75,11 @@ def probe_before(a, cnn, bank, selected, batch, agent, history, used, cap, posit
 
 def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', training=False,
             warmup=False, rollout_seed=None, reference=None, same_level=False, continuation=None,
-            paid_supervision=False):
+            paid_supervision=False, next_domain_features=None):
     config = a.config
+    paired_totals0 = dict(agent.paired_target_totals)
+    if next_domain_features is not None and (continuation is None or warmup):
+        raise ValueError('A boundary successor requires a persistent, non-warmup sequence.')
     slots = len(bank); routes = slots+1
     if agent.slots != slots: raise ValueError("Selector/bank Context count mismatch.")
     counterfactual = training and not warmup and getattr(a, 'counterfactual_utility', False)
@@ -117,6 +120,11 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     audit_rng = np.random.default_rng(seed + 260917)
     timer = StreamTimer(x.device, enabled=not training)
     with timer.stage('cache'): frozen, embeddings = legacy.base_cache(cnn, x)
+    boundary_cache = None
+    if next_domain_features is not None:
+        boundary_x, boundary_count = next_domain_features
+        with timer.stage('cache'): boundary_z, boundary_h = legacy.base_cache(cnn, boundary_x)
+        boundary_cache = boundary_x, boundary_z, boundary_h, boundary_count
     first_ref = observer(cnn, bank, agent, *reference, history, 0, cap, 0, a.seed, config, mode) if reference is not None else None
     first_current = observer(cnn, bank, agent, x, y, history, 0, cap, 0, a.seed, config, mode) if same_level else None
     used = 0; gap = 0; next_cached = None
@@ -181,15 +189,30 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         guard_decision = None
         with timer.stage('update'):
             successor_output = None
-            if pos + 1 < n and not warmup and (paid or (training and not paid_supervision)):
-                successor_output = executor.outputs(x[pos+1:pos+2], frozen[pos+1:pos+2])
+            bridge = pos+1 == n and boundary_cache is not None
+            terminal = pos+1 == n and not bridge
+            if bridge:
+                next_x, next_z, next_h, next_count = boundary_cache
+                next_pos = 0; next_cap = int(np.floor(a.budget_fraction*next_count))
+            else:
+                next_x, next_z, next_h = x[pos+1:pos+2], frozen[pos+1:pos+2], embeddings[pos+1:pos+2]
+                next_count, next_pos, next_cap = n, pos+1, cap
+            if not terminal and not warmup and (paid or (training and not paid_supervision)):
+                successor_output = executor.outputs(next_x, next_z)
             zero = torch.zeros_like(state) if state is not None else None
             skip_next = zero
             next_gate = int(pos+1 in schedule) if schedule is not None else -1
+            if bridge and schedule is not None:
+                next_schedule = np.random.default_rng(seed+819003).choice(next_count,next_cap,replace=False)
+                next_gate = int(0 in next_schedule)
             next_state_gate = 2 + int(destinations[min(pos+1, n-1)]) if a.update_policy == 'fixed' and next_gate == 1 else next_gate
+            def successor_state(outputs):
+                next_history = deepcopy(history) if bridge else history
+                if bridge: next_history.last_update -= n
+                return build_state(outputs, next_h, next_history, 0 if bridge else used,
+                    next_cap, next_pos, next_count, next_state_gate)
             if successor_output is not None:
-                skip_next = build_state(successor_output, embeddings[pos+1:pos+2], history,
-                                                used, cap, pos+1, n, next_state_gate)
+                skip_next = successor_state(successor_output)
             if paid:
                 if used >= cap: raise RuntimeError('A query exceeded the hard label cap.')
                 selected = action - routes
@@ -246,7 +269,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 # TRAIN episodes reproduce the online availability of protected memory.
                 if config.protected_reference or not training: memory.add(inputs, label)
                 if committed and successor_output is not None:
-                    successor_output = executor.refresh_output(x[pos+1:pos+2], successor_output, selected)
+                    successor_output = executor.refresh_output(next_x, successor_output, selected)
             if counterfactual and paid:
                 if alternative_successors is None: alternative_successors = zero.expand(3,-1).clone()
                 agent.observe_counterfactual(state, alternative_utilities, alternative_successors,
@@ -270,14 +293,13 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                     skip_state = state.clone()
                     if schedule is not None: skip_state[:, -3] = 0
                     for r in range(routes):
-                        agent.push(skip_state, r, 1. if correct[r] else -1., skip_next, pos+1 == n, versions)
+                        agent.push(skip_state, r, 1. if correct[r] else -1., skip_next, terminal, versions)
                     if paid:
-                        successor = zero if successor_output is None else build_state(successor_output,
-                            embeddings[pos+1:pos+2], history, used, cap, pos+1, n, next_state_gate)
-                        agent.push(state, action, reward, successor, pos+1 == n, versions)
-                        agent.push_pair(state, action, utility, successor, skip_next, pos+1 == n, versions)
+                        successor = zero if successor_output is None else successor_state(successor_output)
+                        agent.push(state, action, reward, successor, terminal, versions)
+                        agent.push_pair(state, action, utility, successor, skip_next, terminal, versions)
                     if paid or pos % 16 == 15 or pos+1 == n: agent.learn_td()
-        next_cached = successor_output
+        next_cached = None if bridge else successor_output
         predictions_all.append(route_predictions); known_all.append(observed)
         # One batched observer transfer replaces individual scalar .item() calls.
         scores = None if raw_values is None else torch.cat([raw_values, route_logits.sigmoid()]).detach().cpu().tolist()
@@ -287,6 +309,9 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             predictions=[int(v) if known else None for v, known in zip(route_predictions, observed)],
             scores=scores))
         if damage_guard: traces[-1]['damage_guard'] = guard_decision
+        if getattr(a, 'connected_sequence_td', False):
+            traces[-1]['td_terminal'] = terminal
+            traces[-1]['td_boundary_successor'] = bridge
         if counterfactual:
             traces[-1]['counterfactual_utilities'] = alternative_utilities
         if getattr(a, 'collect_utility_calibration', False) or agent.policy.utility_normalization is not None:
@@ -315,6 +340,17 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         oracle_protocol='observer on executed full-bank rows only; complete oracle is null for sparse streams',
         mode=mode, source_ids=source_ids.tolist(), queried_source_ids=source_ids[labels_mask].tolist(),
         latency_protocol='synchronized finite-stream runner with frozen cache and one-input lookahead TD; no annotation delay; not a live-service benchmark')
+    if agent.paired_query_only:
+        totals = {k: agent.paired_target_totals[k]-paired_totals0[k] for k in paired_totals0}
+        rows = totals['rows']; steps = totals['steps']
+        metrics['paired_target_diagnostics'] = dict(sampled_rows=rows, optimizer_steps=steps,
+            **{k+'_mean': totals[k]/rows if rows else None for k in ('utility','future','target','predicted')},
+            positive_utility_rows=totals['positive_utility'], positive_target_rows=totals['positive_target'],
+            terminal_rows=totals['terminal'], absolute_td_loss_diagnostic=totals['absolute_loss']/steps if steps else None,
+            protocol='TRAIN replay samples; repeated rows count repeatedly; absolute TD has no gradient')
+    if getattr(a, 'connected_sequence_td', False):
+        metrics['sequence_td'] = dict(boundary_successor=boundary_cache is not None,
+            boundary_paid=bool(boundary_cache is not None and traces[-1]['queried']))
     if damage_guard:
         accepted = [row for row in guard_records if row['accepted']]
         metrics['damage_guard'] = dict(paid_rows=len(guard_records), accepted=len(accepted),
