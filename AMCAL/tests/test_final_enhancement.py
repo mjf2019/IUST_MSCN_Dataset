@@ -25,8 +25,9 @@ import amcal_final_enhancement as runner
 from enhancements.agent import EfficientQ, EnhancementAgent, DeviceReliability, ranking_loss, routing_objective, load_policy_state
 from enhancements.config import EnhancementConfig
 from enhancements.memory import ProtectedMemory, transfer
-from enhancements.models import ResidualContext, residual_bank, BankExecutor
+from enhancements.models import ResidualContext, residual_bank, BankExecutor, PreRouter
 from enhancements.stream import episode
+from enhancements.sequence import split_validation, fit_sequence, validate_sequence
 from test_structured_bank_protocol import TinyCNN, TinyContext
 
 
@@ -123,6 +124,58 @@ class FinalEnhancementTests(unittest.TestCase):
         for k, v in after.items(): self.assertTrue(torch.equal(v, other.policy.state_dict()[k]))
         for saved, context in zip(weights, bank):
             for k, v in saved.items(): self.assertTrue(torch.equal(v, context.state_dict()[k]))
+
+    def test_paid_only_training_cannot_use_unqueried_train_labels(self):
+        cnn, bank, initial, a, domain, anchors, agent = self.fixture()
+        start = deepcopy(agent.policy.state_dict())
+        m, trace = episode(a, cnn, bank, initial, agent, domain, anchors,
+                           training=True, paid_supervision=True)
+        self.assertEqual(m['route_updates'], m['labels'])
+        self.assertEqual(m['supervision_protocol'], 'paid feedback only')
+        after = deepcopy(agent.policy.state_dict()); bank_after = [deepcopy(c.state_dict()) for c in bank]
+        paid = set(m['queried_source_ids']); labels = domain[1].copy()
+        for i, source in enumerate(domain[2]):
+            if source not in paid: labels[i] = 1-labels[i]
+        other = EnhancementAgent(34, 12, 2, torch.device('cpu'), 42, a.config, policy_state=start)
+        _, second = episode(a, cnn, bank, initial, other, (domain[0], labels, domain[2]), anchors,
+                            training=True, paid_supervision=True)
+        self.assertEqual([r['action'] for r in trace], [r['action'] for r in second])
+        for k, v in after.items(): self.assertTrue(torch.equal(v, other.policy.state_dict()[k]))
+        for saved, context in zip(bank_after, bank):
+            for k, v in saved.items(): self.assertTrue(torch.equal(v, context.state_dict()[k]))
+
+    def test_sequence_validation_audit_is_disjoint_and_observer_labels_cannot_change_learning(self):
+        cnn, bank, initial, a, domain, anchors, agent = self.fixture()
+        a.levels = [0, 1]; a.audit_fraction = .2
+        domains = {0: domain, 1: (domain[0]+.1, domain[1], domain[2])}
+        streams, audits, clean, ids = split_validation(domains, domain, 42, .2)
+        self.assertEqual(set(ids), set(np.random.default_rng(42+8121).permutation(16)[:3]))
+        for d in streams.values(): self.assertFalse(set(ids) & set(d[2]))
+        start = deepcopy(agent.policy.state_dict())
+        result = validate_sequence(a, cnn, bank, initial, agent, streams, audits, clean, anchors)
+        after = deepcopy(agent.policy.state_dict()); bank_after = [deepcopy(c.state_dict()) for c in bank]
+        other = EnhancementAgent(34, 12, 2, torch.device('cpu'), 42, a.config, policy_state=start)
+        flipped = {level: (x, 1-y) for level, (x, y) in audits.items()}
+        validate_sequence(a, cnn, bank, initial, other, streams, flipped, (clean[0], 1-clean[1]), anchors)
+        for k, v in after.items(): self.assertTrue(torch.equal(v, other.policy.state_dict()[k]))
+        for saved, context in zip(bank_after, bank):
+            for k, v in saved.items(): self.assertTrue(torch.equal(v, context.state_dict()[k]))
+        self.assertEqual(len(result['audit_accuracy_by_stage']), 3)
+        self.assertEqual(result['labels'], sum(int(a.budget_fraction*len(d[1])) for d in streams.values()))
+        scores = np.asarray(result['audit_accuracy_by_stage'])
+        self.assertAlmostEqual(result['accuracy'], scores[-1].mean())
+        self.assertAlmostEqual(result['forgetting_pp'], 100*(scores[1:, 0].max()-scores[-1, 0]))
+        self.assertAlmostEqual(result['bwt_pp'], 100*(scores[-1, 0]-scores[1, 0]))
+
+    def test_training_sequence_keeps_state_and_uses_exact_paid_caps(self):
+        cnn, bank, initial, a, domain, anchors, agent = self.fixture()
+        a.levels = [0, 1]
+        result = fit_sequence(a, cnn, bank, initial, agent, {0: domain, 1: domain}, anchors, 42)
+        self.assertEqual(result['labels'], 16)
+        self.assertEqual(agent.route_updates, 16)
+        self.assertEqual([r['route_updates'] for r in result['stages']], [8, 8])
+        # Exactly one bank-generation reset plus the 16 paid updates.
+        self.assertEqual(int(agent.versions.sum()), 3*32+16)
 
     def test_ranking_ignores_uninformative_rows_and_has_correct_direction(self):
         z = torch.zeros(3, 4, requires_grad=True)
@@ -391,7 +444,7 @@ class FinalEnhancementTests(unittest.TestCase):
             burst = root/'burst'; burst.mkdir()
             rng = np.random.default_rng(42); features = [f'f{i}' for i in range(8)]
             raw = rng.normal(size=(80, 8)).astype(np.float32); labels = np.arange(80) % 2
-            for level in (0, 5, 7):
+            for level in (0, 1, 5, 7):
                 path = burst/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv'
                 frame = pd.DataFrame(raw + level*.02, columns=features); frame['label'] = labels
                 frame.to_csv(path, index=False)
@@ -480,6 +533,44 @@ class FinalEnhancementTests(unittest.TestCase):
             self.assertTrue(joint_metrics['classifier_unchanged'])
             self.assertEqual(joint_metrics['labels'], joint_metrics['label_cap'])
             self.assertEqual(joint_metrics['fresh_route_updates'], 0)
+            sequence_source = root/'sequence_source'
+            aligned_output = root/'aligned'
+            calibration_sizes = []; original_calibration = PreRouter.calibrate
+            def calibrated(model, train_h, val_h):
+                calibration_sizes.append(len(val_h))
+                return original_calibration(model, train_h, val_h)
+            with redirect_stdout(io.StringIO()), patch.object(PreRouter, 'calibrate', calibrated):
+                runner.main(['train', '--source-run', str(source), '--output', str(sequence_source),
+                    '--burst-dir', str(burst), '--device', 'cpu', '--profile', 'accuracy',
+                    '--warm-start-selector', '--epochs', '1', '--warmup-episodes', '0', '--levels', '0', '1'])
+                runner.main(['train', '--source-run', str(sequence_source), '--output', str(aligned_output),
+                    '--burst-dir', str(burst), '--device', 'cpu', '--profile', 'accuracy',
+                    '--warm-start-enhancement', '--aligned-sequence', '--query-schedule', 'uniform',
+                    '--epochs', '1', '--levels', '0', '1'])
+                runner.main(['evaluate', '--output', str(aligned_output), '--burst-dir', str(burst),
+                    '--device', 'cpu', '--continual', '--query-schedule', 'uniform',
+                    '--modes', 'learned', '--levels', '5', '7'])
+            aligned = json.loads((aligned_output/'enhancement_training.json').read_text())
+            self.assertEqual(calibration_sizes, [20, 16])
+            protocol = aligned['training_protocol']
+            self.assertEqual(protocol['mode'], 'aligned_sequence')
+            audit_ids = set(protocol['validation_audit_source_ids'])
+            for adaptation_ids in protocol['validation_adaptation_source_ids'].values():
+                self.assertFalse(audit_ids & set(adaptation_ids))
+            self.assertFalse(aligned['config']['joint_router'])
+            self.assertEqual(aligned['epochs'][0]['train_labels'], 0)
+            for stage in aligned['epochs'][1]['train_stages']:
+                self.assertEqual(stage['labels'], stage['cap'])
+                self.assertEqual(stage['route_updates'], stage['labels'])
+            saved = torch.load(aligned_output/'Models'/'final_enhancement.pth', weights_only=False)
+            self.assertEqual(saved['training_protocol'], protocol)
+            best_row = next(row for row in aligned['epochs'] if row['epoch'] == saved['selected_epoch'])
+            self.assertAlmostEqual(saved['selection_score'], best_row['selection_score'])
+            audit_scores = np.asarray(best_row['validation_sequence']['audit_accuracy_by_stage'])
+            self.assertAlmostEqual(saved['validation_accuracy'], audit_scores[-1].mean())
+            result_dir = next((aligned_output/'Results').glob('evaluation_*'))
+            execution = json.loads((result_dir/'execution.json').read_text())
+            self.assertEqual(execution['training_protocol'], protocol)
 
 
 if __name__ == '__main__': unittest.main()

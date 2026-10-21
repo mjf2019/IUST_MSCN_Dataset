@@ -4,7 +4,7 @@ The original structured-bank entry point, checkpoints and results are not edited
 See FINAL_ENHANCEMENT.md for matched controls, profiles and Windows commands.
 """
 import argparse
-from copy import deepcopy
+from copy import deepcopy, copy
 import csv
 import hashlib
 import json
@@ -24,6 +24,7 @@ from enhancements.agent import EnhancementAgent, DeviceReliability, load_policy_
 from enhancements.config import EnhancementConfig
 from enhancements.models import ResidualContext, residual_bank
 from enhancements.stream import episode, observer
+from enhancements.sequence import split_validation, fit_sequence, validate_sequence
 
 FORMAT_VERSION = 1
 SOURCE_FILES = ('initial_cnn_model.pth', 'adversarial_best_context.pth', 'protocol_preprocessing.joblib')
@@ -185,7 +186,7 @@ def train(a):
         initial = pretrain_context(a, models, artifact, cnn, domains)
         torch.save({'architecture': a.config.architecture, 'initial_state_dict': initial}, models/'enhanced_context.pth')
     bank = build_bank(models, artifact, a.config, initial)
-    agent = new_agent(a, cnn, artifact, offline=True, saved=warm)
+    agent = new_agent(a, cnn, artifact, offline=not a.aligned_sequence, saved=warm)
     if a.warm_start_selector:
         old = torch.load(source/'structured_bank_ddqn.pth', map_location='cpu', weights_only=False)
         if old.get('version') != 1 or old.get('route_width') != agent.policy.route_width:
@@ -195,8 +196,25 @@ def train(a):
         load_policy_state(agent.policy, old['policy_state_dict']); agent.target.load_state_dict(agent.policy.state_dict())
     # Novelty thresholds use TRAIN statistics and SOURCE validation only.
     _, train_h = legacy.base_cache(cnn, anchors[0])
-    source_validation = legacy.read_domain(a.burst_dir, artifact, 0, 'val_ids')[:2]
-    _, val_h = legacy.base_cache(cnn, source_validation[0])
+    clean_validation_domain = legacy.read_domain(a.burst_dir, artifact, 0, 'val_ids')
+    source_validation = clean_validation_domain[:2]
+    calibration_x = source_validation[0]
+    training_protocol = None
+    if a.aligned_sequence:
+        validation_domains = {level: domains[level, 'val_ids'] for level in a.levels}
+        val_streams, val_audits, val_clean, val_audit_ids = split_validation(
+            validation_domains, clean_validation_domain, a.seed, a.audit_fraction)
+        val_audit_set = set(val_audit_ids)
+        calibration_x = clean_validation_domain[0][np.array([
+            int(source_id) not in val_audit_set for source_id in clean_validation_domain[2]])]
+        training_protocol = dict(version=1, mode='aligned_sequence', levels=a.levels,
+            query_schedule='uniform', update_policy='learned', paid_only_supervision=True,
+            agent_optimizer='online settings', train_epsilon=a.eval_epsilon,
+            validation_audit_source_ids=val_audit_ids, audit_fraction=a.audit_fraction,
+            validation_adaptation_source_ids={str(level): list(map(int, d[2])) for level, d in val_streams.items()},
+            selection_metric='final persistent VAL audit accuracy minus excess clean-drop penalty',
+            reset='bank/memory reset per TRAIN pass; all adaptive state retained within each sequence')
+    _, val_h = legacy.base_cache(cnn, calibration_x)
     agent.pre_router.calibrate(train_h, val_h)
     for warm in range(0 if a.warm_start_enhancement else a.warmup_episodes):
         level = a.levels[warm % len(a.levels)]
@@ -212,23 +230,40 @@ def train(a):
         level = None; m = {'labels': 0}
         if epoch >= 0:
             agent.td_memory.clear(); agent.pair_memory.clear()
-            level = a.levels[epoch % len(a.levels)]
-            m, _ = episode(a, cnn, bank, initial, agent, domains[level, 'train_ids'], anchors,
-                           training=True, rollout_seed=a.seed+200003+1009*epoch)
+            if a.aligned_sequence:
+                agent.route_memory.clear()
+                rollout_args = copy(a); rollout_args.train_epsilon = a.eval_epsilon
+                train_domains = {level: domains[level, 'train_ids'] for level in a.levels}
+                m = fit_sequence(rollout_args, cnn, bank, initial, agent, train_domains, anchors,
+                                 a.seed+200003+1009*epoch)
+                level = list(a.levels)
+            else:
+                level = a.levels[epoch % len(a.levels)]
+                m, _ = episode(a, cnn, bank, initial, agent, domains[level, 'train_ids'], anchors,
+                               training=True, rollout_seed=a.seed+200003+1009*epoch)
         snapshot = dict(policy_state_dict=deepcopy(agent.policy.state_dict()),
                         prerouter_state_dict=deepcopy(agent.pre_router.state_dict()))
         validation = []
         with torch.random.fork_rng(devices=list(range(torch.cuda.device_count()))):
-            for validation_level in a.levels:
+            if a.aligned_sequence:
                 temporary = new_agent(a, cnn, artifact, saved=snapshot)
-                result, _ = episode(a, cnn, bank, initial, temporary,
-                    domains[validation_level, 'val_ids'], anchors, reference=source_validation)
-                validation.append(result)
-        accuracy = float(np.mean([row['accuracy'] for row in validation]))
-        drop = float(np.mean([row['reference']['drop_pp'] for row in validation]))
+                validation_bank = build_bank(models, artifact, a.config, initial)
+                val_sequence = validate_sequence(a, cnn, validation_bank, initial, temporary,
+                    val_streams, val_audits, val_clean, anchors)
+                accuracy, drop = val_sequence['accuracy'], val_sequence['drop_pp']
+            else:
+                for validation_level in a.levels:
+                    temporary = new_agent(a, cnn, artifact, saved=snapshot)
+                    result, _ = episode(a, cnn, bank, initial, temporary,
+                        domains[validation_level, 'val_ids'], anchors, reference=source_validation)
+                    validation.append(result)
+                accuracy = float(np.mean([row['accuracy'] for row in validation]))
+                drop = float(np.mean([row['reference']['drop_pp'] for row in validation]))
         score = accuracy - a.retention_selection_weight * max(0., (drop-a.max_reference_drop)/100)
         log.append(dict(epoch=epoch+1, domain=level, validation_accuracy=accuracy,
                         reference_drop_pp=drop, selection_score=score, train_labels=m['labels']))
+        if a.aligned_sequence:
+            log[-1].update(validation_sequence=val_sequence, train_stages=m.get('stages', []))
         print(f'Epoch {epoch+1}/{a.epochs}: validation {100*accuracy:.2f}% | source drop {drop:+.2f} pp | labels {m["labels"]}', flush=True)
         if score > best:
             best, stale = score, 0
@@ -241,6 +276,7 @@ def train(a):
                     penalty_weight=a.retention_selection_weight), **snapshot)
             if a.warm_start_enhancement:
                 saved['parent_checkpoint_sha256'] = legacy.core.file_sha256(source/'final_enhancement.pth')
+            if training_protocol is not None: saved['training_protocol'] = training_protocol
             torch.save(saved, models/'final_enhancement.pth')
         else:
             stale += 1
@@ -250,6 +286,7 @@ def train(a):
         warm_start_selector=a.warm_start_selector, warm_start_enhancement=a.warm_start_enhancement,
         selected_epoch=saved['selected_epoch'],
         parent_checkpoint_sha256=saved.get('parent_checkpoint_sha256'),
+        training_protocol=training_protocol,
         evaluation_policy='source-disjoint, pre-feedback',
         min_max='selector maximizes correctness/transfer return; selected Context minimizes current and protected-memory loss'))
     print('Saved:', models/'final_enhancement.pth', flush=True)
@@ -316,6 +353,7 @@ def evaluate(a):
         execution['retention_protocol_version'] = 2
         execution['audit_protocol'] = 'seed+8121 fixed source IDs excluded from every adaptation domain; observer-only labels'
         execution['continuation_protocol'] = 'all adaptive state retained; label budget recharged per domain'
+    if 'training_protocol' in saved: execution['training_protocol'] = saved['training_protocol']
     if a.router_refresh:
         execution['router_refresh'] = dict(version=1, batch='existing pre-update reward reference',
             targets='current bank after paid Context update', steps_per_paid_label=1,
@@ -406,6 +444,8 @@ def parser():
                    help='Reuse source enhancement Context and selector; skip Context pretraining and routing warmup.')
     p.add_argument('--joint-router', action='store_true',
                    help='Train a zero-initialized cross-route attention residual in the correctness head.')
+    p.add_argument('--aligned-sequence', action='store_true',
+                   help='Continue training with paid-only persistent TRAIN sequences and independent persistent VAL audits.')
     p.add_argument('--distill-weight', type=float, default=.2)
     p.add_argument('--context-lr', type=float)
     p.add_argument('--context-alpha', type=float)
@@ -437,6 +477,10 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.aligned_sequence and (a.command != 'train' or not a.warm_start_enhancement):
+        p.error('--aligned-sequence requires train --warm-start-enhancement.')
+    if a.aligned_sequence and (a.query_schedule != 'uniform' or a.update_policy != 'learned'):
+        p.error('Aligned sequences require uniform queries and learned update destinations.')
     if a.warm_start_enhancement and (a.command != 'train' or a.warm_start_selector):
         p.error('--warm-start-enhancement is train-only and cannot combine with --warm-start-selector.')
     if not np.isfinite(a.router_informative_weight) or a.router_informative_weight < 1:
@@ -467,6 +511,7 @@ def main(argv=None):
     a.levels = a.levels or ([0, 1, 3] if a.command == 'train' else [5, 7, 10, 12, 15, 17, 20])
     if len(a.levels) != len(set(a.levels)) or min(a.levels) < 0: p.error('Levels must be unique nonnegative integers.')
     if a.continual and len(a.levels) < 2: p.error('A continual audit requires at least two domains.')
+    if a.aligned_sequence and len(a.levels) < 2: p.error('Aligned training requires at least two TRAIN domains.')
     a.bank_utility = False; a.balanced_reward_reference = True
     if a.command == 'train':
         from dataclasses import replace

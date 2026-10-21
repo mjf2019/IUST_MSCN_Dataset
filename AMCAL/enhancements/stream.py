@@ -71,7 +71,8 @@ def probe_before(a, cnn, bank, selected, batch, agent, history, used, cap, posit
 
 
 def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', training=False,
-            warmup=False, rollout_seed=None, reference=None, same_level=False, continuation=None):
+            warmup=False, rollout_seed=None, reference=None, same_level=False, continuation=None,
+            paid_supervision=False):
     config = a.config
     seed = a.seed if rollout_seed is None else rollout_seed
     x, y, source_ids = domain
@@ -162,7 +163,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         reference_counts = None
         with timer.stage('update'):
             successor_output = None
-            if pos + 1 < n and not warmup and (paid or training):
+            if pos + 1 < n and not warmup and (paid or (training and not paid_supervision)):
                 successor_output = executor.outputs(x[pos+1:pos+2], frozen[pos+1:pos+2])
             zero = torch.zeros_like(state) if state is not None else None
             skip_next = zero
@@ -218,7 +219,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 if config.protected_reference or not training: memory.add(inputs, label)
                 if successor_output is not None:
                     successor_output = executor.refresh_output(x[pos+1:pos+2], successor_output, selected)
-            may_learn = training or (mode == 'learned' and paid)
+            may_learn = (training and not paid_supervision) or (mode == 'learned' and paid)
             if may_learn:
                 if not full: raise RuntimeError('Sparse routes cannot supervise unexecuted predictions.')
                 target = torch.tensor(correct, dtype=torch.float32, device=x.device)
@@ -265,6 +266,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         route_updates=agent.route_updates-route_updates0, td_updates=agent.td_updates-td_updates0,
         fresh_route_updates=agent.fresh_route_updates-fresh_updates0,
         fresh_route_rows=agent.fresh_route_rows-fresh_rows0,
+        supervision_protocol='paid feedback only' if paid_supervision or not training else 'dense TRAIN labels',
         oracle_all=full_correct/n if full_rows == n else None,
         oracle_legal=full_legal_correct/n if full_rows == n else None,
         oracle_on_full_rows=full_correct/full_rows if full_rows else None, oracle_full_rows=full_rows,

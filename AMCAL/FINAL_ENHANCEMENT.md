@@ -410,3 +410,63 @@ real CLI warm continuation / epoch-zero selection / save-load evaluation. The
 synthetic integration test confirms identical copied Context hashes, unchanged
 parent checkpoint, frozen CNN, hard caps and disabled refresh. The full GPU/data
 experiment has not been run in this environment.
+
+## Aligned persistent training and checkpoint selection (baseline architecture)
+
+The joint-router seed-42 trial did not improve the baseline: final audit 77.5033%
+versus 77.9039%, online 73.6903% versus 73.6238%. This next trial reuses the
+original accuracy selector, with no joint head, refresh or informative weighting.
+It changes the training/selection protocol rather than Context or selector size.
+
+`train --aligned-sequence --warm-start-enhancement --query-schedule uniform`
+uses the following protocol:
+
+- One training epoch is a complete ordered pass over TRAIN levels 0, 1, 3.
+  Contexts, optimizers, reliability, memory, selector and TD replay persist within
+  that pass. A new pass resets the bank/reference history and clears old replay;
+  the learned selector weights are retained. Initial Context pretraining and
+  correctness warmup are skipped, reusing the source checkpoint and hashes.
+- Supervision is paid-only, even in TRAIN rollouts. The online optimizer settings,
+  replay capacity, LR, epsilon, 20% per-domain cap and uniform query schedule match
+  evaluation. Pretrained source TRAIN anchors remain available as before. Min
+  Context updates and max learned destination decisions remain active.
+- VAL has a separate fixed 20% source-identity audit split (seed+8121). Audit IDs
+  are excluded from adaptation at EVERY validation level, including level 0.
+  Clean retention uses only these audit IDs. A temporary independent bank/agent
+  adapts on the remaining VAL rows in sequence and is discarded afterwards.
+- Checkpoint selection uses the mean FINAL audit accuracy across VAL domains,
+  minus the existing excess clean-drop penalty. Epoch zero remains a candidate.
+  Intermediate audit matrices, final accuracy, online accuracy, forgetting, BWT,
+  label counts and adaptation/audit source IDs are recorded. VAL observation
+  never updates the TRAIN agent or bank. TEST is never used for selection.
+
+TRAIN and VAL still use intensities 0, 1, 3; the held-out TEST sequence remains
+5, 7, 10, 12, 15, 17, 20. This matches the adaptation and selection mechanics,
+not the held-out domain distribution. Uniform queries intentionally consume the
+full 20% cap; selective query decisions remain disabled in this controlled trial.
+
+Run from the repository root in PowerShell:
+
+```powershell
+git pull origin AMCAL_final_enhancement
+./AMCAL/run_amcal_aligned_sequence.ps1 -Action All
+```
+
+The launcher performs at most two complete TRAIN passes (six domain stages),
+selects on independent VAL audits, then evaluates learned mode with seed 42.
+The fresh output is `final_enhancement_accuracy_aligned_trainseed42` under the
+same `protocol_runs` directory. To run evaluation after training separately, use
+`-Action Evaluate`. Source models/checkpoints/results are not overwritten.
+The baseline comparison is `evaluation_728b41beb74a`: final audit 77.9039%, online
+73.6238%, forgetting 2.0249 pp and 1197 labels. As with any continuation trial,
+further training and the changed protocol both contribute to the comparison.
+
+Validation: 50 CPU tests pass, including paid-only TRAIN label invariance,
+exact caps and one bank reset per multi-domain pass, exact source-identity audit
+exclusion, no effect of audit labels on learned weights or Contexts, correct
+final-audit/forgetting/BWT arithmetic, and a real baseline warm-start, aligned
+training, epoch-zero selection, serialization and persistent evaluation run.
+The CLI integration checks that saved selection uses the final audit matrix and
+that training protocol metadata survives evaluation. PowerShell is unavailable
+here; the launcher received static review. Scientific performance requires the
+full dataset/GPU run on the machine holding the checkpoints.
