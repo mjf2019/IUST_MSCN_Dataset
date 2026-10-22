@@ -18,6 +18,7 @@ from .models import BankExecutor
 from .state import build_state
 from .damage_guard import guarded_context_step
 from .counterfactual import context_step, alternatives
+from .paid_replay import paid_context_step
 
 
 def cascade_decision(agent, embedding, frozen, config, rng, gap):
@@ -133,6 +134,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             # The reference-only ablation uses the original paid-history sampler.
             source = legacy.core.TrainingProbe(x, torch.tensor(y), seed + 910033) if training else legacy.core.PaidHistory(seed + 910033)
             memory = legacy.BalancedRewardReference(source)
+    if not hasattr(memory, 'paid_replay_rng'):
+        memory.paid_replay_rng = np.random.default_rng(seed + 681923)
     executor = BankExecutor(cnn, bank, config.bank_executor)
     schedule = set(np.random.default_rng(seed + 819003).choice(n, cap, replace=False).tolist()) if a.query_schedule == 'uniform' else None
     destinations = np.random.default_rng(seed + 440003).integers(0, slots, n)
@@ -275,6 +278,9 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                         inputs, label, outputs[0][:,0], replay, batch, before)
                     guard_records.append(guard_decision)
                     committed = guard_decision['accepted']
+                elif getattr(a, 'paid_replay_mode', 'off') != 'off':
+                    paid_context_step(a, cnn, bank[selected], optimizers[selected],
+                        inputs, label, outputs[0][:,0], replay, memory.paid_replay(inputs))
                 else:
                     context_step(a, cnn, bank[selected], optimizers[selected], inputs, label, outputs[0][:,0], replay)
                 if committed:
@@ -469,3 +475,4 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     if continuation is not None:
         continuation.update(optimizers=optimizers, history=history, memory=memory, previous_count=n)
     return metrics, traces
+

@@ -104,6 +104,19 @@ class ProtectedMemory:
             retained.update(r[2] for group in self.historical for r in group)
             self.levels = {key: value for key, value in self.levels.items() if key in retained}
 
+    def paid_replay(self, current, count=2):
+        """Uniform unique paid rows only; independent RNG, current row excluded."""
+        if not hasattr(self, 'paid_replay_rng'):
+            raise RuntimeError('Paid replay RNG must be initialized by the stream.')
+        key = current.detach().cpu().contiguous().numpy().tobytes()
+        unique = {}
+        for row in [*self.recent, *(r for group in self.historical for r in group)]:
+            if row[2] != key: unique.setdefault(row[2], row)
+        rows = list(unique.values())
+        ids = self.paid_replay_rng.choice(len(rows), min(count, len(rows)), replace=False)
+        return [(rows[int(i)][0].to(current.device),
+                 torch.tensor([rows[int(i)][1]], device=current.device)) for i in ids]
+
     def router_reference(self, current, reference):
         """Separate routing-only draw: equal historical levels, then classes.
 
@@ -167,3 +180,4 @@ class ProtectedMemory:
                     counts[level] = counts.get(level, 0)+1
                 result[name+'_by_level'] = counts
         return result
+

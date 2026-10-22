@@ -502,6 +502,10 @@ def evaluate(a):
                      runtime=dict(python=sys.version.split()[0], torch=str(torch.__version__),
                          numpy=np.__version__, device=str(legacy.core.device), cuda=torch.version.cuda,
                          gpu=torch.cuda.get_device_name(legacy.core.device) if legacy.core.device.type == 'cuda' else None))
+    if a.paid_replay_mode != 'off':
+        execution['paid_replay'] = dict(version=1, mode=a.paid_replay_mode, count=2,
+            sampling='uniform without replacement; recent/historical paid rows; excludes current',
+            protected_replay='unchanged; reused for all steps', utility='whole update')
     if temporal_credit is not None:
         execution['temporal_credit'] = dict(gamma=a.gamma, connected_levels=a.connected_sequence_td,
             active_boundary_links=bool(a.continual and a.connected_sequence_td))
@@ -725,6 +729,7 @@ def parser():
     p.add_argument('--router-level-balanced-history', action='store_true', help='Balance routing-only historical replay by known acquisition level and class.')
     p.add_argument('--router-protected-replay', action='store_true', help='Mix current-bank source/historical supervision into the paid routing optimizer step.')
     p.add_argument('--routing-oracle-audit', action='store_true', help='Observer-only routing ceiling on unchanged learner trajectories.')
+    p.add_argument('--paid-replay-mode', choices=['off', 'sequential', 'batch'], default='off')
     p.add_argument('--modes', nargs='+', choices=['learned', 'random', 'random_query', 'random_query_online'], default=['learned', 'random'])
     p.add_argument('--query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--update-policy', choices=['learned', 'fixed'], default='learned')
@@ -774,6 +779,12 @@ def main(argv=None):
         p.error('Protected routing replay is an isolated single-Context learned policy evaluation ablation.')
     if a.routing_oracle_audit and a.command != 'evaluate':
         p.error('--routing-oracle-audit is evaluation-only.')
+    if a.paid_replay_mode != 'off':
+        if (a.command != 'evaluate' or a.context_count != 1 or a.modes != ['learned']
+                or a.query_schedule != 'policy' or a.update_policy != 'learned'
+                or a.context_damage_guard or a.router_protected_replay or a.routed_utility
+                or a.online_memory_ce_weight is not None):
+            p.error('Paid replay requires isolated one-Context learned policy evaluation.')
     if a.paired_query_only_training and not a.query_value_only_training:
         p.error('--paired-query-only-training requires --query-value-only-training.')
     if a.connected_sequence_td and not a.paired_query_only_training:
@@ -872,3 +883,4 @@ def main(argv=None):
 
 
 if __name__ == '__main__': main()
+
