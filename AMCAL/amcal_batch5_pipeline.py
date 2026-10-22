@@ -73,7 +73,7 @@ def fit(a, model, cnn, train, validation, context=False):
         value=losses/len(vy)
         log.append(dict(epoch=epoch+1,train_loss=total/len(y),train_accuracy=correct/len(y),
                         validation_loss=value,validation_accuracy=hits/len(vy)))
-        print(('Context' if context else 'Light CNN'),log[-1],flush=True)
+        print(('Context' if context else type(model).__name__),log[-1],flush=True)
         if value < best:
             best=value; saved=deepcopy(model.state_dict());stale=0
         else:
