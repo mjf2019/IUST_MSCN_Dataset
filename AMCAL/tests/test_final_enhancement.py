@@ -863,6 +863,20 @@ class FinalEnhancementTests(unittest.TestCase):
                 runner.main([*protected_common,'--router-protected-replay','--router-protected-weight','2',
                     '--router-normal-weight','8','--routing-oracle-audit'])
             self.assertEqual(set((cf_output/'Results').glob('evaluation_*')),before_relative)
+            # Complete repeats skip inference; missing artifacts are never considered complete.
+            repeated=[*protected_common,'--router-protected-replay','--router-protected-weight','2',
+                '--router-normal-weight','8','--routing-oracle-audit','--skip-existing-completed']
+            before_files={p: p.stat().st_mtime_ns for result in lighter for p in result.iterdir()}
+            with redirect_stdout(io.StringIO()),patch.object(runner,'episode',side_effect=AssertionError('No repeated evaluation')):
+                runner.main(repeated)
+                runner.main([*repeated,'--continual'])
+            self.assertEqual(before_files,{p:p.stat().st_mtime_ns for p in before_files})
+            incomplete=next(r for r in lighter if not json.loads((r/'execution.json').read_text())['continual'])
+            missing=incomplete/'routing_oracle_summary.csv'; saved_report=missing.read_bytes();missing.unlink()
+            with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'incomplete or mismatched'):
+                runner.main(repeated)
+            self.assertFalse(missing.exists())
+            missing.write_bytes(saved_report)
             # Zero protection is an exact full-RL baseline, with no protected forwards/updates.
             existing=set((cf_output/'Results').glob('evaluation_*'))
             with redirect_stdout(io.StringIO()):

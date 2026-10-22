@@ -399,6 +399,36 @@ def summary_row(level, mode, m):
         ResponseP99=m['response_ms_percentiles']['p99'])
 
 
+def completed_evaluation(root, execution):
+    """Only reuse an evaluation with matching metadata and all expected rows."""
+    def row_count(path, columns):
+        with path.open(encoding='utf-8-sig', newline='') as handle:
+            reader = csv.DictReader(handle)
+            if not set(columns).issubset(reader.fieldnames or []): return -1
+            return sum(1 for _ in reader)
+    try:
+        recorded = json.loads((root/'execution.json').read_text(encoding='utf-8-sig'))
+        if not isinstance(recorded, dict): return False
+        if any(recorded.get(key) != value for key, value in execution.items()): return False
+        modes, levels = execution['modes'], execution['levels']
+        if row_count(root/'combined_results.csv', ['Level','Mode','Accuracy']) != len(modes)*len(levels): return False
+        for mode in modes:
+            for level in levels:
+                metric = json.loads((root/f'{mode}_level{level}_metrics.json').read_text(encoding='utf-8-sig'))
+                if metric['mode'] != mode or metric['level'] != level or metric['samples'] <= 0: return False
+                if not 0 <= metric['labels'] <= metric['label_cap']: return False
+                if row_count(root/f'{mode}_level{level}_trace.csv', ['source_row','prediction','queried']) != metric['samples']: return False
+        if execution['continual']:
+            if row_count(root/'sequential_summary.csv', ['Mode','FinalAudit']) != len(modes): return False
+            expected = len(modes)*(len(levels)+1)**2
+            if row_count(root/'sequential_audit_matrix.csv', ['Mode','Stage','AuditLevel','Accuracy']) != expected: return False
+        if 'routing_oracle_audit' in execution:
+            if row_count(root/'routing_oracle_summary.csv', ['Mode','MeanStreamRoutingOracle']) != len(modes): return False
+        return True
+    except (OSError, ValueError, KeyError, TypeError, csv.Error):
+        return False
+
+
 def evaluate(a):
     models = a.output / 'Models'
     saved = torch.load(models/'final_enhancement.pth', map_location='cpu', weights_only=False)
@@ -544,7 +574,16 @@ def evaluate(a):
         execution['router_objective_version'] = 1
     run_id = hashlib.sha256(json.dumps(execution, sort_keys=True).encode()).hexdigest()[:12]
     root = a.output / 'Results' / ('evaluation_'+run_id)
-    if root.exists(): raise ValueError('This exact evaluation already exists; change --seed or use a fresh run copy.')
+    if root.exists():
+        if a.skip_existing_completed and completed_evaluation(root, execution):
+            print(f'Skipping completed evaluation: {root}', flush=True)
+            return
+        if a.skip_existing_completed:
+            raise ValueError(f'Existing evaluation is incomplete or mismatched: {root}. '
+                'Preserved without overwriting; use --evaluation-tag retry1 for a fresh attempt with the same seed.')
+        raise ValueError(f'This exact evaluation already exists: {root}; use --skip-existing-completed '
+            'to reuse complete results, or --evaluation-tag retry1 for a fresh same-seed attempt.')
+
     root.mkdir(parents=True, exist_ok=False)
     rows = []; audit_rows = []; forgetting_rows = []; oracle_summaries = []
     for mode in a.modes:
@@ -690,6 +729,7 @@ def parser():
                    help='Single-Context uniform-feedback evaluation: override protected-replay CE weight online only.')
     p.add_argument('--continual', action='store_true')
     p.add_argument('--audit-fraction', type=float, default=.2)
+    p.add_argument('--skip-existing-completed', action='store_true', help='Skip only matching complete evaluations; preserve and reject partial results.')
     p.add_argument('--evaluation-tag', default='', help='Unique repeat label for identical-trajectory timing repetitions.')
     p.add_argument('--router-refresh', action='store_true',
                    help='After paid feedback, recalibrate routing on existing references with current-bank targets.')

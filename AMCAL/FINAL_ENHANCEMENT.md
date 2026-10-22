@@ -1708,3 +1708,30 @@ choice before reporting a final held-out estimate.
 CPU tests cover relative normalization, invalid/zero totals, endpoints, unchanged
 80/20 loss, equivalent ratio fingerprints, exact baseline traces/weights at zero
 protection and real CLI protocols. PowerShell is reviewed statically.
+
+## Resume completed weight evaluations safely
+
+The protected-router PowerShell launcher now passes `--skip-existing-completed`.
+Repeating the same weights/seed skips a complete independent evaluation and then
+continues to the sequential evaluation (or skips it too if complete). The flag
+does not change result fingerprints or learner behavior. Other launchers retain
+their existing strict duplicate handling unless they explicitly pass this flag.
+
+A preexisting directory is not enough: reuse requires matching execution metadata,
+valid per-level metrics, complete trace row counts, combined results and, when
+requested, all sequential and oracle reports. The completion metadata is written
+last by the evaluator. Missing, malformed or truncated artifacts are rejected and
+preserved. No result is overwritten or deleted.
+
+For a partial attempt, keep seed 42 and use a fresh tag:
+
+```powershell
+.\AMCAL\run_amcal_paironly_protected_router.ps1 -ProtectedWeight 0.05 -NormalWeight 0.95 -Seed 42 -EvaluationTag retry1
+```
+
+Use `-EvaluationSet Sequential` if only sequential evaluation needs a fresh attempt,
+or `Independent` for the independent case. Repeating the same tagged command can
+also skip its complete outputs. Do not run duplicate identical settings concurrently.
+CPU checks verify complete repeats do not call the episode or rewrite files;
+missing oracle reports, mismatched metadata and truncated traces are not reused.
+PowerShell is reviewed statically.
