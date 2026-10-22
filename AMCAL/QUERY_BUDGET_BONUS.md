@@ -44,3 +44,13 @@ LR and memory size/sampling. This scales the existing protected replay loss,
 not the routing replay loss. Evaluate accuracy and source retention together.
 ReplayWeight=-1 (default) omits the override and preserves earlier commands.
 Only syntax checked; no execution tests run.
+
+Next experiment: keep Bonus=1, replay .1 and batch5, but halve only online
+Context LR from .0005 to .00025. Reuse the same checkpoint, no retraining:
+
+```powershell
+.\AMCAL\run_amcal_ps_query_budget.ps1 -Bonus 1 -ReplayWeight 0.1 -ContextLR 0.00025 -Seed 42
+```
+
+Tag: budget_bonus_1_replay_0.1_lr_0.00025. The default ContextLR remains .0005,
+so previous commands/tags are preserved. No execution tests run.
