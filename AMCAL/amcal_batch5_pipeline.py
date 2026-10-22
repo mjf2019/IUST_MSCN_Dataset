@@ -40,7 +40,9 @@ def fit(a, model, cnn, train, validation, context=False):
     criterion=nn.CrossEntropyLoss(weight=weights, label_smoothing=0.0 if context else .05)
     optimizer=torch.optim.AdamW(model.parameters(),lr=.0003 if context else .001,
                                weight_decay=.0001 if context else .01)
-    loader=DataLoader(TensorDataset(x,y),batch_size=32,shuffle=True)
+    batch_size=min(32,len(y))
+    while batch_size>2 and len(y)%batch_size==1: batch_size-=1
+    loader=DataLoader(TensorDataset(x,y),batch_size=batch_size,shuffle=True)
     val_loader=DataLoader(TensorDataset(vx,vy),batch_size=32)
     best=float('inf'); stale=0; saved=None; log=[]
     max_epochs=a.context_epochs if context else a.cnn_epochs
