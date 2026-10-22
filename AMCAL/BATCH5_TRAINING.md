@@ -174,3 +174,13 @@ Other settings match the main batch5 recipe. TEST now includes 1 and 3:
 Output root: clean0_original_iat_paironly_batch5_trainseed42. Original runs stay
 unchanged. Input attack hashes in the run plan are integrity checks, not training
 examples. No execution tests run; Python syntax only.
+
+Clean0 aligned sequence fix: aligned training permits the one-domain [0] case.
+Its VAL protocol still separates adaptation and observer IDs and selects on
+final held-out clean-0 accuracy/drop. Cross-domain Forgetting/BWT do not exist
+with one domain: numerical diagnostics use 0 and cross_domain_retention_defined
+is false, rather than producing NaN from an empty mean. Multi-domain TEST
+retention metrics remain unchanged. Re-run the same CleanOnly command: completed
+source/structured/accuracy stages are verified and skipped. The parser failure
+occurred before counterfactual output creation, so no deletion is required.
+No execution tests run; Python syntax checked.

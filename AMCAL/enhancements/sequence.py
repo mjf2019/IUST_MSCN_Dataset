@@ -73,9 +73,9 @@ def validate_sequence(a, cnn, bank, initial, agent, streams, audits, clean, anch
         stages.append(dict(level=level, labels=m['labels'], cap=m['label_cap'], accuracy=m['accuracy']))
         observe_stage(continuation['history'], m['labels'], m['label_cap'], m['samples'])
     scores = np.asarray(matrix); k = len(stages)
-    forgetting = float(np.mean([scores[j+1:, j].max()-scores[-1, j] for j in range(k-1)]))
-    bwt = float(np.mean([scores[-1, j]-scores[j+1, j] for j in range(k-1)]))
+    forgetting = float(np.mean([scores[j+1:, j].max()-scores[-1, j] for j in range(k-1)])) if k>1 else 0.
+    bwt = float(np.mean([scores[-1, j]-scores[j+1, j] for j in range(k-1)])) if k>1 else 0.
     return dict(accuracy=float(scores[-1].mean()), drop_pp=100*(clean_scores[0]-clean_scores[-1]),
         online_accuracy=float(np.mean([r['accuracy'] for r in stages])), forgetting_pp=100*forgetting,
-        bwt_pp=100*bwt, labels=sum(r['labels'] for r in stages), stages=stages,
+        bwt_pp=100*bwt, cross_domain_retention_defined=k>1, labels=sum(r['labels'] for r in stages), stages=stages,
         audit_accuracy_by_stage=scores.tolist(), clean_accuracy_by_stage=clean_scores)

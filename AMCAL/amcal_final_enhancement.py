@@ -914,7 +914,8 @@ def main(argv=None):
     a.levels = a.levels or ([0, 1, 3] if a.command in ('train','calibrate-utility') else [5, 7, 10, 12, 15, 17, 20])
     if len(a.levels) != len(set(a.levels)) or min(a.levels) < 0: p.error('Levels must be unique nonnegative integers.')
     if a.continual and len(a.levels) < 2: p.error('A continual audit requires at least two domains.')
-    if a.aligned_sequence and len(a.levels) < 2: p.error('Aligned training requires at least two TRAIN domains.')
+    if a.aligned_sequence and len(a.levels) < 2 and a.levels != [0]:
+        p.error('Aligned training requires multiple TRAIN domains, or the explicit clean-only level [0].')
     a.bank_utility = False; a.balanced_reward_reference = True
     if a.command == 'calibrate-utility':
         calibrate_utility(a)
