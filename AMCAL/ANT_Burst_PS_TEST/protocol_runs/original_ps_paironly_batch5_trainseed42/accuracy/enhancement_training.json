@@ -1,0 +1,152 @@
+{
+  "config": {
+    "profile": "accuracy",
+    "architecture": "legacy",
+    "joint_router": false,
+    "rank_weight": 0.2,
+    "paired_weight": 0.5,
+    "route_prior_weight": 0.001,
+    "route_lr_online": 0.0003,
+    "version_half_life": 8.0,
+    "source_capacity": 64,
+    "historical_capacity": 64,
+    "recent_capacity": 128,
+    "reference_size": 32,
+    "memory_replay_size": 8,
+    "memory_ce_weight": 0.1,
+    "residual_weight": 0.001,
+    "damage_limit": 0.02,
+    "damage_weight": 1.0,
+    "protected_reference": true,
+    "routed_utility": false,
+    "token_width": 32,
+    "transformer_layers": 2,
+    "feedforward_width": 128,
+    "residual_bound": 2.0,
+    "bank_executor": "sequential",
+    "cascade": false,
+    "cascade_confidence": 0.8,
+    "cascade_margin": 0.15,
+    "cascade_audit_fraction": 0.05,
+    "cascade_max_gap": 32,
+    "compute_cost": 0.02,
+    "prerouter_weight": 0.2
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "domain": 0,
+      "validation_accuracy": 0.7621705426356589,
+      "reference_drop_pp": -1.1472868217054326,
+      "selection_score": 0.7621705426356589,
+      "train_labels": 646
+    },
+    {
+      "epoch": 2,
+      "domain": 1,
+      "validation_accuracy": 0.7609302325581395,
+      "reference_drop_pp": -0.9302325581395395,
+      "selection_score": 0.7609302325581395,
+      "train_labels": 646
+    },
+    {
+      "epoch": 3,
+      "domain": 3,
+      "validation_accuracy": 0.7631007751937985,
+      "reference_drop_pp": -1.5193798449612366,
+      "selection_score": 0.7631007751937985,
+      "train_labels": 646
+    },
+    {
+      "epoch": 4,
+      "domain": 0,
+      "validation_accuracy": 0.762170542635659,
+      "reference_drop_pp": -0.46511627906976605,
+      "selection_score": 0.762170542635659,
+      "train_labels": 646
+    },
+    {
+      "epoch": 5,
+      "domain": 1,
+      "validation_accuracy": 0.7631007751937985,
+      "reference_drop_pp": -1.3023255813953472,
+      "selection_score": 0.7631007751937985,
+      "train_labels": 646
+    },
+    {
+      "epoch": 6,
+      "domain": 3,
+      "validation_accuracy": 0.7627906976744185,
+      "reference_drop_pp": 0.4341085271317824,
+      "selection_score": 0.7627906976744185,
+      "train_labels": 646
+    },
+    {
+      "epoch": 7,
+      "domain": 0,
+      "validation_accuracy": 0.7634108527131783,
+      "reference_drop_pp": -0.5891472868217007,
+      "selection_score": 0.7634108527131783,
+      "train_labels": 646
+    },
+    {
+      "epoch": 8,
+      "domain": 1,
+      "validation_accuracy": 0.7624806201550388,
+      "reference_drop_pp": -1.1472868217054288,
+      "selection_score": 0.7624806201550388,
+      "train_labels": 646
+    },
+    {
+      "epoch": 9,
+      "domain": 3,
+      "validation_accuracy": 0.7662015503875969,
+      "reference_drop_pp": -0.9302325581395395,
+      "selection_score": 0.7662015503875969,
+      "train_labels": 646
+    },
+    {
+      "epoch": 10,
+      "domain": 0,
+      "validation_accuracy": 0.7618604651162791,
+      "reference_drop_pp": -0.3410852713178277,
+      "selection_score": 0.7618604651162791,
+      "train_labels": 646
+    },
+    {
+      "epoch": 11,
+      "domain": 1,
+      "validation_accuracy": 0.7649612403100775,
+      "reference_drop_pp": -0.06201550387597473,
+      "selection_score": 0.7649612403100775,
+      "train_labels": 646
+    },
+    {
+      "epoch": 12,
+      "domain": 3,
+      "validation_accuracy": 0.7705426356589147,
+      "reference_drop_pp": -0.12403100775193836,
+      "selection_score": 0.7705426356589147,
+      "train_labels": 646
+    }
+  ],
+  "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\original_ps_paironly_batch5_trainseed42\\structured",
+  "model_hashes": {
+    "initial_cnn_model.pth": "c41b28124042413a9aa64614f9dd188eda889d6755fc777c488070015977f00d",
+    "adversarial_best_context.pth": "0319adfdbe26e456fd32e48cb7cd26afcd7e1d0fa899c8c0187a0f19086f6abb",
+    "protocol_preprocessing.joblib": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663",
+    "enhanced_context.pth": "6d54db0c5b5b654810ac2bc028837ac844cc262211f5cfdcbc4b80abe1dfa9b0"
+  },
+  "training_domains": {
+    "0": "0232a51c02cc7b91e073df3ec9c01f59db0b4824a5c9094b9c6ee126161f6c9b",
+    "1": "ea6002429f709aa139baf0766715f7616a3635c31d5a32ecba5e5d96f2b4e891",
+    "3": "4f9171df87f13230b5d8cc5efb3b2c7bd9b1a6015ee3fc4356d5fcf0f50f9fb7"
+  },
+  "warm_start_selector": true,
+  "warm_start_enhancement": false,
+  "selected_epoch": 12,
+  "parent_checkpoint_sha256": null,
+  "training_protocol": null,
+  "evaluation_policy": "source-disjoint, pre-feedback",
+  "min_max": "selector maximizes correctness/transfer return; selected Context minimizes current and protected-memory loss"
+}
