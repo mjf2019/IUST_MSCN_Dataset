@@ -1,5 +1,6 @@
 param(
-    [ValidateRange(0.000001,1.0)][double]$ProtectedWeight = 0.5,
+    [ValidateRange(0.0,1000000.0)][double]$ProtectedWeight = 0.5,
+    [ValidateRange(0.0,1000000.0)][Nullable[double]]$NormalWeight = $null,
     [ValidateSet('Both','Independent','Sequential')][string]$EvaluationSet = 'Both',
     [int]$Seed = 42,
     [string]$OutputRun = 'AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_query_credit_paironly_trainseed42',
@@ -21,6 +22,9 @@ try {
         '--router-protected-weight',$ProtectedWeight.ToString('G',[System.Globalization.CultureInfo]::InvariantCulture),
         '--seed',"$Seed",'--device',$Device,'--eval-epsilon','0.05',
         '--budget-fraction','0.2','--context-lr','0.0005')
+    if ($PSBoundParameters.ContainsKey('NormalWeight')) {
+        $common += @('--router-normal-weight',([double]$NormalWeight).ToString('G',[System.Globalization.CultureInfo]::InvariantCulture))
+    }
     if ($EvaluationSet -in @('Both','Independent')) {
         Invoke-AMCAL -Arguments $common
     }

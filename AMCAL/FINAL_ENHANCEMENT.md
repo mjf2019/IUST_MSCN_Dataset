@@ -1661,3 +1661,50 @@ git add -f -- "$run/Results"
 git commit -m "Add PairOnly protected routing replay weight 0.2 seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## User-configurable protected and normal routing weights
+
+```powershell
+.\AMCAL\run_amcal_paironly_protected_router.ps1 -ProtectedWeight 0.3 -NormalWeight 0.7 -Seed 42
+```
+
+Both are relative nonnegative weights, normalized before mixing losses. Thus
+`-ProtectedWeight 2 -NormalWeight 8` and `0.2 / 0.8` are the same 20% protected
+experiment, with the same result fingerprint. The total must be positive. If
+`-NormalWeight` is omitted, it defaults to `1 - ProtectedWeight`; the protected
+weight must then lie in [0,1]. The old no-argument default remains 50% / 50%.
+The original routing prior is added after the normalized mixture, so relative
+weight magnitude does not change its scale or the effective routing learning rate.
+
+Zero protected weight disables protected batch construction and extra protected
+forwards, giving the exact ordinary full-RL trajectory while recording a separate
+zero-weight control. Zero normal weight trains routing from protected examples
+only; paid Context updates and ordinary TD still run. Existing sampling, Context
+adaptation, RL queries, epsilon, caps, seed and oracle reports are unchanged.
+
+Run untested weights sequentially with one seed:
+
+```powershell
+foreach ($p in @(0.05, 0.1, 0.3, 0.4, 0.7)) {
+    .\AMCAL\run_amcal_paironly_protected_router.ps1 -ProtectedWeight $p -NormalWeight (1-$p) -Seed 42
+}
+```
+
+Each weight runs exactly two evaluations by default. Add
+`-EvaluationSet Independent` or `Sequential` to test one protocol first. Already
+completed equivalent settings are rejected instead of overwritten; weights 0.2
+and 0.5 have already been run. Do not include them again in a batch unless using
+a separate output copy. Both weights are serialized to CLI with invariant culture;
+execution metadata records the effective protected fraction (0.5 is the existing
+legacy metadata default) and the mixture text, so different ratios remain distinct.
+Metrics also record the normalized protected weight. Results stay under the same
+PairOnly `Results/evaluation_*` directories and use the same push command.
+
+Seed-42 20% results: independent accuracy 71.05578%, labels 1116; sequential online
+63.86163%, final audit 71.62884%, forgetting 2.49221 pp, clean drop 5.31221 pp,
+labels 375. These are exploratory TEST comparisons; use VAL for a final weight
+choice before reporting a final held-out estimate.
+
+CPU tests cover relative normalization, invalid/zero totals, endpoints, unchanged
+80/20 loss, equivalent ratio fingerprints, exact baseline traces/weights at zero
+protection and real CLI protocols. PowerShell is reviewed statically.

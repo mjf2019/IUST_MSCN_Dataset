@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 import torch
 import test_final_enhancement as fixtures
-from enhancements.agent import EnhancementAgent, routing_objective
+from enhancements.agent import EnhancementAgent, routing_objective, protected_routing_fraction
 from enhancements.stream import episode
 
 
@@ -34,6 +34,32 @@ class ProtectedRoutingTests(unittest.TestCase):
             if not k.startswith('correctness.'):self.assertTrue(torch.equal(v,agent.policy.state_dict()[k]),k)
         for k,v in target.items():self.assertTrue(torch.equal(v,agent.target.state_dict()[k]))
         self.assertTrue(any(not torch.equal(v,agent.policy.state_dict()[k]) for k,v in before.items() if k.startswith('correctness.')))
+
+    def test_relative_weights_and_invalid_combinations(self):
+        self.assertEqual(protected_routing_fraction(2,8),.2)
+        self.assertEqual(protected_routing_fraction(.2,.8),.2)
+        self.assertEqual(protected_routing_fraction(.2),.2)
+        self.assertEqual(protected_routing_fraction(0,1),0.)
+        self.assertEqual(protected_routing_fraction(1,0),1.)
+        self.assertEqual(protected_routing_fraction(2,2),.5)
+        for protected,normal in ((0,0),(-1,1),(1,-1),(float('nan'),1),(1,float('inf')),(2,None)):
+            with self.assertRaises(ValueError):protected_routing_fraction(protected,normal)
+
+    def test_zero_protected_weight_is_exact_baseline(self):
+        cnn,bank,initial,a,domain,anchors,agent=self.setup_fixture()
+        original=deepcopy(agent.policy.state_dict())
+        base_bank=deepcopy(bank)
+        base=EnhancementAgent(34,12,2,torch.device('cpu'),42,a.config,slots=1,policy_state=original)
+        m,t=episode(a,cnn,base_bank,initial,base,domain,anchors)
+        a.router_protected_replay=True;a.router_protected_weight=0.
+        with patch('enhancements.stream.legacy.base_cache',wraps=fixtures.legacy.base_cache) as cache:
+            actual,trace=episode(a,cnn,bank,initial,agent,domain,anchors)
+        self.assertEqual([(r['action'],r['prediction']) for r in t],[(r['action'],r['prediction']) for r in trace])
+        self.assertEqual(actual['protected_routing_replay']['updates'],0)
+        self.assertEqual(actual['protected_routing_replay']['rows'],0)
+        for k,v in base.policy.state_dict().items():self.assertTrue(torch.equal(v,agent.policy.state_dict()[k]))
+        for k,v in base.target.state_dict().items():self.assertTrue(torch.equal(v,agent.target.state_dict()[k]))
+        for k,v in base_bank[0].state_dict().items():self.assertTrue(torch.equal(v,bank[0].state_dict()[k]))
 
     def test_twenty_percent_is_the_actual_joint_loss(self):
         *_,agent=self.setup_fixture()

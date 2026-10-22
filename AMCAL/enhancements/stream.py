@@ -86,6 +86,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             or config.cascade or config.routed_utility):
         raise ValueError('random_query requires single-Context policy-schedule evaluation without cascade/routed utility.')
     protected_routing = getattr(a, 'router_protected_replay', False)
+    protected_active = protected_routing and getattr(a, 'router_protected_weight', .5) > 0
     if protected_routing and (training or warmup or mode != 'learned' or len(bank) != 1
             or not config.protected_reference or config.routed_utility or config.cascade):
         raise ValueError('Protected routing replay requires single-Context learned evaluation with local protected memory.')
@@ -249,7 +250,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 # Keep reliability features from before this label was observed.
                 # The fresh batch reuses the reward reference; no extra sampling
                 # or label storage can change a fixed-destination bank trajectory.
-                fresh_history = (deepcopy(history) if (getattr(a, 'router_refresh', False) or protected_routing)
+                fresh_history = (deepcopy(history) if (getattr(a, 'router_refresh', False) or protected_active)
                                  and mode == 'learned' and batch is not None else None)
                 if config.protected_reference:
                     before, route_weight = probe_before(a, cnn, bank, selected, batch, agent, history, used, cap, pos, n)
@@ -312,7 +313,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 if not full: raise RuntimeError('Sparse routes cannot supervise unexecuted predictions.')
                 target = torch.tensor(correct, dtype=torch.float32, device=x.device)
                 protected = None
-                if protected_routing and paid and batch is not None:
+                if protected_active and paid and batch is not None:
                     old_ids = np.flatnonzero(batch.segments != 2)
                     if len(old_ids):
                         old_at = torch.as_tensor(old_ids, device=x.device)

@@ -11,6 +11,17 @@ from .utility_normalization import relative_utility
 from .state import masked_q
 
 
+def protected_routing_fraction(protected, normal=None):
+    """Normalize nonnegative relative weights; one weight implies its complement."""
+    protected = float(protected)
+    normal = 1-protected if normal is None else float(normal)
+    total = protected+normal
+    if (not np.isfinite(protected) or not np.isfinite(normal) or not np.isfinite(total)
+            or protected < 0 or normal < 0 or total <= 0):
+        raise ValueError('Routing weights must be finite, nonnegative, with positive total; a single weight must be in [0,1].')
+    return protected/total
+
+
 class JointRouteComparison(nn.Module):
     """Shared cross-route attention; no Context-slot positional bias.
 

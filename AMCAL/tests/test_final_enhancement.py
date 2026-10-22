@@ -857,6 +857,25 @@ class FinalEnhancementTests(unittest.TestCase):
                 execution=json.loads((result/'execution.json').read_text())
                 self.assertNotIn('protected_fraction',execution['router_protected_replay'])
             self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
+            # Relative weights 2:8 resolve to the existing 20:80 fingerprint.
+            before_relative=set((cf_output/'Results').glob('evaluation_*'))
+            with redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'already exists'):
+                runner.main([*protected_common,'--router-protected-replay','--router-protected-weight','2',
+                    '--router-normal-weight','8','--routing-oracle-audit'])
+            self.assertEqual(set((cf_output/'Results').glob('evaluation_*')),before_relative)
+            # Zero protection is an exact full-RL baseline, with no protected forwards/updates.
+            existing=set((cf_output/'Results').glob('evaluation_*'))
+            with redirect_stdout(io.StringIO()):
+                runner.main([*protected_common,'--router-protected-replay','--router-protected-weight','0',
+                    '--router-normal-weight','1','--routing-oracle-audit'])
+            zero=(set((cf_output/'Results').glob('evaluation_*'))-existing).pop()
+            baseline=next(r for r in oracle_results if not json.loads((r/'execution.json').read_text())['continual'])
+            for level in (5,7):
+                pd.testing.assert_frame_equal(pd.read_csv(zero/f'learned_level{level}_trace.csv'),
+                    pd.read_csv(baseline/f'learned_level{level}_trace.csv'))
+                measured=json.loads((zero/f'learned_level{level}_metrics.json').read_text())
+                self.assertEqual(measured['protected_routing_replay']['updates'],0)
+            self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
             # Expanded banks: each Context count runs both protocols, same checkpoint.
             existing=set((cf_output/'Results').glob('evaluation_*'))
             for count in (4,5):
