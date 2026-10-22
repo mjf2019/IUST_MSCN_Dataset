@@ -54,3 +54,15 @@ Context LR from .0005 to .00025. Reuse the same checkpoint, no retraining:
 
 Tag: budget_bonus_1_replay_0.1_lr_0.00025. The default ContextLR remains .0005,
 so previous commands/tags are preserved. No execution tests run.
+
+IAT evaluation on the existing original-CNN batch5 checkpoint is also supported:
+
+```powershell
+.\AMCAL\run_amcal_ps_query_budget.ps1 -Dataset IAT -Bonus 1 -ReplayWeight 0.1 -ContextLR 0.00025 -Seed 42
+```
+
+Dataset defaults to PS to preserve existing commands. IAT uses
+paironly_batch5_trainseed42/paironly_batch5 and its original CNN checkpoint;
+no architecture/model training change. Same independent/continual levels
+5,7,10,12,15,17,20 and same evaluation tag; no synthetic0 checkpoint is loaded.
+No execution tests run.
