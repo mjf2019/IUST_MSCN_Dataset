@@ -1803,3 +1803,76 @@ git add -f -- "$run/Results"
 git commit -m "Add PairOnly 40 60 level-balanced historical routing replay seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## Main PairOnly method on Burst_PS (seed 42)
+
+```powershell
+.\AMCAL\run_amcal_paironly_burst_ps.ps1 -Action All -Seed 42
+```
+
+This ports the selected unprotected-ROUTER PairOnly recipe to PS. It uses PS-only
+preprocessing, frozen CNN, initial Context and original structured selector from
+`AMCAL/ANT_Burst_PS_TEST/protocol_runs/structured_bank3_balancedref_lr0p0005_seed42`.
+The source `Models` must exist locally (large source models are not in Git).
+Default PS domains:
+`AMCAL/ANT_Burst_PS_TEST/Dataset_official_v1/AdvBurst_FTSC-PS`.
+Override `-SourceRun` / `-BurstDir` only with the appropriate matching PS inputs.
+IAT weights/preprocessing are not transferred. No automatic downloads are started.
+
+The fixed recipe has THREE supplementary training stages, not merely evaluation:
+
+1. Accuracy enhancement: original PS structured-selector warm start, TRAIN 0/1/3,
+   12 epochs maximum, patience 5 and 3 warmup episodes; three Contexts, matching the
+   inherited enhancement stage used before the IAT PairOnly specialization.
+2. Counterfactual utility: warm-start that PS enhancement; 3 paid-only persistent
+   passes over TRAIN 0/1/3, uniform feedback and protected Context memory. As in the
+   existing recipe, the update-value head alone fits isolated Context alternatives.
+3. PairOnly: warm-start the PS counterfactual checkpoint; one Context, policy
+   feedback, paired-query-only fitting of update_value, 12 epochs maximum and
+   patience 5. Other selector heads are frozen only during this specialization.
+
+The source PS CNN/initial Context are reused, not trained from IAT or reinitialized.
+Existing TRAIN/VAL split IDs, per-stage VAL selection and epoch-zero handling are
+inherited from the unchanged training code. No TEST score selects a checkpoint.
+The pipeline records selected training outcomes instead of assuming new fitting
+won over the inherited checkpoint.
+
+Final evaluation uses FULL online RL (prediction routing and label requests),
+one Context, gamma .95, epsilon .05, 20% cap and Context LR .0005. No protected
+routing replay, level-balanced routing or random-query ablation is enabled.
+Protected memory/Context replay remain part of PairOnly. Exactly TWO final
+protocols run: independent TEST levels 5/7/10/12/15/17/20 and persistent sequential
+forgetting, with observer-only routing oracle reports in the same passes.
+
+Output root:
+`AMCAL/ANT_Burst_PS_TEST/protocol_runs/paironly_pipeline_seed42`.
+Subdirectories `accuracy`, `counterfactual`, `paironly` keep training stages apart;
+final reports are under `paironly/Results`. `pipeline_plan.json` records the fixed
+arguments, PS source hashes, domain hashes and source-partition counts. Preflight
+validates all required domains/alignment and rejects source-data mismatches BEFORE
+creating a training output. The source partition remains disjoint TRAIN/VAL/TEST.
+
+Each successful training stage writes `pipeline_stage_complete.json` with input,
+checkpoint and training-log hashes. Repeating the same command skips only verified
+complete stages and complete final evaluations. Partial/mismatched training is
+preserved and rejected; use a fresh `-OutputRoot` rather than overwriting it.
+`-Action Train` runs the three training stages only; `Evaluate` runs the final
+independent test only; `Audit` runs the final sequential test only. Evaluation-only
+validates all saved stage provenance and does not initiate training. For a partial
+final evaluation use `-EvaluationTag retry1`. If training epoch knobs were changed,
+repeat those same knobs on resume so the saved recipe remains identical.
+
+The CPU integration test runs the actual three-stage training chain and both final
+protocols on a tiny aligned synthetic fixture; it verifies one-Context paired-only
+specialization, PS source provenance, absence of protected ROUTER flags, TEST-ID
+isolation, budget caps, frozen CNN, oracle reports and no retraining/inference on
+a complete repeat. A separate test rejects a mismatched clean source before any
+output is created. These are implementation checks, not PS scientific results.
+PowerShell is reviewed statically; full PS training/evaluation runs on the user GPU.
+
+```powershell
+$run='AMCAL/ANT_Burst_PS_TEST/protocol_runs/paironly_pipeline_seed42'
+git add -f -- "$run/pipeline_plan.json" "$run/*/enhancement_training.json" "$run/*/pipeline_stage_complete.json" "$run/paironly/Results"
+git commit -m "Add main PairOnly Burst PS training and both evaluations seed 42"
+git push origin AMCAL_final_enhancement
+```
