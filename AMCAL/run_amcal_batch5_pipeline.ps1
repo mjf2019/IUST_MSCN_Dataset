@@ -3,6 +3,7 @@ param(
     [ValidateSet('All','Train','Evaluate','Audit')][string]$Action = 'All',
     [int]$Seed = 42,
     [switch]$LightCNN,
+    [switch]$OriginalCNN,
     [double]$Bonus = 0,
     [double]$OnlineContextLR = 0.0005,
     [double]$ReplayWeight = -1,
@@ -19,6 +20,7 @@ Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
     $runArgs = @('--dataset',$Dataset,'--action',$Action,'--seed',"$Seed",'--device',$Device,
         '--batch-size',"$BatchSize",'--epochs',"$Epochs",'--patience',"$Patience")
+    if ($OriginalCNN) { $runArgs += '--original-cnn' }
     if ($LightCNN) { $runArgs += '--light-cnn' }
     $runArgs += @('--query-budget-bonus',$Bonus.ToString([Globalization.CultureInfo]::InvariantCulture),'--online-context-lr',$OnlineContextLR.ToString('0.##########',[Globalization.CultureInfo]::InvariantCulture))
     if ($ReplayWeight -ge 0) { $runArgs += @('--replay-weight',$ReplayWeight.ToString([Globalization.CultureInfo]::InvariantCulture)) }

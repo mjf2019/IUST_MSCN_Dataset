@@ -92,25 +92,27 @@ def fresh_ps_source(a, output):
     a.classes=list(artifact['label_encoder'].classes_)
     train=combined(a,artifact,'train_ids');val=combined(a,artifact,'val_ids')
     width=len(artifact['feature_names']);classes=len(a.classes)
-    cnn=LightCNN1D(width,classes).to(core.device)
+    use_original=getattr(a,'original_cnn',False)
+    architecture='legacy' if use_original else ARCHITECTURE
+    cnn=(core.CNN1D(width,classes) if use_original else LightCNN1D(width,classes)).to(core.device)
     cnn_log=fit(a,cnn,None,train,val)
     cnn.eval();cnn.requires_grad_(False)
     preprocessing=digest(models/'protocol_preprocessing.joblib')
     original=core.CNN1D(width,classes)
     old_count=sum(p.numel() for p in original.parameters())
     new_count=sum(p.numel() for p in cnn.parameters())
-    if new_count>=old_count:raise RuntimeError('Light CNN is not smaller than original.')
-    torch.save(dict(architecture=ARCHITECTURE,preprocessing_sha256=preprocessing,
+    if not use_original and new_count>=old_count:raise RuntimeError('Light CNN is not smaller than original.')
+    torch.save(dict(architecture=architecture,preprocessing_sha256=preprocessing,
         model_state_dict=cnn.state_dict(),input_length=width,num_classes=classes),models/'initial_cnn_model.pth')
     context=core.ContextAwareNetwork(width).to(core.device)
     context_log=fit(a,context,cnn,train,val,context=True)
     torch.save(dict(preprocessing_sha256=preprocessing,context_model_state_dict=context.state_dict()),
                models/'adversarial_best_context.pth')
     # Domain provenance required by the unchanged structured-selector trainer.
-    torch.save(dict(training_perturbations=TRAIN,scope='fresh light PS source; no imported selector weights'),
+    torch.save(dict(training_perturbations=TRAIN,scope='fresh source CNN/Context; no imported selector weights'),
                models/'adversarial_best_dqn.pth')
-    runner.write_json(output/'source_training.json',dict(architecture=ARCHITECTURE,
-        original_parameters=old_count,light_parameters=new_count,
+    runner.write_json(output/'source_training.json',dict(architecture=architecture,
+        original_parameters=old_count,trained_parameters=new_count,
         source_partition_sha256=preprocessing,cnn=cnn_log,context=context_log,
         training_levels=TRAIN,selection='validation loss only; no TEST scoring',
         optimizer='AdamW; CNN weight decay .01, dropout, label smoothing .05; Context weight decay .0001',
@@ -200,7 +202,7 @@ def execute(a,stage):
 def frozen_comparison(a, final):
     """Post-training observer only; never used for selection or adaptation."""
     core=runner.legacy.core
-    models=[('original',a.source_run/'Models'),('light',final/'Models')]
+    models=[('original',a.source_run/'Models'),('retrained_original' if getattr(a,'original_cnn',False) else 'light',final/'Models')]
     rows=[]
     from sklearn.metrics import f1_score
     for name,path in models:
@@ -219,6 +221,7 @@ def main(argv=None):
     p.add_argument('--batch-size',type=int,choices=[3,5,7],default=5)
     p.add_argument('--dataset',choices=['IAT','PS'],required=True)
     p.add_argument('--action',choices=['All','Train','Evaluate','Audit'],default='All')
+    p.add_argument('--original-cnn',action='store_true',help='Explicitly train original CNN architecture from scratch for PS.')
     p.add_argument('--light-cnn',action='store_true',help='Explicitly train the PS LightCNN architecture from scratch for IAT as well.')
     p.add_argument('--query-budget-bonus',type=float,default=0.)
     p.add_argument('--online-context-lr',type=float,default=.0005)
@@ -233,6 +236,7 @@ def main(argv=None):
     p.add_argument('--cnn-epochs',type=int,default=60);p.add_argument('--context-epochs',type=int,default=20)
     p.add_argument('--evaluation-tag',default='')
     a=p.parse_args(argv)
+    if a.original_cnn and (a.dataset!='PS' or a.light_cnn):p.error('--original-cnn is for PS and cannot combine with --light-cnn.')
     if min(a.epochs,a.patience,a.utility_epochs,a.cnn_epochs,a.context_epochs)<1:p.error('Epochs and patience must be positive.')
     if not np.isfinite(a.online_context_lr) or a.online_context_lr<=0:p.error('Online Context LR must be positive and finite.')
     if not np.isfinite(a.query_budget_bonus) or a.query_budget_bonus<0:p.error('Bonus must be finite and nonnegative.')
@@ -243,6 +247,7 @@ def main(argv=None):
             else 'structured_bank3_balancedref_lr0p0005_seed42')
     a.source_run=(a.source_run or root/'protocol_runs'/source).resolve()
     suffix=f'light_ps_paironly_batch{a.batch_size}' if a.dataset=='PS' else f'paironly_batch{a.batch_size}'
+    if a.dataset=='PS' and a.original_cnn:suffix=f'original_ps_paironly_batch{a.batch_size}'
     if a.dataset=='IAT' and a.light_cnn:suffix=f'light_iat_paironly_batch{a.batch_size}'
     a.output_root=(a.output_root or root/'protocol_runs'/f'{suffix}_trainseed{a.seed}').resolve()
     device='cuda' if a.device=='auto' and torch.cuda.is_available() else 'cpu' if a.device=='auto' else a.device
@@ -258,8 +263,9 @@ def main(argv=None):
         source_hashes={name:digest(a.source_run/'Models'/name) for name in runner.SOURCE_FILES},
         domain_hashes={str(level):digest(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv') for level in [*TRAIN,*TEST]},
         method=f'PairOnly batch{a.batch_size} TRAIN/VAL/TEST; protected replay retained; no protected routing replay')
-    if a.light_cnn or a.query_budget_bonus or a.online_context_lr!=.0005 or a.replay_weight is not None:
+    if a.original_cnn or a.light_cnn or a.query_budget_bonus or a.online_context_lr!=.0005 or a.replay_weight is not None:
         plan['explicit_experiment']=dict(light_cnn=a.light_cnn,bonus=a.query_budget_bonus,online_context_lr=a.online_context_lr,replay_weight=a.replay_weight)
+    if a.original_cnn:plan['explicit_experiment']['source_architecture']='legacy'
     plan_path=a.output_root/'batch5_pipeline_plan.json'
     if plan_path.exists():
         if json.loads(plan_path.read_text())!=plan:raise ValueError('Pipeline inputs/recipe changed; use a fresh output root.')

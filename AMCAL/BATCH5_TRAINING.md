@@ -141,3 +141,17 @@ Output root: light_iat_paironly_batch5_trainseed42. Real TRAIN levels 0/1/3;
 TEST 5/7/10/12/15/17/20. No synthetic drift. IAT defaults remain original CNN
 unless -LightCNN is explicitly passed. PS architecture remains Light CNN.
 No execution tests run; Python syntax only.
+
+PS original frozen CNN comparison (explicit user request):
+
+```powershell
+.\AMCAL\run_amcal_batch5_pipeline.ps1 -Dataset PS -OriginalCNN -BatchSize 5 -Action All -Seed 42 -Bonus 1 -ReplayWeight 0.1 -OnlineContextLR 0.00025 -EvaluationTag original_ps_final_budget20
+```
+
+Fresh original CNN and Context TRAIN/VAL levels 0/1/3, same development recipe
+and optimizer as the light PS comparison. Freeze CNN after pretraining. Final
+one-Context PairOnly batch5; online bonus1, replay .1, LR .00025, budget .2.
+Output root original_ps_paironly_batch5_trainseed42. TEST levels
+5/7/10/12/15/17/20, independent plus continual. Existing light runs untouched.
+Only source preprocessing/partitions inherited, no model/selector weights.
+No execution tests run; Python syntax checked.
