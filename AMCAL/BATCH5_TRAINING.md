@@ -126,3 +126,18 @@ and continual TEST. Fewer retained paid rows means a smaller initial batch.
 Default BatchSize=5 and its output paths/recipe remain compatible. Sizes 3/7
 write separate paironly_batch3_trainseed42 / paironly_batch7_trainseed42 roots.
 Only syntax checks were run for this addition, per user instructions.
+
+Explicit user-requested IAT Light CNN comparison, matching the PS architecture
+and TRAIN 0/1/3 recipe. Source CNN/Context and selector stages train from scratch;
+only source preprocessing/partition artifacts are copied from the existing run.
+Final PairOnly uses batch5 and TRAIN Context LR .0005. Only TEST uses Bonus=1,
+protected replay .1, Context LR .00025, with independent and continual audits.
+
+```powershell
+.\AMCAL\run_amcal_batch5_pipeline.ps1 -Dataset IAT -LightCNN -BatchSize 5 -Action All -Seed 42 -Bonus 1 -ReplayWeight 0.1 -OnlineContextLR 0.00025 -EvaluationTag light_iat_bonus1_lr0p00025
+```
+
+Output root: light_iat_paironly_batch5_trainseed42. Real TRAIN levels 0/1/3;
+TEST 5/7/10/12/15/17/20. No synthetic drift. IAT defaults remain original CNN
+unless -LightCNN is explicitly passed. PS architecture remains Light CNN.
+No execution tests run; Python syntax only.

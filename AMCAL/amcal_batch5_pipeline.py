@@ -123,7 +123,7 @@ def make_plan(a):
         '--budget-fraction','0.2','--eval-epsilon','0.05','--update-policy','learned',
         '--modes','learned']
     stages=[]
-    if a.dataset=='PS':
+    if a.dataset=='PS' or getattr(a,'light_cnn',False):
         source=a.output_root/'source';structured=a.output_root/'structured'
         stages.append(dict(name='source',kind='source',source=str(a.source_run),output=str(source),args=[]))
         stages.append(dict(name='structured',kind='structured',source=str(source),output=str(structured),args=[
@@ -155,6 +155,10 @@ def make_plan(a):
         '--modes','learned','--paid-replay-mode',mode,'--context-lr','.0005',
         '--levels',*map(str,TEST),'--seed',str(a.seed),'--device',a.device,
         '--budget-fraction','.2','--eval-epsilon','.05','--routing-oracle-audit','--skip-existing-completed']
+    online_lr=getattr(a,'online_context_lr',.0005)
+    evaluation[evaluation.index('--context-lr')+1]=str(online_lr)
+    if getattr(a,'query_budget_bonus',0)>0:evaluation+=['--query-budget-bonus',str(a.query_budget_bonus)]
+    if getattr(a,'replay_weight',None) is not None:evaluation+=['--online-memory-ce-weight',str(a.replay_weight)]
     if a.evaluation_tag:evaluation+=['--evaluation-tag',a.evaluation_tag]
     return stages,evaluation
 
@@ -215,6 +219,10 @@ def main(argv=None):
     p.add_argument('--batch-size',type=int,choices=[3,5,7],default=5)
     p.add_argument('--dataset',choices=['IAT','PS'],required=True)
     p.add_argument('--action',choices=['All','Train','Evaluate','Audit'],default='All')
+    p.add_argument('--light-cnn',action='store_true',help='Explicitly train the PS LightCNN architecture from scratch for IAT as well.')
+    p.add_argument('--query-budget-bonus',type=float,default=0.)
+    p.add_argument('--online-context-lr',type=float,default=.0005)
+    p.add_argument('--replay-weight',type=float)
     p.add_argument('--source-run',type=Path)
     p.add_argument('--burst-dir',type=Path)
     p.add_argument('--output-root',type=Path)
@@ -226,12 +234,16 @@ def main(argv=None):
     p.add_argument('--evaluation-tag',default='')
     a=p.parse_args(argv)
     if min(a.epochs,a.patience,a.utility_epochs,a.cnn_epochs,a.context_epochs)<1:p.error('Epochs and patience must be positive.')
+    if not np.isfinite(a.online_context_lr) or a.online_context_lr<=0:p.error('Online Context LR must be positive and finite.')
+    if not np.isfinite(a.query_budget_bonus) or a.query_budget_bonus<0:p.error('Bonus must be finite and nonnegative.')
+    if a.replay_weight is not None and (not np.isfinite(a.replay_weight) or a.replay_weight<0):p.error('Replay weight must be finite and nonnegative.')
     root=Path(f'AMCAL/ANT_Burst_{a.dataset}_TEST')
     a.burst_dir=(a.burst_dir or root/f'Dataset_official_v1/AdvBurst_FTSC-{a.dataset}').resolve()
     source=('final_enhancement_accuracy_counterfactual_trainseed42' if a.dataset=='IAT'
             else 'structured_bank3_balancedref_lr0p0005_seed42')
     a.source_run=(a.source_run or root/'protocol_runs'/source).resolve()
     suffix=f'light_ps_paironly_batch{a.batch_size}' if a.dataset=='PS' else f'paironly_batch{a.batch_size}'
+    if a.dataset=='IAT' and a.light_cnn:suffix=f'light_iat_paironly_batch{a.batch_size}'
     a.output_root=(a.output_root or root/'protocol_runs'/f'{suffix}_trainseed{a.seed}').resolve()
     device='cuda' if a.device=='auto' and torch.cuda.is_available() else 'cpu' if a.device=='auto' else a.device
     if device=='cuda' and not torch.cuda.is_available():p.error('CUDA unavailable.')
@@ -246,6 +258,8 @@ def main(argv=None):
         source_hashes={name:digest(a.source_run/'Models'/name) for name in runner.SOURCE_FILES},
         domain_hashes={str(level):digest(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv') for level in [*TRAIN,*TEST]},
         method=f'PairOnly batch{a.batch_size} TRAIN/VAL/TEST; protected replay retained; no protected routing replay')
+    if a.light_cnn or a.query_budget_bonus or a.online_context_lr!=.0005 or a.replay_weight is not None:
+        plan['explicit_experiment']=dict(light_cnn=a.light_cnn,bonus=a.query_budget_bonus,online_context_lr=a.online_context_lr,replay_weight=a.replay_weight)
     plan_path=a.output_root/'batch5_pipeline_plan.json'
     if plan_path.exists():
         if json.loads(plan_path.read_text())!=plan:raise ValueError('Pipeline inputs/recipe changed; use a fresh output root.')
@@ -258,7 +272,7 @@ def main(argv=None):
     elif not all(stage_complete(stage) for stage in stages):raise ValueError('Training stages are incomplete or changed.')
     if a.action in ('All','Evaluate'):runner.main(evaluation)
     if a.action in ('All','Audit'):runner.main([*evaluation,'--continual'])
-    if a.dataset=='PS' and a.action in ('All','Evaluate','Audit'):frozen_comparison(a,Path(stages[-1]['output']))
+    if (a.dataset=='PS' or a.light_cnn) and a.action in ('All','Evaluate','Audit'):frozen_comparison(a,Path(stages[-1]['output']))
     print('Pipeline outputs:',a.output_root,flush=True)
 
 
