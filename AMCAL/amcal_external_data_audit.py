@@ -4,6 +4,7 @@ from collections import Counter
 import csv
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -21,15 +22,50 @@ def sha256(path):
     return h.hexdigest()
 
 
+def exclusion_reason(column):
+    # Canonicalization is only for metadata matching; feature names stay intact.
+    name = re.sub(r'[^a-z0-9]', '', str(column).lower())
+    if name.startswith('label'): return 'label metadata'
+    if name.startswith('unnamed') or name in {'id', 'index', 'rowid', 'sourcerow', 'flowid', 'sessionid'}:
+        return 'record identifier'
+    if name in {'nactions', 'attack', 'attacktype', 'category', 'subcategory', 'scenario', 'scenarioid',
+                'dataset', 'datasetid', 'filename', 'filepath', 'split'}:
+        return 'generation or dataset metadata'
+    if name in {'srcip', 'dstip', 'sourceip', 'destinationip', 'srcaddr', 'dstaddr',
+                'sourceaddress', 'destinationaddress', 'srcmac', 'dstmac', 'sourcemac',
+                'destinationmac', 'srcipinvlan', 'dstipinvlan', 'ipsrctype', 'ipdsttype'}:
+        return 'host identity or host identity proxy'
+    if name in {'srcport', 'dstport', 'sourceport', 'destinationport', 'sport', 'dport'}:
+        return 'raw endpoint port'
+    if name in {'tsesstart', 'tsesend', 'starttime', 'endtime', 'timestamp', 'flowstart',
+                'flowend', 'date', 'datetime'}:
+        return 'absolute capture time'
+    return None
+
+
 def excluded(column):
-    name = str(column).strip().lower()
-    return name.startswith(('label', 'unnamed:')) or name == 'n_actions' or name in IDENTIFIERS
+    return exclusion_reason(column) is not None
 
 
 def separator(path):
-    with path.open(encoding='utf-8-sig', newline='') as f:
-        sample = f.read(32768)
-    return csv.Sniffer().sniff(sample, delimiters=',;\t').delimiter
+    # Inspect complete CSV records: fixed-byte snippets can end in the middle
+    # of ASNM's very wide second record and break csv.Sniffer.
+    candidates = []
+    for delimiter in (',', ';', '\t'):
+        widths = []
+        with path.open(encoding='utf-8-sig', newline='') as f:
+            reader = csv.reader(f, delimiter=delimiter)
+            for row in reader:
+                if not row: continue
+                widths.append(len(row))
+                if len(widths) == 8: break
+        if widths and widths[0] > 1 and len(set(widths)) == 1:
+            candidates.append((widths[0], delimiter))
+    if not candidates: raise ValueError('No consistent comma/semicolon/tab CSV delimiter found.')
+    candidates.sort(reverse=True)
+    if len(candidates) > 1 and candidates[0][0] == candidates[1][0]:
+        raise ValueError('Ambiguous CSV delimiter.')
+    return candidates[0][1]
 
 
 def binary_label(values):
@@ -82,6 +118,7 @@ def audit_file(path, dataset, repo_root, chunksize=10000):
             columns = list(frame.columns)
             result['columns'] = columns
             result['excluded_columns'] = [c for c in columns if excluded(c)]
+            result['exclusion_reasons'] = {c: exclusion_reason(c) for c in columns if excluded(c)}
             result['candidate_features'] = [c for c in columns if not excluded(c)]
         roles, targets = roles_and_targets(frame, dataset, path)
         role_counts.update(roles.tolist()); target_counts.update(map(str, targets.tolist()))

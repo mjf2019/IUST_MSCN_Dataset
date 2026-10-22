@@ -7,7 +7,7 @@ import unittest
 
 import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from amcal_external_data_audit import audit, audit_file, excluded, roles_and_targets
+from amcal_external_data_audit import audit, audit_file, excluded, roles_and_targets, separator
 
 
 class ExternalDataAuditTests(unittest.TestCase):
@@ -20,9 +20,10 @@ class ExternalDataAuditTests(unittest.TestCase):
             self.assertEqual(y.tolist(), [0, 1, 1])
             frame.loc[2, 'label_2'] = False
             with self.assertRaisesRegex(ValueError, 'disagree'): roles_and_targets(frame, 'ASNM_NPBO_TEST', Path('x.csv'))
-        for col in ('label', 'label_2', 'label_poly_o', 'id', 'Unnamed: 0', 'n_actions', 'srcIP', 'SrcMAC', 'TSesStart'):
+        for col in ('label', 'label_2', 'label_poly_o', 'id', 'Unnamed: 0', 'n_actions', 'srcIP', 'SrcMAC', 'TSesStart', 'IPSrcType', 'IPDstType',
+                    'srcIPInVlan', 'DstIPInVlan', 'source_ip', 'destination_ip', 'Flow ID', 'Timestamp', 'srcPort'):
             self.assertTrue(excluded(col), col)
-        self.assertFalse(excluded('srcIPInVlan'))
+        self.assertTrue(excluded('srcIPInVlan'))
         self.assertFalse(excluded('MeanPktLenIn'))
 
     def test_drelab_path_and_adversarial_target(self):
@@ -54,6 +55,16 @@ class ExternalDataAuditTests(unittest.TestCase):
             self.assertEqual(files[1]['infinite_values'], {'F':1})
             self.assertEqual(files[1]['separator'], ';')
             for path, content in before.items(): self.assertEqual(path.read_bytes(),content)
+
+    def test_wide_complete_records_and_quoted_delimiter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for delimiter in (',', ';', '\t'):
+                path = Path(tmp)/'wide.csv'
+                # A single record exceeds the old 32768-byte sample.
+                columns = [f'feature_{i:04d}_long_name' for i in range(904)]
+                frame = pd.DataFrame([['a,b;c']*904, ['z'*50]*904], columns=columns)
+                frame.to_csv(path, index=False, sep=delimiter)
+                self.assertEqual(separator(path), delimiter)
 
     def test_missing_files_report_errors(self):
         with tempfile.TemporaryDirectory() as tmp:
