@@ -1559,3 +1559,64 @@ git add -f -- "$run/Results"
 git commit -m "Add PairOnly online routing and routing oracle audits seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## PairOnly full RL with balanced protected routing replay
+
+```powershell
+.\AMCAL\run_amcal_paironly_protected_router.ps1 -Seed 42
+```
+
+Two evaluations only (independent levels and persistent forgetting), no retraining,
+same PairOnly checkpoint, seed 42, one Context, policy queries, 20% cap and Context
+LR 0.0005. `-EvaluationSet Independent` or `Sequential` selects one protocol.
+Both evaluations include observer-only routing oracle reports. The full RL action
+selector and ordinary TD learning remain active. Queries are not forced or random.
+
+`--router-protected-replay` changes only the correctness-head routing loss. Each
+paid step already samples a balanced reward reference. Reuse its source and
+historical rows (exclude recent rows and the current input), then recompute their
+route correctness with the bank AFTER its ordinary paid Context update. Build
+fresh reference states using the pre-feedback reliability snapshot. No extra
+sampling changes memory RNG or the Context replay trajectory. No extra labels,
+reference capacity, Context optimizer steps or routing optimizer steps are added.
+Protected routing evaluation does add batched CNN/Context forwards.
+
+Within that existing routing optimizer step use:
+
+`0.5 * paid-route-replay loss + 0.5 * fresh protected routing loss + original prior`.
+
+Both routing losses retain BCE and the existing ranking term. Protected weights
+give equal mass to available source/historical segments and equal class mass
+inside each segment. Missing segments/classes do not receive synthetic rows.
+If there is no eligible protected reference, retain the original routing loss.
+Recomputed protected targets are used directly, not stored as stale route replay.
+TD heads keep their original optimizer and losses; the extra protected routing
+loss itself changes only routing parameters. This differs from `--router-refresh`,
+which performs an additional separate routing step on the whole reference batch.
+The two ablations cannot be combined.
+
+Because routing affects RL action values and later states, learned queries and
+actual label spending may change versus the baseline. Compare accuracy,
+forgetting, clean-domain drop, oracle gaps, actual labels and cost together.
+The principal baseline is the same PairOnly full-RL checkpoint, not the
+random-query diagnostic. This is an evaluation-only ablation; it does not alter
+saved training or overwrite earlier results.
+
+`execution.json` records `router_protected_replay.version=1`. Each metrics JSON
+adds `protected_routing_replay` with optimizer-step counts and source/historical
+row exposures (repeated rows count repeatedly). Existing oracle and independent /
+sequential reports remain available under fresh evaluation fingerprints.
+
+CPU checks cover a single joint optimizer step, routing-only gradients from the
+new loss, unchanged target/TD weights in isolation, exact matched Context weights
+under fixed queries, invariance to unpaid TEST labels, historical/source exposure,
+zero budget, TRAIN rejection and real CLI evaluation in both protocols. Existing
+routing/oracle controls are regression tested. PowerShell is reviewed statically;
+full-data accuracy/retention and latency require the user-host run.
+
+```powershell
+$run='AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_query_credit_paironly_trainseed42'
+git add -f -- "$run/Results"
+git commit -m "Add PairOnly protected routing replay results seed 42"
+git push origin AMCAL_final_enhancement
+```

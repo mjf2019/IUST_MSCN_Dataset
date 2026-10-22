@@ -152,6 +152,8 @@ class EnhancementAgent(legacy.Agent):
         self.last_losses = {}
         self.fresh_route_updates = 0
         self.fresh_route_rows = 0
+        self.protected_route_updates = 0
+        self.protected_route_rows = 0
         self.counterfactual_memory = deque(maxlen=512)
         self.counterfactual_optimizer = None
         self.counterfactual_updates = 0
@@ -193,7 +195,7 @@ class EnhancementAgent(legacy.Agent):
                                 device=self.device, dtype=weights.dtype)
         return samples, weights
 
-    def observe_routes(self, state, correct, step_now=True, importance=1., versions=None):
+    def observe_routes(self, state, correct, step_now=True, importance=1., versions=None, protected=None):
         if self.query_value_only: return
         version = tuple(self.versions if versions is None else versions)
         self.route_memory.append((state.detach().cpu().reshape(-1).clone(),
@@ -205,6 +207,15 @@ class EnhancementAgent(legacy.Agent):
         logits = self.policy.route_logits(x)
         weight *= torch.tensor([row[2] for row in samples], device=self.device)
         loss = routing_objective(logits, y, weight, self.config.rank_weight, self.informative_weight)
+        if protected is not None:
+            protected_states, protected_correct, protected_weights = protected
+            protected_logits = self.policy.route_logits(protected_states.detach())
+            protected_loss = routing_objective(protected_logits, protected_correct.detach().float(),
+                protected_weights, self.config.rank_weight, self.informative_weight)
+            loss = .5*(loss + protected_loss)
+            self.protected_route_updates += 1
+            self.protected_route_rows += len(protected_states)
+            self.last_losses['protected_routing'] = float(protected_loss.detach())
         if not self.offline and self.config.route_prior_weight:
             prior = sum((value - self.prior[name]).square().mean()
                         for name, value in self.policy.named_routing_parameters())

@@ -810,6 +810,29 @@ class FinalEnhancementTests(unittest.TestCase):
                 b_trace=pd.read_csv(counterpart/f'random_query_level{level}_trace.csv')
                 pd.testing.assert_frame_equal(a_trace,b_trace)
             self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
+            # Full RL with one joint protected routing step per acquired label.
+            existing=set((cf_output/'Results').glob('evaluation_*'))
+            protected_common=random_common.copy()
+            protected_common[protected_common.index('--modes')+1]='learned'
+            with redirect_stdout(io.StringIO()):
+                runner.main([*protected_common,'--router-protected-replay','--routing-oracle-audit'])
+                runner.main([*protected_common,'--router-protected-replay','--routing-oracle-audit','--continual'])
+            protected_results=set((cf_output/'Results').glob('evaluation_*'))-existing
+            self.assertEqual(len(protected_results),2)
+            for result in protected_results:
+                execution=json.loads((result/'execution.json').read_text())
+                self.assertEqual(execution['router_protected_replay']['version'],1)
+                self.assertEqual(execution['query_schedule'],'policy')
+                self.assertEqual(execution['checkpoint_sha256'],cf_hash)
+                self.assertTrue((result/'routing_oracle_summary.csv').exists())
+                self.assertEqual((result/'sequential_summary.csv').exists(),execution['continual'])
+                for level in (5,7):
+                    measured=json.loads((result/f'learned_level{level}_metrics.json').read_text())
+                    self.assertEqual(measured['protected_routing_replay']['updates'],measured['labels'])
+                    self.assertEqual(measured['route_updates'],measured['labels'])
+                    self.assertGreaterEqual(measured['protected_routing_replay']['rows'],measured['labels'])
+                    self.assertLessEqual(measured['labels'],measured['label_cap'])
+            self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
             # Expanded banks: each Context count runs both protocols, same checkpoint.
             existing=set((cf_output/'Results').glob('evaluation_*'))
             for count in (4,5):

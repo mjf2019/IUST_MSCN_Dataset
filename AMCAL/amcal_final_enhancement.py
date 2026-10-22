@@ -432,6 +432,9 @@ def evaluate(a):
         calibration = validate_calibration(json.loads(a.utility_calibration.read_text()),
             legacy.core.file_sha256(models/'final_enhancement.pth'), saved['training_levels'])
         a.utility_normalization = dict(scale=calibration['scale'], weight=a.utility_weight, clip=a.utility_clip)
+    if a.router_protected_replay and (not config.protected_reference or config.routed_utility
+            or config.cascade or config.architecture != 'legacy' or config.joint_router):
+        raise ValueError('Protected routing replay requires unchanged legacy Context with local protected memory.')
     if a.router_refresh and not config.protected_reference:
         raise ValueError('Router refresh requires protected TRAIN/paid-label references.')
     for key, value in saved['training_args'].items():
@@ -519,6 +522,14 @@ def evaluate(a):
     if calibration is not None:
         execution['utility_normalization'] = dict(calibration=calibration,
             weight=a.utility_weight, clip=a.utility_clip, application='actor only; raw reward and critic units retained')
+    if a.router_protected_replay:
+        execution['router_protected_replay'] = dict(version=1,
+            batch='source/historical subset of existing reward reference; current sample excluded',
+            targets='fresh current-bank correctness after paid Context update',
+            weights='equal source/historical mass; equal class mass within segment',
+            loss='0.5 paid-replay routing + 0.5 protected routing + original prior; one optimizer step',
+            labels='existing TRAIN anchors and paid history only; no new queries for replay',
+            history='pre-feedback snapshot; no protected samples stored as stale route replay')
     if a.router_refresh:
         execution['router_refresh'] = dict(version=1, batch='existing pre-update reward reference',
             targets='current bank after paid Context update', steps_per_paid_label=1,
@@ -657,6 +668,7 @@ def parser():
     p.add_argument('--retention-weight', type=float, default=1.)
     p.add_argument('--train-epsilon', type=float, default=.2)
     p.add_argument('--eval-epsilon', type=float, default=.05)
+    p.add_argument('--router-protected-replay', action='store_true', help='Mix current-bank source/historical supervision into the paid routing optimizer step.')
     p.add_argument('--routing-oracle-audit', action='store_true', help='Observer-only routing ceiling on unchanged learner trajectories.')
     p.add_argument('--modes', nargs='+', choices=['learned', 'random', 'random_query', 'random_query_online'], default=['learned', 'random'])
     p.add_argument('--query-schedule', choices=['policy', 'uniform'], default='policy')
@@ -691,6 +703,11 @@ def main(argv=None):
             or a.query_schedule != 'policy' or a.update_policy != 'learned'
             or a.router_refresh or a.context_damage_guard):
         p.error('random_query requires single-Context policy-schedule evaluation without other routing ablations.')
+    if a.router_protected_replay and (a.command != 'evaluate' or a.context_count != 1
+            or a.modes != ['learned'] or a.query_schedule != 'policy' or a.update_policy != 'learned'
+            or a.router_refresh or a.context_damage_guard or a.utility_calibration is not None
+            or a.online_memory_ce_weight is not None or a.router_informative_weight != 1.):
+        p.error('Protected routing replay is an isolated single-Context learned policy evaluation ablation.')
     if a.routing_oracle_audit and a.command != 'evaluate':
         p.error('--routing-oracle-audit is evaluation-only.')
     if a.paired_query_only_training and not a.query_value_only_training:

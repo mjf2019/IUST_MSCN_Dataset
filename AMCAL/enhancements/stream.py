@@ -85,6 +85,13 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             or a.query_schedule != 'policy' or a.update_policy != 'learned'
             or config.cascade or config.routed_utility):
         raise ValueError('random_query requires single-Context policy-schedule evaluation without cascade/routed utility.')
+    protected_routing = getattr(a, 'router_protected_replay', False)
+    if protected_routing and (training or warmup or mode != 'learned' or len(bank) != 1
+            or not config.protected_reference or config.routed_utility or config.cascade):
+        raise ValueError('Protected routing replay requires single-Context learned evaluation with local protected memory.')
+    protected_updates0 = agent.protected_route_updates
+    protected_rows0 = agent.protected_route_rows
+    protected_segments = np.zeros(2, dtype=np.int64)
     paired_totals0 = dict(agent.paired_target_totals)
     if next_domain_features is not None and (continuation is None or warmup):
         raise ValueError('A boundary successor requires a persistent, non-warmup sequence.')
@@ -242,7 +249,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 # Keep reliability features from before this label was observed.
                 # The fresh batch reuses the reward reference; no extra sampling
                 # or label storage can change a fixed-destination bank trajectory.
-                fresh_history = (deepcopy(history) if getattr(a, 'router_refresh', False)
+                fresh_history = (deepcopy(history) if (getattr(a, 'router_refresh', False) or protected_routing)
                                  and mode == 'learned' and batch is not None else None)
                 if config.protected_reference:
                     before, route_weight = probe_before(a, cnn, bank, selected, batch, agent, history, used, cap, pos, n)
@@ -304,8 +311,31 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             if may_learn:
                 if not full: raise RuntimeError('Sparse routes cannot supervise unexecuted predictions.')
                 target = torch.tensor(correct, dtype=torch.float32, device=x.device)
+                protected = None
+                if protected_routing and paid and batch is not None:
+                    old_ids = np.flatnonzero(batch.segments != 2)
+                    if len(old_ids):
+                        old_at = torch.as_tensor(old_ids, device=x.device)
+                        old_x, old_y = batch.x[old_at], batch.y[old_at]
+                        old_segments = batch.segments[old_ids]
+                        old_labels = old_y.detach().cpu().numpy()
+                        weights = np.zeros(len(old_ids), dtype=np.float32)
+                        # Equal segment mass, then equal class mass within each segment.
+                        for segment in np.unique(old_segments):
+                            classes = np.unique(old_labels[old_segments == segment])
+                            for cls in classes:
+                                mask = (old_segments == segment) & (old_labels == cls)
+                                weights[mask] = 1./(len(classes)*int(mask.sum()))
+                        with torch.no_grad():
+                            old_z, old_h = legacy.base_cache(cnn, old_x)
+                            old_outputs = executor.outputs(old_x, old_z)
+                            old_states = build_state(old_outputs, old_h, fresh_history,
+                                used-1, cap, pos, n, state_gate)
+                            old_correct = old_outputs[0].argmax(2) == old_y[:, None]
+                        protected = (old_states, old_correct, torch.as_tensor(weights, device=x.device))
+                        protected_segments += np.bincount(old_segments, minlength=2)
                 agent.observe_routes(state, target, step_now=not training or paid or pos % 16 == 15 or pos+1 == n,
-                                     versions=versions)
+                                     versions=versions, **({'protected': protected} if protected_routing else {}))
                 if paid and getattr(a, 'router_refresh', False) and fresh_history is not None:
                     with torch.no_grad():
                         fresh_z, fresh_h = legacy.base_cache(cnn, batch.x)
@@ -368,6 +398,12 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         oracle_protocol='observer on executed full-bank rows only; complete oracle is null for sparse streams',
         mode=mode, source_ids=source_ids.tolist(), queried_source_ids=source_ids[labels_mask].tolist(),
         latency_protocol='synchronized finite-stream runner with frozen cache and one-input lookahead TD; no annotation delay; not a live-service benchmark')
+    if protected_routing:
+        metrics['protected_routing_replay'] = dict(
+            updates=agent.protected_route_updates-protected_updates0,
+            rows=agent.protected_route_rows-protected_rows0,
+            source_rows=int(protected_segments[0]), historical_rows=int(protected_segments[1]),
+            protocol='exposures, not unique rows; half paid replay and half current-bank protected loss; one routing step')
     if agent.paired_query_only:
         totals = {k: agent.paired_target_totals[k]-paired_totals0[k] for k in paired_totals0}
         rows = totals['rows']; steps = totals['steps']
