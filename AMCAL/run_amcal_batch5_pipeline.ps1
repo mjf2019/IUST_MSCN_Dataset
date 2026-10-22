@@ -4,6 +4,7 @@ param(
     [int]$Seed = 42,
     [switch]$LightCNN,
     [switch]$OriginalCNN,
+    [switch]$CleanOnly,
     [double]$Bonus = 0,
     [double]$OnlineContextLR = 0.0005,
     [double]$ReplayWeight = -1,
@@ -20,6 +21,7 @@ Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
     $runArgs = @('--dataset',$Dataset,'--action',$Action,'--seed',"$Seed",'--device',$Device,
         '--batch-size',"$BatchSize",'--epochs',"$Epochs",'--patience',"$Patience")
+    if ($CleanOnly) { $runArgs += '--clean-only' }
     if ($OriginalCNN) { $runArgs += '--original-cnn' }
     if ($LightCNN) { $runArgs += '--light-cnn' }
     $runArgs += @('--query-budget-bonus',$Bonus.ToString([Globalization.CultureInfo]::InvariantCulture),'--online-context-lr',$OnlineContextLR.ToString('0.##########',[Globalization.CultureInfo]::InvariantCulture))

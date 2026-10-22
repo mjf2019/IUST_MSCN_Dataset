@@ -155,3 +155,22 @@ Output root original_ps_paironly_batch5_trainseed42. TEST levels
 5/7/10/12/15/17/20, independent plus continual. Existing light runs untouched.
 Only source preprocessing/partitions inherited, no model/selector weights.
 No execution tests run; Python syntax checked.
+
+IAT clean-level-0-only complete training (explicit user request):
+
+```powershell
+.\AMCAL\run_amcal_batch5_pipeline.ps1 -Dataset IAT -CleanOnly -BatchSize 5 -Action All -Seed 42 -Bonus 1 -ReplayWeight 0.1 -OnlineContextLR 0.00025 -EvaluationTag clean0_final_budget20
+```
+
+Fresh original CNN, Context, structured selector, accuracy warmup, counterfactual
+utility and final one-Context PairOnly all use only clean level 0 TRAIN/VAL.
+No official 1/3 or synthetic drift examples are used for fitting or selection.
+Existing preprocessing supplies only the schema, label encoder and disjoint source
+IDs. StandardScaler is refitted on clean TRAIN; previous model/selector weights
+are never loaded for training. Source CNN/Context and all selector stages are
+newly trained; CNN is frozen thereafter. TRAIN Context LR .0005, TEST .00025.
+Other settings match the main batch5 recipe. TEST now includes 1 and 3:
+1,3,5,7,10,12,15,17,20. Independent and continual tests retain held-out identities.
+Output root: clean0_original_iat_paironly_batch5_trainseed42. Original runs stay
+unchanged. Input attack hashes in the run plan are integrity checks, not training
+examples. No execution tests run; Python syntax only.

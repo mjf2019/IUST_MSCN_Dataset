@@ -88,11 +88,20 @@ def fresh_ps_source(a, output):
     core=runner.legacy.core; source=a.source_run/'Models'
     artifact=runner.load_artifact(source,a.burst_dir)
     models=output/'Models';models.mkdir(parents=True)
-    shutil.copy2(source/'protocol_preprocessing.joblib',models/'protocol_preprocessing.joblib')
+    if getattr(a,'clean_only',False):
+        from sklearn.preprocessing import StandardScaler
+        frame,ids,_=runner.legacy.base.official.mapped_domain(
+            a.burst_dir/'AdvBurstTrainedBurst_size_0_Step_2000.csv',artifact,a.burst_dir,False)
+        lookup={int(v):i for i,v in enumerate(ids)}
+        train_rows=[lookup[int(i)] for i in artifact['train_ids']]
+        artifact['scaler']=StandardScaler().fit(frame.iloc[train_rows][artifact['feature_names']])
+        joblib.dump(artifact,models/'protocol_preprocessing.joblib')
+    else:
+        shutil.copy2(source/'protocol_preprocessing.joblib',models/'protocol_preprocessing.joblib')
     a.classes=list(artifact['label_encoder'].classes_)
     train=combined(a,artifact,'train_ids');val=combined(a,artifact,'val_ids')
     width=len(artifact['feature_names']);classes=len(a.classes)
-    use_original=getattr(a,'original_cnn',False)
+    use_original=getattr(a,'original_cnn',False) or (getattr(a,'clean_only',False) and a.dataset=='IAT')
     architecture='legacy' if use_original else ARCHITECTURE
     cnn=(core.CNN1D(width,classes) if use_original else LightCNN1D(width,classes)).to(core.device)
     cnn_log=fit(a,cnn,None,train,val)
@@ -125,7 +134,7 @@ def make_plan(a):
         '--budget-fraction','0.2','--eval-epsilon','0.05','--update-policy','learned',
         '--modes','learned']
     stages=[]
-    if a.dataset=='PS' or getattr(a,'light_cnn',False):
+    if a.dataset=='PS' or getattr(a,'light_cnn',False) or getattr(a,'clean_only',False):
         source=a.output_root/'source';structured=a.output_root/'structured'
         stages.append(dict(name='source',kind='source',source=str(a.source_run),output=str(source),args=[]))
         stages.append(dict(name='structured',kind='structured',source=str(source),output=str(structured),args=[
@@ -217,10 +226,12 @@ def frozen_comparison(a, final):
 
 
 def main(argv=None):
+    global TRAIN,TEST
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--batch-size',type=int,choices=[3,5,7],default=5)
     p.add_argument('--dataset',choices=['IAT','PS'],required=True)
     p.add_argument('--action',choices=['All','Train','Evaluate','Audit'],default='All')
+    p.add_argument('--clean-only',action='store_true',help='Fresh original-CNN IAT; all training and validation use level 0 only.')
     p.add_argument('--original-cnn',action='store_true',help='Explicitly train original CNN architecture from scratch for PS.')
     p.add_argument('--light-cnn',action='store_true',help='Explicitly train the PS LightCNN architecture from scratch for IAT as well.')
     p.add_argument('--query-budget-bonus',type=float,default=0.)
@@ -236,6 +247,9 @@ def main(argv=None):
     p.add_argument('--cnn-epochs',type=int,default=60);p.add_argument('--context-epochs',type=int,default=20)
     p.add_argument('--evaluation-tag',default='')
     a=p.parse_args(argv)
+    if a.clean_only and (a.dataset!='IAT' or a.light_cnn):p.error('--clean-only currently requires IAT original CNN, without --light-cnn.')
+    TRAIN=[0] if a.clean_only else [0,1,3]
+    TEST=[1,3,5,7,10,12,15,17,20] if a.clean_only else [5,7,10,12,15,17,20]
     if a.original_cnn and (a.dataset!='PS' or a.light_cnn):p.error('--original-cnn is for PS and cannot combine with --light-cnn.')
     if min(a.epochs,a.patience,a.utility_epochs,a.cnn_epochs,a.context_epochs)<1:p.error('Epochs and patience must be positive.')
     if not np.isfinite(a.online_context_lr) or a.online_context_lr<=0:p.error('Online Context LR must be positive and finite.')
@@ -249,6 +263,7 @@ def main(argv=None):
     suffix=f'light_ps_paironly_batch{a.batch_size}' if a.dataset=='PS' else f'paironly_batch{a.batch_size}'
     if a.dataset=='PS' and a.original_cnn:suffix=f'original_ps_paironly_batch{a.batch_size}'
     if a.dataset=='IAT' and a.light_cnn:suffix=f'light_iat_paironly_batch{a.batch_size}'
+    if a.clean_only:suffix=f'clean0_original_iat_paironly_batch{a.batch_size}'
     a.output_root=(a.output_root or root/'protocol_runs'/f'{suffix}_trainseed{a.seed}').resolve()
     device='cuda' if a.device=='auto' and torch.cuda.is_available() else 'cpu' if a.device=='auto' else a.device
     if device=='cuda' and not torch.cuda.is_available():p.error('CUDA unavailable.')
@@ -263,9 +278,12 @@ def main(argv=None):
         source_hashes={name:digest(a.source_run/'Models'/name) for name in runner.SOURCE_FILES},
         domain_hashes={str(level):digest(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv') for level in [*TRAIN,*TEST]},
         method=f'PairOnly batch{a.batch_size} TRAIN/VAL/TEST; protected replay retained; no protected routing replay')
-    if a.original_cnn or a.light_cnn or a.query_budget_bonus or a.online_context_lr!=.0005 or a.replay_weight is not None:
+    if a.clean_only or a.original_cnn or a.light_cnn or a.query_budget_bonus or a.online_context_lr!=.0005 or a.replay_weight is not None:
         plan['explicit_experiment']=dict(light_cnn=a.light_cnn,bonus=a.query_budget_bonus,online_context_lr=a.online_context_lr,replay_weight=a.replay_weight)
     if a.original_cnn:plan['explicit_experiment']['source_architecture']='legacy'
+    if a.clean_only:
+        plan['explicit_experiment'].update(clean_only=True,source_architecture='legacy',training_levels=[0],validation_levels=[0],test_levels=TEST,
+            inherited='schema and disjoint source partitions only; clean TRAIN scaler refit; no weights inherited')
     plan_path=a.output_root/'batch5_pipeline_plan.json'
     if plan_path.exists():
         if json.loads(plan_path.read_text())!=plan:raise ValueError('Pipeline inputs/recipe changed; use a fresh output root.')
