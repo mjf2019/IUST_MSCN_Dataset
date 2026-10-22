@@ -1,4 +1,5 @@
 param(
+    [ValidateRange(0.000001,1.0)][double]$ProtectedWeight = 0.5,
     [ValidateSet('Both','Independent','Sequential')][string]$EvaluationSet = 'Both',
     [int]$Seed = 42,
     [string]$OutputRun = 'AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_query_credit_paironly_trainseed42',
@@ -17,6 +18,7 @@ try {
     }
     $common = @('evaluate','--output',$OutputRun,'--burst-dir',$burst,'--context-count','1',
         '--query-schedule','policy','--update-policy','learned','--modes','learned','--router-protected-replay','--routing-oracle-audit',
+        '--router-protected-weight',$ProtectedWeight.ToString('G',[System.Globalization.CultureInfo]::InvariantCulture),
         '--seed',"$Seed",'--device',$Device,'--eval-epsilon','0.05',
         '--budget-fraction','0.2','--context-lr','0.0005')
     if ($EvaluationSet -in @('Both','Independent')) {

@@ -530,6 +530,11 @@ def evaluate(a):
             loss='0.5 paid-replay routing + 0.5 protected routing + original prior; one optimizer step',
             labels='existing TRAIN anchors and paid history only; no new queries for replay',
             history='pre-feedback snapshot; no protected samples stored as stale route replay')
+        if a.router_protected_weight != .5:
+            execution['router_protected_replay']['protected_fraction'] = a.router_protected_weight
+            execution['router_protected_replay']['loss'] = (
+                f'{1-a.router_protected_weight:g} paid-replay routing + '
+                f'{a.router_protected_weight:g} protected routing + original prior; one optimizer step')
     if a.router_refresh:
         execution['router_refresh'] = dict(version=1, batch='existing pre-update reward reference',
             targets='current bank after paid Context update', steps_per_paid_label=1,
@@ -668,6 +673,7 @@ def parser():
     p.add_argument('--retention-weight', type=float, default=1.)
     p.add_argument('--train-epsilon', type=float, default=.2)
     p.add_argument('--eval-epsilon', type=float, default=.05)
+    p.add_argument('--router-protected-weight', type=float, default=.5, help='Protected share of the joint routing loss, default 0.5.')
     p.add_argument('--router-protected-replay', action='store_true', help='Mix current-bank source/historical supervision into the paid routing optimizer step.')
     p.add_argument('--routing-oracle-audit', action='store_true', help='Observer-only routing ceiling on unchanged learner trajectories.')
     p.add_argument('--modes', nargs='+', choices=['learned', 'random', 'random_query', 'random_query_online'], default=['learned', 'random'])
@@ -703,6 +709,10 @@ def main(argv=None):
             or a.query_schedule != 'policy' or a.update_policy != 'learned'
             or a.router_refresh or a.context_damage_guard):
         p.error('random_query requires single-Context policy-schedule evaluation without other routing ablations.')
+    if not np.isfinite(a.router_protected_weight) or not 0 < a.router_protected_weight <= 1:
+        p.error('--router-protected-weight must be finite and in (0,1].')
+    if a.router_protected_weight != .5 and not a.router_protected_replay:
+        p.error('--router-protected-weight requires --router-protected-replay.')
     if a.router_protected_replay and (a.command != 'evaluate' or a.context_count != 1
             or a.modes != ['learned'] or a.query_schedule != 'policy' or a.update_policy != 'learned'
             or a.router_refresh or a.context_damage_guard or a.utility_calibration is not None

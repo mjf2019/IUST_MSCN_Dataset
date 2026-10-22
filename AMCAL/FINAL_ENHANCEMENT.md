@@ -1620,3 +1620,44 @@ git add -f -- "$run/Results"
 git commit -m "Add PairOnly protected routing replay results seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## Protected routing replay at 20% (single follow-up)
+
+```powershell
+.\AMCAL\run_amcal_paironly_protected_router.ps1 -ProtectedWeight 0.2 -Seed 42
+```
+
+Run exactly two evaluations (independent and sequential), no retraining. Keep the
+same PairOnly checkpoint, RL query selection and all previous settings, replacing
+only the routing-loss mixture with `0.8 paid replay + 0.2 fresh protected replay`
+before adding the original routing prior. No changes to memory sampling, Context
+updates, TD learning, label cap, epsilon, seed or oracle-reporting protocol.
+Acquired labels may differ because the updated correctness head participates in
+subsequent full-RL actions; the cap remains unchanged.
+
+The old launcher's default `-ProtectedWeight 0.5` is preserved. Nondefault values
+are passed as `--router-protected-weight` and recorded in execution metadata as
+`protected_fraction`, producing distinct evaluation IDs without overwriting the
+50% reports. Per-level replay diagnostics record `protected_weight`. The Python
+argument must be finite and in (0,1], and a nondefault weight requires protected
+routing replay to be enabled. PowerShell formats the value with invariant culture.
+
+The 50% trial had independent accuracy 70.76288% with 1126 labels, sequential
+online 62.46466%, final audit 68.22430%, forgetting 3.27103 pp, clean drop 2.70270
+pp and 224 labels. The original PairOnly full-RL baseline remains independent
+70.08388% with 805 labels; online 68.30201%, final audit 70.62750%, forgetting
+5.52960 pp, clean drop 6.24418 pp and 305 labels. Compare the new run to both;
+reduced forgetting alone is not an accuracy improvement.
+
+CPU checks verify the numeric 80/20 routing loss, paid-only supervision and
+matched Context behavior at weight 0.2, one routing step per acquired label,
+separate 20%/50% fingerprints and actual independent/sequential CLI outputs.
+The unchanged controls are regression tested. Full-data outcomes require the
+user-host run; PowerShell is reviewed statically.
+
+```powershell
+$run='AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_query_credit_paironly_trainseed42'
+git add -f -- "$run/Results"
+git commit -m "Add PairOnly protected routing replay weight 0.2 seed 42"
+git push origin AMCAL_final_enhancement
+```

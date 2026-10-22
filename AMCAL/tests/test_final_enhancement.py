@@ -833,6 +833,30 @@ class FinalEnhancementTests(unittest.TestCase):
                     self.assertGreaterEqual(measured['protected_routing_replay']['rows'],measured['labels'])
                     self.assertLessEqual(measured['labels'],measured['label_cap'])
             self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
+            # Weight 0.2 creates two distinct evaluations and records the actual loss share.
+            existing=set((cf_output/'Results').glob('evaluation_*'))
+            with redirect_stdout(io.StringIO()):
+                runner.main([*protected_common,'--router-protected-replay','--router-protected-weight','0.2','--routing-oracle-audit'])
+                runner.main([*protected_common,'--router-protected-replay','--router-protected-weight','0.2','--routing-oracle-audit','--continual'])
+            lighter=set((cf_output/'Results').glob('evaluation_*'))-existing
+            self.assertEqual(len(lighter),2)
+            self.assertTrue(lighter.isdisjoint(protected_results))
+            for result in lighter:
+                execution=json.loads((result/'execution.json').read_text())
+                self.assertEqual(execution['router_protected_replay']['protected_fraction'],.2)
+                self.assertIn('0.8 paid-replay',execution['router_protected_replay']['loss'])
+                self.assertEqual(execution['checkpoint_sha256'],cf_hash)
+                self.assertTrue((result/'routing_oracle_summary.csv').exists())
+                self.assertEqual((result/'sequential_summary.csv').exists(),execution['continual'])
+                for level in (5,7):
+                    measured=json.loads((result/f'learned_level{level}_metrics.json').read_text())
+                    self.assertEqual(measured['protected_routing_replay']['protected_weight'],.2)
+                    self.assertEqual(measured['route_updates'],measured['labels'])
+                    self.assertLessEqual(measured['labels'],measured['label_cap'])
+            for result in protected_results:
+                execution=json.loads((result/'execution.json').read_text())
+                self.assertNotIn('protected_fraction',execution['router_protected_replay'])
+            self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
             # Expanded banks: each Context count runs both protocols, same checkpoint.
             existing=set((cf_output/'Results').glob('evaluation_*'))
             for count in (4,5):

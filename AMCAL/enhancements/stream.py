@@ -335,7 +335,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                         protected = (old_states, old_correct, torch.as_tensor(weights, device=x.device))
                         protected_segments += np.bincount(old_segments, minlength=2)
                 agent.observe_routes(state, target, step_now=not training or paid or pos % 16 == 15 or pos+1 == n,
-                                     versions=versions, **({'protected': protected} if protected_routing else {}))
+                                     versions=versions, **({'protected': protected, 'protected_weight': getattr(a, 'router_protected_weight', .5)} if protected_routing else {}))
                 if paid and getattr(a, 'router_refresh', False) and fresh_history is not None:
                     with torch.no_grad():
                         fresh_z, fresh_h = legacy.base_cache(cnn, batch.x)
@@ -403,7 +403,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             updates=agent.protected_route_updates-protected_updates0,
             rows=agent.protected_route_rows-protected_rows0,
             source_rows=int(protected_segments[0]), historical_rows=int(protected_segments[1]),
-            protocol='exposures, not unique rows; half paid replay and half current-bank protected loss; one routing step')
+            protected_weight=getattr(a, 'router_protected_weight', .5),
+            protocol='exposures, not unique rows; weighted paid replay and current-bank protected loss; one routing step')
     if agent.paired_query_only:
         totals = {k: agent.paired_target_totals[k]-paired_totals0[k] for k in paired_totals0}
         rows = totals['rows']; steps = totals['steps']

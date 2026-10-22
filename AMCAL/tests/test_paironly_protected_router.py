@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 import torch
 import test_final_enhancement as fixtures
-from enhancements.agent import EnhancementAgent
+from enhancements.agent import EnhancementAgent, routing_objective
 from enhancements.stream import episode
 
 
@@ -35,12 +35,27 @@ class ProtectedRoutingTests(unittest.TestCase):
         for k,v in target.items():self.assertTrue(torch.equal(v,agent.target.state_dict()[k]))
         self.assertTrue(any(not torch.equal(v,agent.policy.state_dict()[k]) for k,v in before.items() if k.startswith('correctness.')))
 
+    def test_twenty_percent_is_the_actual_joint_loss(self):
+        *_,agent=self.setup_fixture()
+        state=torch.randn(1,71);states=torch.randn(4,71)
+        correct=torch.tensor([1.,0.])
+        old_correct=torch.tensor([[1.,0.],[0.,1.],[1.,1.],[0.,0.]])
+        weights=torch.tensor([1.,2.,3.,4.])
+        with torch.no_grad():
+            normal=routing_objective(agent.policy.route_logits(state),correct[None],torch.ones(1),agent.config.rank_weight)
+            protected=routing_objective(agent.policy.route_logits(states),old_correct,weights,agent.config.rank_weight)
+        agent.observe_routes(state,correct,protected=(states,old_correct,weights),protected_weight=.2)
+        self.assertAlmostEqual(agent.last_losses['routing'],float(.8*normal+.2*protected),places=6)
+        self.assertEqual(agent.route_updates,1)
+        self.assertEqual(agent.protected_route_updates,1)
+
     def test_causal_balanced_replay_preserves_matched_context_and_ignores_unpaid_labels(self):
         cnn,bank,initial,a,domain,anchors,agent=self.setup_fixture()
         original=deepcopy(agent.policy.state_dict());baseline_bank=deepcopy(bank)
         baseline=EnhancementAgent(34,12,2,torch.device('cpu'),42,a.config,slots=1,policy_state=original)
         base_m,_=episode(a,cnn,baseline_bank,initial,baseline,domain,anchors)
         a.router_protected_replay=True
+        a.router_protected_weight=.2
         seen=[];original_observe=agent.observe_routes
         def capture(*args,**kwargs):
             protected=kwargs.get('protected')

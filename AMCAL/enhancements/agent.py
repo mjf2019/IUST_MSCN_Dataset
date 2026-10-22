@@ -195,7 +195,7 @@ class EnhancementAgent(legacy.Agent):
                                 device=self.device, dtype=weights.dtype)
         return samples, weights
 
-    def observe_routes(self, state, correct, step_now=True, importance=1., versions=None, protected=None):
+    def observe_routes(self, state, correct, step_now=True, importance=1., versions=None, protected=None, protected_weight=.5):
         if self.query_value_only: return
         version = tuple(self.versions if versions is None else versions)
         self.route_memory.append((state.detach().cpu().reshape(-1).clone(),
@@ -212,7 +212,8 @@ class EnhancementAgent(legacy.Agent):
             protected_logits = self.policy.route_logits(protected_states.detach())
             protected_loss = routing_objective(protected_logits, protected_correct.detach().float(),
                 protected_weights, self.config.rank_weight, self.informative_weight)
-            loss = .5*(loss + protected_loss)
+            loss = (.5*(loss + protected_loss) if protected_weight == .5
+                    else (1-protected_weight)*loss + protected_weight*protected_loss)
             self.protected_route_updates += 1
             self.protected_route_rows += len(protected_states)
             self.last_losses['protected_routing'] = float(protected_loss.detach())
