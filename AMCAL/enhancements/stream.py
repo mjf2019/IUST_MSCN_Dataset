@@ -44,11 +44,13 @@ def observer(cnn, bank, agent, x, y, history, used, cap, position, seed, config,
         for start in range(0, len(x), 64):
             bx = x[start:start + 64]
             outputs = executor.outputs(bx, z[start:start + 64])
-            state = build_state(outputs, h[start:start + 64], history, used, cap,
-                                       position, max(position, 1), 0)
-            routes = agent.policy.route_logits(state).argmax(1)
-            if mode == 'random': routes = torch.tensor(rng.integers(0, len(bank)+1, len(bx)), device=x.device)
-            elif config.cascade:
+            if mode == 'random':
+                routes = torch.tensor(rng.integers(0, len(bank)+1, len(bx)), device=x.device)
+            else:
+                state = build_state(outputs, h[start:start + 64], history, used, cap,
+                                           position, max(position, 1), 0)
+                routes = agent.policy.route_logits(state).argmax(1)
+            if mode != 'random' and config.cascade:
                 for k in range(len(bx)):
                     full, candidate = cascade_decision(agent, h[start+k:start+k+1], z[start+k:start+k+1],
                                                        config, rng, (start + k) % (config.cascade_max_gap + 1))
@@ -77,6 +79,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             warmup=False, rollout_seed=None, reference=None, same_level=False, continuation=None,
             paid_supervision=False, next_domain_features=None):
     config = a.config
+    random_no_rl = mode == 'random' and not training and not warmup
     paired_totals0 = dict(agent.paired_target_totals)
     if next_domain_features is not None and (continuation is None or warmup):
         raise ValueError('A boundary successor requires a persistent, non-warmup sequence.')
@@ -155,15 +158,19 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         with timer.stage('selection'):
             state = None; values = None; raw_values = None; update_values = None; route_logits = None
             if full:
-                state = build_state(outputs, embeddings[pos:pos+1], history, used, cap, pos, n, state_gate)
+                if not random_no_rl:
+                    state = build_state(outputs, embeddings[pos:pos+1], history, used, cap, pos, n, state_gate)
                 allowed = legacy.base.legal_actions(slots, cap-used, gate)
                 if a.update_policy == 'fixed': allowed = [v for v in allowed if v < routes or v == routes + int(destinations[pos])]
                 with torch.no_grad():
-                    values, route_logits, raw_values, update_values = agent.policy.forward_for_action(state)
-                    values, route_logits = values[0], route_logits[0]
-                    raw_values, update_values = raw_values[0], update_values[0]
-                    valid = torch.tensor(allowed, device=x.device)
-                    greedy = int(valid[values[valid].argmax()])
+                    if random_no_rl:
+                        greedy = None
+                    else:
+                        values, route_logits, raw_values, update_values = agent.policy.forward_for_action(state)
+                        values, route_logits = values[0], route_logits[0]
+                        raw_values, update_values = raw_values[0], update_values[0]
+                        valid = torch.tensor(allowed, device=x.device)
+                        greedy = int(valid[values[valid].argmax()])
                 epsilon = a.train_epsilon if training else a.eval_epsilon
                 action = int(rng.choice(allowed)) if mode == 'random' or warmup or rng.random() < epsilon else greedy
                 route = legacy.base.route_index(action, slots)
@@ -182,7 +189,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             full_rows += 1; full_correct += bool(correct.any())
             legal_routes = {legacy.base.route_index(v, slots) for v in allowed}
             full_legal_correct += any(correct[r] for r in legal_routes)
-            briers.append(float(np.mean((route_logits.sigmoid().detach().cpu().numpy() - correct) ** 2)))
+            if route_logits is not None:
+                briers.append(float(np.mean((route_logits.sigmoid().detach().cpu().numpy() - correct) ** 2)))
         action_counts[action] += 1; agent.clock += 1
         reward = gain = harm = None
         reference_counts = None; alternative_utilities = None; alternative_successors = None

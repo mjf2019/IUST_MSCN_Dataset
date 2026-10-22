@@ -470,6 +470,10 @@ def evaluate(a):
     if temporal_credit is not None:
         execution['temporal_credit'] = dict(gamma=a.gamma, connected_levels=a.connected_sequence_td,
             active_boundary_links=bool(a.continual and a.connected_sequence_td))
+    if 'random' in a.modes:
+        execution['random_control'] = dict(version=2,
+            actions='uniform among legal actions; random prediction routes after budget exhaustion',
+            selector='no selector action/observer forward or learning in random evaluation; Context adaptation retained')
     if a.context_damage_guard:
         execution['context_damage_guard'] = dict(version=1, max_harm=config.damage_limit,
             step_scales=[1., .5, .25], reference='source/historical rows of the same pre-feedback reward reference',

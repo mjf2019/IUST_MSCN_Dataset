@@ -721,6 +721,29 @@ class FinalEnhancementTests(unittest.TestCase):
                 self.assertTrue(all(len(json.loads(x))==5 for x in traces.scores))
             self.assertEqual(kinds,{True,False})
             self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
+            # Random selection: both real CLI protocols, no selector execution or learning.
+            existing=set((cf_output/'Results').glob('evaluation_*'))
+            random_common=single_common.copy()
+            random_common[random_common.index('uniform')]='policy'
+            random_common[random_common.index('--modes')+1]='random'
+            with redirect_stdout(io.StringIO()), \
+                    patch.object(EfficientQ,'forward_for_action',side_effect=AssertionError('No RL action')), \
+                    patch.object(EfficientQ,'route_logits',side_effect=AssertionError('No RL observer')):
+                runner.main(random_common)
+                runner.main([*random_common,'--continual'])
+            random_results=set((cf_output/'Results').glob('evaluation_*'))-existing
+            self.assertEqual(len(random_results),2)
+            for result in random_results:
+                execution=json.loads((result/'execution.json').read_text())
+                self.assertEqual(execution['random_control']['version'],2)
+                self.assertEqual(execution['checkpoint_sha256'],cf_hash)
+                self.assertEqual((result/'sequential_summary.csv').exists(),execution['continual'])
+                for level in (5,7):
+                    measured=json.loads((result/f'random_level{level}_metrics.json').read_text())
+                    self.assertEqual(measured['route_updates'],0)
+                    self.assertEqual(measured['td_updates'],0)
+                    self.assertLessEqual(measured['labels'],measured['label_cap'])
+            self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
             # Expanded banks: each Context count runs both protocols, same checkpoint.
             existing=set((cf_output/'Results').glob('evaluation_*'))
             for count in (4,5):

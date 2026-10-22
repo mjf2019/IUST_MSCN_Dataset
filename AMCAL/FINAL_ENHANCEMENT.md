@@ -1417,3 +1417,46 @@ git push origin AMCAL_final_enhancement
 ```
 
 Prepared CSVs and large model checkpoints are not needed for result analysis.
+
+## PairOnly random-selector ablation (seed 42)
+
+Run the existing paired-only checkpoint without retraining:
+
+```powershell
+.\AMCAL\run_amcal_paironly_random.ps1 -Seed 42
+```
+
+This runs exactly two evaluations: independent levels and a persistent sequential
+forgetting test. Default checkpoint: `final_enhancement_query_credit_paironly_trainseed42`.
+A single Context is retained. Each step samples uniformly from legal actions:
+CNN prediction/skip, Context prediction/skip, or Context prediction/query.
+Once the 20% hard cap is exhausted only the two prediction actions remain legal.
+RL action/observer networks are bypassed and RL optimizer updates are disabled;
+Context adaptation, protected memory and its replay continue on paid labels.
+The target checkpoint uses local (not routed) reward-reference utility, so its
+utility measurement also does not need any RL head. The learned differential
+objective is therefore inactive at inference: this is an ablation of the
+selector on the PairOnly-trained checkpoint, not a new training objective.
+
+Independent levels restore the initial Context and memory separately; sequential
+levels carry Context, optimizer and protected memory through the sequence.
+The same checkpoint, seed, split, cap, Context LR and audit protocol are used as
+the preceding PairOnly learned-selector evaluations. Random selection may spend
+more labels than RL: compare actual counts alongside accuracy and forgetting.
+The evaluation fingerprint includes `random_control.version=2` to distinguish
+this control from older random runs that still executed selector networks.
+Results go into separate `Results/evaluation_*` directories with `random_` files;
+the learned-selector results and model checkpoint are preserved.
+
+For a single evaluation use `-EvaluationSet Independent` or `Sequential`.
+Run evaluations sequentially for comparable timing. CPU tests check the absence
+of selector calls/updates, unchanged RL parameters, independence from arbitrary
+selector weights, Context learning, the hard budget and both real CLI protocols.
+PowerShell is reviewed statically; full-data results require the user-host run.
+
+```powershell
+$run='AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_query_credit_paironly_trainseed42'
+git add -f -- "$run/Results"
+git commit -m "Add PairOnly random-selector ablation seed 42"
+git push origin AMCAL_final_enhancement
+```
