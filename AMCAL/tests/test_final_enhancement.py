@@ -890,6 +890,31 @@ class FinalEnhancementTests(unittest.TestCase):
                 measured=json.loads((zero/f'learned_level{level}_metrics.json').read_text())
                 self.assertEqual(measured['protected_routing_replay']['updates'],0)
             self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
+            # Routing-only level balancing: separate fingerprints and level diagnostics.
+            existing=set((cf_output/'Results').glob('evaluation_*'))
+            level_common=[*protected_common,'--router-protected-replay','--router-protected-weight','0.4',
+                '--router-level-balanced-history','--routing-oracle-audit']
+            with redirect_stdout(io.StringIO()):
+                runner.main(level_common)
+                runner.main([*level_common,'--continual'])
+            level_results=set((cf_output/'Results').glob('evaluation_*'))-existing
+            self.assertEqual(len(level_results),2)
+            for result in level_results:
+                execution=json.loads((result/'execution.json').read_text())
+                self.assertEqual(execution['router_level_balanced_history']['version'],1)
+                self.assertEqual(execution['router_protected_replay']['protected_fraction'],.4)
+                self.assertEqual(execution['checkpoint_sha256'],cf_hash)
+                self.assertTrue((result/'routing_oracle_summary.csv').exists())
+                self.assertEqual((result/'sequential_summary.csv').exists(),execution['continual'])
+                for level in (5,7):
+                    measured=json.loads((result/f'learned_level{level}_metrics.json').read_text())
+                    self.assertEqual(measured['router_level_history']['acquisition_level'],level)
+                    self.assertEqual(measured['route_updates'],measured['labels'])
+                    self.assertLessEqual(measured['labels'],measured['label_cap'])
+                    self.assertIn('historical_by_level',measured['memory'])
+                    allowed={'5','7'} if execution['continual'] else {str(level)}
+                    self.assertTrue(set(measured['memory']['historical_by_level']).issubset(allowed))
+            self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
             # Expanded banks: each Context count runs both protocols, same checkpoint.
             existing=set((cf_output/'Results').glob('evaluation_*'))
             for count in (4,5):

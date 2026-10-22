@@ -77,7 +77,7 @@ def probe_before(a, cnn, bank, selected, batch, agent, history, used, cap, posit
 
 def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', training=False,
             warmup=False, rollout_seed=None, reference=None, same_level=False, continuation=None,
-            paid_supervision=False, next_domain_features=None):
+            paid_supervision=False, next_domain_features=None, domain_level=None):
     config = a.config
     random_no_rl = mode == 'random' and not training and not warmup
     random_queries = mode in ('random_query', 'random_query_online')
@@ -87,6 +87,10 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         raise ValueError('random_query requires single-Context policy-schedule evaluation without cascade/routed utility.')
     protected_routing = getattr(a, 'router_protected_replay', False)
     protected_active = protected_routing and getattr(a, 'router_protected_weight', .5) > 0
+    level_balanced = getattr(a, 'router_level_balanced_history', False)
+    if level_balanced and (not protected_active or domain_level is None or int(domain_level) < 0):
+        raise ValueError('Level-balanced routing requires active protected replay and a known acquisition level.')
+    level_exposures = {}; level_class_exposures = {}
     if protected_routing and (training or warmup or mode != 'learned' or len(bank) != 1
             or not config.protected_reference or config.routed_utility or config.cascade):
         raise ValueError('Protected routing replay requires single-Context learned evaluation with local protected memory.')
@@ -124,7 +128,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                                       lr=a.context_lr, weight_decay=1e-4) for c in bank]
         history = DeviceReliability(len(a.classes), x.device, routes)
         if config.protected_reference:
-            memory = ProtectedMemory(anchors, len(a.classes), config, seed + 910033)
+            memory = ProtectedMemory(anchors, len(a.classes), config, seed + 910033, track_levels=True) if level_balanced else ProtectedMemory(anchors, len(a.classes), config, seed + 910033)
         else:
             # The reference-only ablation uses the original paid-history sampler.
             source = legacy.core.TrainingProbe(x, torch.tensor(y), seed + 910033) if training else legacy.core.PaidHistory(seed + 910033)
@@ -296,7 +300,9 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                     change = (changed[0][:, selected+1].softmax(1) - outputs[0][:, selected+1].softmax(1)).abs().mean()
                     history.updated(selected+1, pos+1, change)
                 # TRAIN episodes reproduce the online availability of protected memory.
-                if config.protected_reference or not training: memory.add(inputs, label)
+                if config.protected_reference or not training:
+                    if level_balanced: memory.add(inputs, label, level=domain_level)
+                    else: memory.add(inputs, label)
                 if committed and successor_output is not None:
                     successor_output = executor.refresh_output(next_x, successor_output, selected)
             if counterfactual and paid:
@@ -314,19 +320,29 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 target = torch.tensor(correct, dtype=torch.float32, device=x.device)
                 protected = None
                 if protected_active and paid and batch is not None:
-                    old_ids = np.flatnonzero(batch.segments != 2)
+                    route_batch = memory.router_reference(inputs, batch) if level_balanced else batch
+                    old_ids = np.flatnonzero(route_batch.segments != 2) if route_batch is not None else []
                     if len(old_ids):
                         old_at = torch.as_tensor(old_ids, device=x.device)
-                        old_x, old_y = batch.x[old_at], batch.y[old_at]
-                        old_segments = batch.segments[old_ids]
+                        old_x, old_y = route_batch.x[old_at], route_batch.y[old_at]
+                        old_segments = route_batch.segments[old_ids]
                         old_labels = old_y.detach().cpu().numpy()
                         weights = np.zeros(len(old_ids), dtype=np.float32)
                         # Equal segment mass, then equal class mass within each segment.
                         for segment in np.unique(old_segments):
-                            classes = np.unique(old_labels[old_segments == segment])
-                            for cls in classes:
-                                mask = (old_segments == segment) & (old_labels == cls)
-                                weights[mask] = 1./(len(classes)*int(mask.sum()))
+                            segment_mask = old_segments == segment
+                            level_ids = route_batch.levels[old_ids] if level_balanced else np.zeros(len(old_ids), dtype=int)
+                            levels = np.unique(level_ids[segment_mask])
+                            for level in levels:
+                                level_mask = segment_mask & (level_ids == level)
+                                classes = np.unique(old_labels[level_mask])
+                                for cls in classes:
+                                    mask = level_mask & (old_labels == cls)
+                                    weights[mask] = 1./(len(levels)*len(classes)*int(mask.sum()))
+                                    if level_balanced and segment == 1:
+                                        key = str(int(level)); cell = f'{int(level)}:{int(cls)}'
+                                        level_exposures[key] = level_exposures.get(key,0)+int(mask.sum())
+                                        level_class_exposures[cell] = level_class_exposures.get(cell,0)+int(mask.sum())
                         with torch.no_grad():
                             old_z, old_h = legacy.base_cache(cnn, old_x)
                             old_outputs = executor.outputs(old_x, old_z)
@@ -406,6 +422,11 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             source_rows=int(protected_segments[0]), historical_rows=int(protected_segments[1]),
             protected_weight=getattr(a, 'router_protected_weight', .5),
             protocol='exposures, not unique rows; weighted paid replay and current-bank protected loss; one routing step')
+    if level_balanced:
+        metrics['router_level_history'] = dict(version=1, acquisition_level=int(domain_level),
+            historical_exposures_by_level=level_exposures,
+            historical_exposures_by_level_class=level_class_exposures,
+            protocol='routing-only balanced sampling/weights over retained acquired levels; original reservoirs unchanged')
     if agent.paired_query_only:
         totals = {k: agent.paired_target_totals[k]-paired_totals0[k] for k in paired_totals0}
         rows = totals['rows']; steps = totals['steps']

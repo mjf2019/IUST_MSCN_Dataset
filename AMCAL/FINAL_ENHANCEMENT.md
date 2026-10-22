@@ -1735,3 +1735,71 @@ also skip its complete outputs. Do not run duplicate identical settings concurre
 CPU checks verify complete repeats do not call the episode or rewrite files;
 missing oracle reports, mismatched metadata and truncated traces are not reused.
 PowerShell is reviewed statically.
+
+## PairOnly 40/60: balance historical routing replay across acquisition levels
+
+```powershell
+.\AMCAL\run_amcal_paironly_level_balanced_router.ps1 -Seed 42
+```
+
+Exactly two evaluations (independent and persistent sequential), no retraining.
+Default protected/normal routing mixture is 0.4 / 0.6, seed 42, one Context, RL
+queries, 20% cap, original Context LR and observer-only oracle reports. Optional
+weight, protocol, output, device and retry-tag arguments work as in the preceding
+protected-router launcher. Completed runs are skipped only after verification.
+
+The existing historical reservoir is balanced by class only and had no level
+provenance, so old reports cannot establish how many rows of each acquisition
+level survived. This opt-in control records the acquisition level of each paid
+row. It retains the original source/recent/historical storage and eviction rules,
+capacities, reward sampler, Context replay, loss and random streams. The level-tag
+map is pruned to retained target rows; no extra examples are stored.
+
+Only protected ROUTING replay changes. Source rows reuse the existing reward
+reference's source subset. Historical rows are drawn from the retained historical
+reservoir with a separate routing RNG, round-robin over available levels and then
+classes. The historical draw is at most reference_size/4 (8 for the real config),
+without replacement and excluding the current feature-identical row. It may use
+previous paid rows of the current level as well as earlier levels; future levels
+and audit labels are unavailable. Historical routing loss has equal level mass,
+then equal observed-class mass within each level. Source and historical segments
+retain equal mass before the unchanged 40/60 protected/normal mixture.
+
+Fresh correctness targets are computed with the current bank as in the preceding
+protected-router control; there is still one routing optimizer step per acquired
+label. Additional sampling does not consume the reference or Context-replay RNG.
+Under fixed queries, tests verify exact equality of Context weights and both
+original memory RNG states. With RL queries, downstream action/label trajectories
+can differ and actual usage must be compared.
+
+This balances replay among RETAINED levels. It does not guarantee every level has
+survived the original class-only reservoir, and cannot reconstruct evicted data.
+The experiment deliberately separates routing replay from a future change to
+historical storage. A level with fewer available rows may exhaust its quota;
+remaining draw slots go to other available levels rather than duplicating data.
+
+New execution fingerprint: `router_level_balanced_history.version=1`. Per-level
+metrics and trace reference snapshots add `historical_by_level` and
+`recent_by_level` memory counts. `router_level_history` reports historical replay
+exposures by level and by level/class; repeated use counts repeatedly. These
+reports distinguish missing retained levels from unequal replay exposure. In the
+independent protocol all target history has the current acquisition level;
+the across-level balancing is relevant chiefly to the sequential protocol.
+
+Compare to the completed 40/60 baseline: independent 70.76288%, online 69.81540%,
+final audit 68.89186%, forgetting 5.45171 pp, clean drop 8.29450 pp and 374 sequential
+labels. All scientific outcomes for the new control require user-host evaluation.
+
+CPU checks cover a deliberately 48:16 level-imbalanced pool, balanced levels and
+classes in its routing draw, exclusion/deduplication, bounded tags, unchanged
+storage/reference RNG, exact Context trajectories across three fixed-query
+stages, known-level requirements, and real CLI independent/sequential outputs.
+The earlier routing, oracle, weights and resume controls are regression tested.
+PowerShell is reviewed statically.
+
+```powershell
+$run='AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_query_credit_paironly_trainseed42'
+git add -f -- "$run/Results"
+git commit -m "Add PairOnly 40 60 level-balanced historical routing replay seed 42"
+git push origin AMCAL_final_enhancement
+```

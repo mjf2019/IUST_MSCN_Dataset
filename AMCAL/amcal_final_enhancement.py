@@ -552,6 +552,13 @@ def evaluate(a):
     if calibration is not None:
         execution['utility_normalization'] = dict(calibration=calibration,
             weight=a.utility_weight, clip=a.utility_clip, application='actor only; raw reward and critic units retained')
+    if a.router_level_balanced_history:
+        execution['router_level_balanced_history'] = dict(version=1,
+            storage='unchanged original class reservoirs; acquisition-level tags only',
+            sampler='routing-only historical draw: equal available levels then classes; separate RNG; current input excluded',
+            weights='equal source/history mass; historical level/class hierarchy',
+            capacity='unchanged; unavailable or evicted levels cannot be recovered',
+            labels='acquired TEST feedback only for target history; source labels remain TRAIN anchors')
     if a.router_protected_replay:
         execution['router_protected_replay'] = dict(version=1,
             batch='source/historical subset of existing reward reference; current sample excluded',
@@ -623,7 +630,8 @@ def evaluate(a):
             if not a.continual: agent = new_agent(a, cnn, artifact, saved=saved)
             m, traces = episode(a, cnn, bank, initial, agent, domains[level], anchors,
                 mode=mode, reference=clean, same_level=True, continuation=continuation,
-                next_domain_features=next_sequence_features(a, domains, stage-1, a.seed) if a.continual else None)
+                next_domain_features=next_sequence_features(a, domains, stage-1, a.seed) if a.continual else None,
+                **({'domain_level': level} if a.router_level_balanced_history else {}))
             m.update(level=level, config_fingerprint=config.fingerprint, execution=execution,
                      classifier_unchanged=not cnn.training and all(not p.requires_grad for p in cnn.parameters())
                      and all(torch.equal(value.detach().cpu(), frozen_weights[name]) for name, value in cnn.state_dict().items()))
@@ -714,6 +722,7 @@ def parser():
     p.add_argument('--eval-epsilon', type=float, default=.05)
     p.add_argument('--router-protected-weight', type=float, default=.5, help='Protected share, or relative weight when --router-normal-weight is supplied.')
     p.add_argument('--router-normal-weight', type=float, help='Optional nonnegative relative paid-replay weight; both weights are normalized to sum to one.')
+    p.add_argument('--router-level-balanced-history', action='store_true', help='Balance routing-only historical replay by known acquisition level and class.')
     p.add_argument('--router-protected-replay', action='store_true', help='Mix current-bank source/historical supervision into the paid routing optimizer step.')
     p.add_argument('--routing-oracle-audit', action='store_true', help='Observer-only routing ceiling on unchanged learner trajectories.')
     p.add_argument('--modes', nargs='+', choices=['learned', 'random', 'random_query', 'random_query_online'], default=['learned', 'random'])
@@ -756,6 +765,8 @@ def main(argv=None):
         a.router_protected_weight = protected_routing_fraction(a.router_protected_weight, a.router_normal_weight)
     except ValueError as error:
         p.error(str(error))
+    if a.router_level_balanced_history and (not a.router_protected_replay or a.router_protected_weight <= 0):
+        p.error('--router-level-balanced-history requires active protected routing replay.')
     if a.router_protected_replay and (a.command != 'evaluate' or a.context_count != 1
             or a.modes != ['learned'] or a.query_schedule != 'policy' or a.update_policy != 'learned'
             or a.router_refresh or a.context_damage_guard or a.utility_calibration is not None

@@ -11,6 +11,7 @@ class ReferenceBatch:
     x: torch.Tensor
     y: torch.Tensor
     segments: np.ndarray
+    levels: np.ndarray | None = None
 
     def protected(self, count, rng):
         eligible = np.flatnonzero(self.segments != 2)
@@ -46,10 +47,13 @@ class ProtectedMemory:
     not duplicated in recent and historical storage. Sampling also deduplicates
     feature-identical rows across all partitions and excludes the current input.
     """
-    def __init__(self, anchors, classes, config, seed):
+    def __init__(self, anchors, classes, config, seed, track_levels=False):
         self.config, self.classes = config, classes
         self.rng = np.random.default_rng(seed)
         self.replay_rng = np.random.default_rng(seed + 1729)
+        self.track_levels = track_levels
+        self.levels = {}
+        self.router_rng = np.random.default_rng(seed + 491993) if track_levels else None
         self.source = []
         self.recent = deque()
         self.historical = [[] for _ in range(classes)]
@@ -81,7 +85,9 @@ class ProtectedMemory:
             index = int(self.rng.integers(self.seen[label]))
             if index < capacity: group[index] = row
 
-    def add(self, x, y):
+    def add(self, x, y, level=None):
+        if self.track_levels and (level is None or int(level) < 0):
+            raise ValueError('Tracked paid memory requires a nonnegative acquisition level.')
         row = self._row(x, int(torch.as_tensor(y).reshape(-1)[0]))
         if any(old[2] == row[2] for old in self.source): return
         for old in self.recent:
@@ -92,6 +98,41 @@ class ProtectedMemory:
             self.recent.append(row)
             if len(self.recent) > self.config.recent_capacity: self._archive(self.recent.popleft())
         else: self._archive(row)
+        if self.track_levels:
+            self.levels[row[2]] = int(level)
+            retained = {r[2] for r in self.recent}
+            retained.update(r[2] for group in self.historical for r in group)
+            self.levels = {key: value for key, value in self.levels.items() if key in retained}
+
+    def router_reference(self, current, reference):
+        """Separate routing-only draw: equal historical levels, then classes.
+
+        This never consumes the reward-reference or Context-replay RNG. Historical
+        storage stays the original per-class reservoir; absent levels cannot be
+        reconstructed. Source rows reuse the current reward-reference subset.
+        """
+        if not self.track_levels: raise ValueError('Router level balancing requires tracked memory.')
+        current_key = current.detach().cpu().contiguous().numpy().tobytes()
+        source_ids = np.flatnonzero(reference.segments == 0)
+        rows = [r for group in self.historical for r in group if r[2] != current_key]
+        labels = np.array([r[1] for r in rows])
+        levels = np.array([self.levels[r[2]] for r in rows], dtype=np.int64)
+        queues = {int(level): balanced_indices(labels, np.flatnonzero(levels == level), len(rows), self.router_rng).tolist()
+                  for level in np.unique(levels)}
+        chosen = []
+        count = min(self.config.reference_size//4, len(rows))
+        while len(chosen) < count:
+            for level in self.router_rng.permutation(list(queues)):
+                if queues[level]: chosen.append(queues[level].pop(0))
+                if len(chosen) == count: break
+        source_at = torch.as_tensor(source_ids, device=current.device)
+        pieces = [reference.x[source_at]] if len(source_ids) else []
+        if chosen: pieces.append(torch.cat([rows[i][0] for i in chosen]).to(current.device))
+        if not pieces: return None
+        out_labels = reference.y[source_at].detach().cpu().tolist() + [rows[i][1] for i in chosen]
+        out_segments = np.array([0]*len(source_ids)+[1]*len(chosen))
+        out_levels = np.array([-1]*len(source_ids)+[int(levels[i]) for i in chosen])
+        return ReferenceBatch(torch.cat(pieces), torch.tensor(out_labels, device=current.device), out_segments, out_levels)
 
     def sample(self, current):
         current_key = current.detach().cpu().contiguous().numpy().tobytes()
@@ -115,6 +156,14 @@ class ProtectedMemory:
                               torch.tensor(labels[chosen], device=current.device), segments[chosen])
 
     def counts(self):
-        return {'source': len(self.source), 'historical': sum(map(len, self.historical)),
+        result = {'source': len(self.source), 'historical': sum(map(len, self.historical)),
                 'recent': len(self.recent),
                 'historical_per_class': [len(group) for group in self.historical]}
+        if self.track_levels:
+            for name, rows in (('historical', [r for group in self.historical for r in group]), ('recent', list(self.recent))):
+                counts = {}
+                for row in rows:
+                    level = str(self.levels[row[2]])
+                    counts[level] = counts.get(level, 0)+1
+                result[name+'_by_level'] = counts
+        return result
