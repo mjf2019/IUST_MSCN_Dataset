@@ -1503,3 +1503,59 @@ git add -f -- "$run/Results"
 git commit -m "Add PairOnly matched random queries with frozen learned routing seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## PairOnly paid online routing and observer-only routing ceilings
+
+```powershell
+.\AMCAL\run_amcal_paironly_router_oracle.ps1 -Test Both -Seed 42
+```
+
+No training. Default `Both` runs exactly four evaluations on the existing PairOnly
+checkpoint: random queries with online correctness routing (independent and
+sequential), then ordinary full RL with routing-oracle reports (independent and
+sequential). Use `-Test Router` or `-Test Oracle` to run one pair, and
+`-EvaluationSet Independent` or `Sequential` to run one protocol. Output directory,
+Context count, cap, Context LR and seed match preceding PairOnly controls.
+
+`random_query_online` retains the exact full-random query/skip RNG and uses
+correctness-head argmax for prediction without exploration. Only acquired labels
+supervise correctness of the cached pre-feedback outputs of both routes, using
+the existing routing loss, replay and routing optimizer. Future/update-value
+parameters and target weights stay fixed; no TD training or TD optimizer step is
+performed. Prediction and query remain independent, so CNN may predict on a row
+whose feedback updates Context. The Context and protected memory still adapt.
+This diagnostic asks whether adapting prediction routing fixes the frozen-router
+collapse while keeping acquired labels matched; it is not a new PairOnly training.
+
+`--routing-oracle-audit` adds reports only; it never changes a prediction, query,
+reward, acquired label, Context update or selector update. The existing per-level
+`Oracle` is the fraction of pre-feedback rows for which CNN or Context is correct.
+The new `routing_oracle_summary.csv` reports mean stream oracle, actual accuracy,
+their gap and label counts. In persistent evaluation it additionally reports
+`FinalRoutingOracleAudit`, `FinalAudit`, their gap and clean-domain oracle. The
+sequential audit matrix gains `OracleAccuracy`, `Route0Accuracy` (CNN) and
+`Route1Accuracy` (Context), using the same observer outputs without extra model
+forwards. Full-bank evaluation is required; cascade is rejected.
+
+These are perfect-routing ceilings conditional on the evaluated adaptation/query
+trajectory, not a maximum over other label choices, model weights, training runs
+or architecture capacities. If both routes are wrong, this oracle is also wrong.
+Real labels are used only by the reporting observer for unpaid rows. Do not treat
+oracle accuracy as a deployable predictor or its time as a service benchmark.
+Oracle metadata creates fresh result fingerprints; existing runs are preserved.
+Both diagnostic and full-RL runs receive oracle reports, allowing their routing
+gaps to be compared without introducing an oracle-controlled learning trajectory.
+
+CPU tests verify paid-only routing updates, exact matched queries and Context
+states, frozen non-routing/target weights, invariance to unpaid labels, zero-label
+behavior, persistent continuation and both real CLI protocols. Oracle tests
+recompute the stream ceiling from saved predictions, bound audit scores by their
+oracle, and verify byte-equivalent parsed traces with versus without reporting.
+PowerShell is reviewed statically; full-data outcomes require the user-host run.
+
+```powershell
+$run='AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_query_credit_paironly_trainseed42'
+git add -f -- "$run/Results"
+git commit -m "Add PairOnly online routing and routing oracle audits seed 42"
+git push origin AMCAL_final_enhancement
+```

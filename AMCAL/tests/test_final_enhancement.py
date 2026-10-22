@@ -767,6 +767,49 @@ class FinalEnhancementTests(unittest.TestCase):
                     self.assertEqual(measured['queried_source_ids'],original['queried_source_ids'])
                 self.assertEqual((result/'sequential_summary.csv').exists(),execution['continual'])
             self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
+            # Paid-only online router and observer-only oracle reports on real CLI runs.
+            for oracle_mode in ('random_query_online','learned'):
+                existing=set((cf_output/'Results').glob('evaluation_*'))
+                oracle_common=random_common.copy()
+                oracle_common[oracle_common.index('--modes')+1]=oracle_mode
+                with redirect_stdout(io.StringIO()):
+                    runner.main([*oracle_common,'--routing-oracle-audit'])
+                    runner.main([*oracle_common,'--routing-oracle-audit','--continual'])
+                oracle_results=set((cf_output/'Results').glob('evaluation_*'))-existing
+                self.assertEqual(len(oracle_results),2)
+                for result in oracle_results:
+                    execution=json.loads((result/'execution.json').read_text())
+                    report=pd.read_csv(result/'routing_oracle_summary.csv').iloc[0]
+                    self.assertEqual(execution['routing_oracle_audit']['version'],1)
+                    self.assertGreaterEqual(report.MeanStreamRoutingOracle,report.MeanStreamAccuracy)
+                    if execution['continual']:
+                        self.assertGreaterEqual(report.FinalRoutingOracleAudit,report.FinalAudit)
+                        audit=pd.read_csv(result/'sequential_audit_matrix.csv')
+                        self.assertTrue((audit.OracleAccuracy+1e-10>=audit.Accuracy).all())
+                        self.assertTrue((audit.OracleAccuracy+1e-10>=audit.Route0Accuracy).all())
+                        self.assertTrue((audit.OracleAccuracy+1e-10>=audit.Route1Accuracy).all())
+                    for level in (5,7):
+                        measured=json.loads((result/f'{oracle_mode}_level{level}_metrics.json').read_text())
+                        trace=pd.read_csv(result/f'{oracle_mode}_level{level}_trace.csv')
+                        direct=np.mean([int(row.truth) in json.loads(row.predictions) for row in trace.itertuples()])
+                        self.assertAlmostEqual(measured['oracle_all'],direct)
+                        if oracle_mode=='random_query_online':
+                            self.assertEqual(measured['route_updates'],measured['labels'])
+                            self.assertEqual(measured['td_updates'],0)
+                            counterpart=next(r for r in random_results if json.loads((r/'execution.json').read_text())['continual']==execution['continual'])
+                            original=json.loads((counterpart/f'random_level{level}_metrics.json').read_text())
+                            self.assertEqual(measured['queried_source_ids'],original['queried_source_ids'])
+            # Oracle reports must not alter an otherwise identical learner trajectory.
+            existing=set((cf_output/'Results').glob('evaluation_*'))
+            with redirect_stdout(io.StringIO()):
+                runner.main([*random_common,'--routing-oracle-audit','--continual'])
+            result=(set((cf_output/'Results').glob('evaluation_*'))-existing).pop()
+            counterpart=next(r for r in query_results if json.loads((r/'execution.json').read_text())['continual'])
+            for level in (5,7):
+                a_trace=pd.read_csv(result/f'random_query_level{level}_trace.csv')
+                b_trace=pd.read_csv(counterpart/f'random_query_level{level}_trace.csv')
+                pd.testing.assert_frame_equal(a_trace,b_trace)
+            self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
             # Expanded banks: each Context count runs both protocols, same checkpoint.
             existing=set((cf_output/'Results').glob('evaluation_*'))
             for count in (4,5):

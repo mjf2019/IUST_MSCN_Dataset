@@ -417,6 +417,8 @@ def evaluate(a):
     if a.context_damage_guard and (not config.protected_reference or config.routed_utility
             or config.memory_replay_size < 1 or config.memory_ce_weight != .1):
         raise ValueError('Damage-guard ablation requires protected replay with the original CE weight 0.1.')
+    if a.routing_oracle_audit and config.cascade:
+        raise ValueError('Routing oracle audit requires a full-bank evaluation without cascade.')
     a.config = config
     temporal_credit = saved.get('training_protocol', {}).get('temporal_credit')
     if temporal_credit is not None:
@@ -470,6 +472,16 @@ def evaluate(a):
     if temporal_credit is not None:
         execution['temporal_credit'] = dict(gamma=a.gamma, connected_levels=a.connected_sequence_td,
             active_boundary_links=bool(a.continual and a.connected_sequence_td))
+    if 'random_query_online' in a.modes:
+        execution['random_query_online_control'] = dict(version=1,
+            query='matched full-random legal-action draws; query probability 1/3 until cap',
+            prediction='correctness head argmax without exploration',
+            learning='routing optimizer on paid pre-feedback correctness only; future/update/target fixed',
+            context='paid adaptation and protected replay retained')
+    if a.routing_oracle_audit:
+        execution['routing_oracle_audit'] = dict(version=1,
+            protocol='observer-only any-correct CNN/Context prediction before feedback; labels never select actions',
+            scope='routing ceiling conditional on the evaluated query/adaptation trajectory; not global capacity')
     if 'random_query' in a.modes:
         execution['random_query_control'] = dict(version=1,
             query='same RNG and legal-action query draws as full random; probability 1/3 until cap',
@@ -518,7 +530,7 @@ def evaluate(a):
     root = a.output / 'Results' / ('evaluation_'+run_id)
     if root.exists(): raise ValueError('This exact evaluation already exists; change --seed or use a fresh run copy.')
     root.mkdir(parents=True, exist_ok=False)
-    rows = []; audit_rows = []; forgetting_rows = []
+    rows = []; audit_rows = []; forgetting_rows = []; oracle_summaries = []
     for mode in a.modes:
         legacy.core.set_seed(a.seed)
         cnn = load_cnn(models, artifact)
@@ -529,17 +541,26 @@ def evaluate(a):
         continuation = {} if a.continual else None
         audit_matrix = []
         clean_scores = []
+        oracle_audit_matrix = []; oracle_clean_scores = []
         def observe_stage(stage, after_level, history, used, cap, position):
-            scores = []
+            scores = []; oracle_scores = []
             for audit_level, (ax, ay) in [(0, clean), *audits.items()]:
                 result = observer(cnn, bank, agent, ax, ay, history, used, cap,
                                   position, a.seed, config, mode)
                 accuracy = float(np.mean(result[0] == ay))
                 audit_rows.append(dict(Mode=mode, Stage=stage, AfterLevel=after_level,
                                        AuditLevel=audit_level, N=len(ay), Accuracy=100*accuracy))
+                if a.routing_oracle_audit:
+                    oracle_accuracy = float(np.any(result[2] == np.asarray(ay)[:, None], axis=1).mean())
+                    audit_rows[-1]['OracleAccuracy'] = 100*oracle_accuracy
+                    for k, value in enumerate(result[1]):
+                        audit_rows[-1][f'Route{k}Accuracy'] = 100*value
+                    if audit_level == 0: oracle_clean_scores.append(oracle_accuracy)
+                    else: oracle_scores.append(oracle_accuracy)
                 if audit_level == 0: clean_scores.append(accuracy)
                 else: scores.append(accuracy)
             audit_matrix.append(scores)
+            if a.routing_oracle_audit: oracle_audit_matrix.append(oracle_scores)
         if audits is not None:
             observe_stage(0, 0, DeviceReliability(len(a.classes), legacy.core.device, a.context_count+1),
                           0, int(a.budget_fraction*len(domains[a.levels[0]][1])), 0)
@@ -569,6 +590,22 @@ def evaluate(a):
                 CleanDrop=100*(clean_scores[0]-clean_scores[-1]),
                 MeanOnlineAccuracy=float(np.mean([row['Accuracy'] for row in rows if row['Mode'] == mode])),
                 Labels=sum(row['Labels'] for row in rows if row['Mode'] == mode)))
+        if a.routing_oracle_audit:
+            selected_rows = [row for row in rows if row['Mode'] == mode]
+            observed = float(np.mean([row['Accuracy'] for row in selected_rows]))
+            ceiling = float(np.mean([row['Oracle'] for row in selected_rows]))
+            diagnostic = dict(Mode=mode, MeanStreamAccuracy=observed,
+                MeanStreamRoutingOracle=ceiling, StreamRoutingGap=ceiling-observed,
+                Labels=sum(row['Labels'] for row in selected_rows))
+            if audits is not None:
+                final_ceiling = 100*float(np.mean(oracle_audit_matrix[-1]))
+                diagnostic.update(FinalAudit=forgetting_rows[-1]['FinalAudit'],
+                    FinalRoutingOracleAudit=final_ceiling,
+                    FinalRoutingGap=final_ceiling-forgetting_rows[-1]['FinalAudit'],
+                    CleanRoutingOracleFinal=100*oracle_clean_scores[-1])
+            oracle_summaries.append(diagnostic)
+    if a.routing_oracle_audit:
+        write_csv(root/'routing_oracle_summary.csv', oracle_summaries)
     write_csv(root/'combined_results.csv', rows)
     if audits is not None:
         write_csv(root/'sequential_audit_matrix.csv', audit_rows)
@@ -620,7 +657,8 @@ def parser():
     p.add_argument('--retention-weight', type=float, default=1.)
     p.add_argument('--train-epsilon', type=float, default=.2)
     p.add_argument('--eval-epsilon', type=float, default=.05)
-    p.add_argument('--modes', nargs='+', choices=['learned', 'random', 'random_query'], default=['learned', 'random'])
+    p.add_argument('--routing-oracle-audit', action='store_true', help='Observer-only routing ceiling on unchanged learner trajectories.')
+    p.add_argument('--modes', nargs='+', choices=['learned', 'random', 'random_query', 'random_query_online'], default=['learned', 'random'])
     p.add_argument('--query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--update-policy', choices=['learned', 'fixed'], default='learned')
     p.add_argument('--max-reference-drop', type=float, default=2.)
@@ -649,10 +687,12 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
-    if 'random_query' in a.modes and (a.command != 'evaluate' or a.context_count != 1
+    if any(m in a.modes for m in ('random_query', 'random_query_online')) and (a.command != 'evaluate' or a.context_count != 1
             or a.query_schedule != 'policy' or a.update_policy != 'learned'
             or a.router_refresh or a.context_damage_guard):
         p.error('random_query requires single-Context policy-schedule evaluation without other routing ablations.')
+    if a.routing_oracle_audit and a.command != 'evaluate':
+        p.error('--routing-oracle-audit is evaluation-only.')
     if a.paired_query_only_training and not a.query_value_only_training:
         p.error('--paired-query-only-training requires --query-value-only-training.')
     if a.connected_sequence_td and not a.paired_query_only_training:
