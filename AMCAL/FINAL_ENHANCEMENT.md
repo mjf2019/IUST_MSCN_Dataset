@@ -1328,7 +1328,14 @@ git push origin AMCAL_final_enhancement
 ```
 
 
-### Original paper configuration on three training domains
+
+### Main-paper baseline: reuse the existing binary implementation
+
+The original-paper reference is **`mjf2019/AMCAL-paper` main/elsarticle**, not
+`revision/reviewer-response`. The earlier seven-action launcher was incorrectly
+labelled original-paper AMCAL. This section and the launcher replace that
+identification. Seven-action experiments remain separate and are not evidence
+for the original binary paper method.
 
 ```powershell
 git pull --ff-only origin AMCAL_final_enhancement
@@ -1337,55 +1344,76 @@ if ($LASTEXITCODE -eq 0) {
 }
 ```
 
-Here "three training datasets" means Burst perturbation levels 0, 1, 3, not
-three independent traffic corpora. The reference is the supplied paper at
-`mjf2019/AMCAL-paper`, branch `revision/reviewer-response`,
-`elsarticle/AMCAL.tex`: three Contexts, seven coupled prediction/query actions,
-structured correctness/future/update heads, balanced transfer reference,
-DDQN with absolute TD plus the existing paired term, and pre-feedback scoring.
+This uses the already approved implementation
+`AMCAL/ANT_Burst_TEST/amcal_burst_legacy.py`, without editing its algorithm,
+classes, reward, optimizer, transition, scoring, or checkpoint-selection code.
+`amcal_paper_legacy_levels013.py` is a data/dispatch adapter, not a second AMCAL
+implementation. It calls the existing CLI and temporarily replaces only the
+training loaders passed to its existing `train_adversarial_system`; it restores
+the original function afterwards and records/verifies the source-file SHA256.
+It retains that implementation's existing architecture and selector state
+representation rather than redesigning either from the prose.
 
-The launcher invokes the original `amcal_burst_structured_bank_protocol.py`
-directly. It does not use the enhancement agent or any single-Context,
-protected-source/replay, damage-guard, frozen-head, paired-only or connected-TD
-extension. Selector initialization is fresh: neither resume-selector nor
-warm-start-selector is used. The already-pretrained CNN, initial Context and
-preprocessing are copied from the common original balanced-reference source
-run. Their offline pretraining is reused rather than rerun. Thus this is a
-paper-method selector retraining/evaluation with shared pretrained artifacts,
-not a claim of end-to-end reproduction from random CNN weights.
+The frozen base CNN is freshly pretrained on level-0 TRAIN data only. The
+existing Context pretraining and binary-DDQN/Context training routine receives
+the combined TRAIN subsets of levels 0, 1, 3 and the corresponding combined VAL
+subsets. Its algorithm, warmup, training exploration, Context persistence and
+early stopping are inherited. This **three-domain training dataset is the
+requested experimental extension**: the main paper originally trains on level 0.
+No persistent episodic-training redesign is introduced. The source run
+`structured_bank3_balancedref_lr0p0005_seed42` supplies only the saved source-row
+partition provenance; none of its CNN, Context or selector weights is reused.
 
-Original offline supervision is retained: dense TRAIN labels may supervise
-correctness, whereas Context updates follow policy queries under the 20% cap.
-The three correctness warmup episodes visit levels 0, 1, 3. Each subsequent
-epoch visits one of those levels cyclically, resets Contexts and their optimizers,
-and retains the learned selector, as described in the supplied paper. This
-does not apply the later persistent paid-only training modification. Validation
-uses temporary learners; the checkpoint is selected by mean independent VAL
-accuracy. The default is 12 epochs and patience 5. Training levels have disjoint
-TRAIN/VAL/TEST source IDs under the saved preprocessing.
+The adapter validates source maps, feature schemas, labels and disjoint source
+TRAIN/VAL/TEST identities across every domain. Prepared level-0 training rows
+supply the original legacy scaler/encoder. It creates separate combined
+Context TRAIN and VAL CSVs under `PreparedData`. The original training routine
+prints a test observer; the data adapter supplies VAL as that placeholder so
+held-out target TEST performance cannot enter training. Separate held-out
+level files contain only the saved TEST IDs. Original dataset files are
+never modified.
 
-The experiment sets Context LR 0.0005, alpha 0.8, gamma 0.95, label cost 0.0001,
-gain/retention weights 1, TRAIN epsilon 0.2, TEST epsilon 0.05, policy queries,
-learned update destinations and balanced macro transfer. No new source data,
-model architecture, reward formula or algorithm modification is introduced.
+The existing runner is selected with `--reward-mode paper --transition-mode local
+--gamma 0.95 --context-loss-mode aligned --training-selector-mode original`.
+Paper reward is 3/2/-2/0, with zero reward for skipping, zero added selection
+cost and no external prediction/confidence query gate. It has one shared
+Context and two selector actions. Training labels are unconstrained by an
+online label cap. Defaults retain the previous implementation's schedules:
+200 maximum CNN epochs, 300 adversarial epochs, patience 30 and its internal
+Context pretraining. The launcher exposes `-BaseEpochs`, `-ContextEpochs`,
+and `-Patience`. No accuracy outcome is assumed.
 
-`-Action All` performs one selector training job and then two held-out TEST jobs
-on levels 5, 7, 10, 12, 15, 17, 20: independent and persistent sequential
-forgetting, both learned mode and seed 42 only. The independent run resets all
-adaptive state per level; the sequential run uses the existing fixed audit IDs,
-excludes them at every level and retains adaptive state between levels.
-The sequential experiment is an additional diagnostic and does not change the
-original offline training protocol. `-Action Train`, `Evaluate`, or `Audit`
-runs just that stage. Output defaults to `paper_original_levels013_seed42`;
-sequential results go under `Results/Sequential_seed42`. Existing source runs
-and enhancement results are preserved. Pull once before starting concurrent jobs.
+`-Action All` trains once, then evaluates the original independent-domain
+protocol on held-out levels 5, 7, 10, 12, 15, 17, 20 with seed 42. Each level
+reloads the saved model. The cap is floor(20% of the source TEST count), epsilon
+is fixed at 0.05, Context LR is 0.0005 and order is shuffled with seed 42.
+The existing same-level/original-reference forgetting diagnostics are enabled.
+This does **not** run the later persistent-sequence forgetting protocol; adding
+that would require a separate adapter. `-Action Evaluate` runs evaluation only
+after training. Existing seven-action results are preserved.
 
-Both Python entry-point options were checked; the PowerShell launcher is
-reviewed statically. No GPU accuracy result is implied by preparation.
+The old legacy runner scores after feedback. Its existing traces also cache
+predictions before feedback. The data adapter writes
+`Results/legacy_levels_summary.csv` with both accuracies explicitly separated,
+plus base accuracy and actual labels, without changing predictions or learning.
+Use its pre-feedback accuracy for comparisons with the recent enhancement runs;
+do not mix the legacy post-feedback score with pre-feedback accuracy.
+Metadata outputs are `legacy_data_protocol.json`, `legacy_execution.json`,
+`legacy_training_summary.json`, and the original `reproduction_*.json` reports.
+The default output directory is now `paper_main_legacy_levels013_seed42`;
+it cannot overwrite the earlier `paper_original_levels013_seed42` run.
+
+CPU verification covers source-ID partition isolation, invalid-map rejection,
+separation of pre/post-feedback reports, actual existing legacy training and
+an independent TEST level, budget enforcement and an unchanged legacy source
+hash. PowerShell is reviewed statically. User-host training is required for
+scientific results.
 
 ```powershell
-$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/paper_original_levels013_seed42"
-git add -f -- "$run/structured_training.json" "$run/Results"
-git commit -m "Add original-paper AMCAL training on levels 0 1 3 seed 42"
+$run="AMCAL/ANT_Burst_IAT_TEST/protocol_runs/paper_main_legacy_levels013_seed42"
+git add -f -- "$run/legacy_data_protocol.json" "$run/legacy_execution.json" "$run/legacy_training_summary.json" "$run/reproduction_*.json" "$run/Results"
+git commit -m "Add existing binary-paper AMCAL results trained on levels 0 1 3 seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+Prepared CSVs and large model checkpoints are not needed for result analysis.
