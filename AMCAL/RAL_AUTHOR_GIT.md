@@ -1,3 +1,53 @@
+# RAL: clean-0 training and independent attack-level evaluation
+
+Use `run_ral_author_levels.ps1` for the requested AMCAL comparison protocol:
+
+```powershell
+.\AMCAL\run_ral_author_levels.ps1 -Dataset IAT -Seed 42 -BudgetFraction 0.2
+.\AMCAL\run_ral_author_levels.ps1 -Dataset PS -Seed 42 -BudgetFraction 0.2
+```
+
+Initial supervised training uses level 0 only. The author example's .5% bootstrap
+size is retained (fraction of the whole clean CSV, selected exclusively from
+eligible TRAIN identities in file order). It does not fit all clean TRAIN rows.
+Clean VAL is an observer only; it supplies no training labels or model selection.
+All supplied attack levels 1,3,5,7,10,12,15,17,20 are TEST only before streaming.
+Only the held-out TEST identities from the existing partition are streamed.
+
+Save one clean-0 checkpoint, then deserialize that SAME checkpoint before EVERY
+level. Each level starts with the initial source history, alpha, threshold and
+zero acquired/seen counters. No feedback or fitted target model crosses levels.
+Each level has its own floor(.2 * level TEST sample count) hard label cap, in
+addition to the author's native prefix-ratio gate. This is a maximum, not a
+forced quota. Predictions are recorded BEFORE acquiring the current label.
+Only acquired labels enter adaptation. Every update retains all initial clean
+bootstrap rows plus acquired feedback from the CURRENT level, as in author RAL.
+The original author core file remains unchanged. The experiment adapter changes
+the data split, stream order and hard per-level ceiling to the user's protocol;
+it is not the original single-file example experiment.
+
+The saved preprocessing artifact supplies feature schema and source identity
+partitions only. No CNN/Context weights, saved scaler or attack-domain fitting
+are used. Raw numeric permitted features are passed to the original classifiers.
+Inputs, checkpoint hashes, split identities, installed versions and actual default
+classifier parameters are recorded. The author uses default constructors;
+installed sklearn determines RF tree count (not an explicit RF10).
+
+Outputs for each dataset:
+`protocol_runs/ral_author_clean0_levels_budget0.2_seed42/`
+contains `Models/ral_author_clean0.joblib`, `execution.json`, and `Results/`
+with per-level prequential metrics/traces, combined_results.csv and summary.json.
+Source retention is measured on clean VAL before/after each independent level.
+The final retrospective target score includes queried rows and is explicitly
+separate from the pre-feedback online accuracy used for comparison.
+Prior outputs are preserved; use a new --output / -Output for a repeat run.
+No numerical experiments were run; Python syntax was checked.
+
+The earlier `run_ral_author_git.ps1` below remains a separate single-file example
+adapter. It is NOT the runner for clean-0-to-held-out-attack comparisons.
+
+---
+
 # RAL using the original author source and example protocol
 
 Author: https://github.com/SAWassermann/RAL
