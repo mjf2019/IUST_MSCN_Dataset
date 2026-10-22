@@ -66,6 +66,35 @@ class ExternalDataAuditTests(unittest.TestCase):
                 frame.to_csv(path, index=False, sep=delimiter)
                 self.assertEqual(separator(path), delimiter)
 
+    def test_auxiliary_metadata_is_diagnostic_not_a_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); path = root/'npbo.csv'
+            pd.DataFrame({'label':[1,2,3], 'label_2':[True,True,False],
+                'label_poly_o':['1_Apache','2a_variant_Apache','3_Other'],
+                'F':[1,2,3]}).to_csv(path,index=False)
+            result = audit_file(path,'ASNM_NPBO_TEST',root,chunksize=1)
+            self.assertEqual(result['binary_classes'], {'1':2,'0':1})
+            self.assertEqual(result['auxiliary_label_diagnostics']['label_poly_o']['prefix_mismatch_rows'],1)
+            self.assertEqual(result['candidate_features'],['F'])
+            self.assertTrue(result['warnings'])
+
+    def test_dataset_filter_preserves_existing_report_entries(self):
+        import json
+        from unittest.mock import patch
+        from amcal_external_data_audit import main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); path=root/'AMCAL/ASNM_NPBO_TEST/Dataset_official_v1/x.csv'
+            path.parent.mkdir(parents=True)
+            pd.DataFrame({'label':[1,2,3], 'label_2':[True,True,False], 'F':[1,2,3]}).to_csv(path,index=False)
+            output=root/'AMCAL/external_datasets_audit.json'
+            preserved={'name':'DReLAB_TEST','files':[{'marker':'retained'}],'errors':[]}
+            output.write_text(json.dumps({'datasets':[preserved]}))
+            with patch.object(sys,'argv',['audit','--repo-root',str(root),'--datasets','ASNM_NPBO_TEST']):
+                with contextlib.redirect_stdout(io.StringIO()): main()
+            result=json.loads(output.read_text())
+            self.assertEqual(result['datasets'][0],preserved)
+            self.assertEqual(result['datasets'][1]['role_rows'],{'direct':1,'adversarial':1,'benign':1})
+
     def test_missing_files_report_errors(self):
         with tempfile.TemporaryDirectory() as tmp:
             with contextlib.redirect_stdout(io.StringIO()): result=audit(Path(tmp))

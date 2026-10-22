@@ -98,10 +98,6 @@ def roles_and_targets(frame, dataset, path):
     targets = (codes != 3).astype(int)
     if 'label_2' in frame and not binary_label(frame['label_2']).equals(targets):
         raise ValueError('ASNM binary and ternary labels disagree.')
-    for col in ('label_poly', 'label_poly_o', 'label_poly_s'):
-        if col in frame:
-            prefix = pd.to_numeric(frame[col].astype(str).str.split('_').str[0], errors='coerce')
-            if not prefix.eq(codes).all(): raise ValueError(f'{col} disagrees with ternary labels.')
     return roles, targets
 
 
@@ -112,6 +108,7 @@ def audit_file(path, dataset, repo_root, chunksize=10000):
                   label_values={}, excluded_columns=[], candidate_features=[])
     role_counts, target_counts, labels = Counter(), Counter(), {}
     bad_numeric, missing, infinite = Counter(), Counter(), Counter()
+    auxiliary = {}
     columns = None
     for frame in pd.read_csv(path, sep=sep, encoding='utf-8-sig', chunksize=chunksize, low_memory=False):
         if columns is None:
@@ -123,6 +120,19 @@ def audit_file(path, dataset, repo_root, chunksize=10000):
         roles, targets = roles_and_targets(frame, dataset, path)
         role_counts.update(roles.tolist()); target_counts.update(map(str, targets.tolist()))
         result['rows'] += len(frame)
+        if dataset != 'DReLAB_TEST':
+            codes = roles.map({'direct': 1, 'adversarial': 2, 'benign': 3})
+            for col in ('label_poly', 'label_poly_o', 'label_poly_s'):
+                if col not in frame: continue
+                values = frame[col].astype(str)
+                prefix = pd.to_numeric(values.str.split('_').str[0], errors='coerce')
+                mismatch = ~prefix.eq(codes)
+                stats = auxiliary.setdefault(col, {'rows': 0, 'prefix_mismatch_rows': 0, 'examples': []})
+                stats['rows'] += len(frame)
+                stats['prefix_mismatch_rows'] += int(mismatch.sum())
+                for value in values[mismatch].unique():
+                    if value not in stats['examples'] and len(stats['examples']) < 10:
+                        stats['examples'].append(value)
         for col in columns:
             if str(col).lower().startswith('label'):
                 values = labels.setdefault(col, Counter())
@@ -140,18 +150,21 @@ def audit_file(path, dataset, repo_root, chunksize=10000):
         missing_values={k: v for k,v in missing.items() if v},
         infinite_values={k: v for k,v in infinite.items() if v},
         candidate_feature_count=len(result['candidate_features']))
+    result['auxiliary_label_diagnostics'] = auxiliary
+    result['warnings'] = [f'{col}: auxiliary prefix differs on {stats["prefix_mismatch_rows"]} rows; excluded from features and targets'
+        for col, stats in auxiliary.items() if stats['prefix_mismatch_rows']]
     result['numeric_feature_count'] = sum(not bad_numeric[c] for c in result['candidate_features'])
     return result
 
 
-def audit(repo_root, chunksize=10000):
+def audit(repo_root, chunksize=10000, datasets=DATASETS):
     report = dict(version=1, purpose='data readiness only; not training or test results',
         method='PairOnly; one Context; three actions; Context LR 0.0005; 20% label cap',
         limitations=['No source/attack identity alignment is inferred from CSV indices.',
             'Feature selection, imputation and scaling must fit TRAIN only.',
             'Full feature/identity leakage checks and split creation are still required before training.',
             'Candidate feature counts are not a trained feature selection.'], datasets=[])
-    for dataset in DATASETS:
+    for dataset in datasets:
         root = repo_root/'AMCAL'/dataset/'Dataset_official_v1'
         record = dict(name=dataset, files=[], skipped=[], errors=[])
         paths = sorted(root.rglob('*.csv'))
@@ -175,6 +188,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--repo-root', type=Path, default=Path(__file__).resolve().parents[1])
     p.add_argument('--output', type=Path)
+    p.add_argument('--datasets', nargs='+', choices=DATASETS)
     p.add_argument('--chunksize', type=int, default=10000)
     a = p.parse_args()
     if a.chunksize < 1: p.error('--chunksize must be positive.')
@@ -183,7 +197,13 @@ def main():
     if output.suffix.lower() != '.json': p.error('--output must be a JSON report.')
     if any(part.lower() == 'dataset_official_v1' for part in output.resolve().parts):
         p.error('Report output cannot be inside raw dataset folders.')
-    report = audit(root, a.chunksize)
+    report = audit(root, a.chunksize, a.datasets or DATASETS)
+    if a.datasets and output.exists():
+        previous = json.loads(output.read_text(encoding='utf-8-sig'))
+        records = {record['name']: record for record in previous['datasets']}
+        records.update({record['name']: record for record in report['datasets']})
+        report['datasets'] = [records[name] for name in DATASETS if name in records]
+    report['auxiliary_label_policy'] = 'binary and ternary targets must agree; auxiliary label columns are excluded and diagnosed only'
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, ensure_ascii=True, allow_nan=False), encoding='utf-8')
     print('Report:', output.resolve(), flush=True)
