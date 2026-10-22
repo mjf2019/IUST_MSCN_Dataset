@@ -1,0 +1,13 @@
+{
+  "source_sha256": "aae24fdd940d08f8612e9cc7a6dbd13e5f44e6198e28293cf83d063c75117085",
+  "seed": 42,
+  "max_features": 64,
+  "schedule": {
+    "cnn_epochs": 60,
+    "context_epochs": 10,
+    "warm_epochs": 3,
+    "pair_epochs": 6,
+    "patience": 5
+  },
+  "dataset_name": "DReLAB-CTU-Neris-RF-DDQN"
+}
