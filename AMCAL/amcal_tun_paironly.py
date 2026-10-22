@@ -176,7 +176,7 @@ def train(a,prepared,output,artifact):
             if epoch>=0:
                 agent.td_memory.clear();agent.pair_memory.clear();agent.route_memory.clear()
                 continuation={}
-                for domain in (source,target):
+                for domain in ((source,) if getattr(a,'source_only_training',False) else (source,target)):
                     episode(a,cnn,[context],initial,agent,domain,source[:2],training=True,
                         paid_supervision=paired,continuation=continuation,
                         rollout_seed=a.seed+200003+epoch*1009)
@@ -199,6 +199,7 @@ def train(a,prepared,output,artifact):
     runner.write_json(output/'training.json',dict(cnn=cnn_log,context=context_log,selector=logs,
         method=getattr(a,'dataset_name','ASNM-TUN')+' one-Context three-action PairOnly pilot; dataset-specific warmup, no imported Burst weights',
         feature_count=width,heldout_test_scored=False,context_update='original single acquired row plus protected replay; no batch5',
+        adversarial_exposure='TEST only; no adversarial TRAIN/warmup/VAL' if getattr(a,'source_only_training',False) else 'adversarial TRAIN and VAL present',
         source_preprocessing='fitted on source TRAIN only'))
     runner.write_json(output/'training_complete.json',dict(outputs={p.relative_to(output).as_posix():digest(p)
         for p in [*models.iterdir(),output/'training.json']}))
@@ -250,6 +251,7 @@ def evaluate(a,prepared,output,artifact):
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--source-only-training',action='store_true')
     p.add_argument('--dataset-name', default='ASNM-TUN')
     p.add_argument('--action',choices=['All','Train','Evaluate'],default='All')
     p.add_argument('--csv',type=Path)
@@ -275,6 +277,7 @@ def main(argv=None):
     if args.dataset_name!='ASNM-TUN':
         spec['dataset_name']=args.dataset_name
         spec['source_loss']='weighted_ce_no_smoothing_global_v1'
+    if args.source_only_training:spec['training_protocol']='source_only_no_adversarial_train_or_val_v1'
     plan=args.output/'plan.json';prepared=args.output/'Prepared'
     if plan.exists():
         if json.loads(plan.read_text())!=spec:raise ValueError('Inputs/schedule changed; use a new --output.')
@@ -295,6 +298,11 @@ def main(argv=None):
     if device=='cuda' and not torch.cuda.is_available():p.error('CUDA unavailable.')
     core=runner.legacy.core;core.device=torch.device(device);core.set_seed(args.seed)
     a=runner.parser().parse_args(['train','--output',str(args.output),'--burst-dir',str(prepared)])
+    a.source_only_training=args.source_only_training
+    if args.source_only_training:
+        for key,ids in artifact['pools'].items():
+            if key.endswith(('_train','_val')) and 'adversarial' in set(artifact['roles'][ids]):
+                raise ValueError('Adversarial data in source-only training/validation pool: '+key)
     a.dataset_name=args.dataset_name
     a.external_balanced_loss=args.dataset_name!='ASNM-TUN'
     a.config=EnhancementConfig.preset('accuracy');a.classes=['0','1'];a.context_count=1

@@ -1,93 +1,58 @@
-# NPBO and fast DReLAB PairOnly pilots
+# Source-only NPBO and DReLAB PairOnly pilots
 
-From the repository root on experiment/paironly-paid-replay:
+Current protocol: adversarial examples are TEST-only. All initial CNN/Context
+training, selector warmup, paid PairOnly fitting, and model selection use only
+benign and direct attacks. The legacy target_train/target_val/audit_val pool names
+now refer to source-domain benign/direct data. Training visits source once per
+pass, not twice through aliases. Runtime assertions reject adversarial TRAIN/VAL.
+
+Original group assignments are made before filtering adversarial TRAIN/VAL rows.
+Those adversarial rows are discarded, never moved to TEST. Thus using Fraction=1
+reads the entire scenario but does not evaluate derivatives of training groups.
+DReLAB retains immutable-feature groups, with fixed seed role-stratified group
+60/20/20 splitting. NPBO uses exact raw-feature groups; original/obfuscated
+identity linkage is NOT verified from these CSVs. Exact processed-feature overlap
+checks still apply; session/derivative independence is not claimed for NPBO.
+
+DReLAB keeps the whole-group processed overlap purge (TRAIN > VAL > TEST,
+observers > stream). No rows move between partitions; preprocessing stays fitted
+on source TRAIN only. VAL and TEST pools are independently balanced 50:50
+benign/attack, after purging, without replacement and with a seeded permutation.
+Each DReLAB evaluation pool requires at least 20 rows per class; fail otherwise.
+VAL attacks are direct; only TEST target stream and audit attacks are adversarial.
+Source TEST audit uses benign/direct rows disjoint from adaptation groups.
+These are balanced case-control results, not natural-prevalence accuracy.
+
+Commands from the repository root:
 
 ```powershell
 .\AMCAL\run_amcal_external_paironly.ps1 -Dataset NPBO -Action All -Seed 42
-.\AMCAL\run_amcal_external_paironly.ps1 -Dataset DReLAB -Action All -Seed 42 -Fraction 0.1 -MaxTrainRows 2000 -MaxStreamRows 1000 -MaxAuditRows 5000
+.\AMCAL\run_amcal_external_paironly.ps1 -Dataset DReLAB -Action All -Seed 42 -Fraction 1 -MaxTrainRows 0 -MaxStreamRows 0 -MaxAuditRows 0
 ```
 
-NPBO uses all raw data (11,445 records) without fractional sampling/caps by
-default. Fixed held-out source/target/audit partitions still reserve records from
-training. DReLAB starts with CTU/Neris, RF/DDQN attacks only. No attacks are
-regenerated. Both use simple one-Context three-action PairOnly, Context LR .0005,
-20% label cap, original single-acquired-row update and protected replay. No batch5.
+NPBO reads its full CSV. DReLAB currently covers CTU/Neris RF/DDQN only; Fraction=1
+reads all three scenario CSVs, not other attack families. Prepared fraction CSVs
+and group maps are reused, with original hashes checked. The effective splitting
+policy is recorded in the external protocol; old prepared manifests may describe
+the earlier splitting policy, which is superseded by this run's protocol.
 
-For speed, source-only preprocessing selects at most 64 nonconstant source-TRAIN
-features, with signed-log transform, TRAIN medians and TRAIN scaling, matching the
-TUN pilot. Label/ID/IP/MAC/raw ports/absolute times and generation metadata stay
-excluded. The selector warmup is 3 epochs and paired-only specialization 6 epochs
-by default (override WarmEpochs/PairEpochs). Source CNN/Context use existing pilot
-maximum epochs and VAL-only early stopping. No TEST score selects a model.
+New defaults prevent mixing legacy adversarial-trained results:
+- ASNM_NPBO_TEST/protocol_runs/paironly_sourceonly_seed42
+- DReLAB_TEST/protocol_runs/paironly_sourceonly_CTUNeris_f1_seed42
 
-DReLAB reads the large benign CSV in chunks and uses seeded within-file 10%
-Bernoulli sampling while retaining immutable-feature keys. The effective v2
-TRAIN/VAL/TEST assignment uses role-stratified whole groups, as described below. Actual percentages/counts are recorded,
-not assumed exactly 10%. A group includes every flow with the same fields that
-DReLAB's published attack leaves unchanged. This is a deliberately conservative
-equivalence group, NOT a verified one-to-one original-flow ID. Attack immutable
-keys must exist in original Neris data. Host-type fields may be used for grouping
-only, never model inputs. No CSV index is assumed to prove derivative identity.
+Source CNN/Context use inverse-frequency weighted CE, no smoothing, globally
+normalized TRAIN weights. Preprocessing: signed log, source TRAIN medians,
+source TRAIN ANOVA at most 64 nonconstant features and StandardScaler.
+Label, ID, IP, MAC, raw port, absolute time, host identity proxies and generation
+metadata remain excluded. Context LR .0005; 20% TEST label cap. One Context,
+three actions, original single-row Context update with protected replay; no batch5.
+Selector warmup defaults to 3 epochs, PairOnly specialization to 6.
 
-The sample's TRAIN pool is proportionally capped at 2,000 rows by the example
-command, before source/target role selection; target VAL/TEST adaptation streams
-are capped at 1,000 and each audit at 5,000. Caps sample without replacement and
-preserve role proportions up to rounding. These are pilot results, not full-data
-results. Zero caps mean unlimited. Ratios may still differ between partitions
-because entire conservative groups are kept together. Source and target audits
-are group-disjoint from adaptation; final selected-feature duplicates are checked
-again. If conservative grouping leaves any required class/role absent, the run
-stops instead of silently weakening independence. Inspect the input/split reports
-before deciding a different protocol; no scientific independence is claimed from
-an unchecked source index.
-
-Prepared DReLAB CSV/group maps and original SHA256 hashes are retained under
-DReLAB_TEST/Dataset_prepared_pilots. Official CSVs are unchanged. Integrity and
-sampling configs prevent accidentally reusing a run with different inputs/caps.
-Use a fresh -Output to change caps/epoch settings. Partial training is preserved.
-
-Outputs:
-- ASNM_NPBO_TEST/protocol_runs/paironly_simple_seed42
-- DReLAB_TEST/protocol_runs/paironly_simple_CTUNeris_f0.1_seed42
-
-Both have Models, Prepared, training.json, and Results/summary.csv/summary.json,
-stream_metrics.json and trace.csv. Report online accuracy/F1 vs frozen, target
-holdout accuracy/F1/attack recall, label use and source accuracy drop. Source
-macro-F1 and attack recall before/after are also reported because source classes
-are imbalanced. These are single-target-domain retention pilots, not multi-domain
-BWT experiments. Full-data runs and additional seeds can follow after the pilot.
-
-No numerical/execution tests were run for these new entry points, per user
-request. Only Python syntax was checked. They reuse the previously exercised
-pilot agent/stream; actual dataset behavior must be checked on the user machine.
-
-DReLAB processed-feature overlap fix: TRAIN preprocessing stays fixed. Entire
-held-out immutable groups whose processed features overlap TRAIN are purged;
-TEST also purges overlap with retained VAL. Within VAL/TEST, observer pools take
-priority over stream groups. No row is reassigned; removed counts are printed
-and saved in split_manifest.json. Missing classes still stop the run. This changes
-the retained evaluation population; report the counts with pilot results.
-For an earlier failed run, use a new --Output ending in _purged_seed42. Existing
-sampled CSV/groups are reused. No numerical execution tests were run for this fix.
-
-External source loss fix: NPBO/DReLAB use inverse-frequency weighted CE without
-label smoothing, normalized by global TRAIN class frequency rather than each
-minibatch's weight sum. The old smoothing + inverse-frequency combination can
-strongly favor the rare class on predominantly majority-only minibatches.
-Use fresh output directories ending in _lossfix_seed42; earlier trained models
-are incompatible. TUN and Burst PS/IAT training settings are unchanged.
-
-DReLAB balanced_v2: replace hash partitions with one fixed-seed five-fold
-StratifiedGroupKFold assignment (3 TRAIN, 1 VAL, 1 TEST). Immutable groups still
-stay together. Reserve source/target observers with role-stratified group folds;
-apply the same whole-group processed overlap purge. Then sample each VAL/TEST
-pool 50:50 benign/attack, capped only after purging, without replacement.
-Require at least 20 rows of each class per evaluation pool; fail otherwise.
-The 10% prepared input is reused, but the effective split rule is now v2, recorded
-in the external protocol. This is a balanced case-control pilot, not an estimate
-of natural-prevalence accuracy. Inspect actual group/row counts with results.
-TRAIN retains its natural proportions and uses the corrected source loss.
-No seed search or TEST performance is used to select groups.
-
-Balanced evaluation pools use a fixed seeded permutation, not raw file order;
-no chronological-stream interpretation is claimed for this pilot.
+Results include online accuracy/Macro-F1 vs frozen, fixed target audit
+accuracy/F1/attack recall, source before/after accuracy/F1/recall, and label use.
+Source drop measures retention of benign/direct behavior; one target domain
+cannot establish multi-domain BWT. Inspect role counts and purged counts.
+Previous pilot outputs remain separate and are not unseen-attack evaluations.
+No execution/numerical tests were run for this change, per user request;
+only Python syntax was checked. Actual dataset split feasibility must be verified
+on the user's machine.

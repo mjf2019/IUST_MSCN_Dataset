@@ -149,7 +149,7 @@ def purge_processed_overlaps(splits,pools,groups,processed_groups,roles):
         report['removed_stream_rows'][name]=int(len(stream)-len(kept))
         pools['target_'+name]=kept
     for key,ids in pools.items():
-        expected={'benign','direct'} if key.startswith('source_') else {'benign','adversarial'}
+        expected={'benign','adversarial'} if key in ('target_test','audit_test') else {'benign','direct'}
         if set(roles[ids])!=expected:
             raise ValueError(f'{key} loses a class after whole-group overlap purge: {report}')
     print('Processed overlap purge:',report,flush=True)
@@ -174,26 +174,31 @@ def data_hooks(a,group_values):
             for name,ids in splits.items():
                 if set(roles[ids])!={'benign','direct','adversarial'}:
                     raise ValueError(f'{name} lacks roles under stratified group splitting.')
+        for name in ('train','val'):
+            splits[name]=splits[name][roles[splits[name]]!='adversarial']
+            if set(roles[splits[name]])!={'benign','direct'}:
+                raise ValueError(name+' lacks benign/direct data for source-only training.')
         splits['train']=capped(splits['train'],roles,a.max_train_rows,np.random.default_rng(seed+2011))
         return splits,groups
     def pools(splits,roles,groups,seed):
-        if group_values is None:
-            return grouped_pools(splits,roles,groups,seed,a.max_stream_rows,a.max_audit_rows)
         result={}
         for offset,(name,ids) in enumerate(splits.items()):
             if name=='train':
                 result['source_train']=ids[roles[ids]!='adversarial']
-                result['target_train']=ids[roles[ids]!='direct']
+                result['target_train']=ids.copy()
                 continue
             folds=list(StratifiedGroupKFold(n_splits=5,shuffle=True,random_state=seed+1500+offset)
                        .split(ids,roles[ids],groups[ids]))
             source=ids[np.concatenate([folds[i][1] for i in (0,1)])]
             target=ids[np.concatenate([folds[i][1] for i in (2,3,4)])]
             source=source[roles[source]!='adversarial']
-            target=target[roles[target]!='direct']
+            target=target[roles[target]!=('direct' if name=='test' else 'adversarial')]
             ti,ai=next(StratifiedGroupKFold(n_splits=4,shuffle=True,random_state=seed+1700+offset)
                        .split(target,roles[target],groups[target]))
             result.update({f'source_{name}':source,f'target_{name}':target[ti],f'audit_{name}':target[ai]})
+        for key,ids in result.items():
+            expected={'benign','adversarial'} if key in ('target_test','audit_test') else {'benign','direct'}
+            if set(roles[ids])!=expected:raise ValueError(key+' lacks expected source-only protocol classes.')
         return result
     pilot.partition_ids=partition;pilot.domain_splits=pools
     if group_values is not None:
@@ -240,15 +245,15 @@ def main(argv=None):
     if a.dataset=='DReLAB':
         csv_path,groups,input_path,root=drelab_input(a)
         name='DReLAB-CTU-Neris-RF-DDQN'
-        default_output=root/'protocol_runs'/f'paironly_simple_CTUNeris_f{a.fraction:g}_balanced_v2_seed{a.seed}'
+        default_output=root/'protocol_runs'/f'paironly_sourceonly_CTUNeris_f{a.fraction:g}_seed{a.seed}'
     else:
         root=a.data_root or Path(__file__).resolve().parent/'ASNM_NPBO_TEST'
         paths=list((root/'Dataset_official_v1').rglob('*.csv'))
         if len(paths)!=1:raise ValueError('Exactly one NPBO CSV required beneath Dataset_official_v1.')
         csv_path=paths[0];groups=None;input_path=csv_path.parent;name='ASNM-NPBO'
-        default_output=root/'protocol_runs'/f'paironly_simple_seed{a.seed}'
+        default_output=root/'protocol_runs'/f'paironly_sourceonly_seed{a.seed}'
     output=(a.output or default_output).resolve()
-    protocol=dict(dataset=name,seed=a.seed,fraction=a.fraction if groups is not None else 1.,
+    protocol=dict(training_protocol='source_only_no_adversarial_train_or_val_v1',dataset=name,seed=a.seed,fraction=a.fraction if groups is not None else 1.,
         max_train_rows=a.max_train_rows,max_stream_rows=a.max_stream_rows,max_audit_rows=a.max_audit_rows,
         warm_epochs=a.warm_epochs,pair_epochs=a.pair_epochs,
         source_sha256=pilot.digest(csv_path),
@@ -260,7 +265,7 @@ def main(argv=None):
         if json.loads(protocol_path.read_text())!=protocol:raise ValueError('Sampling/protocol changed; choose a new --output.')
     elif a.action=='Evaluate':raise ValueError('No trained protocol found.')
     else:pilot.runner.write_json(protocol_path,protocol)
-    arguments=['--dataset-name',name,'--csv',str(csv_path),'--output',str(output),'--action',a.action,
+    arguments=['--source-only-training','--dataset-name',name,'--csv',str(csv_path),'--output',str(output),'--action',a.action,
         '--seed',str(a.seed),'--device',a.device,'--warm-epochs',str(a.warm_epochs),'--pair-epochs',str(a.pair_epochs)]
     with data_hooks(a,groups):pilot.main(arguments)
 
