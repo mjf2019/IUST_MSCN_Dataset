@@ -1,0 +1,26 @@
+{
+  "train": {
+    "implementation_sha256": "b6fd0e1964ff3b0628133be38eeee4adab35ba23843746fbf56311975095f735",
+    "seed": 42,
+    "source_main": "elsarticle/AMCAL.tex",
+    "reward": "paper",
+    "transition": "local",
+    "gamma": 0.95,
+    "selection_cost": 0,
+    "query_gate": "none",
+    "training": "base on 0; Context and selector on combined 0,1,3; no episodic redesign",
+    "evaluation": "independent levels; same-level forgetting diagnostics; no persistent sequential evaluation"
+  },
+  "evaluate": {
+    "implementation_sha256": "b6fd0e1964ff3b0628133be38eeee4adab35ba23843746fbf56311975095f735",
+    "seed": 42,
+    "source_main": "elsarticle/AMCAL.tex",
+    "reward": "paper",
+    "transition": "local",
+    "gamma": 0.95,
+    "selection_cost": 0,
+    "query_gate": "none",
+    "training": "base on 0; Context and selector on combined 0,1,3; no episodic redesign",
+    "evaluation": "independent levels; same-level forgetting diagnostics; no persistent sequential evaluation"
+  }
+}
