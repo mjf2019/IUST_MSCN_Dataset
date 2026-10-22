@@ -811,8 +811,7 @@ def main(argv=None):
         if ((a.command != 'evaluate' and not allowed_train)
                 or a.context_count != 1 or a.modes != ['learned']
                 or a.query_schedule != 'policy' or a.update_policy != 'learned'
-                or a.context_damage_guard or a.router_protected_replay or a.routed_utility
-                or a.online_memory_ce_weight is not None):
+                or a.context_damage_guard or a.router_protected_replay or a.routed_utility):
             p.error('Paid replay requires one-Context learned evaluation or dedicated PairOnly batch3/5/7 training.')
     if a.paired_query_only_training and not a.query_value_only_training:
         p.error('--paired-query-only-training requires --query-value-only-training.')
@@ -835,8 +834,11 @@ def main(argv=None):
     if a.online_memory_ce_weight is not None:
         if not np.isfinite(a.online_memory_ce_weight) or a.online_memory_ce_weight < 0:
             p.error('Online memory CE weight must be finite and nonnegative.')
-        if a.command != 'evaluate' or a.context_count != 1 or a.query_schedule != 'uniform' or a.update_policy != 'learned':
-            p.error('Online replay weighting is a single-Context uniform-feedback evaluation ablation.')
+        matched_policy = (a.query_schedule == 'policy' and a.modes == ['learned']
+                          and a.paid_replay_mode in ('batch3','batch5','batch7'))
+        if (a.command != 'evaluate' or a.context_count != 1 or a.update_policy != 'learned'
+                or (a.query_schedule != 'uniform' and not matched_policy)):
+            p.error('Online replay weighting requires single-Context uniform feedback or matched learned PairOnly batch evaluation.')
         if a.utility_calibration is not None or a.router_refresh or a.router_informative_weight != 1.:
             p.error('Test online replay weighting separately from other routing/utility ablations.')
     if a.context_count != 3 and not a.one_context_rl_training and (a.command != 'evaluate' or a.utility_calibration is not None):
