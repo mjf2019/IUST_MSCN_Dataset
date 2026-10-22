@@ -36,3 +36,16 @@ architecture_ablation metadata and distinct fingerprints under the original
 IAT batch5 Results directory. Baseline is the previously completed Bonus1,
 replay .1, LR .00025, budget .2 run. No baseline or model file is overwritten.
 No numerical/execution tests were run, as requested; Python syntax only.
+
+PS final Light CNN checkpoint is supported explicitly:
+
+```powershell
+.\AMCAL\run_amcal_iat_component_ablations.ps1 -Dataset PS -Seed 42
+```
+
+Uses light_ps_paironly_batch5_trainseed42/paironly_batch5, NOT the original-CNN
+PS comparison or synthetic run. Same component protocols, fixed seed, budget .2,
+Context LR .00025, protected replay .1 and batch5; Bonus1 retained only where RL
+is active (no_context). Tags component_no_context/component_no_rl/component_frozen
+under the PS run. Defaults stay IAT for backward compatibility. No architecture
+or checkpoint is retrained or edited; no execution tests run.

@@ -1,4 +1,5 @@
 param(
+    [ValidateSet('IAT','PS')][string]$Dataset = 'IAT',
     [int]$Seed = 42,
     [ValidateSet('all','no_context','no_rl','frozen')][string]$Component = 'all',
     [ValidateSet('cpu','cuda')][string]$Device = 'cuda'
@@ -6,12 +7,15 @@ param(
 $ErrorActionPreference = 'Stop'
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
+    $runName = if ($Dataset -eq 'PS') { 'light_ps_paironly_batch5_trainseed42' } else { 'paironly_batch5_trainseed42' }
+    $run = "AMCAL/ANT_Burst_${Dataset}_TEST/protocol_runs/$runName/paironly_batch5"
+    $burstDir = "AMCAL/ANT_Burst_${Dataset}_TEST/Dataset_official_v1/AdvBurst_FTSC-$Dataset"
     $cases = if ($Component -eq 'all') { @('no_context','no_rl','frozen') } else { @($Component) }
     foreach ($case in $cases) {
         $bonus = if ($case -eq 'no_context') { '1' } else { '0' }
         $runArgs = @('evaluate',
-            '--output','AMCAL/ANT_Burst_IAT_TEST/protocol_runs/paironly_batch5_trainseed42/paironly_batch5',
-            '--burst-dir','AMCAL/ANT_Burst_IAT_TEST/Dataset_official_v1/AdvBurst_FTSC-IAT',
+            '--output',$run,
+            '--burst-dir',$burstDir,
             '--architecture-ablation',$case,'--context-count','1','--modes','learned',
             '--query-schedule','policy','--update-policy','learned','--paid-replay-mode','batch5',
             '--context-lr','0.00025','--online-memory-ce-weight','0.1',
