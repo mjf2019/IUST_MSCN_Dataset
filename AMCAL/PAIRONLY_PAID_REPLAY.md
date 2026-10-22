@@ -61,3 +61,13 @@ with batch_all in its separate execution fingerprint/tag. No retraining.
 
 Validation: syntax/AST and integration-order checks passed in the authoring
 environment; numerical CPU tests require PyTorch and were not executed here.
+
+## Fixed paid batch sizes 5 and 8
+
+-Mode batch5 uses current + up to 4 unique randomly selected old paid rows.
+-Mode batch8 uses current + up to 7 unique randomly selected old paid rows.
+These sizes describe the primary paid batch; the existing protected replay
+rows are additional and keep their original separate loss weight. One Adam
+step per acquired label, LR .0005. Short buffers use available unique rows,
+without replacement or padding. Both modes are available for PS and IAT and
+produce separate fingerprints/results. No retraining is performed.

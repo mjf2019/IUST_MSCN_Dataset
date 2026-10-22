@@ -504,7 +504,7 @@ def evaluate(a):
                          gpu=torch.cuda.get_device_name(legacy.core.device) if legacy.core.device.type == 'cuda' else None))
     if a.paid_replay_mode != 'off':
         execution['paid_replay'] = dict(version=1, mode=a.paid_replay_mode,
-            count='all_retained_paid' if a.paid_replay_mode == 'batch_all' else 2,
+            count='all_retained_paid' if a.paid_replay_mode == 'batch_all' else {'batch5': 4, 'batch8': 7}.get(a.paid_replay_mode, 2),
             sampling=('all unique retained recent/historical paid rows; excludes current'
                       if a.paid_replay_mode == 'batch_all' else
                       'uniform without replacement; recent/historical paid rows; excludes current'),
@@ -732,7 +732,7 @@ def parser():
     p.add_argument('--router-level-balanced-history', action='store_true', help='Balance routing-only historical replay by known acquisition level and class.')
     p.add_argument('--router-protected-replay', action='store_true', help='Mix current-bank source/historical supervision into the paid routing optimizer step.')
     p.add_argument('--routing-oracle-audit', action='store_true', help='Observer-only routing ceiling on unchanged learner trajectories.')
-    p.add_argument('--paid-replay-mode', choices=['off', 'sequential', 'batch', 'batch_all'], default='off')
+    p.add_argument('--paid-replay-mode', choices=['off', 'sequential', 'batch', 'batch_all', 'batch5', 'batch8'], default='off')
     p.add_argument('--modes', nargs='+', choices=['learned', 'random', 'random_query', 'random_query_online'], default=['learned', 'random'])
     p.add_argument('--query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--update-policy', choices=['learned', 'fixed'], default='learned')

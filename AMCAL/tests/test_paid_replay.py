@@ -22,8 +22,9 @@ class PaidReplayTests(unittest.TestCase):
         from enhancements.config import EnhancementConfig
         cnn = torch.nn.Linear(2, 2).eval().requires_grad_(False)
         initial = torch.nn.Linear(2, 2).eval()
-        rows = [(torch.tensor([[float(i), .4]]), torch.tensor([i % 2])) for i in range(3)]
-        for mode in ('sequential', 'batch', 'batch_all'):
+        for mode in ('sequential', 'batch', 'batch_all', 'batch5', 'batch8'):
+            size = {'batch5': 5, 'batch8': 8}.get(mode, 3)
+            rows = [(torch.tensor([[float(i), .4]]), torch.tensor([i % 2])) for i in range(size)]
             context = deepcopy(initial); reference = deepcopy(initial)
             optimizer = torch.optim.Adam(context.parameters(), lr=.0005, weight_decay=1e-4)
             expected = torch.optim.Adam(reference.parameters(), lr=.0005, weight_decay=1e-4)
@@ -64,6 +65,10 @@ class PaidReplayTests(unittest.TestCase):
         all_values = [float(x.item()) for x, y in all_sample]
         self.assertEqual(set(all_values), {1., 2., 3.})
         self.assertEqual(len(all_values), 3)
+        for count in (4, 7):
+            short = memory.paid_replay(current, count=count)
+            self.assertEqual({float(x.item()) for x, y in short}, {1., 2., 3.})
+            self.assertEqual(len(short), 3)
         sample = memory.paid_replay(current)
         values = [float(x.item()) for x, y in sample]
         self.assertEqual(len(values), 2); self.assertEqual(len(set(values)), 2)
