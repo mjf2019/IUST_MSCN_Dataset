@@ -34,12 +34,19 @@ from baselines.dfe_burst import (DFEBackbone,FlowImages,GaussianCompression,
     TemplateLibrary,constrained_triplet,triplet_indices,knn_vote,embed)
 
 core=shared.core
-METHOD_NAMES={'cnn':'1D-CNN-existing-frozen','ral':'RAL-paper-core',
-              'af':'AF-Burst-causal','dfe':'DFE-Burst-adapted','arf':'River-ARFClassifier',
+METHOD_NAMES={'cnn':'1D-CNN-existing-frozen','ral':'RAL-author-core-matched-source',
+              'af':'AF-Burst-online-extension-NOT-paper','dfe':'DFE-Burst-adapted','arf':'River-ARFClassifier',
               'calmid':'CALMID-paper-River','micfoal':'MicFoal-paper-weighted-ARF'}
 
 
 def cpu_state(model):return {k:v.detach().cpu().clone() for k,v in model.state_dict().items()}
+
+
+def require_explicit_af_extension(a):
+    if 'af' in a.methods and not getattr(a,'allow_af_extension',False):
+        raise ValueError('The old --methods af is an online extension, NOT the original AF. '
+                         'Use AMCAL/run_amcal_ral_af_audit.ps1 for corrected AF few-shot evaluation. '
+                         'For an explicitly labelled historical extension only, add --allow-af-extension.')
 
 
 def river_arf(trees,seed):
@@ -338,6 +345,9 @@ def evaluate_level(a,method,saved,domain,reference,observer=True):
                        online_update_calls=used,source_initialization=saved['initialization'])
     if method=='ral':
         metrics.update(ral_budget_mode=getattr(a,'ral_budget_mode','prefix'),
+                       source_labels=saved.get('source_labels',len(learner.model._training_data_samples.y)-used),
+                       source_initialization=saved.get('source_initialization','matched source TRAIN; historical checkpoint'),
+                       author_code_commit='2a34a4b1b1e11054a718233e19de0c2134fd68e8',
                        ral_protocol_version=saved.get('ral_protocol_version',0),
                        ral_trees=next((member.n_estimators for member in learner.model._committee_classifiers
                                        if isinstance(member,RandomForestClassifier)),None),
@@ -365,6 +375,7 @@ def training_data(a,artifact):
 
 
 def train(a,artifact):
+    require_explicit_af_extension(a)
     if a.output.exists():raise ValueError('Use a fresh baseline output directory.')
     a.output.mkdir(parents=True);models=a.output/'Models';models.mkdir()
     shutil.copy2(a.source_run/'Models/protocol_preprocessing.joblib',models/'protocol_preprocessing.joblib')
@@ -389,6 +400,9 @@ def train(a,artifact):
                        reward=1,penalty=-1,budget=a.budget_fraction,model_update_frequency=1)
             model.fit(*train);saved=dict(model=model,ral_protocol_version=2,ral_trees=10,
                                         algorithm_reference='Wassermann et al. 2021 Algorithm 2; kNN5, DT, RF10; source-code prefix ratio gate',
+                                        author_code_commit='2a34a4b1b1e11054a718233e19de0c2134fd68e8',
+                                        source_initialization='all matched source TRAIN rows across declared levels; not original paper small chronological bootstrap',
+                                        source_labels=len(train[1]),
                                         budget_protocol='paper prefix ratio plus common strict total cap')
             print(f'RAL trained on {len(train[1])} rows | kNN k=5, decision tree, RF=10 | paper reward/EXP4/threshold updates.',flush=True)
         elif method=='dfe':saved=train_dfe(a,train,validation)
@@ -409,9 +423,11 @@ def train(a,artifact):
 
 
 def evaluate(a,artifact):
+    require_explicit_af_extension(a)
     root=a.output/'Results';root.mkdir(exist_ok=True)
     reference=shared.read_domain(a.burst_dir,artifact,0,'val_ids')[:2]
     config=dict(seed=a.seed,budget=a.budget_fraction,af_online_lr=a.af_lr,protocol_version=1,timing_version=1)
+    if 'af' in a.methods:config['af_historical_online_extension']=True
     attack_artifact=artifact
     if getattr(a,'test_scaler','training')=='notebook':
         from baselines.evaluation_scaling import notebook_scaler
@@ -498,7 +514,8 @@ def main():
     parser.add_argument('--include-seen-levels',action='store_true',help='Score seen intensities on disjoint TEST source IDs only.')
     parser.add_argument('--burst-dir',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path)
-    parser.add_argument('--methods',nargs='+',choices=list(METHOD_NAMES),default=list(METHOD_NAMES))
+    parser.add_argument('--methods',nargs='+',choices=list(METHOD_NAMES),default=[m for m in METHOD_NAMES if m!='af'])
+    parser.add_argument('--allow-af-extension',action='store_true',help='Explicitly reproduce historical AF online extension; NEVER report it as original AF.')
     parser.add_argument('--train-levels',type=int,nargs='+',default=[0,1,3])
     parser.add_argument('--levels',type=int,nargs='+',default=[5,7,10,12,15,17,20])
     parser.add_argument('--seed',type=int,default=42)
@@ -531,6 +548,8 @@ def main():
     parser.add_argument('--jobs',type=int,default=-1)
     parser.add_argument('--device',choices=['auto','cpu','cuda'],default='auto')
     a=parser.parse_args()
+    try:require_explicit_af_extension(a)
+    except ValueError as error:parser.error(str(error))
     if not 0<=a.budget_fraction<=1 or min(a.dfe_epochs,a.af_epochs,a.patience,a.templates)<1 or a.batch_size<2:parser.error('Invalid budget/epochs/batch/templates.')
     if min(a.arf_trees,a.arf_train_passes)<1:parser.error('ARF trees and train passes must be positive.')
     if min(a.active_models,a.active_window)<1 or not 0<a.active_random_ratio<=1:parser.error('Invalid active ensemble/window/random ratio.')

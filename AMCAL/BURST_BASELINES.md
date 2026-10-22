@@ -1,5 +1,14 @@
 # Matched baselines for the final structured AMCAL bank
 
+> RAL/AF fidelity audit: see [RAL_AF_FIDELITY_AUDIT.md](RAL_AF_FIDELITY_AUDIT.md).
+> RAL's author core is unchanged; its source/stream protocol is a matched
+> adaptation. The AF described below is the **historical online extension**,
+> not original Adaptive Fingerprinting. It is now excluded from default method
+> lists; historical `--methods af` commands additionally require
+> `--allow-af-extension`. For the separate author-structure AF few-shot port,
+> use `run_amcal_ral_af_audit.ps1`. Its offline calibration scores must be
+> reported separately from online AMCAL/RAL scores.
+
 CALMID and MicFoal are also available as `--methods calmid micfoal`.
 See [CALMID_MICFOAL.md](CALMID_MICFOAL.md) for the paper/source-code audit,
 equations, CPU backend, explicit source-bootstrap/budget adaptations and separate

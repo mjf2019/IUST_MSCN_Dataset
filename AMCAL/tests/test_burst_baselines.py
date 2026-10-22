@@ -28,7 +28,7 @@ class BurstBaselineTests(unittest.TestCase):
     def setUp(self):
         m.core.set_seed(42)
         self.a=SimpleNamespace(seed=42,classes=['0','1'],budget_fraction=.25,
-                               batch_size=4,af_lr=1e-5)
+                               batch_size=4,af_lr=1e-5,allow_af_extension=True)
         rng=np.random.default_rng(5)
         self.x=rng.normal(size=(12,8)).astype(np.float32)
         self.y=np.arange(12)%2
@@ -186,6 +186,7 @@ class BurstBaselineTests(unittest.TestCase):
         domain=(torch.tensor(self.x).unsqueeze(1),self.y,np.arange(12))
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);self.a.output=root/'baselines';self.a.source_run=root/'source';self.a.burst_dir=root/'data'
+            self.a.training_domain_dir=self.a.burst_dir
             models=self.a.source_run/'Models';models.mkdir(parents=True);self.a.burst_dir.mkdir()
             joblib.dump({},models/'protocol_preprocessing.joblib')
             cnn=m.core.CNN1D(8,2)
