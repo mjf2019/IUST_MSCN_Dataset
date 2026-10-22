@@ -1,4 +1,4 @@
-"""RAL classes extracted unchanged from AMCAL/ANT_Burst_TEST/RAL.ipynb.
+"""RAL classes with unchanged default behavior extracted from AMCAL/ANT_Burst_TEST/RAL.ipynb.
 The shared runner enforces the global cap outside the original prefix gate.
 """
 import random
@@ -134,10 +134,18 @@ class RAL:
             self._update_uncertainty_threshold(reward)
         self._n_acquired_samples += 1
         self._training_data_samples.append(x, y)
+        window=getattr(self,'_online_update_window',0)
+        if window:
+            self._training_data_samples._X=self._training_data_samples._X[-window:]
+            self._training_data_samples._y=self._training_data_samples._y[-window:]
+            if len(self._training_data_samples.y)<window:return
         if self._n_acquired_samples % self._model_update_frequency == 0:
             for learner in self._committee_classifiers:
                 learner.fit(self._training_data_samples.X, self._training_data_samples.y)
             self._committee_classifier.fit(self._training_data_samples.X, self._training_data_samples.y)
+            if window:
+                self._online_refit_count=getattr(self,'_online_refit_count',0)+1
+                self._online_max_fit_rows=max(getattr(self,'_online_max_fit_rows',0),len(self._training_data_samples.y))
 
     def evaluate_metrics(self, X, y):
         self._committee_classifier.fit(self._training_data_samples.X, self._training_data_samples.y)

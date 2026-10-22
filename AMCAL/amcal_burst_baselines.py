@@ -27,7 +27,7 @@ from sklearn.tree import DecisionTreeClassifier
 
 import amcal_burst_structured_bank_protocol as shared
 from amcal_burst_results_summary import display
-from baselines.ral_existing import RAL
+from baselines.ral_existing import RAL, TrainingData
 from baselines.stream_timing import StreamTimer, timing_row, timing_report
 from baselines.calmid_micfoal import CALMID, MicFoal, VERSION as ACTIVE_VERSION
 from baselines.dfe_burst import (DFEBackbone,FlowImages,GaussianCompression,
@@ -209,6 +209,12 @@ class Learner:
             # Paper / author code: q_so_far / seen_so_far < budget BEFORE
             # deciding to acquire the current sample. The wrapper additionally
             # retains the shared strict floor(budget*n) total ceiling.
+            if getattr(a,'ral_update_window',0):
+                self.model._window_source_labels=len(self.model._training_data_samples.y)
+                self.model._training_data_samples=TrainingData([],[])
+                self.model._online_update_window=a.ral_update_window
+                self.model._online_refit_count=0
+                self.model._online_max_fit_rows=0
             self.model._budget=a.budget_fraction if getattr(a,'ral_budget_mode','prefix')=='prefix' else None
         elif method in ('calmid','micfoal'):
             self.model=deepcopy(saved['model'])
@@ -344,8 +350,15 @@ def evaluate_level(a,method,saved,domain,reference,observer=True):
         metrics.update(active_learning=learner.model.statistics(),river_version=saved['river_version'],
                        online_update_calls=used,source_initialization=saved['initialization'])
     if method=='ral':
+        if getattr(a,'ral_update_window',0):
+            metrics['method']='RAL-recent5-modified'
+            metrics['ral_online_window']=dict(size=a.ral_update_window,includes_current=True,
+                source_rows_in_online_fit=0,retained_feedback=len(learner.model._training_data_samples.y),
+                first_fit_after_labels=a.ral_update_window,
+                refits=learner.model._online_refit_count,max_rows_per_fit=learner.model._online_max_fit_rows,
+                semantics='sliding-window refit, not incremental learning; source model retained only until first refit')
         metrics.update(ral_budget_mode=getattr(a,'ral_budget_mode','prefix'),
-                       source_labels=saved.get('source_labels',len(learner.model._training_data_samples.y)-used),
+                       source_labels=saved.get('source_labels',getattr(learner.model,'_window_source_labels',len(learner.model._training_data_samples.y)-used)),
                        source_initialization=saved.get('source_initialization','matched source TRAIN; historical checkpoint'),
                        author_code_commit='2a34a4b1b1e11054a718233e19de0c2134fd68e8',
                        ral_protocol_version=saved.get('ral_protocol_version',0),
@@ -437,6 +450,7 @@ def evaluate(a,artifact):
     if getattr(a,'full_unseen_levels',False):config['unseen_rows']='all supplied rows; source IDs may occur in training at other intensities'
     if 'ral' in a.methods:
         config.update(ral_protocol_version=2,ral_budget_mode=getattr(a,'ral_budget_mode','prefix'))
+        if getattr(a,'ral_update_window',0):config['ral_online_update_window']=a.ral_update_window
     if set(a.methods)&{'calmid','micfoal'}:config['active_protocol_version']=ACTIVE_VERSION
     tag=hashlib.sha256(json.dumps(config,sort_keys=True).encode()).hexdigest()[:8]
     rows=[];same_rows=[];time_rows=[]
@@ -542,12 +556,15 @@ def main():
     parser.add_argument('--micfoal-threshold',type=float,default=.9)
     parser.add_argument('--micfoal-step',type=float,default=.1)
     parser.add_argument('--micfoal-fixed-budget',action='store_true',help='MicFoal_hw ablation; default enables periodic budget adaptation.')
+    parser.add_argument('--ral-update-window',type=int,choices=[0,5],default=0,help='Evaluation-only modified RAL: online refit on last 5 acquired rows, no source replay. Zero preserves original RAL.')
     parser.add_argument('--ral-budget-mode',choices=['prefix','global'],default='prefix',
                         help='prefix: paper ratio gate plus common global cap; global: previous budget ablation.')
     parser.add_argument('--progress-every',type=int,default=200,help='Active-method progress interval in stream rows; 0 disables.')
     parser.add_argument('--jobs',type=int,default=-1)
     parser.add_argument('--device',choices=['auto','cpu','cuda'],default='auto')
     a=parser.parse_args()
+    if a.ral_update_window and (a.command!='evaluate' or a.methods!=['ral']):
+        parser.error('--ral-update-window requires evaluate --methods ral.')
     try:require_explicit_af_extension(a)
     except ValueError as error:parser.error(str(error))
     if not 0<=a.budget_fraction<=1 or min(a.dfe_epochs,a.af_epochs,a.patience,a.templates)<1 or a.batch_size<2:parser.error('Invalid budget/epochs/batch/templates.')
