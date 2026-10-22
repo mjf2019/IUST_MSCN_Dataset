@@ -1,0 +1,36 @@
+{
+  "spec": {
+    "version": 1,
+    "seed": 42,
+    "dataset": "PS",
+    "source_sha256": "0232a51c02cc7b91e073df3ec9c01f59db0b4824a5c9094b9c6ee126161f6c9b",
+    "template_sha256": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663",
+    "gain": 0.25,
+    "bias": 0.3,
+    "noise": 0.1,
+    "train": [
+      0,
+      "synthetic drift from 0"
+    ],
+    "test": [
+      3,
+      5,
+      7,
+      10,
+      12,
+      15,
+      17,
+      20
+    ]
+  },
+  "drift": "label-blind affine scale/shift + Gaussian noise in clean TRAIN scaler units; nonnegative features clipped at zero",
+  "synthetic_level_1": "file-format placeholder, NOT official Burst level 1",
+  "inherited": "feature schema and source partitions only; scaler refitted on clean TRAIN; no weights inherited",
+  "files": {
+    "SyntheticDomains/AdvBurstTrainedBurst_size_0_Step_2000.csv": "0232a51c02cc7b91e073df3ec9c01f59db0b4824a5c9094b9c6ee126161f6c9b",
+    "SyntheticDomains/AdvBurstTrainedBurst_size_0_Step_2000_rows.csv": "c43c3cc5d5e054aeed4d3f768236965a69eb032f298fb2455fb854bc5cf936ed",
+    "SyntheticDomains/AdvBurstTrainedBurst_size_1_Step_2000.csv": "130e0c97e942a841f626895459a0366f2560b5b688b98c9b32385a12cc46f256",
+    "SyntheticDomains/AdvBurstTrainedBurst_size_1_Step_2000_rows.csv": "11806a649d0a7743557b6432354fcf8501e12546ad5a7c3779a3112d068c9035",
+    "input_preprocessing.joblib": "c3988aa8522938a1401d7510de6d3ac0ed48cb8e3c83aa807f5efe421c491ced"
+  }
+}

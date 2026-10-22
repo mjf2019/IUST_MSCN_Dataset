@@ -1,0 +1,87 @@
+{
+  "config": {
+    "profile": "accuracy",
+    "architecture": "legacy",
+    "joint_router": false,
+    "rank_weight": 0.2,
+    "paired_weight": 0.5,
+    "route_prior_weight": 0.001,
+    "route_lr_online": 0.0003,
+    "version_half_life": 8.0,
+    "source_capacity": 64,
+    "historical_capacity": 64,
+    "recent_capacity": 128,
+    "reference_size": 32,
+    "memory_replay_size": 8,
+    "memory_ce_weight": 0.1,
+    "residual_weight": 0.001,
+    "damage_limit": 0.02,
+    "damage_weight": 1.0,
+    "protected_reference": true,
+    "routed_utility": false,
+    "token_width": 32,
+    "transformer_layers": 2,
+    "feedforward_width": 128,
+    "residual_bound": 2.0,
+    "bank_executor": "sequential",
+    "cascade": false,
+    "cascade_confidence": 0.8,
+    "cascade_margin": 0.15,
+    "cascade_audit_fraction": 0.05,
+    "cascade_max_gap": 32,
+    "compute_cost": 0.02,
+    "prerouter_weight": 0.2
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "domain": 0,
+      "validation_accuracy": 0.5827906976744186,
+      "reference_drop_pp": 0.6046511627906981,
+      "selection_score": 0.5827906976744186,
+      "train_labels": 646
+    },
+    {
+      "epoch": 2,
+      "domain": 1,
+      "validation_accuracy": 0.5669767441860465,
+      "reference_drop_pp": 3.3488372093023244,
+      "selection_score": 0.5534883720930233,
+      "train_labels": 646
+    },
+    {
+      "epoch": 3,
+      "domain": 0,
+      "validation_accuracy": 0.5846511627906976,
+      "reference_drop_pp": 2.6976744186046506,
+      "selection_score": 0.5776744186046511,
+      "train_labels": 646
+    },
+    {
+      "epoch": 4,
+      "domain": 1,
+      "validation_accuracy": 0.5758139534883722,
+      "reference_drop_pp": 1.7674418604651243,
+      "selection_score": 0.5758139534883722,
+      "train_labels": 425
+    }
+  ],
+  "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42\\structured",
+  "model_hashes": {
+    "initial_cnn_model.pth": "a896aad5805eea19cbc2511fe39918cff03b08e3e3a3a8b99792e4e6f740334e",
+    "adversarial_best_context.pth": "148913d4ba82b2a3272a32d0c8341d700c0d0fd3cea4d2b71d7d5d9d06d4c7bc",
+    "protocol_preprocessing.joblib": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663",
+    "enhanced_context.pth": "60998d3043fa04857b035aeb45d902a8848f54a05feb9e0fb25999a399bb829d"
+  },
+  "training_domains": {
+    "0": "0232a51c02cc7b91e073df3ec9c01f59db0b4824a5c9094b9c6ee126161f6c9b",
+    "1": "130e0c97e942a841f626895459a0366f2560b5b688b98c9b32385a12cc46f256"
+  },
+  "warm_start_selector": true,
+  "warm_start_enhancement": false,
+  "selected_epoch": 1,
+  "parent_checkpoint_sha256": null,
+  "training_protocol": null,
+  "evaluation_policy": "source-disjoint, pre-feedback",
+  "min_max": "selector maximizes correctness/transfer return; selected Context minimizes current and protected-memory loss"
+}
