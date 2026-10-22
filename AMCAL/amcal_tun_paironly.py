@@ -62,6 +62,10 @@ def domain_splits(splits, roles, groups, seed):
     return result
 
 
+def processed_overlap_policy(splits, pools, groups, processed_groups, roles):
+    return splits, pools, {}
+
+
 def prepare(csv_path, output, seed, max_features):
     frame=pd.read_csv(csv_path,sep=separator(csv_path),encoding='utf-8-sig')
     roles,y=roles_and_targets(frame,'ASNM_TUN_TEST',csv_path)
@@ -92,6 +96,7 @@ def prepare(csv_path, output, seed, max_features):
     x=scaler.transform(imputed[:,selected]).astype(np.float32)
     if not np.isfinite(x).all():raise ValueError('Nonfinite preprocessed features.')
     processed_groups=pd.util.hash_pandas_object(pd.DataFrame(x),index=False).to_numpy()
+    splits,pools,overlap_report=processed_overlap_policy(splits,pools,groups,processed_groups,roles)
     for left,right in [('train','val'),('train','test'),('val','test')]:
         if set(processed_groups[splits[left]]) & set(processed_groups[splits[right]]):
             raise ValueError('Preprocessed feature duplicates cross splits; increase --max-features or review grouping.')
@@ -108,7 +113,7 @@ def prepare(csv_path, output, seed, max_features):
     for key,ids in pools.items():
         np.savez_compressed(output/f'{key}.npz',x=x[ids],y=y[ids],ids=ids)
     runner.write_json(output/'split_manifest.json',dict(source_sha256=artifact['source_sha256'],
-        seed=seed,selected_features=artifact['feature_names'],excluded_columns=artifact['excluded_columns'],
+        seed=seed,processed_overlap_policy=overlap_report,selected_features=artifact['feature_names'],excluded_columns=artifact['excluded_columns'],
         preprocessing='signed log; source-TRAIN median, ANOVA top-k and StandardScaler',
         pools={k:dict(rows=len(v),ids=v.tolist(),roles=pd.Series(roles[v]).value_counts().to_dict()) for k,v in pools.items()},
         limitation='exact-feature grouping, not verified session/time separation; small-data pilot'))

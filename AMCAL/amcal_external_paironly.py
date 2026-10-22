@@ -124,9 +124,42 @@ def drelab_input(a):
     return csv_path,group_values,prepared,root
 
 
+def purge_processed_overlaps(splits,pools,groups,processed_groups,roles):
+    """Purge whole held-out groups; never move rows or refit on held-out data."""
+    splits={k:v.copy() for k,v in splits.items()}
+    pools={k:v.copy() for k,v in pools.items()}
+    report={'policy':'whole-group purge; TRAIN > VAL > TEST; observers > stream',
+            'removed_split_rows':{},'removed_stream_rows':{}}
+    seen=set()
+    for name in ('train','val','test'):
+        ids=splits[name]
+        bad=ids[np.isin(processed_groups[ids],list(seen))]
+        bad_groups=np.unique(groups[bad])
+        kept=ids[~np.isin(groups[ids],bad_groups)]
+        report['removed_split_rows'][name]=int(len(ids)-len(kept))
+        splits[name]=kept
+        seen.update(processed_groups[kept])
+        for key in pools:
+            if key.endswith('_'+name):pools[key]=pools[key][np.isin(pools[key],kept)]
+    for name in ('val','test'):
+        observer=np.concatenate([pools['source_'+name],pools['audit_'+name]])
+        stream=pools['target_'+name]
+        bad=stream[np.isin(processed_groups[stream],processed_groups[observer])]
+        kept=stream[~np.isin(groups[stream],np.unique(groups[bad]))]
+        report['removed_stream_rows'][name]=int(len(stream)-len(kept))
+        pools['target_'+name]=kept
+    for key,ids in pools.items():
+        expected={'benign','direct'} if key.startswith('source_') else {'benign','adversarial'}
+        if set(roles[ids])!=expected:
+            raise ValueError(f'{key} loses a class after whole-group overlap purge: {report}')
+    print('Processed overlap purge:',report,flush=True)
+    return splits,pools,report
+
+
 @contextmanager
 def data_hooks(a,group_values):
     old_partition,old_domains=pilot.partition_ids,pilot.domain_splits
+    old_overlap=pilot.processed_overlap_policy
     def partition(features,roles,seed):
         if group_values is None:
             splits,groups=old_partition(features,roles,seed)
@@ -145,8 +178,11 @@ def data_hooks(a,group_values):
     def pools(splits,roles,groups,seed):
         return grouped_pools(splits,roles,groups,seed,a.max_stream_rows,a.max_audit_rows)
     pilot.partition_ids=partition;pilot.domain_splits=pools
+    if group_values is not None:pilot.processed_overlap_policy=purge_processed_overlaps
     try:yield
-    finally:pilot.partition_ids=old_partition;pilot.domain_splits=old_domains
+    finally:
+        pilot.partition_ids=old_partition;pilot.domain_splits=old_domains
+        pilot.processed_overlap_policy=old_overlap
 
 
 def main(argv=None):
@@ -179,6 +215,7 @@ def main(argv=None):
         warm_epochs=a.warm_epochs,pair_epochs=a.pair_epochs,
         source_sha256=pilot.digest(csv_path),
         groups_sha256=pilot.digest(input_path/'groups.npy') if groups is not None else None)
+    if groups is not None:protocol['processed_overlap_policy']='whole_group_purge_v1'
     protocol_path=output.parent/(output.name+'_external_protocol.json')
     if protocol_path.exists():
         if json.loads(protocol_path.read_text())!=protocol:raise ValueError('Sampling/protocol changed; choose a new --output.')

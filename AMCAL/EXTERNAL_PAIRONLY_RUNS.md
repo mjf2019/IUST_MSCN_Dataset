@@ -60,3 +60,12 @@ BWT experiments. Full-data runs and additional seeds can follow after the pilot.
 No numerical/execution tests were run for these new entry points, per user
 request. Only Python syntax was checked. They reuse the previously exercised
 pilot agent/stream; actual dataset behavior must be checked on the user machine.
+
+DReLAB processed-feature overlap fix: TRAIN preprocessing stays fixed. Entire
+held-out immutable groups whose processed features overlap TRAIN are purged;
+TEST also purges overlap with retained VAL. Within VAL/TEST, observer pools take
+priority over stream groups. No row is reassigned; removed counts are printed
+and saved in split_manifest.json. Missing classes still stop the run. This changes
+the retained evaluation population; report the counts with pilot results.
+For an earlier failed run, use a new --Output ending in _purged_seed42. Existing
+sampled CSV/groups are reused. No numerical execution tests were run for this fix.
