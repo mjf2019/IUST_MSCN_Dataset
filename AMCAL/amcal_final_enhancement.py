@@ -457,6 +457,8 @@ def evaluate(a):
     if a.context_damage_guard and (not config.protected_reference or config.routed_utility
             or config.memory_replay_size < 1 or config.memory_ce_weight != .1):
         raise ValueError('Damage-guard ablation requires protected replay with the original CE weight 0.1.')
+    if a.query_budget_bonus > 0 and config.cascade:
+        raise ValueError('Query budget bonus requires full-bank evaluation without cascade.')
     if a.routing_oracle_audit and config.cascade:
         raise ValueError('Routing oracle audit requires a full-bank evaluation without cascade.')
     a.config = config
@@ -512,6 +514,10 @@ def evaluate(a):
                      runtime=dict(python=sys.version.split()[0], torch=str(torch.__version__),
                          numpy=np.__version__, device=str(legacy.core.device), cuda=torch.version.cuda,
                          gpu=torch.cuda.get_device_name(legacy.core.device) if legacy.core.device.type == 'cuda' else None))
+    if a.query_budget_bonus > 0:
+        execution['query_budget_bonus']=dict(version=1,strength=a.query_budget_bonus,
+            formula='strength * clip((cap*(pos+1)/n-used)/max(1,0.1*cap),0,1)',
+            scope='legal query action scores only; no forced labels, no reward/TD target change')
     if a.paid_replay_mode != 'off':
         execution['paid_replay'] = dict(version=1, mode=a.paid_replay_mode,
             count='all_retained_paid' if a.paid_replay_mode == 'batch_all' else {'batch3': 2, 'batch5': 4, 'batch7': 6, 'batch8': 7}.get(a.paid_replay_mode, 2),
@@ -757,6 +763,7 @@ def parser():
     p.add_argument('--continual', action='store_true')
     p.add_argument('--audit-fraction', type=float, default=.2)
     p.add_argument('--skip-existing-completed', action='store_true', help='Skip only matching complete evaluations; preserve and reject partial results.')
+    p.add_argument('--query-budget-bonus',type=float,default=0.,help='Evaluation-only deficit-dependent bonus for legal query action scores; zero preserves baseline.')
     p.add_argument('--evaluation-tag', default='', help='Unique repeat label for identical-trajectory timing repetitions.')
     p.add_argument('--router-refresh', action='store_true',
                    help='After paid feedback, recalibrate routing on existing references with current-bank targets.')
@@ -773,6 +780,12 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if not np.isfinite(a.query_budget_bonus) or a.query_budget_bonus < 0:
+        p.error('--query-budget-bonus must be finite and nonnegative.')
+    if a.query_budget_bonus > 0 and (a.command!='evaluate' or a.context_count!=1
+            or a.modes!=['learned'] or a.query_schedule!='policy' or a.update_policy!='learned'
+            or a.router_protected_replay or a.context_damage_guard):
+        p.error('Query budget bonus requires isolated one-Context learned policy evaluation without cascade/other controls.')
     if any(m in a.modes for m in ('random_query', 'random_query_online')) and (a.command != 'evaluate' or a.context_count != 1
             or a.query_schedule != 'policy' or a.update_policy != 'learned'
             or a.router_refresh or a.context_damage_guard):

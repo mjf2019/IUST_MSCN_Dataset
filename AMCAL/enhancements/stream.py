@@ -163,6 +163,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     timer.start()
     for pos in range(n):
         row_start = time.perf_counter()
+        query_bonus = 0.
         inputs = x[pos:pos+1]
         versions = agent.versions.copy()
         gate = int(pos in schedule) if schedule is not None else -1
@@ -192,6 +193,13 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                         values, route_logits, raw_values, update_values = agent.policy.forward_for_action(state)
                         values, route_logits = values[0], route_logits[0]
                         raw_values, update_values = raw_values[0], update_values[0]
+                        strength = getattr(a, 'query_budget_bonus', 0.)
+                        if strength > 0 and not training and used < cap and cap > 0:
+                            expected = cap * (pos+1) / n
+                            deficit = max(0., expected-used)
+                            query_bonus = strength * min(1., deficit/max(1., .1*cap))
+                            values = values.clone()
+                            values[routes:] += query_bonus
                         valid = torch.tensor(allowed, device=x.device)
                         greedy = int(valid[values[valid].argmax()])
                 epsilon = a.train_epsilon if training else a.eval_epsilon
@@ -388,6 +396,9 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             reward=reward, gain=gain, harm=harm, reference_counts=reference_counts,
             predictions=[int(v) if known else None for v, known in zip(route_predictions, observed)],
             scores=scores))
+        if getattr(a, 'query_budget_bonus', 0.) > 0:
+            traces[-1]['query_budget_bonus'] = query_bonus
+            traces[-1]['selection_scores'] = None if values is None else values.detach().cpu().tolist()
         if random_queries:
             traces[-1]['prediction_route_scores'] = route_logits.detach().cpu().tolist()
         if damage_guard: traces[-1]['damage_guard'] = guard_decision
