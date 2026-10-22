@@ -35,17 +35,27 @@ def cascade_decision(agent, embedding, frozen, config, rng, gap):
     return force, candidate
 
 
+class FrozenRoutesExecutor(BankExecutor):
+    """Keep selector tensor shape, but never execute the removed Context."""
+    def outputs(self,x,frozen_logits,slots=None):
+        return (frozen_logits[:,None,:].expand(-1,len(self.bank)+1,-1),
+                x.new_zeros((len(x),len(self.bank)+1)))
+
+
 def observer(cnn, bank, agent, x, y, history, used, cap, position, seed, config, mode='learned'):
     """Observer-only endpoints; identical independent audit draws at both ends."""
     z, h = legacy.base_cache(cnn, x)
-    executor = BankExecutor(cnn, bank, config.bank_executor)
+    ablation=getattr(agent,'architecture_ablation','none')
+    executor = (FrozenRoutesExecutor if ablation in ('no_context','frozen') else BankExecutor)(cnn, bank, config.bank_executor)
     predictions, all_predictions = [], []
     rng = np.random.default_rng(seed + 30003)
     with torch.no_grad():
         for start in range(0, len(x), 64):
             bx = x[start:start + 64]
             outputs = executor.outputs(bx, z[start:start + 64])
-            if mode == 'random':
+            if ablation in ('no_context','frozen','no_rl'):
+                routes=torch.full((len(bx),),1 if ablation=='no_rl' else 0,dtype=torch.long,device=x.device)
+            elif mode == 'random':
                 routes = torch.tensor(rng.integers(0, len(bank)+1, len(bx)), device=x.device)
             else:
                 state = build_state(outputs, h[start:start + 64], history, used, cap,
@@ -80,7 +90,10 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             warmup=False, rollout_seed=None, reference=None, same_level=False, continuation=None,
             paid_supervision=False, next_domain_features=None, domain_level=None):
     config = a.config
-    random_no_rl = mode == 'random' and not training and not warmup
+    ablation=getattr(a,'architecture_ablation','none')
+    no_selector=ablation in ('no_rl','frozen')
+    no_context=ablation in ('no_context','frozen')
+    random_no_rl = no_selector or (mode == 'random' and not training and not warmup)
     random_queries = mode in ('random_query', 'random_query_online')
     if random_queries and (training or warmup or len(bank) != 1
             or a.query_schedule != 'policy' or a.update_policy != 'learned'
@@ -118,6 +131,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     order = np.random.default_rng(seed).permutation(len(y))
     x, y, source_ids = x[order], np.asarray(y)[order], np.asarray(source_ids)[order]
     n, cap = len(y), int(np.floor(a.budget_fraction * len(y)))
+    if ablation=='frozen':cap=0
     continuing = bool(continuation)
     if continuing:
         optimizers, history, memory = (continuation[key] for key in ('optimizers', 'history', 'memory'))
@@ -136,8 +150,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             memory = legacy.BalancedRewardReference(source)
     if not hasattr(memory, 'paid_replay_rng'):
         memory.paid_replay_rng = np.random.default_rng(seed + 681923)
-    executor = BankExecutor(cnn, bank, config.bank_executor)
-    schedule = set(np.random.default_rng(seed + 819003).choice(n, cap, replace=False).tolist()) if a.query_schedule == 'uniform' else None
+    executor = (FrozenRoutesExecutor if no_context else BankExecutor)(cnn, bank, config.bank_executor)
+    schedule = set(np.random.default_rng(seed + 819003).choice(n, cap, replace=False).tolist()) if a.query_schedule == 'uniform' or ablation=='no_rl' else None
     destinations = np.random.default_rng(seed + 440003).integers(0, slots, n)
     rng = np.random.default_rng(seed + 719003)
     audit_rng = np.random.default_rng(seed + 260917)
@@ -182,6 +196,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 if not random_no_rl:
                     state = build_state(outputs, embeddings[pos:pos+1], history, used, cap, pos, n, state_gate)
                 allowed = legacy.base.legal_actions(slots, cap-used, gate)
+                if ablation=='no_context':allowed=[v for v in allowed if v!=1]
                 if a.update_policy == 'fixed': allowed = [v for v in allowed if v < routes or v == routes + int(destinations[pos])]
                 with torch.no_grad():
                     if random_queries:
@@ -204,6 +219,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                         greedy = int(valid[values[valid].argmax()])
                 epsilon = a.train_epsilon if training else a.eval_epsilon
                 action = greedy if random_queries else (int(rng.choice(allowed)) if mode == 'random' or warmup or rng.random() < epsilon else greedy)
+                if no_selector:action=(routes if gate==1 else 1) if ablation=='no_rl' else 0
                 route = legacy.base.route_index(action, slots)
                 if random_queries:
                     # Match the full-random query draw; choose prediction independently.
@@ -241,7 +257,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             else:
                 next_x, next_z, next_h = x[pos+1:pos+2], frozen[pos+1:pos+2], embeddings[pos+1:pos+2]
                 next_count, next_pos, next_cap = n, pos+1, cap
-            if not terminal and not warmup and (paid or (training and not paid_supervision)):
+            if not no_selector and not terminal and not warmup and (paid or (training and not paid_supervision)):
                 successor_output = executor.outputs(next_x, next_z)
             zero = torch.zeros_like(state) if state is not None else None
             skip_next = zero
@@ -281,7 +297,9 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                         embeddings[pos+1:pos+2] if successor_output is not None else None, next_state_gate)
                 history.observe_paid(outputs[0].softmax(2), truth)
                 committed = True
-                if damage_guard:
+                if no_context:
+                    committed=False
+                elif damage_guard:
                     guard_decision, after = guarded_context_step(a, cnn, bank[selected], optimizers[selected],
                         inputs, label, outputs[0][:,0], replay, batch, before)
                     guard_records.append(guard_decision)
@@ -329,7 +347,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 # No action-value/TD, future-head or update-value learning is performed.
                 agent.observe_routes(state, torch.tensor(correct, dtype=torch.float32, device=x.device),
                                      versions=versions)
-            may_learn = not counterfactual and ((training and not paid_supervision) or (mode == 'learned' and paid))
+            may_learn = not no_selector and not counterfactual and ((training and not paid_supervision) or (mode == 'learned' and paid))
             if may_learn:
                 if not full: raise RuntimeError('Sparse routes cannot supervise unexecuted predictions.')
                 target = torch.tensor(correct, dtype=torch.float32, device=x.device)
@@ -423,6 +441,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         route_updates=agent.route_updates-route_updates0, td_updates=agent.td_updates-td_updates0,
         fresh_route_updates=agent.fresh_route_updates-fresh_updates0,
         fresh_route_rows=agent.fresh_route_rows-fresh_rows0,
+        architecture_ablation=ablation,
         supervision_protocol='paid feedback only' if paid_supervision or not training else 'dense TRAIN labels',
         oracle_all=full_correct/n if full_rows == n else None,
         oracle_legal=full_legal_correct/n if full_rows == n else None,

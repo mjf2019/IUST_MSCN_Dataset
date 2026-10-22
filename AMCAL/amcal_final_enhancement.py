@@ -461,6 +461,8 @@ def evaluate(a):
         raise ValueError('Query budget bonus requires full-bank evaluation without cascade.')
     if a.routing_oracle_audit and config.cascade:
         raise ValueError('Routing oracle audit requires a full-bank evaluation without cascade.')
+    if a.architecture_ablation!='none' and (config.cascade or config.routed_utility or config.architecture!='legacy'):
+        raise ValueError('Component ablations require the original full-bank Context architecture without routed utility.')
     a.config = config
     temporal_credit = saved.get('training_protocol', {}).get('temporal_credit')
     if temporal_credit is not None:
@@ -514,6 +516,13 @@ def evaluate(a):
                      runtime=dict(python=sys.version.split()[0], torch=str(torch.__version__),
                          numpy=np.__version__, device=str(legacy.core.device), cuda=torch.version.cuda,
                          gpu=torch.cuda.get_device_name(legacy.core.device) if legacy.core.device.type == 'cuda' else None))
+    if a.architecture_ablation!='none':
+        execution['architecture_ablation']=dict(version=1,mode=a.architecture_ablation,
+            scope='component removal from fixed trained checkpoint; no retraining',
+            query='uniform exact cap' if a.architecture_ablation=='no_rl' else 'none' if a.architecture_ablation=='frozen' else 'inherited RL plus specified bonus',
+            prediction='Context only' if a.architecture_ablation=='no_rl' else 'frozen CNN only',
+            removed_context='bypassed, no forwards or parameter updates',
+            no_rl='no selector forwards/learning; Context batch adaptation retained')
     if a.query_budget_bonus > 0:
         execution['query_budget_bonus']=dict(version=1,strength=a.query_budget_bonus,
             formula='strength * clip((cap*(pos+1)/n-used)/max(1,0.1*cap),0,1)',
@@ -622,7 +631,11 @@ def evaluate(a):
         frozen_weights = {name: value.detach().cpu().clone() for name, value in cnn.state_dict().items()}
         initial = torch.load(models/'enhanced_context.pth', map_location='cpu', weights_only=False)['initial_state_dict']
         bank = build_bank(models, artifact, config, initial, slots=a.context_count)
+        if a.architecture_ablation in ('no_context','frozen'):
+            from types import MethodType
+            for context in bank:context.forward=MethodType(lambda self,x:x,context)
         agent = new_agent(a, cnn, artifact, saved=saved)
+        agent.architecture_ablation=a.architecture_ablation
         continuation = {} if a.continual else None
         audit_matrix = []
         clean_scores = []
@@ -650,7 +663,9 @@ def evaluate(a):
             observe_stage(0, 0, DeviceReliability(len(a.classes), legacy.core.device, a.context_count+1),
                           0, int(a.budget_fraction*len(domains[a.levels[0]][1])), 0)
         for stage, level in enumerate(a.levels, start=1):
-            if not a.continual: agent = new_agent(a, cnn, artifact, saved=saved)
+            if not a.continual:
+                agent = new_agent(a, cnn, artifact, saved=saved)
+                agent.architecture_ablation=a.architecture_ablation
             m, traces = episode(a, cnn, bank, initial, agent, domains[level], anchors,
                 mode=mode, reference=clean, same_level=True, continuation=continuation,
                 next_domain_features=next_sequence_features(a, domains, stage-1, a.seed) if a.continual else None,
@@ -763,6 +778,7 @@ def parser():
     p.add_argument('--continual', action='store_true')
     p.add_argument('--audit-fraction', type=float, default=.2)
     p.add_argument('--skip-existing-completed', action='store_true', help='Skip only matching complete evaluations; preserve and reject partial results.')
+    p.add_argument('--architecture-ablation',choices=['none','no_context','no_rl','frozen'],default='none')
     p.add_argument('--query-budget-bonus',type=float,default=0.,help='Evaluation-only deficit-dependent bonus for legal query action scores; zero preserves baseline.')
     p.add_argument('--evaluation-tag', default='', help='Unique repeat label for identical-trajectory timing repetitions.')
     p.add_argument('--router-refresh', action='store_true',
@@ -780,6 +796,11 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.architecture_ablation!='none':
+        if a.command!='evaluate' or a.context_count!=1 or a.modes!=['learned'] or a.query_schedule!='policy':
+            p.error('Architecture removal requires one-Context learned policy checkpoint evaluation.')
+        if a.architecture_ablation in ('no_rl','frozen') and a.query_budget_bonus:
+            p.error('No-RL/frozen ablations require Bonus=0.')
     if not np.isfinite(a.query_budget_bonus) or a.query_budget_bonus < 0:
         p.error('--query-budget-bonus must be finite and nonnegative.')
     if a.query_budget_bonus > 0 and (a.command!='evaluate' or a.context_count!=1
