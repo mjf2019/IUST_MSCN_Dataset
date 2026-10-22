@@ -503,8 +503,11 @@ def evaluate(a):
                          numpy=np.__version__, device=str(legacy.core.device), cuda=torch.version.cuda,
                          gpu=torch.cuda.get_device_name(legacy.core.device) if legacy.core.device.type == 'cuda' else None))
     if a.paid_replay_mode != 'off':
-        execution['paid_replay'] = dict(version=1, mode=a.paid_replay_mode, count=2,
-            sampling='uniform without replacement; recent/historical paid rows; excludes current',
+        execution['paid_replay'] = dict(version=1, mode=a.paid_replay_mode,
+            count='all_retained_paid' if a.paid_replay_mode == 'batch_all' else 2,
+            sampling=('all unique retained recent/historical paid rows; excludes current'
+                      if a.paid_replay_mode == 'batch_all' else
+                      'uniform without replacement; recent/historical paid rows; excludes current'),
             protected_replay='unchanged; reused for all steps', utility='whole update')
     if temporal_credit is not None:
         execution['temporal_credit'] = dict(gamma=a.gamma, connected_levels=a.connected_sequence_td,
@@ -729,7 +732,7 @@ def parser():
     p.add_argument('--router-level-balanced-history', action='store_true', help='Balance routing-only historical replay by known acquisition level and class.')
     p.add_argument('--router-protected-replay', action='store_true', help='Mix current-bank source/historical supervision into the paid routing optimizer step.')
     p.add_argument('--routing-oracle-audit', action='store_true', help='Observer-only routing ceiling on unchanged learner trajectories.')
-    p.add_argument('--paid-replay-mode', choices=['off', 'sequential', 'batch'], default='off')
+    p.add_argument('--paid-replay-mode', choices=['off', 'sequential', 'batch', 'batch_all'], default='off')
     p.add_argument('--modes', nargs='+', choices=['learned', 'random', 'random_query', 'random_query_online'], default=['learned', 'random'])
     p.add_argument('--query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--update-policy', choices=['learned', 'fixed'], default='learned')

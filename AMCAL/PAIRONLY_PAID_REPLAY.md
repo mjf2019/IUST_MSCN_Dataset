@@ -44,3 +44,20 @@ Validation in authoring environment: Python syntax and update/reward/memory
 insertion order checks passed. PyTorch is unavailable here; both added numerical
 CPU tests were skipped, and full dataset/GPU runs were not performed. PowerShell
 was reviewed statically. Run the CPU tests with PyTorch before dataset evaluation.
+
+## Full retained-feedback batch
+
+Use -Mode batch_all for either -Dataset IAT or -Dataset PS. Each newly
+acquired label triggers one Adam step with the current row plus ALL unique
+retained recent/historical paid rows, excluding the current input. No random
+subsampling is done. The primary Context loss averages over the full paid batch;
+the existing protected replay loss is retained with its original weight.
+The old feedback capacity remains 128 recent + 64 historical (at most 193
+primary rows including the current row). This is all retained feedback, not all
+past acquired labels and not the complete TEST dataset. Source anchors remain
+in the separate protected replay term. No extra labels are requested.
+LR remains .0005. Each launcher runs independent and sequential evaluation,
+with batch_all in its separate execution fingerprint/tag. No retraining.
+
+Validation: syntax/AST and integration-order checks passed in the authoring
+environment; numerical CPU tests require PyTorch and were not executed here.

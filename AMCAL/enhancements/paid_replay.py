@@ -14,7 +14,7 @@ def paid_context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, 
                 frozen = frozen_logits if i == 0 else cnn(x)
             context_step(a, cnn, context, optimizer, x, y, frozen, replay)
         return
-    if a.paid_replay_mode != 'batch': raise ValueError('Unknown paid replay mode.')
+    if a.paid_replay_mode not in ('batch', 'batch_all'): raise ValueError('Unknown paid replay mode.')
     # With no old feedback, preserve the original single-row update exactly.
     if len(rows) == 1:
         context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, replay)

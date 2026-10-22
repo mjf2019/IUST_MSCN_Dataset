@@ -113,7 +113,8 @@ class ProtectedMemory:
         for row in [*self.recent, *(r for group in self.historical for r in group)]:
             if row[2] != key: unique.setdefault(row[2], row)
         rows = list(unique.values())
-        ids = self.paid_replay_rng.choice(len(rows), min(count, len(rows)), replace=False)
+        ids = (range(len(rows)) if count is None else
+               self.paid_replay_rng.choice(len(rows), min(count, len(rows)), replace=False))
         return [(rows[int(i)][0].to(current.device),
                  torch.tensor([rows[int(i)][1]], device=current.device)) for i in ids]
 

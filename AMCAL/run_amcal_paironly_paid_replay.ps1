@@ -1,6 +1,6 @@
 param(
     [ValidateSet('IAT','PS')][string]$Dataset = 'IAT',
-    [ValidateSet('sequential','batch')][string]$Mode = 'sequential',
+    [ValidateSet('sequential','batch','batch_all')][string]$Mode = 'sequential',
     [int]$Seed = 42,
     [string]$OutputRun = '',
     [ValidateSet('cpu','cuda','auto')][string]$Device = 'cuda'
