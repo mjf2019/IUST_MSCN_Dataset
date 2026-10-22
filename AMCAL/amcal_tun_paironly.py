@@ -272,7 +272,9 @@ def main(argv=None):
     args.output.mkdir(parents=True,exist_ok=True)
     spec=dict(source_sha256=digest(args.csv),seed=args.seed,max_features=args.max_features,
               schedule={k:getattr(args,k) for k in ('cnn_epochs','context_epochs','warm_epochs','pair_epochs','patience')})
-    if args.dataset_name!='ASNM-TUN':spec['dataset_name']=args.dataset_name
+    if args.dataset_name!='ASNM-TUN':
+        spec['dataset_name']=args.dataset_name
+        spec['source_loss']='weighted_ce_no_smoothing_global_v1'
     plan=args.output/'plan.json';prepared=args.output/'Prepared'
     if plan.exists():
         if json.loads(plan.read_text())!=spec:raise ValueError('Inputs/schedule changed; use a new --output.')
@@ -287,13 +289,14 @@ def main(argv=None):
     prepared_record=json.loads((args.output/'prepared_complete.json').read_text())
     if not all((prepared/name).is_file() and digest(prepared/name)==value for name,value in prepared_record.items()):
         raise ValueError('Prepared data changed; use a new output run.')
-    print('TUN selected features:',len(artifact['feature_names']),'pool sizes:',
+    print(args.dataset_name+' selected features:',len(artifact['feature_names']),'pool sizes:',
           {k:len(v) for k,v in artifact['pools'].items()},flush=True)
     device='cuda' if args.device=='auto' and torch.cuda.is_available() else 'cpu' if args.device=='auto' else args.device
     if device=='cuda' and not torch.cuda.is_available():p.error('CUDA unavailable.')
     core=runner.legacy.core;core.device=torch.device(device);core.set_seed(args.seed)
     a=runner.parser().parse_args(['train','--output',str(args.output),'--burst-dir',str(prepared)])
     a.dataset_name=args.dataset_name
+    a.external_balanced_loss=args.dataset_name!='ASNM-TUN'
     a.config=EnhancementConfig.preset('accuracy');a.classes=['0','1'];a.context_count=1
     a.context_lr=.0005;a.context_alpha=.8;a.seed=args.seed;a.paid_replay_mode='off'
     for key in ('cnn_epochs','context_epochs','warm_epochs','pair_epochs','patience'):setattr(a,key,getattr(args,key))

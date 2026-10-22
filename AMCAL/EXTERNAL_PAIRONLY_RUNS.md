@@ -69,3 +69,10 @@ and saved in split_manifest.json. Missing classes still stop the run. This chang
 the retained evaluation population; report the counts with pilot results.
 For an earlier failed run, use a new --Output ending in _purged_seed42. Existing
 sampled CSV/groups are reused. No numerical execution tests were run for this fix.
+
+External source loss fix: NPBO/DReLAB use inverse-frequency weighted CE without
+label smoothing, normalized by global TRAIN class frequency rather than each
+minibatch's weight sum. The old smoothing + inverse-frequency combination can
+strongly favor the rare class on predominantly majority-only minibatches.
+Use fresh output directories ending in _lossfix_seed42; earlier trained models
+are incompatible. TUN and Burst PS/IAT training settings are unchanged.

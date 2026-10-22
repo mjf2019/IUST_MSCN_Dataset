@@ -37,7 +37,16 @@ def fit(a, model, cnn, train, validation, context=False):
     count=torch.bincount(y,minlength=len(a.classes)).float()
     if (count==0).any(): raise ValueError('A source TRAIN class is missing.')
     weights=(1/count); weights=weights/weights.mean()
-    criterion=nn.CrossEntropyLoss(weight=weights, label_smoothing=0.0 if context else .05)
+    external_balance=getattr(a,'external_balanced_loss',False)
+    if external_balance:
+        # Global normalization avoids batch-dependent class-weight denominators.
+        weights=weights/(weights*count).sum()*count.sum()
+    criterion=nn.CrossEntropyLoss(weight=weights,
+        label_smoothing=0.0 if context or external_balance else .05,
+        reduction='none' if external_balance else 'mean')
+    if external_balance:
+        print('External source loss: weighted CE, no smoothing, global normalization; class counts:',
+              count.detach().cpu().tolist(),flush=True)
     optimizer=torch.optim.AdamW(model.parameters(),lr=.0003 if context else .001,
                                weight_decay=.0001 if context else .01)
     batch_size=min(32,len(y))
@@ -53,14 +62,14 @@ def fit(a, model, cnn, train, validation, context=False):
         for bx,by in loader:
             optimizer.zero_grad(set_to_none=True)
             out=cnn(model(bx)) if context else model(bx)
-            loss=criterion(out,by); loss.backward()
+            loss=criterion(out,by).mean(); loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(),1); optimizer.step()
             total+=float(loss.detach())*len(by);correct+=int((out.argmax(1)==by).sum())
         model.eval(); losses=0.; hits=0
         with torch.no_grad():
             for bx,by in val_loader:
                 out=cnn(model(bx)) if context else model(bx)
-                losses+=float(criterion(out,by))*len(by);hits+=int((out.argmax(1)==by).sum())
+                losses+=float(criterion(out,by).mean())*len(by);hits+=int((out.argmax(1)==by).sum())
         value=losses/len(vy)
         log.append(dict(epoch=epoch+1,train_loss=total/len(y),train_accuracy=correct/len(y),
                         validation_loss=value,validation_accuracy=hits/len(vy)))
