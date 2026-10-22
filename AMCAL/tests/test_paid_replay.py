@@ -52,7 +52,7 @@ class PaidReplayTests(unittest.TestCase):
         import numpy as np
         from enhancements.memory import ProtectedMemory
         from enhancements.config import EnhancementConfig
-        config = EnhancementConfig(source_capacity=1, recent_capacity=2, historical_capacity=2)
+        config = EnhancementConfig(source_capacity=1, recent_capacity=2, historical_capacity=4)
         source = torch.tensor([[[-99.]]])
         memory = ProtectedMemory((source, np.array([0])), 2, config, 42)
         memory.paid_replay_rng = np.random.default_rng(55)

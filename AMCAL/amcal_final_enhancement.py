@@ -70,8 +70,9 @@ def load_artifact(models, burst_dir):
 
 def load_cnn(models, artifact):
     width = len(artifact['feature_names']); classes = len(artifact['label_encoder'].classes_)
-    cnn = legacy.core.CNN1D(width, classes).to(legacy.core.device)
     saved = torch.load(models / 'initial_cnn_model.pth', map_location='cpu', weights_only=False)
+    from amcal_light_cnn import classifier_for_checkpoint
+    cnn = classifier_for_checkpoint(saved, width, classes, legacy.core.CNN1D).to(legacy.core.device)
     expected = legacy.core.file_sha256(models / 'protocol_preprocessing.joblib')
     if saved.get('preprocessing_sha256', expected) != expected:
         raise ValueError('Frozen CNN and preprocessing do not match.')
@@ -289,6 +290,10 @@ def train(a):
             boundary='next-domain first adaptation features; budget recharged; no next label',
             evaluation='ordinary online selector losses; connected boundaries only for persistent sequences',
             diagnostics='sampled TRAIN replay targets; rows may be counted repeatedly')
+    if a.paid_replay_mode != 'off':
+        training_protocol['context_update'] = dict(version=1, mode=a.paid_replay_mode,
+            primary_batch_size=5, old_paid_rows=4, optimizer_steps_per_query=1,
+            protected_replay='unchanged additional loss', utility='whole batch update')
     if a.counterfactual_utility:
         training_protocol['utility_supervision'] = dict(version=1, scope='paid TRAIN only',
             alternatives=3, trained_parameters='update_value only', learning_rate=.0001,
@@ -435,6 +440,11 @@ def evaluate(a):
     if saved.get('training_context_count') is not None and a.context_count != saved['training_context_count']:
         raise ValueError('Context count must match this specialized training checkpoint.')
     if saved['format_version'] != FORMAT_VERSION: raise ValueError('Unsupported enhancement checkpoint format.')
+    trained_update = saved.get('training_protocol', {}).get('context_update')
+    if trained_update is not None:
+        if a.paid_replay_mode not in ('off', trained_update['mode']):
+            raise ValueError('Context update mode differs from the specialized training checkpoint.')
+        a.paid_replay_mode = trained_update['mode']
     config = EnhancementConfig(**saved['config']).validated()
     if a.profile is not None and a.profile != config.profile: raise ValueError('Profile differs from training.')
     if a.joint_router and not config.joint_router: raise ValueError('Joint router requires a separately trained checkpoint.')
@@ -783,11 +793,14 @@ def main(argv=None):
     if a.routing_oracle_audit and a.command != 'evaluate':
         p.error('--routing-oracle-audit is evaluation-only.')
     if a.paid_replay_mode != 'off':
-        if (a.command != 'evaluate' or a.context_count != 1 or a.modes != ['learned']
+        allowed_train = (a.command == 'train' and a.paid_replay_mode == 'batch5'
+                         and a.paired_query_only_training and a.one_context_rl_training)
+        if ((a.command != 'evaluate' and not allowed_train)
+                or a.context_count != 1 or a.modes != ['learned']
                 or a.query_schedule != 'policy' or a.update_policy != 'learned'
                 or a.context_damage_guard or a.router_protected_replay or a.routed_utility
                 or a.online_memory_ce_weight is not None):
-            p.error('Paid replay requires isolated one-Context learned policy evaluation.')
+            p.error('Paid replay requires one-Context learned evaluation or dedicated PairOnly batch5 training.')
     if a.paired_query_only_training and not a.query_value_only_training:
         p.error('--paired-query-only-training requires --query-value-only-training.')
     if a.connected_sequence_td and not a.paired_query_only_training:

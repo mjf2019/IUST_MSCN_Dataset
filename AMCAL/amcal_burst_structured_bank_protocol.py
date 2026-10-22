@@ -693,9 +693,10 @@ def read_domain(root,artifact,level,split,full_domain=False):
 
 def models_from_source(models,artifact):
     width=len(artifact['feature_names']);classes=len(artifact['label_encoder'].classes_)
-    cnn=core.CNN1D(width,classes).to(core.device)
     digest=core.file_sha256(models/'protocol_preprocessing.joblib')
     cnn_checkpoint=torch.load(models/'initial_cnn_model.pth',map_location='cpu',weights_only=False)
+    from amcal_light_cnn import classifier_for_checkpoint
+    cnn=classifier_for_checkpoint(cnn_checkpoint,width,classes,core.CNN1D).to(core.device)
     context_checkpoint=torch.load(models/'adversarial_best_context.pth',map_location='cpu',weights_only=False)
     for saved in (cnn_checkpoint,context_checkpoint):
         if saved.get('preprocessing_sha256',digest)!=digest:raise ValueError('Source model/preprocessing mismatch.')
