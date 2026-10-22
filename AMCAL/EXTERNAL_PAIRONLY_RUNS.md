@@ -20,9 +20,9 @@ excluded. The selector warmup is 3 epochs and paired-only specialization 6 epoch
 by default (override WarmEpochs/PairEpochs). Source CNN/Context use existing pilot
 maximum epochs and VAL-only early stopping. No TEST score selects a model.
 
-DReLAB reads the large benign CSV in chunks. It assigns immutable-feature groups
-to TRAIN/VAL/TEST via a fixed hash rule, independently of sampling; then uses
-seeded within-file 10% Bernoulli sampling. Actual percentages/counts are recorded,
+DReLAB reads the large benign CSV in chunks and uses seeded within-file 10%
+Bernoulli sampling while retaining immutable-feature keys. The effective v2
+TRAIN/VAL/TEST assignment uses role-stratified whole groups, as described below. Actual percentages/counts are recorded,
 not assumed exactly 10%. A group includes every flow with the same fields that
 DReLAB's published attack leaves unchanged. This is a deliberately conservative
 equivalence group, NOT a verified one-to-one original-flow ID. Attack immutable
@@ -76,3 +76,18 @@ minibatch's weight sum. The old smoothing + inverse-frequency combination can
 strongly favor the rare class on predominantly majority-only minibatches.
 Use fresh output directories ending in _lossfix_seed42; earlier trained models
 are incompatible. TUN and Burst PS/IAT training settings are unchanged.
+
+DReLAB balanced_v2: replace hash partitions with one fixed-seed five-fold
+StratifiedGroupKFold assignment (3 TRAIN, 1 VAL, 1 TEST). Immutable groups still
+stay together. Reserve source/target observers with role-stratified group folds;
+apply the same whole-group processed overlap purge. Then sample each VAL/TEST
+pool 50:50 benign/attack, capped only after purging, without replacement.
+Require at least 20 rows of each class per evaluation pool; fail otherwise.
+The 10% prepared input is reused, but the effective split rule is now v2, recorded
+in the external protocol. This is a balanced case-control pilot, not an estimate
+of natural-prevalence accuracy. Inspect actual group/row counts with results.
+TRAIN retains its natural proportions and uses the corrected source loss.
+No seed search or TEST performance is used to select groups.
+
+Balanced evaluation pools use a fixed seeded permutation, not raw file order;
+no chronological-stream interpretation is claimed for this pilot.

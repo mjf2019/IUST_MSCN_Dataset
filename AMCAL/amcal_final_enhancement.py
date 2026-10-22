@@ -292,7 +292,7 @@ def train(a):
             diagnostics='sampled TRAIN replay targets; rows may be counted repeatedly')
     if a.paid_replay_mode != 'off':
         training_protocol['context_update'] = dict(version=1, mode=a.paid_replay_mode,
-            primary_batch_size=5, old_paid_rows=4, optimizer_steps_per_query=1,
+            primary_batch_size=int(a.paid_replay_mode[5:]), old_paid_rows=int(a.paid_replay_mode[5:])-1, optimizer_steps_per_query=1,
             protected_replay='unchanged additional loss', utility='whole batch update')
     if a.counterfactual_utility:
         training_protocol['utility_supervision'] = dict(version=1, scope='paid TRAIN only',
@@ -514,7 +514,7 @@ def evaluate(a):
                          gpu=torch.cuda.get_device_name(legacy.core.device) if legacy.core.device.type == 'cuda' else None))
     if a.paid_replay_mode != 'off':
         execution['paid_replay'] = dict(version=1, mode=a.paid_replay_mode,
-            count='all_retained_paid' if a.paid_replay_mode == 'batch_all' else {'batch5': 4, 'batch8': 7}.get(a.paid_replay_mode, 2),
+            count='all_retained_paid' if a.paid_replay_mode == 'batch_all' else {'batch3': 2, 'batch5': 4, 'batch7': 6, 'batch8': 7}.get(a.paid_replay_mode, 2),
             sampling=('all unique retained recent/historical paid rows; excludes current'
                       if a.paid_replay_mode == 'batch_all' else
                       'uniform without replacement; recent/historical paid rows; excludes current'),
@@ -742,7 +742,7 @@ def parser():
     p.add_argument('--router-level-balanced-history', action='store_true', help='Balance routing-only historical replay by known acquisition level and class.')
     p.add_argument('--router-protected-replay', action='store_true', help='Mix current-bank source/historical supervision into the paid routing optimizer step.')
     p.add_argument('--routing-oracle-audit', action='store_true', help='Observer-only routing ceiling on unchanged learner trajectories.')
-    p.add_argument('--paid-replay-mode', choices=['off', 'sequential', 'batch', 'batch_all', 'batch5', 'batch8'], default='off')
+    p.add_argument('--paid-replay-mode', choices=['off', 'sequential', 'batch', 'batch_all', 'batch3', 'batch5', 'batch7', 'batch8'], default='off')
     p.add_argument('--modes', nargs='+', choices=['learned', 'random', 'random_query', 'random_query_online'], default=['learned', 'random'])
     p.add_argument('--query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--update-policy', choices=['learned', 'fixed'], default='learned')
@@ -793,14 +793,14 @@ def main(argv=None):
     if a.routing_oracle_audit and a.command != 'evaluate':
         p.error('--routing-oracle-audit is evaluation-only.')
     if a.paid_replay_mode != 'off':
-        allowed_train = (a.command == 'train' and a.paid_replay_mode == 'batch5'
+        allowed_train = (a.command == 'train' and a.paid_replay_mode in ('batch3','batch5','batch7')
                          and a.paired_query_only_training and a.one_context_rl_training)
         if ((a.command != 'evaluate' and not allowed_train)
                 or a.context_count != 1 or a.modes != ['learned']
                 or a.query_schedule != 'policy' or a.update_policy != 'learned'
                 or a.context_damage_guard or a.router_protected_replay or a.routed_utility
                 or a.online_memory_ce_weight is not None):
-            p.error('Paid replay requires one-Context learned evaluation or dedicated PairOnly batch5 training.')
+            p.error('Paid replay requires one-Context learned evaluation or dedicated PairOnly batch3/5/7 training.')
     if a.paired_query_only_training and not a.query_value_only_training:
         p.error('--paired-query-only-training requires --query-value-only-training.')
     if a.connected_sequence_td and not a.paired_query_only_training:

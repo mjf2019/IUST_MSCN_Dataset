@@ -111,3 +111,18 @@ paired-only specialization, batch5 TRAIN/TEST matching/inheritance, budget caps,
 TEST identity isolation, frozen CNN invariance and verified completion/resume.
 Seven CPU tests passed in this environment (five integration/regression tests plus two paid-replay tests). A pre-existing sampler fixture was corrected to allow two historical rows of the same class; the production memory policy was unchanged. These correctness checks are not scientific benchmark results. PowerShell is
 reviewed statically; full IAT/PS GPU training/evaluation runs on the user machine.
+
+Batch3 and batch7 are also supported by the same entry point:
+
+```powershell
+.\AMCAL\run_amcal_batch5_pipeline.ps1 -Dataset IAT -BatchSize 3 -Action All -Seed 42
+.\AMCAL\run_amcal_batch5_pipeline.ps1 -Dataset IAT -BatchSize 7 -Action All -Seed 42
+```
+
+Each uses one current paid row and up to BatchSize-1 distinct old paid rows,
+one optimizer step, and the existing protected replay loss. The batch mode is
+applied during final PairOnly TRAIN and inherited/matched during independent
+and continual TEST. Fewer retained paid rows means a smaller initial batch.
+Default BatchSize=5 and its output paths/recipe remain compatible. Sizes 3/7
+write separate paironly_batch3_trainseed42 / paironly_batch7_trainseed42 roots.
+Only syntax checks were run for this addition, per user instructions.

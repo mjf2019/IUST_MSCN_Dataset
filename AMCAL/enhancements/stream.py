@@ -281,7 +281,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 elif getattr(a, 'paid_replay_mode', 'off') != 'off':
                     paid_context_step(a, cnn, bank[selected], optimizers[selected],
                         inputs, label, outputs[0][:,0], replay, memory.paid_replay(inputs,
-                            count=None if a.paid_replay_mode == 'batch_all' else {'batch5': 4, 'batch8': 7}.get(a.paid_replay_mode, 2)))
+                            count=None if a.paid_replay_mode == 'batch_all' else {'batch3': 2, 'batch5': 4, 'batch7': 6, 'batch8': 7}.get(a.paid_replay_mode, 2)))
                 else:
                     context_step(a, cnn, bank[selected], optimizers[selected], inputs, label, outputs[0][:,0], replay)
                 if committed:

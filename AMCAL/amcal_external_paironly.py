@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import GroupShuffleSplit
+from sklearn.model_selection import GroupShuffleSplit, StratifiedGroupKFold
 
 import amcal_tun_paironly as pilot
 from amcal_external_data_audit import excluded
@@ -105,8 +105,8 @@ def drelab_input(a):
             keys=pd.util.hash_pandas_object(frame[immutable].astype(float),index=False).to_numpy()
             if code==2 and not set(keys)<=original_keys:
                 raise ValueError('Attack changes supposedly immutable fields; conservative identity grouping cannot be used.')
-            # Split assignment exists BEFORE sampling: every derivative with the
-            # same immutable key belongs to the same hash-defined partition.
+            # Retain immutable keys with sampled rows; the effective v2 grouped
+            # split is assigned by data_hooks, before TRAIN-only preprocessing.
             mask=rng.random(len(frame))<a.fraction
             chosen=frame.loc[mask,features].copy()
             chosen['label_3']=code;chosen['label_2']=code!=3
@@ -116,7 +116,7 @@ def drelab_input(a):
     group_values=np.concatenate(groups);np.save(group_path,group_values,allow_pickle=False)
     pilot.runner.write_json(meta,dict(spec=spec,counts=counts,group_columns=immutable,
         group_policy='conservative immutable-feature equivalence, not verified one-to-one source identity',
-        split_rule='immutable hash modulo 1000003: TRAIN <600002; VAL <800002; else TEST',
+        split_rule='assigned by external run protocol; balanced_v2 uses fixed-seed role-stratified whole groups',
         numeric_host_type_fields='grouping only; excluded from model features',
         independent_groups=int(len(np.unique(group_values))),
         csv_sha256=pilot.digest(csv_path),groups_sha256=pilot.digest(group_path)))
@@ -166,19 +166,57 @@ def data_hooks(a,group_values):
         else:
             if len(group_values)!=len(features):raise ValueError('Prepared group map length mismatch.')
             groups=group_values
-            bucket=groups % np.uint64(1000003)
-            splits={'train':np.flatnonzero(bucket<600002),
-                    'val':np.flatnonzero((bucket>=600002)&(bucket<800002)),
-                    'test':np.flatnonzero(bucket>=800002)}
+            # Fixed seed, role-stratified whole groups. No score-based seed search.
+            folds=list(StratifiedGroupKFold(n_splits=5,shuffle=True,random_state=seed)
+                       .split(features,roles,groups))
+            splits={'train':np.sort(np.concatenate([folds[i][1] for i in (0,1,2)])),
+                    'val':np.sort(folds[3][1]),'test':np.sort(folds[4][1])}
             for name,ids in splits.items():
                 if set(roles[ids])!={'benign','direct','adversarial'}:
-                    raise ValueError(f'{name} lacks roles under conservative DReLAB grouping; report group counts before changing protocol.')
+                    raise ValueError(f'{name} lacks roles under stratified group splitting.')
         splits['train']=capped(splits['train'],roles,a.max_train_rows,np.random.default_rng(seed+2011))
         return splits,groups
     def pools(splits,roles,groups,seed):
-        return grouped_pools(splits,roles,groups,seed,a.max_stream_rows,a.max_audit_rows)
+        if group_values is None:
+            return grouped_pools(splits,roles,groups,seed,a.max_stream_rows,a.max_audit_rows)
+        result={}
+        for offset,(name,ids) in enumerate(splits.items()):
+            if name=='train':
+                result['source_train']=ids[roles[ids]!='adversarial']
+                result['target_train']=ids[roles[ids]!='direct']
+                continue
+            folds=list(StratifiedGroupKFold(n_splits=5,shuffle=True,random_state=seed+1500+offset)
+                       .split(ids,roles[ids],groups[ids]))
+            source=ids[np.concatenate([folds[i][1] for i in (0,1)])]
+            target=ids[np.concatenate([folds[i][1] for i in (2,3,4)])]
+            source=source[roles[source]!='adversarial']
+            target=target[roles[target]!='direct']
+            ti,ai=next(StratifiedGroupKFold(n_splits=4,shuffle=True,random_state=seed+1700+offset)
+                       .split(target,roles[target],groups[target]))
+            result.update({f'source_{name}':source,f'target_{name}':target[ti],f'audit_{name}':target[ai]})
+        return result
     pilot.partition_ids=partition;pilot.domain_splits=pools
-    if group_values is not None:pilot.processed_overlap_policy=purge_processed_overlaps
+    if group_values is not None:
+        def balanced_overlap(splits,pools,groups,processed_groups,roles):
+            splits,pools,report=purge_processed_overlaps(splits,pools,groups,processed_groups,roles)
+            counts={}
+            for offset,(key,ids) in enumerate(pools.items()):
+                if key.endswith('_train'):continue
+                cap=a.max_stream_rows if key.startswith('target_') else a.max_audit_rows
+                labels=np.unique(roles[ids])
+                n=min(int(np.sum(roles[ids]==label)) for label in labels)
+                if cap:n=min(n,cap//2)
+                if n<20:
+                    raise ValueError(f'{key}: only {n} rows per class after group separation/purge; '
+                                     'need at least 20. Increase Fraction with a new Output; no row-split fallback.')
+                rng=np.random.default_rng(a.seed+2500+offset)
+                pools[key]=rng.permutation(np.concatenate([rng.choice(ids[roles[ids]==label],n,replace=False) for label in labels]))
+                counts[key]={str(label):n for label in labels}
+            report['balanced_evaluation_roles']=counts
+            report['evaluation_population']='50:50 benign/attack case-control pilot, not natural prevalence'
+            print('Balanced DReLAB evaluation:',counts,flush=True)
+            return splits,pools,report
+        pilot.processed_overlap_policy=balanced_overlap
     try:yield
     finally:
         pilot.partition_ids=old_partition;pilot.domain_splits=old_domains
@@ -202,7 +240,7 @@ def main(argv=None):
     if a.dataset=='DReLAB':
         csv_path,groups,input_path,root=drelab_input(a)
         name='DReLAB-CTU-Neris-RF-DDQN'
-        default_output=root/'protocol_runs'/f'paironly_simple_CTUNeris_f{a.fraction:g}_seed{a.seed}'
+        default_output=root/'protocol_runs'/f'paironly_simple_CTUNeris_f{a.fraction:g}_balanced_v2_seed{a.seed}'
     else:
         root=a.data_root or Path(__file__).resolve().parent/'ASNM_NPBO_TEST'
         paths=list((root/'Dataset_official_v1').rglob('*.csv'))
@@ -215,7 +253,8 @@ def main(argv=None):
         warm_epochs=a.warm_epochs,pair_epochs=a.pair_epochs,
         source_sha256=pilot.digest(csv_path),
         groups_sha256=pilot.digest(input_path/'groups.npy') if groups is not None else None)
-    if groups is not None:protocol['processed_overlap_policy']='whole_group_purge_v1'
+    if groups is not None:protocol['processed_overlap_policy']='whole_group_purge_balanced_v2'
+    if groups is not None:protocol['split_policy']='role_stratified_group_60_20_20_v2'
     protocol_path=output.parent/(output.name+'_external_protocol.json')
     if protocol_path.exists():
         if json.loads(protocol_path.read_text())!=protocol:raise ValueError('Sampling/protocol changed; choose a new --output.')

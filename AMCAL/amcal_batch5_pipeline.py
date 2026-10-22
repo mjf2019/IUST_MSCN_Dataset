@@ -142,16 +142,17 @@ def make_plan(a):
             '--query-schedule','uniform','--levels',*map(str,TRAIN),
             '--epochs',str(a.utility_epochs),'--patience',str(a.utility_epochs)]))
     else:utility=a.source_run
-    final=a.output_root/'paironly_batch5'
-    stages.append(dict(name='paironly_batch5',kind='enhancement',source=str(utility),output=str(final),args=[
+    mode=f'batch{a.batch_size}'
+    final=a.output_root/f'paironly_{mode}'
+    stages.append(dict(name=f'paironly_{mode}',kind='enhancement',source=str(utility),output=str(final),args=[
         'train','--source-run',str(utility),'--output',str(final),*common,
         '--warm-start-enhancement','--aligned-sequence','--one-context-rl-training',
         '--query-value-only-training','--paired-query-only-training','--context-count','1',
-        '--query-schedule','policy','--paid-replay-mode','batch5','--levels',*map(str,TRAIN),
+        '--query-schedule','policy','--paid-replay-mode',mode,'--levels',*map(str,TRAIN),
         '--epochs',str(a.epochs),'--patience',str(a.patience)]))
     evaluation=['evaluate','--output',str(final),'--burst-dir',str(a.burst_dir),
         '--context-count','1','--query-schedule','policy','--update-policy','learned',
-        '--modes','learned','--paid-replay-mode','batch5','--context-lr','.0005',
+        '--modes','learned','--paid-replay-mode',mode,'--context-lr','.0005',
         '--levels',*map(str,TEST),'--seed',str(a.seed),'--device',a.device,
         '--budget-fraction','.2','--eval-epsilon','.05','--routing-oracle-audit','--skip-existing-completed']
     if a.evaluation_tag:evaluation+=['--evaluation-tag',a.evaluation_tag]
@@ -211,6 +212,7 @@ def frozen_comparison(a, final):
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--batch-size',type=int,choices=[3,5,7],default=5)
     p.add_argument('--dataset',choices=['IAT','PS'],required=True)
     p.add_argument('--action',choices=['All','Train','Evaluate','Audit'],default='All')
     p.add_argument('--source-run',type=Path)
@@ -229,7 +231,7 @@ def main(argv=None):
     source=('final_enhancement_accuracy_counterfactual_trainseed42' if a.dataset=='IAT'
             else 'structured_bank3_balancedref_lr0p0005_seed42')
     a.source_run=(a.source_run or root/'protocol_runs'/source).resolve()
-    suffix='light_ps_paironly_batch5' if a.dataset=='PS' else 'paironly_batch5'
+    suffix=f'light_ps_paironly_batch{a.batch_size}' if a.dataset=='PS' else f'paironly_batch{a.batch_size}'
     a.output_root=(a.output_root or root/'protocol_runs'/f'{suffix}_trainseed{a.seed}').resolve()
     device='cuda' if a.device=='auto' and torch.cuda.is_available() else 'cpu' if a.device=='auto' else a.device
     if device=='cuda' and not torch.cuda.is_available():p.error('CUDA unavailable.')
@@ -243,7 +245,7 @@ def main(argv=None):
         training_knobs={k:getattr(a,k) for k in ('seed','epochs','patience','utility_epochs','cnn_epochs','context_epochs')},
         source_hashes={name:digest(a.source_run/'Models'/name) for name in runner.SOURCE_FILES},
         domain_hashes={str(level):digest(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv') for level in [*TRAIN,*TEST]},
-        method='PairOnly batch5 TRAIN/VAL/TEST; protected replay retained; no protected routing replay')
+        method=f'PairOnly batch{a.batch_size} TRAIN/VAL/TEST; protected replay retained; no protected routing replay')
     plan_path=a.output_root/'batch5_pipeline_plan.json'
     if plan_path.exists():
         if json.loads(plan_path.read_text())!=plan:raise ValueError('Pipeline inputs/recipe changed; use a fresh output root.')
