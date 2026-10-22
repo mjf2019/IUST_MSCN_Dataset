@@ -44,3 +44,11 @@ Output: protocol_runs/ral_author_git_level0_seed42/{execution.json,summary.json,
 summary.csv,trace.csv,split_manifest.csv}. Previous outputs are never overwritten.
 This protocol differs from AMCAL's matched 60/20/20 + held-out-identity experiments;
 its scores must not replace matched RAL results in the same comparison table.
+
+Budget update requested by user: adapter default is now .2, passed to the
+unmodified author's native budget argument. Every other setting stays unchanged.
+Use -BudgetFraction 0.05 to reproduce the Git example's budget. New output names
+include budget, e.g. ral_author_git_level0_budget0.2_seed42, so old .05 outputs
+are preserved. Report the .2 run as original RAL code with an adapted 20% budget,
+not all-original-example hyperparameters. No additional global cap is added.
+No execution tests run; Python syntax checked.

@@ -32,11 +32,13 @@ def main():
     p.add_argument('--csv',type=Path)
     p.add_argument('--output',type=Path)
     p.add_argument('--seed',type=int,default=42)
+    p.add_argument('--budget-fraction',type=float,default=.2)
     a=p.parse_args()
     if a.level<0:p.error('Level must be nonnegative.')
+    if not np.isfinite(a.budget_fraction) or not 0<=a.budget_fraction<=1:p.error('Budget must be finite and in [0,1].')
     root=Path(f'AMCAL/ANT_Burst_{a.dataset}_TEST')
     source=(a.csv or root/f'Dataset_official_v1/AdvBurst_FTSC-{a.dataset}'/f'AdvBurstTrainedBurst_size_{a.level}_Step_2000.csv').resolve()
-    out=(a.output or root/'protocol_runs'/f'ral_author_git_level{a.level}_seed{a.seed}').resolve()
+    out=(a.output or root/'protocol_runs'/f'ral_author_git_level{a.level}_budget{a.budget_fraction:g}_seed{a.seed}').resolve()
     if out.exists() and any(out.iterdir()):raise ValueError('Output is not empty; use a new --output. No previous results overwritten.')
     frame=pd.read_csv(source)
     label=frame.columns[-1]
@@ -64,15 +66,15 @@ def main():
         label_column=label,feature_names=names,excluded_columns=[c for c in frame.columns[:-1] if c not in names],
         order='supplied CSV row order, not independently verified timestamps',
         preprocessing='none: raw numeric permitted features; no scaling, class balancing or imputation',
-        parameters=dict(threshold_greedy=.025,threshold_uncertainty=.9,eta=.01,reward=1,penalty=-1,budget=.05,model_update_frequency=1),
+        parameters=dict(threshold_greedy=.025,threshold_uncertainty=.9,eta=.01,reward=1,penalty=-1,budget=a.budget_fraction,model_update_frequency=1),
         classifiers=[dict(name=type(m).__name__,parameters=m.get_params()) for m in learners],
         environment=dict(python=platform.python_version(),numpy=np.__version__,pandas=pd.__version__,sklearn=sklearn.__version__),
         caveat='Not the matched AMCAL TRAIN/TEST protocol; initial rows come from this supplied level, not necessarily clean level 0.')
     out.mkdir(parents=True,exist_ok=True)
     (out/'execution.json').write_text(json.dumps(execution,indent=2),encoding='utf-8')
     pd.DataFrame({'row':np.arange(n),'partition':np.where(np.arange(n)<nt,'initial',np.where(np.arange(n)<nt+ns,'stream','validation'))}).to_csv(out/'split_manifest.csv',index=False)
-    print('Author RAL protocol:',execution['rows'],'budget=.05; RF default n_estimators=',rf10.n_estimators,flush=True)
-    ral=ral_author.RAL(learners,.9,.025,.01,reward=1,penalty=-1,budget=.05,model_update_frequency=1)
+    print('Author RAL protocol:',execution['rows'],f'budget={a.budget_fraction:g}; RF default n_estimators=',rf10.n_estimators,flush=True)
+    ral=ral_author.RAL(learners,.9,.025,.01,reward=1,penalty=-1,budget=a.budget_fraction,model_update_frequency=1)
     ral.fit(xb,yb)
     initial_accuracy=ral.evaluate_performance(xv,yv)
     predictions=[];traces=[]
@@ -94,7 +96,7 @@ def main():
         final_validation_macro_f1=float(f1_score(yv,final_predictions,average='macro',zero_division=0)),
         online_accuracy=float(accuracy_score(ys,predictions)),online_macro_f1=float(f1_score(ys,predictions,average='macro',zero_division=0)),
         labels=ral._n_acquired_samples,stream_rows=len(ys),initial_labels=len(yb),
-        actual_label_fraction=ral._n_acquired_samples/len(ys),native_budget=.05,
+        actual_label_fraction=ral._n_acquired_samples/len(ys),native_budget=a.budget_fraction,
         hard_global_cap_added=False,online_update_window='all initial rows plus acquired feedback',
         final_history_rows=len(ral._training_data_samples.y),stream_seconds=stream_seconds,
         rf_actual_n_estimators=rf10.n_estimators,
