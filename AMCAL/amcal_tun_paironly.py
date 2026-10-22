@@ -192,7 +192,7 @@ def train(a,prepared,output,artifact):
             supervision='paid TRAIN only; paired update_value objective' if paired else 'dense TRAIN labels for selector initialization')
         torch.save(selected,models/f'{stage}.pth')
     runner.write_json(output/'training.json',dict(cnn=cnn_log,context=context_log,selector=logs,
-        method='TUN one-Context three-action PairOnly pilot; new dataset-specific warmup, no imported Burst weights',
+        method=getattr(a,'dataset_name','ASNM-TUN')+' one-Context three-action PairOnly pilot; dataset-specific warmup, no imported Burst weights',
         feature_count=width,heldout_test_scored=False,context_update='original single acquired row plus protected replay; no batch5',
         source_preprocessing='fitted on source TRAIN only'))
     runner.write_json(output/'training_complete.json',dict(outputs={p.relative_to(output).as_posix():digest(p)
@@ -214,12 +214,14 @@ def evaluate(a,prepared,output,artifact):
     bank=[core.ContextAwareNetwork(width).to(core.device).eval()];bank[0].load_state_dict(initial)
     h=DeviceReliability(2,core.device,2);cap=int(.2*len(stream[1]))
     before,_,_=observer(cnn,bank,agent,*audit[:2],h,0,cap,0,a.seed,a.config)
+    clean_before,_,_=observer(cnn,bank,agent,*clean[:2],h,0,cap,0,a.seed,a.config)
     cnn_before=deepcopy(cnn.state_dict());continuation={}
     m,traces=episode(a,cnn,bank,initial,agent,stream,anchors,reference=clean[:2],continuation=continuation)
     pred,_,_=observer(cnn,bank,agent,*audit[:2],continuation['history'],m['labels'],m['label_cap'],m['samples'],a.seed,a.config)
+    clean_after,_,_=observer(cnn,bank,agent,*clean[:2],continuation['history'],m['labels'],m['label_cap'],m['samples'],a.seed,a.config)
     from sklearn.metrics import f1_score, recall_score
     z,_=runner.legacy.base_cache(cnn,stream[0]);frozen=z.argmax(1).cpu().numpy()
-    result=dict(method='PairOnly simple TUN pilot',seed=a.seed,context_lr=.0005,
+    result=dict(method='PairOnly simple '+getattr(a,'dataset_name','ASNM-TUN')+' pilot',seed=a.seed,context_lr=.0005,
         online_accuracy=m['accuracy'],online_macro_f1=m['macro_f1'],labels=m['labels'],cap=m['label_cap'],
         frozen_online_accuracy=float((frozen==stream[1]).mean()),
         frozen_online_macro_f1=float(f1_score(stream[1],frozen,average='macro',zero_division=0)),
@@ -229,6 +231,10 @@ def evaluate(a,prepared,output,artifact):
         target_audit_attack_recall=float(recall_score(audit[1],pred,zero_division=0)),
         source_initial_accuracy=m['reference']['initial'],source_final_accuracy=m['reference']['final'],
         source_drop_pp=m['reference']['drop_pp'],
+        source_initial_macro_f1=float(f1_score(clean[1],clean_before,average='macro',zero_division=0)),
+        source_final_macro_f1=float(f1_score(clean[1],clean_after,average='macro',zero_division=0)),
+        source_initial_attack_recall=float(recall_score(clean[1],clean_before,zero_division=0)),
+        source_final_attack_recall=float(recall_score(clean[1],clean_after,zero_division=0)),
         classifier_unchanged=all(torch.equal(v,cnn_before[k]) for k,v in cnn.state_dict().items()),
         samples=m['samples'],source_audit_rows=len(clean[1]),target_audit_rows=len(audit[1]),
         forgetting_definition='source accuracy before minus after; one target domain, no multi-domain BWT claimed')
@@ -239,6 +245,7 @@ def evaluate(a,prepared,output,artifact):
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--dataset-name', default='ASNM-TUN')
     p.add_argument('--action',choices=['All','Train','Evaluate'],default='All')
     p.add_argument('--csv',type=Path)
     p.add_argument('--output',type=Path)
@@ -260,6 +267,7 @@ def main(argv=None):
     args.output.mkdir(parents=True,exist_ok=True)
     spec=dict(source_sha256=digest(args.csv),seed=args.seed,max_features=args.max_features,
               schedule={k:getattr(args,k) for k in ('cnn_epochs','context_epochs','warm_epochs','pair_epochs','patience')})
+    if args.dataset_name!='ASNM-TUN':spec['dataset_name']=args.dataset_name
     plan=args.output/'plan.json';prepared=args.output/'Prepared'
     if plan.exists():
         if json.loads(plan.read_text())!=spec:raise ValueError('Inputs/schedule changed; use a new --output.')
@@ -280,6 +288,7 @@ def main(argv=None):
     if device=='cuda' and not torch.cuda.is_available():p.error('CUDA unavailable.')
     core=runner.legacy.core;core.device=torch.device(device);core.set_seed(args.seed)
     a=runner.parser().parse_args(['train','--output',str(args.output),'--burst-dir',str(prepared)])
+    a.dataset_name=args.dataset_name
     a.config=EnhancementConfig.preset('accuracy');a.classes=['0','1'];a.context_count=1
     a.context_lr=.0005;a.context_alpha=.8;a.seed=args.seed;a.paid_replay_mode='off'
     for key in ('cnn_epochs','context_epochs','warm_epochs','pair_epochs','patience'):setattr(a,key,getattr(args,key))
@@ -293,7 +302,7 @@ def main(argv=None):
         train(a,prepared,args.output,artifact)
     else:raise ValueError('Training incomplete.')
     if args.action in ('All','Evaluate'):evaluate(a,prepared,args.output,artifact)
-    print('TUN output:',args.output,flush=True)
+    print(args.dataset_name+' output:',args.output,flush=True)
 
 
 if __name__=='__main__':main()
