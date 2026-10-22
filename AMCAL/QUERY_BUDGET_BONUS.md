@@ -66,3 +66,17 @@ paironly_batch5_trainseed42/paironly_batch5 and its original CNN checkpoint;
 no architecture/model training change. Same independent/continual levels
 5,7,10,12,15,17,20 and same evaluation tag; no synthetic0 checkpoint is loaded.
 No execution tests run.
+
+Budget comparison (user requested): -BudgetFraction 0.35 or 0.5 changes only
+online per-domain annotation cap, retaining the trained checkpoint and TRAIN
+budget. Nondefault budget is appended to evaluation_tag and already recorded in
+the execution fingerprint. Defaults and earlier 20% commands remain unchanged.
+
+```powershell
+.\AMCAL\run_amcal_ps_query_budget.ps1 -Dataset IAT -Bonus 1 -ReplayWeight 0.1 -ContextLR 0.00025 -BudgetFraction 0.35 -Seed 42
+.\AMCAL\run_amcal_ps_query_budget.ps1 -Dataset IAT -Bonus 1 -ReplayWeight 0.1 -ContextLR 0.00025 -BudgetFraction 0.5 -Seed 42
+```
+
+Each command runs independent and continual tests. This is a 35%/50% TEST budget
+ablation with the original 20%-trained policy, not retrained budget matching.
+No execution tests run.

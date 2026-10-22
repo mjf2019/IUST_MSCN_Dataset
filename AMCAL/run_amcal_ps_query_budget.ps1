@@ -3,6 +3,7 @@ param(
     [double]$Bonus = 2.0,
     [double]$ReplayWeight = -1,
     [double]$ContextLR = 0.0005,
+    [ValidateRange(0.0,1.0)][double]$BudgetFraction = 0.2,
     [int]$Seed = 42,
     [string]$Run = '',
     [ValidateSet('cpu','cuda')][string]$Device = 'cuda'
@@ -20,9 +21,11 @@ try {
     if ($ReplayWeight -ge 0) { $tag += "_replay_" + $ReplayWeight.ToString([Globalization.CultureInfo]::InvariantCulture) }
     $lrValue = $ContextLR.ToString("0.##########",[Globalization.CultureInfo]::InvariantCulture)
     if ($ContextLR -ne 0.0005) { $tag += "_lr_$lrValue" }
+    $budgetValue = $BudgetFraction.ToString("0.##########",[Globalization.CultureInfo]::InvariantCulture)
+    if ($BudgetFraction -ne 0.2) { $tag += "_budget_$budgetValue" }
     $runArgs = @('evaluate','--output',$Run,'--burst-dir',$burstDir,
         '--context-count','1','--modes','learned','--query-schedule','policy','--update-policy','learned',
-        '--paid-replay-mode','batch5','--context-lr',$lrValue,'--budget-fraction','0.2','--eval-epsilon','0.05',
+        '--paid-replay-mode','batch5','--context-lr',$lrValue,'--budget-fraction',$budgetValue,'--eval-epsilon','0.05',
         '--levels','5','7','10','12','15','17','20','--seed',"$Seed",'--device',$Device,
         '--query-budget-bonus',$value,'--routing-oracle-audit','--evaluation-tag',$tag,'--skip-existing-completed')
     if ($ReplayWeight -ge 0) { $runArgs += @('--online-memory-ce-weight',$ReplayWeight.ToString([Globalization.CultureInfo]::InvariantCulture)) }
