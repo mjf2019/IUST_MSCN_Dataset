@@ -1460,3 +1460,46 @@ git add -f -- "$run/Results"
 git commit -m "Add PairOnly random-selector ablation seed 42"
 git push origin AMCAL_final_enhancement
 ```
+
+## Matched random queries with frozen learned prediction routing
+
+```powershell
+.\AMCAL\run_amcal_paironly_random_query.ps1 -Seed 42
+```
+
+No retraining: evaluate the same PairOnly checkpoint with one Context, seed 42,
+20% cap and Context LR 0.0005. Runs independent and persistent sequential tests.
+The `random_query` evaluation mode draws from the same legal-action RNG as the
+preceding full-random experiment, using only the draw's query/skip decision.
+Until budget exhaustion query probability is 1/3; afterwards it is zero.
+Actual query IDs and Context adaptation match full random for this local-utility
+configuration. Prediction is independently the argmax of the checkpoint's frozen
+correctness head across CNN and Context, without epsilon exploration. Neither
+RL weights nor optimizer states learn; the future/update-value heads are bypassed.
+Paid Context adaptation, protected memory and replay remain enabled.
+
+A queried row can predict with CNN while updating Context. Therefore `action`
+encodes feedback destination on queried rows, while `route` is the actual
+prediction route. `prediction_route_scores` records the frozen routing logits.
+Audit/clean observers also use the frozen learned router. Separate result IDs,
+`random_query_` files and `random_query_control.version=1` preserve existing runs.
+Only evaluation with one Context, policy query schedule and learned destination
+is supported; cascade and routed utility are rejected.
+
+Compare this primarily against full random: matched labels and Context states
+isolate the benefit of prediction routing. Comparing with ordinary learned mode
+also changes query decisions and online selector learning, so it does not isolate
+query selection alone. Audit initial accuracy can differ from full random because
+prediction routing differs even before adaptation.
+
+CPU tests check identical acquired source IDs and exact Context parameters across
+two persistent stages versus full random, correct independent prediction during
+queries, unchanged RL weights, zero RL updates, zero budget, rejection of TRAIN,
+and both real CLI evaluation protocols. PowerShell is reviewed statically.
+
+```powershell
+$run='AMCAL/ANT_Burst_IAT_TEST/protocol_runs/final_enhancement_query_credit_paironly_trainseed42'
+git add -f -- "$run/Results"
+git commit -m "Add PairOnly matched random queries with frozen learned routing seed 42"
+git push origin AMCAL_final_enhancement
+```

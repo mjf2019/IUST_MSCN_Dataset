@@ -80,6 +80,10 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             paid_supervision=False, next_domain_features=None):
     config = a.config
     random_no_rl = mode == 'random' and not training and not warmup
+    if mode == 'random_query' and (training or warmup or len(bank) != 1
+            or a.query_schedule != 'policy' or a.update_policy != 'learned'
+            or config.cascade or config.routed_utility):
+        raise ValueError('random_query requires single-Context policy-schedule evaluation without cascade/routed utility.')
     paired_totals0 = dict(agent.paired_target_totals)
     if next_domain_features is not None and (continuation is None or warmup):
         raise ValueError('A boundary successor requires a persistent, non-warmup sequence.')
@@ -163,7 +167,10 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 allowed = legacy.base.legal_actions(slots, cap-used, gate)
                 if a.update_policy == 'fixed': allowed = [v for v in allowed if v < routes or v == routes + int(destinations[pos])]
                 with torch.no_grad():
-                    if random_no_rl:
+                    if mode == 'random_query':
+                        route_logits = agent.policy.route_logits(state)[0]
+                        greedy = int(route_logits.argmax())
+                    elif random_no_rl:
                         greedy = None
                     else:
                         values, route_logits, raw_values, update_values = agent.policy.forward_for_action(state)
@@ -172,8 +179,13 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                         valid = torch.tensor(allowed, device=x.device)
                         greedy = int(valid[values[valid].argmax()])
                 epsilon = a.train_epsilon if training else a.eval_epsilon
-                action = int(rng.choice(allowed)) if mode == 'random' or warmup or rng.random() < epsilon else greedy
+                action = greedy if mode == 'random_query' else (int(rng.choice(allowed)) if mode == 'random' or warmup or rng.random() < epsilon else greedy)
                 route = legacy.base.route_index(action, slots)
+                if mode == 'random_query':
+                    # Match the full-random query draw; choose prediction independently.
+                    draw = int(rng.choice(allowed))
+                    route = greedy
+                    action = routes if draw >= routes else route
                 gap = 0
             else:
                 route = action = candidate
@@ -316,6 +328,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             reward=reward, gain=gain, harm=harm, reference_counts=reference_counts,
             predictions=[int(v) if known else None for v, known in zip(route_predictions, observed)],
             scores=scores))
+        if mode == 'random_query':
+            traces[-1]['prediction_route_scores'] = route_logits.detach().cpu().tolist()
         if damage_guard: traces[-1]['damage_guard'] = guard_decision
         if getattr(a, 'connected_sequence_td', False):
             traces[-1]['td_terminal'] = terminal

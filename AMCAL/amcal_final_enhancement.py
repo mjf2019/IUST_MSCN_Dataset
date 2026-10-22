@@ -470,6 +470,12 @@ def evaluate(a):
     if temporal_credit is not None:
         execution['temporal_credit'] = dict(gamma=a.gamma, connected_levels=a.connected_sequence_td,
             active_boundary_links=bool(a.continual and a.connected_sequence_td))
+    if 'random_query' in a.modes:
+        execution['random_query_control'] = dict(version=1,
+            query='same RNG and legal-action query draws as full random; probability 1/3 until cap',
+            prediction='frozen correctness head argmax; no exploration; independent of query',
+            learning='no selector learning; paid Context adaptation and memory retained',
+            trace='action encodes feedback destination on queried rows; route encodes prediction')
     if 'random' in a.modes:
         execution['random_control'] = dict(version=2,
             actions='uniform among legal actions; random prediction routes after budget exhaustion',
@@ -614,7 +620,7 @@ def parser():
     p.add_argument('--retention-weight', type=float, default=1.)
     p.add_argument('--train-epsilon', type=float, default=.2)
     p.add_argument('--eval-epsilon', type=float, default=.05)
-    p.add_argument('--modes', nargs='+', choices=['learned', 'random'], default=['learned', 'random'])
+    p.add_argument('--modes', nargs='+', choices=['learned', 'random', 'random_query'], default=['learned', 'random'])
     p.add_argument('--query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--update-policy', choices=['learned', 'fixed'], default='learned')
     p.add_argument('--max-reference-drop', type=float, default=2.)
@@ -643,6 +649,10 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if 'random_query' in a.modes and (a.command != 'evaluate' or a.context_count != 1
+            or a.query_schedule != 'policy' or a.update_policy != 'learned'
+            or a.router_refresh or a.context_damage_guard):
+        p.error('random_query requires single-Context policy-schedule evaluation without other routing ablations.')
     if a.paired_query_only_training and not a.query_value_only_training:
         p.error('--paired-query-only-training requires --query-value-only-training.')
     if a.connected_sequence_td and not a.paired_query_only_training:

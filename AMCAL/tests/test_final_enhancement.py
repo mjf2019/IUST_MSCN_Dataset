@@ -744,6 +744,29 @@ class FinalEnhancementTests(unittest.TestCase):
                     self.assertEqual(measured['td_updates'],0)
                     self.assertLessEqual(measured['labels'],measured['label_cap'])
             self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
+            # Random queries with a frozen learned prediction router, both protocols.
+            existing=set((cf_output/'Results').glob('evaluation_*'))
+            random_common[random_common.index('--modes')+1]='random_query'
+            with redirect_stdout(io.StringIO()), \
+                    patch.object(EfficientQ,'forward_for_action',side_effect=AssertionError('No action-value head')):
+                runner.main(random_common)
+                runner.main([*random_common,'--continual'])
+            query_results=set((cf_output/'Results').glob('evaluation_*'))-existing
+            self.assertEqual(len(query_results),2)
+            for result in query_results:
+                execution=json.loads((result/'execution.json').read_text())
+                self.assertEqual(execution['random_query_control']['version'],1)
+                self.assertEqual(execution['checkpoint_sha256'],cf_hash)
+                for level in (5,7):
+                    measured=json.loads((result/f'random_query_level{level}_metrics.json').read_text())
+                    self.assertEqual(measured['route_updates'],0)
+                    self.assertEqual(measured['td_updates'],0)
+                    self.assertLessEqual(measured['labels'],measured['label_cap'])
+                    counterpart=next(r for r in random_results if json.loads((r/'execution.json').read_text())['continual']==execution['continual'])
+                    original=json.loads((counterpart/f'random_level{level}_metrics.json').read_text())
+                    self.assertEqual(measured['queried_source_ids'],original['queried_source_ids'])
+                self.assertEqual((result/'sequential_summary.csv').exists(),execution['continual'])
+            self.assertEqual(legacy.core.file_sha256(cf_output/'Models'/'final_enhancement.pth'),cf_hash)
             # Expanded banks: each Context count runs both protocols, same checkpoint.
             existing=set((cf_output/'Results').glob('evaluation_*'))
             for count in (4,5):
