@@ -62,3 +62,13 @@ When restarting an interrupted older baseline run, valid existing preprocessing
 is verified and reused; extraneous CNN/Context files are preserved but ignored. Repeat -Action Evaluate to evaluate saved models.
 Never push Models or exported Domains; push JSON manifests and result CSV/JSON.
 No numerical experiments were executed; Python syntax/static checks only.
+
+Recovery for interrupted AMCAL stages: add --restart-incomplete-stages to the
+Python command. Verified complete source/stages are reused. A nonempty stage
+that fails the existing completion/hash checks is renamed to a timestamped
+.preserved_ sibling before restarting that stage from its verified input. No
+partial model is marked complete and no source weights or old results are
+removed. Downstream stages with changed input hashes are likewise preserved and
+rebuilt. Recovery events and input fingerprints are recorded in
+stage_recovery_events.json. This is stage restart, not mid-epoch resumption.
+Without the explicit flag the original mismatch guard remains unchanged.

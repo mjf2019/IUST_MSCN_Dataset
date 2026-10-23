@@ -1,5 +1,6 @@
 """Clean-only AMCAL PairOnly batch5 and existing AF/DFE on supplied CSV attacks."""
 import argparse
+from datetime import datetime, timezone
 from contextlib import contextmanager
 import json
 from pathlib import Path
@@ -240,7 +241,26 @@ def train_amcal(a, source):
     pipeline.TRAIN=[0];pipeline.TEST=[1,2,3]
     stages,_=pipeline.make_plan(a)
     # The source above is freshly trained without a template or pretrained model.
-    for stage in stages[1:]:pipeline.execute(a,stage)
+    for stage in stages[1:]:
+        out=Path(stage['output'])
+        if (a.restart_incomplete_stages and out.exists() and any(out.iterdir())
+                and not pipeline.stage_complete(stage)):
+            # Preserve the entire old stage, including its checkpoints/results.
+            # Never modify source CNN/Context or mark partial weights complete.
+            stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+            archived=out.with_name(out.name+'.preserved_'+stamp)
+            expected=pipeline.fingerprint(stage)
+            record=dict(stage=stage['name'],preserved=str(archived),
+                reason='stage completion marker absent or recipe/input/output hashes mismatched',
+                expected_fingerprint=expected,
+                had_completion_marker=(out/'batch5_stage_complete.json').exists())
+            out.rename(archived)
+            history=a.output/'stage_recovery_events.json'
+            events=json.loads(history.read_text()) if history.exists() else []
+            write(history,events+[record])
+            print('Preserved incomplete/mismatched stage:',archived,flush=True)
+            print('Restarting only stage:',stage['name'],flush=True)
+        pipeline.execute(a,stage)
 
 
 def evaluate_amcal(a):
@@ -372,6 +392,8 @@ def main():
     p.add_argument('--methods',nargs='+',choices=['AMCAL','AF','DFE'],default=['AMCAL','AF','DFE'])
     p.add_argument('--data-dir',type=Path);p.add_argument('--output',type=Path)
     p.add_argument('--assume-historical-pool-order',action='store_true')
+    p.add_argument('--restart-incomplete-stages',action='store_true',
+        help='Preserve incomplete/mismatched AMCAL stages under timestamped names, then rebuild those stages; verified complete source/stages are reused.')
     p.add_argument('--seed',type=int,default=42);p.add_argument('--device',choices=['auto','cpu','cuda'],default='cuda')
     p.add_argument('--cnn-epochs',type=int,default=60);p.add_argument('--context-epochs',type=int,default=20)
     p.add_argument('--epochs',type=int,default=12);p.add_argument('--utility-epochs',type=int,default=3)
