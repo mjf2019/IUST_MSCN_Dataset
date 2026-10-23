@@ -39,17 +39,6 @@ def audited(m):
                for k in metrics) for block in (same,ref))
 
 
-def valid_online_audit(m,seed,level,n,method,history):
-    if method!='arf':return history.valid_summary(m,seed,level,n,method=='ral5')
-    e=m.get('execution_config',{})
-    return (e.get('seed')==seed and e.get('budget')==1.0
-            and not e.get('test_scaler') and not e.get('unseen_rows')
-            and m.get('level')==level and m.get('samples')==n
-            and m.get('label_cap')==n and m.get('labels')==n
-            and m.get('training_provenance',{}).get('train_levels')==[0,1,3]
-            and not e.get('ral_online_update_window'))
-
-
 def find_audit(dataset,method,seed,level,history):
     root,runs,main,sources=history.locations(dataset)
     if method=='amcal':
@@ -73,7 +62,7 @@ def find_audit(dataset,method,seed,level,history):
         for path in (folder/'Results').glob(f'{native}_per{level}_seed{seed}_*_metrics.json'):
             m=read(path)
             if (m.get('execution_config',{}).get('endpoint_metrics_version')==1 and audited(m)
-                and valid_online_audit(m,seed,level,1073 if dataset=='IAT' else 886,method,history)):
+                and history.valid_summary(m,seed,level,1073 if dataset=='IAT' else 886,method=='ral5')):
                 candidates.append((path,path.with_name(path.name.replace('_metrics.json','_trace.csv')),m))
     return max(candidates,key=lambda v:v[0].stat().st_mtime) if candidates else None
 
@@ -112,7 +101,7 @@ def run_seed(a,method,seed,history):
         if method=='ral5' and folder.name!=f'ral_recent5_seed{seed}':
             raise FileNotFoundError(f'Missing original recent5 seed{seed} Models; restore/copy the original checkpoint first.')
         invoke(['AMCAL/amcal_burst_baselines.py','evaluate','--methods',native,'--output',folder,
-            '--burst-dir',burst,'--levels',*pending,'--seed',seed,'--budget-fraction','1.0' if method=='arf' else '.2',
+            '--burst-dir',burst,'--levels',*pending,'--seed',seed,'--budget-fraction','.2',
             '--endpoint-metrics','--device',a.device if method in ('cnn','dfe') else 'cpu',
             *(['--ral-budget-mode','prefix','--ral-update-window','5'] if method=='ral5' else [])])
 
@@ -130,17 +119,10 @@ def collect(a,method,history,before):
             if not trace.exists():raise FileNotFoundError(trace)
             online=history.derived(trace,m)
             target=m['same_level']['unqueried']['metric_pairs'];reference=m['reference']['metric_pairs']
-            if not reference['initial']['samples']:
-                raise ValueError('Empty reference endpoint population.')
-            if not target['initial']['samples'] and method!='arf':
-                raise ValueError('Empty unqueried target endpoint population.')
-            all_target=m['same_level']['all_rows']['metric_pairs']
+            if not target['initial']['samples'] or not reference['initial']['samples']:
+                raise ValueError('Empty paired endpoint population.')
             for pair in (target,reference):
                 for k in METRICS:
-                    if not pair['initial']['samples']:
-                        if pair['gain_pp'][k] is not None or pair['drop_pp'][k] is not None:
-                            raise ValueError('Empty endpoint population must have undefined changes.')
-                        continue
                     value=100*(pair['final'][k]-pair['initial'][k])
                     if abs(pair['gain_pp'][k]-value)>1e-9 or abs(pair['drop_pp'][k]+value)>1e-9:
                         raise ValueError('Endpoint metric arithmetic mismatch.')
@@ -155,9 +137,6 @@ def collect(a,method,history,before):
             entry=dict(version=1,dataset=a.dataset,method=a.method,seed=seed,level=level,
                 online=online,target_gain_pp=target['gain_pp'],reference_drop_pp=reference['drop_pp'],
                 target_endpoint=target,reference_endpoint=reference,
-                target_endpoint_all_rows=all_target,target_gain_all_rows_pp=all_target['gain_pp'],
-                target_gain_scope='unqueried TEST subset; undefined when ARF acquires all stream labels',
-                all_rows_gain_scope='retrospective full TEST stream, including acquired labels; not heldout generalization',
                 endpoint_phase=m.get('endpoint_phase','whole online adaptation; initial checkpoint to end of stream'),
                 source=str(path.relative_to(REPO)).replace('\\','/'),source_sha256=sha(path),
                 trace=str(trace.relative_to(REPO)).replace('\\','/'),trace_sha256=sha(trace),
@@ -171,7 +150,7 @@ def collect(a,method,history,before):
                 shutil.copy2(ep,out.with_name(f'level{level}_endpoint_predictions.csv'))
             entries.append(dict(seed=seed,level=level,path=str(out.relative_to(REPO)).replace('\\','/')))
     manifest=dict(version=1,dataset=a.dataset,method=a.method,seeds=a.seeds,levels=a.levels,
-        budget_fraction=None if method=='af_cal' else 1.0 if method=='arf' else .2,train_levels=[0,1,3],metrics=list(METRICS),entries=entries,
+        budget_fraction=None if method=='af_cal' else .2,train_levels=[0,1,3],metrics=list(METRICS),entries=entries,
         protocol='fresh initial model per level; paired endpoint observers only; no transfer across levels',
         af_caveat='AF measures the supervised tuning stage, not whole-method source-only forgetting' if method=='af_cal' else None)
     bundle.mkdir(parents=True,exist_ok=True)
@@ -195,9 +174,6 @@ def main():
     before={(seed,level):history.find(a.dataset,method,seed,level) for seed in a.seeds for level in a.levels}
     if method=='af_cal':
         before={key:(value if value and value[2].get('execution',{}).get('source_levels')==[0,1,3] else None)
-                for key,value in before.items()}
-    if method=='arf':
-        before={key:(value if value and value[2].get('execution_config',{}).get('budget')==1.0 else None)
                 for key,value in before.items()}
     if a.action=='run':
         for seed in a.seeds:run_seed(a,method,seed,history)
