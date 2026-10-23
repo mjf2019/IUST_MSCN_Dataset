@@ -1,0 +1,1095 @@
+{
+  "version": 1,
+  "dataset": "IAT",
+  "method": "RAL",
+  "seed": 42,
+  "level": 15,
+  "online": {
+    "accuracy": 0.2590866728797763,
+    "macro_precision": 0.22799444586565432,
+    "macro_recall": 0.21854676662716663,
+    "macro_f1": 0.21991493850599922,
+    "confusion_matrix": [
+      [
+        16,
+        10,
+        15,
+        21,
+        6,
+        35
+      ],
+      [
+        8,
+        11,
+        14,
+        10,
+        6,
+        30
+      ],
+      [
+        37,
+        10,
+        73,
+        53,
+        20,
+        89
+      ],
+      [
+        25,
+        11,
+        30,
+        54,
+        12,
+        86
+      ],
+      [
+        10,
+        6,
+        12,
+        17,
+        12,
+        23
+      ],
+      [
+        50,
+        15,
+        50,
+        68,
+        16,
+        112
+      ]
+    ],
+    "trace_sha256": "473f1c6a1ef081f87375b5aad2e50952f590f531238be58b9fc123918f1cb922"
+  },
+  "target_gain_pp": {
+    "accuracy": -25.378346915017463,
+    "macro_precision": -35.18340819518352,
+    "macro_recall": -26.621324792931635,
+    "macro_f1": -31.721672467349677
+  },
+  "reference_drop_pp": {
+    "accuracy": 45.94594594594595,
+    "macro_precision": 58.806239749864794,
+    "macro_recall": 51.741926992910514,
+    "macro_f1": 58.66494528000753
+  },
+  "target_endpoint": {
+    "version": 1,
+    "initial": {
+      "samples": 859,
+      "classes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "confusion_matrix": [
+        [
+          32,
+          9,
+          3,
+          23,
+          2,
+          6
+        ],
+        [
+          8,
+          40,
+          0,
+          1,
+          0,
+          14
+        ],
+        [
+          9,
+          7,
+          72,
+          91,
+          5,
+          52
+        ],
+        [
+          11,
+          10,
+          1,
+          124,
+          1,
+          34
+        ],
+        [
+          8,
+          12,
+          2,
+          20,
+          7,
+          13
+        ],
+        [
+          24,
+          12,
+          9,
+          53,
+          1,
+          143
+        ]
+      ],
+      "accuracy": 0.48661233993015135,
+      "macro_precision": 0.5000990270751621,
+      "macro_recall": 0.4592612061656221,
+      "macro_f1": 0.4336533127767515
+    },
+    "final": {
+      "samples": 859,
+      "classes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "confusion_matrix": [
+        [
+          12,
+          0,
+          0,
+          56,
+          0,
+          7
+        ],
+        [
+          14,
+          0,
+          0,
+          46,
+          0,
+          3
+        ],
+        [
+          16,
+          0,
+          0,
+          205,
+          0,
+          15
+        ],
+        [
+          21,
+          0,
+          0,
+          159,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          62,
+          0,
+          0
+        ],
+        [
+          22,
+          0,
+          0,
+          191,
+          0,
+          29
+        ]
+      ],
+      "accuracy": 0.23282887077997672,
+      "macro_precision": 0.14826494512332686,
+      "macro_recall": 0.1930479582363058,
+      "macro_f1": 0.11643658810325476
+    },
+    "gain_pp": {
+      "accuracy": -25.378346915017463,
+      "macro_precision": -35.18340819518352,
+      "macro_recall": -26.621324792931635,
+      "macro_f1": -31.721672467349677
+    },
+    "drop_pp": {
+      "accuracy": 25.378346915017463,
+      "macro_precision": 35.18340819518352,
+      "macro_recall": 26.621324792931635,
+      "macro_f1": 31.721672467349677
+    },
+    "scope": "same masked rows at both endpoints; observer-only; macro scores use source class vocabulary"
+  },
+  "reference_endpoint": {
+    "version": 1,
+    "initial": {
+      "samples": 1073,
+      "classes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "confusion_matrix": [
+        [
+          35,
+          4,
+          21,
+          11,
+          5,
+          24
+        ],
+        [
+          5,
+          62,
+          4,
+          3,
+          1,
+          3
+        ],
+        [
+          7,
+          5,
+          222,
+          14,
+          5,
+          27
+        ],
+        [
+          11,
+          1,
+          20,
+          138,
+          2,
+          49
+        ],
+        [
+          0,
+          0,
+          2,
+          0,
+          75,
+          3
+        ],
+        [
+          12,
+          7,
+          26,
+          41,
+          3,
+          225
+        ]
+      ],
+      "accuracy": 0.7054986020503262,
+      "macro_precision": 0.7013255497438707,
+      "macro_recall": 0.702703972737225,
+      "macro_f1": 0.6989124583780312
+    },
+    "final": {
+      "samples": 1073,
+      "classes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "confusion_matrix": [
+        [
+          2,
+          0,
+          0,
+          76,
+          0,
+          22
+        ],
+        [
+          7,
+          0,
+          0,
+          61,
+          0,
+          10
+        ],
+        [
+          11,
+          0,
+          0,
+          222,
+          0,
+          47
+        ],
+        [
+          10,
+          0,
+          0,
+          192,
+          0,
+          19
+        ],
+        [
+          0,
+          0,
+          0,
+          79,
+          0,
+          1
+        ],
+        [
+          19,
+          0,
+          0,
+          225,
+          0,
+          70
+        ]
+      ],
+      "accuracy": 0.24603914259086673,
+      "macro_precision": 0.1132631522452228,
+      "macro_recall": 0.18528470280811982,
+      "macro_f1": 0.11226300557795584
+    },
+    "gain_pp": {
+      "accuracy": -45.94594594594595,
+      "macro_precision": -58.806239749864794,
+      "macro_recall": -51.741926992910514,
+      "macro_f1": -58.66494528000753
+    },
+    "drop_pp": {
+      "accuracy": 45.94594594594595,
+      "macro_precision": 58.806239749864794,
+      "macro_recall": 51.741926992910514,
+      "macro_f1": 58.66494528000753
+    },
+    "scope": "same masked rows at both endpoints; observer-only; macro scores use source class vocabulary"
+  },
+  "endpoint_phase": "whole online adaptation; initial checkpoint to end of stream",
+  "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/ral_recent5_seed42/Results/ral_per15_seed42_6f47dea8_metrics.json",
+  "source_sha256": "85f0a116625cdc1ee2dd47a62f48c6f0db8ff40d248ecf8b9d99a8f2663c6669",
+  "trace": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/ral_recent5_seed42/Results/ral_per15_seed42_6f47dea8_trace.csv",
+  "trace_sha256": "473f1c6a1ef081f87375b5aad2e50952f590f531238be58b9fc123918f1cb922",
+  "prior_comparison": {
+    "accuracy_delta": 0.0,
+    "macro_f1_delta": 2.7755575615628914e-17,
+    "labels_match": true,
+    "prior_source": "AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\ral_recent5_seed42\\Results\\ral_per15_seed42_602ad26f_metrics.json"
+  },
+  "original": {
+    "method": "RAL-recent5-modified",
+    "accuracy": 0.2590866728797763,
+    "macro_f1": 0.2199149385059992,
+    "weighted_f1": 0.26052426578544563,
+    "samples": 1073,
+    "labels": 214,
+    "label_cap": 214,
+    "actual_label_fraction": 0.19944082013047532,
+    "budget_utilization_pct": 100.0,
+    "labels_remaining": 0,
+    "online_gradient_steps": 0,
+    "query_protocol": "RAL paper prefix-ratio gate plus strict global cap",
+    "protocol": "predict-score-query-update; fresh model per level; reference/same-level observers never feed learning",
+    "online_seconds": 127.59261239995249,
+    "prediction_seconds": 48.97307670151349,
+    "selection_seconds": 48.13673140050378,
+    "update_seconds": 30.436830299790017,
+    "cache_seconds": 0.0,
+    "other_seconds": 0.04597399814520031,
+    "online_ms_per_sample": 118.91203392353447,
+    "samples_per_second": 8.409577794649806,
+    "update_ms_per_label": 142.2281789709814,
+    "timing_device": "cpu",
+    "timing_protocol": "synchronized wall time; prediction includes frozen-cache construction; update includes Context/classifier, reward probes and selector learning; excludes model loading, initialization, endpoint retention observers, file I/O and human label latency; other includes stream bookkeeping, oracle scoring and progress output",
+    "ral_online_window": {
+      "size": 5,
+      "includes_current": true,
+      "source_rows_in_online_fit": 0,
+      "retained_feedback": 5,
+      "first_fit_after_labels": 5,
+      "refits": 210,
+      "max_rows_per_fit": 5,
+      "semantics": "sliding-window refit, not incremental learning; source model retained only until first refit"
+    },
+    "ral_budget_mode": "prefix",
+    "source_labels": 9663,
+    "source_initialization": "matched source TRAIN; historical checkpoint",
+    "author_code_commit": "2a34a4b1b1e11054a718233e19de0c2134fd68e8",
+    "ral_protocol_version": 2,
+    "ral_trees": 10,
+    "ral_seen": 1073,
+    "ral_final_threshold": 0.9949499999999999,
+    "ral_final_decision_powers": [
+      0.42554318742198155,
+      0.42554318742198155,
+      0.1489136251560368
+    ],
+    "same_level": {
+      "all_rows": {
+        "n": 1073,
+        "initial": 0.48928238583411,
+        "final": 0.23299161230195714,
+        "drop_pp": 25.629077353215283,
+        "broken": 362,
+        "fixed": 87,
+        "metric_pairs": {
+          "version": 1,
+          "initial": {
+            "samples": 1073,
+            "classes": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "confusion_matrix": [
+              [
+                47,
+                9,
+                4,
+                29,
+                3,
+                11
+              ],
+              [
+                8,
+                51,
+                1,
+                1,
+                0,
+                18
+              ],
+              [
+                12,
+                7,
+                87,
+                103,
+                6,
+                67
+              ],
+              [
+                14,
+                14,
+                1,
+                142,
+                1,
+                46
+              ],
+              [
+                12,
+                14,
+                2,
+                24,
+                12,
+                16
+              ],
+              [
+                31,
+                13,
+                11,
+                69,
+                1,
+                186
+              ]
+            ],
+            "accuracy": 0.48928238583411,
+            "macro_precision": 0.5200525945564415,
+            "macro_recall": 0.46830630408358626,
+            "macro_f1": 0.4489325580437262
+          },
+          "final": {
+            "samples": 1073,
+            "classes": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "confusion_matrix": [
+              [
+                22,
+                0,
+                0,
+                72,
+                0,
+                9
+              ],
+              [
+                21,
+                0,
+                0,
+                53,
+                0,
+                5
+              ],
+              [
+                21,
+                0,
+                0,
+                243,
+                0,
+                18
+              ],
+              [
+                23,
+                0,
+                0,
+                194,
+                0,
+                1
+              ],
+              [
+                0,
+                0,
+                0,
+                80,
+                0,
+                0
+              ],
+              [
+                25,
+                0,
+                0,
+                252,
+                0,
+                34
+              ]
+            ],
+            "accuracy": 0.23299161230195714,
+            "macro_precision": 0.15348224918870015,
+            "macro_recall": 0.20213754145548105,
+            "macro_f1": 0.12224436766570501
+          },
+          "gain_pp": {
+            "accuracy": -25.629077353215283,
+            "macro_precision": -36.657034536774134,
+            "macro_recall": -26.616876262810518,
+            "macro_f1": -32.66881903780212
+          },
+          "drop_pp": {
+            "accuracy": 25.629077353215283,
+            "macro_precision": 36.657034536774134,
+            "macro_recall": 26.616876262810518,
+            "macro_f1": 32.66881903780212
+          },
+          "scope": "same masked rows at both endpoints; observer-only; macro scores use source class vocabulary"
+        }
+      },
+      "unqueried": {
+        "n": 859,
+        "initial": 0.48661233993015135,
+        "final": 0.23282887077997672,
+        "drop_pp": 25.378346915017463,
+        "broken": 283,
+        "fixed": 65,
+        "metric_pairs": {
+          "version": 1,
+          "initial": {
+            "samples": 859,
+            "classes": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "confusion_matrix": [
+              [
+                32,
+                9,
+                3,
+                23,
+                2,
+                6
+              ],
+              [
+                8,
+                40,
+                0,
+                1,
+                0,
+                14
+              ],
+              [
+                9,
+                7,
+                72,
+                91,
+                5,
+                52
+              ],
+              [
+                11,
+                10,
+                1,
+                124,
+                1,
+                34
+              ],
+              [
+                8,
+                12,
+                2,
+                20,
+                7,
+                13
+              ],
+              [
+                24,
+                12,
+                9,
+                53,
+                1,
+                143
+              ]
+            ],
+            "accuracy": 0.48661233993015135,
+            "macro_precision": 0.5000990270751621,
+            "macro_recall": 0.4592612061656221,
+            "macro_f1": 0.4336533127767515
+          },
+          "final": {
+            "samples": 859,
+            "classes": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "confusion_matrix": [
+              [
+                12,
+                0,
+                0,
+                56,
+                0,
+                7
+              ],
+              [
+                14,
+                0,
+                0,
+                46,
+                0,
+                3
+              ],
+              [
+                16,
+                0,
+                0,
+                205,
+                0,
+                15
+              ],
+              [
+                21,
+                0,
+                0,
+                159,
+                0,
+                1
+              ],
+              [
+                0,
+                0,
+                0,
+                62,
+                0,
+                0
+              ],
+              [
+                22,
+                0,
+                0,
+                191,
+                0,
+                29
+              ]
+            ],
+            "accuracy": 0.23282887077997672,
+            "macro_precision": 0.14826494512332686,
+            "macro_recall": 0.1930479582363058,
+            "macro_f1": 0.11643658810325476
+          },
+          "gain_pp": {
+            "accuracy": -25.378346915017463,
+            "macro_precision": -35.18340819518352,
+            "macro_recall": -26.621324792931635,
+            "macro_f1": -31.721672467349677
+          },
+          "drop_pp": {
+            "accuracy": 25.378346915017463,
+            "macro_precision": 35.18340819518352,
+            "macro_recall": 26.621324792931635,
+            "macro_f1": 31.721672467349677
+          },
+          "scope": "same masked rows at both endpoints; observer-only; macro scores use source class vocabulary"
+        }
+      }
+    },
+    "reference": {
+      "n": 1073,
+      "initial": 0.7054986020503262,
+      "final": 0.24603914259086673,
+      "drop_pp": 45.94594594594595,
+      "broken": 580,
+      "fixed": 87,
+      "metric_pairs": {
+        "version": 1,
+        "initial": {
+          "samples": 1073,
+          "classes": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "confusion_matrix": [
+            [
+              35,
+              4,
+              21,
+              11,
+              5,
+              24
+            ],
+            [
+              5,
+              62,
+              4,
+              3,
+              1,
+              3
+            ],
+            [
+              7,
+              5,
+              222,
+              14,
+              5,
+              27
+            ],
+            [
+              11,
+              1,
+              20,
+              138,
+              2,
+              49
+            ],
+            [
+              0,
+              0,
+              2,
+              0,
+              75,
+              3
+            ],
+            [
+              12,
+              7,
+              26,
+              41,
+              3,
+              225
+            ]
+          ],
+          "accuracy": 0.7054986020503262,
+          "macro_precision": 0.7013255497438707,
+          "macro_recall": 0.702703972737225,
+          "macro_f1": 0.6989124583780312
+        },
+        "final": {
+          "samples": 1073,
+          "classes": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "confusion_matrix": [
+            [
+              2,
+              0,
+              0,
+              76,
+              0,
+              22
+            ],
+            [
+              7,
+              0,
+              0,
+              61,
+              0,
+              10
+            ],
+            [
+              11,
+              0,
+              0,
+              222,
+              0,
+              47
+            ],
+            [
+              10,
+              0,
+              0,
+              192,
+              0,
+              19
+            ],
+            [
+              0,
+              0,
+              0,
+              79,
+              0,
+              1
+            ],
+            [
+              19,
+              0,
+              0,
+              225,
+              0,
+              70
+            ]
+          ],
+          "accuracy": 0.24603914259086673,
+          "macro_precision": 0.1132631522452228,
+          "macro_recall": 0.18528470280811982,
+          "macro_f1": 0.11226300557795584
+        },
+        "gain_pp": {
+          "accuracy": -45.94594594594595,
+          "macro_precision": -58.806239749864794,
+          "macro_recall": -51.741926992910514,
+          "macro_f1": -58.66494528000753
+        },
+        "drop_pp": {
+          "accuracy": 45.94594594594595,
+          "macro_precision": 58.806239749864794,
+          "macro_recall": 51.741926992910514,
+          "macro_f1": 58.66494528000753
+        },
+        "scope": "same masked rows at both endpoints; observer-only; macro scores use source class vocabulary"
+      }
+    },
+    "level": 15,
+    "execution_config": {
+      "seed": 42,
+      "budget": 0.2,
+      "af_online_lr": 1e-05,
+      "protocol_version": 1,
+      "timing_version": 1,
+      "endpoint_metrics_version": 1,
+      "endpoint_metrics_methods": [
+        "ral"
+      ],
+      "ral_protocol_version": 2,
+      "ral_budget_mode": "prefix",
+      "ral_online_update_window": 5
+    },
+    "training_provenance": {
+      "version": 1,
+      "train_levels": [
+        0,
+        1,
+        3
+      ],
+      "training_domains_sha256": {
+        "0": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+        "1": "bf92f8d8088d7199d1a83187c2f04079c13aa0fb115878e3649c5bd85d8a6cc6",
+        "3": "391285a6f89750c0025eb225a7d2b4beca1314852c9d630e8105108a352eaa53"
+      },
+      "source_preprocessing_sha256": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+      "partition_sha256": {
+        "train_ids": "45d655cf6438a0305588c9279099331c4443ab58d3df40bc611b8ad697754c17",
+        "val_ids": "4767222d8415edc8cd197bcc4bae2af7023ddc792b92a629cf008ac8155710d5",
+        "test_ids": "fab8909d80feb1a230e03a6d7365759e65ed4df3cfb11d59a90c0f445edb69c3"
+      },
+      "config": {
+        "command": "train",
+        "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\structured_bank3_policy_lr0p0005_seed42",
+        "burst_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\Dataset_official_v1\\AdvBurst_FTSC-IAT",
+        "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\ral_paper_rf10_prefix_levels1_3_seed42",
+        "methods": [
+          "ral"
+        ],
+        "train_levels": [
+          0,
+          1,
+          3
+        ],
+        "levels": [
+          5,
+          7,
+          10,
+          12,
+          15,
+          17,
+          20
+        ],
+        "seed": 42,
+        "budget_fraction": 0.2,
+        "dfe_epochs": 200,
+        "af_epochs": 30,
+        "patience": 10,
+        "batch_size": 32,
+        "dfe_lr": 0.001,
+        "af_lr": 1e-05,
+        "dfe_alpha1": 0.5,
+        "dfe_alpha2": 2.0,
+        "dfe_eta": 0.5,
+        "dfe_lambda": 1.0,
+        "dfe_betas": [
+          0.01,
+          0.02,
+          0.03,
+          0.04,
+          0.05,
+          0.05
+        ],
+        "templates": 20,
+        "arf_trees": 10,
+        "arf_train_passes": 1,
+        "ral_budget_mode": "prefix",
+        "progress_every": 200,
+        "jobs": -1,
+        "device": "cpu",
+        "classes": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ]
+      },
+      "classes": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "feature_names": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48",
+        "49",
+        "50",
+        "51",
+        "52",
+        "53",
+        "54",
+        "55",
+        "56",
+        "57",
+        "58",
+        "59",
+        "60",
+        "61",
+        "62",
+        "63",
+        "64",
+        "65",
+        "66",
+        "67",
+        "68",
+        "69",
+        "70",
+        "71",
+        "72",
+        "73",
+        "74",
+        "75",
+        "76",
+        "77",
+        "78",
+        "79",
+        "80",
+        "81",
+        "82",
+        "83",
+        "84",
+        "85",
+        "86",
+        "87",
+        "88",
+        "89",
+        "90",
+        "91",
+        "92",
+        "93",
+        "94",
+        "95",
+        "96",
+        "97",
+        "98",
+        "99",
+        "100"
+      ]
+    },
+    "target_sha256": "3c7125d4cb4847ca908ad76e4c93b02df236b3b2a4e80d813aa73f2900260bb9"
+  }
+}
