@@ -52,7 +52,8 @@ def find_audit(dataset,method,seed,level,history):
         candidates=[]
         for path in runs.glob(f'af_endpoint_seed{seed}_*/af_fewshot/level{level}_shot5/metrics.json'):
             m=read(path)
-            if m.get('execution',{}).get('seed')==seed and m.get('shots')==5 and audited(m):
+            if (m.get('execution',{}).get('seed')==seed and m.get('shots')==5 and audited(m)
+                and m.get('execution',{}).get('source_levels')==[0,1,3]):
                 candidates.append((path,path.with_name('predictions.csv'),m))
     else:
         native='ral' if method=='ral5' else method
@@ -84,7 +85,7 @@ def run_seed(a,method,seed,history):
         source=runs/'structured_bank3_policy_lr0p0005_seed42'
         out=runs/f'af_endpoint_seed{seed}_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}'/'af_fewshot'
         invoke(['AMCAL/amcal_af_paper_burst.py','--source-run',source,'--burst-dir',burst,'--output',out,
-            '--levels',*pending,'--shots','5','--seed',seed,'--endpoint-metrics','--device',a.device])
+            '--levels',*pending,'--source-levels','0','1','3','--shots','5','--seed',seed,'--endpoint-metrics','--device',a.device])
     else:
         if method=='ral5':
             # Same fixed offline RAL checkpoint as the existing recent5 experiments.
@@ -149,7 +150,7 @@ def collect(a,method,history,before):
                 shutil.copy2(ep,out.with_name(f'level{level}_endpoint_predictions.csv'))
             entries.append(dict(seed=seed,level=level,path=str(out.relative_to(REPO)).replace('\\','/')))
     manifest=dict(version=1,dataset=a.dataset,method=a.method,seeds=a.seeds,levels=a.levels,
-        budget_fraction=.2,train_levels=[0,1,3],metrics=list(METRICS),entries=entries,
+        budget_fraction=None if method=='af_cal' else .2,train_levels=[0,1,3],metrics=list(METRICS),entries=entries,
         protocol='fresh initial model per level; paired endpoint observers only; no transfer across levels',
         af_caveat='AF measures the supervised tuning stage, not whole-method source-only forgetting' if method=='af_cal' else None)
     bundle.mkdir(parents=True,exist_ok=True)
@@ -171,6 +172,9 @@ def main():
     import run_burst_final_five_seeds as history
     method=METHODS[a.method]
     before={(seed,level):history.find(a.dataset,method,seed,level) for seed in a.seeds for level in a.levels}
+    if method=='af_cal':
+        before={key:(value if value and value[2].get('execution',{}).get('source_levels')==[0,1,3] else None)
+                for key,value in before.items()}
     if a.action=='run':
         for seed in a.seeds:run_seed(a,method,seed,history)
     collect(a,method,history,before)

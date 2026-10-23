@@ -39,9 +39,38 @@ def prepare(a):
     if shared.core.file_sha256(clean_file) != artifact['source_sha256']:
         raise ValueError('Clean source hash differs from preprocessing artifact.')
     classes = np.arange(len(artifact['label_encoder'].classes_))
-    sx, sy, source_ids = arrays(shared.read_domain(a.burst_dir, artifact, 0, 'train_ids'))
-    selected = per_class_indices(sy, classes, 25, np.random.default_rng(a.seed))
-    source = sx[selected], sy[selected], source_ids[selected]
+    source_levels=list(getattr(a,'source_levels',[0]))
+    source_domains={level:arrays(shared.read_domain(a.burst_dir,artifact,level,'train_ids'))
+                    for level in source_levels}
+    rng=np.random.default_rng(a.seed)
+    if source_levels==[0]:
+        # Preserve the historical default and its exact support selection.
+        sx,sy,source_ids=source_domains[0]
+        selected=per_class_indices(sy,classes,25,rng)
+        source=sx[selected],sy[selected],source_ids[selected]
+        row_levels=[0]*len(selected)
+    else:
+        # Keep the author source budget (25/class), stratified across known levels.
+        # One underlying flow ID is selected at only one intensity.
+        first=source_domains[source_levels[0]]
+        for level,(x,y,flow_ids) in source_domains.items():
+            if not np.array_equal(flow_ids,first[2]) or not np.array_equal(y,first[1]):
+                raise ValueError('Known-source domains must align by original flow ID and label.')
+        selected_x=[];selected_y=[];selected_ids=[];row_levels=[];used=set()
+        for label in classes:
+            for index,level in enumerate(source_levels):
+                count=25//len(source_levels)+int(index<25%len(source_levels))
+                x,y,flow_ids=source_domains[level]
+                available=np.asarray([i for i in np.flatnonzero(y==label) if int(flow_ids[i]) not in used],dtype=np.int64)
+                if len(available)<count:raise ValueError('Insufficient distinct source TRAIN flows for AF known levels.')
+                chosen=rng.permutation(available)[:count]
+                selected_x.extend(x[chosen]);selected_y.extend(y[chosen]);selected_ids.extend(flow_ids[chosen])
+                row_levels.extend([level]*count);used.update(map(int,flow_ids[chosen]))
+        source=np.asarray(selected_x),np.asarray(selected_y),np.asarray(selected_ids)
+    a.source_selection=dict(levels=source_levels,rows_per_class=25,row_levels=row_levels,
+        per_class_counts_by_level={str(level):25//len(source_levels)+int(i<25%len(source_levels))
+                                   for i,level in enumerate(source_levels)},
+        source_id_policy='distinct underlying flow IDs across all selected source levels')
     tasks = []
     for level in a.levels:
         tx, ty, target_ids = arrays(shared.read_domain(a.burst_dir, artifact, level, 'train_ids'))
@@ -72,8 +101,9 @@ def run(a):
                   parameters=asdict(p), test_per_class=a.test_per_class,
                   preprocessing_sha256=shared.core.file_sha256(a.source_run/'Models/protocol_preprocessing.joblib'),
                   domain_sha256={str(l):shared.core.file_sha256(a.burst_dir/f'AdvBurstTrainedBurst_size_{l}_Step_2000.csv')
-                                 for l in [0]+a.levels},
+                                 for l in sorted(set([0]+list(getattr(a,'source_levels',[0]))+a.levels))},
                   source_ids=source[2].tolist(),
+                  source_levels=list(getattr(a,'source_levels',[0])),source_selection=a.source_selection,
                   adaptations=['continuous Burst IAT/PS rather than direction-only WF traces',
                                'AMCAL train-fitted preprocessing and source partitions',
                                'target calibration from remaining TRAIN IDs at each target intensity',
@@ -162,6 +192,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--levels', type=int, nargs='+', default=[5,7,10,12,15,17,20])
     parser.add_argument('--shots', type=int, nargs='+', choices=[1,5,10,15,20], default=[5])
+    parser.add_argument('--source-levels',type=int,nargs='+',choices=[0,1,3],default=[0],
+                        help='Known-source TRAIN intensities; 25/class total stratified across levels. Default preserves historical clean-only AF.')
     parser.add_argument('--endpoint-metrics',action='store_true',help='Observer-only audit of the supervised tuning stage; not whole-AF forgetting.')
     parser.add_argument('--test-per-class', type=int, default=0, help='0: common heldout TEST set; 70: author count.')
     parser.add_argument('--iterations', type=int, default=1000)
@@ -173,6 +205,8 @@ def main():
         parser.error('Invalid iteration/epoch/test count.')
     if len(set(a.levels)) != len(a.levels) or min(a.levels) <= 0 or len(set(a.shots)) != len(a.shots):
         parser.error('Duplicate levels/shots or nonpositive target levels.')
+    if len(set(a.source_levels))!=len(a.source_levels) or set(a.source_levels)&set(a.levels):
+        parser.error('Source levels must be unique and disjoint from target levels.')
     if a.device == 'auto':
         a.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if a.device == 'cuda' and not torch.cuda.is_available():

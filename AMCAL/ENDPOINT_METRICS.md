@@ -43,3 +43,9 @@ Online execution is repeated, not inferred from historical accuracy totals. It c
 ## Validation during preparation
 
 No model training or adaptation experiment was run and no dependencies were installed. Python syntax, CLI help and focused confusion-matrix arithmetic/serialization checks were performed. The user executes the actual model experiments in the existing Windows environment.
+
+## Known-source AF update
+
+The endpoint runner now explicitly supplies `--source-levels 0 1 3` to AF. It retains the author-style source budget of 25 examples per class **in total**, assigning 9 to level0 and 8 each to levels1 and3. Underlying flow IDs are distinct across these source supports. Only TRAIN partitions enter this selection, and source flow IDs are excluded from target calibration even at another intensity. The 5-shot-per-class target calibration remains an offline AF step at each heldout intensity; target TEST rows never enter fitting. Thus this is not source-only zero-shot AF and is not a 20%-budget prequential method.
+
+The original standalone AF default (`--source-levels 0`) is preserved for reproducibility. New endpoint AF runs record their source levels, per-class counts, per-row source intensities and all source-domain hashes. The endpoint collector rejects previous AF audit runs lacking explicit source levels 0,1,3. The reference observer remains original-domain level0 VAL, as for other methods; known training levels and the forgetting reference are distinct concepts.
