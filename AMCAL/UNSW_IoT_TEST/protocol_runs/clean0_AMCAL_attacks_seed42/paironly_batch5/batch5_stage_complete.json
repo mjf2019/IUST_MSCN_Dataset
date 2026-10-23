@@ -1,0 +1,70 @@
+{
+  "fingerprint": {
+    "stage": {
+      "name": "paironly_batch5",
+      "kind": "enhancement",
+      "source": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\counterfactual",
+      "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\paironly_batch5",
+      "args": [
+        "train",
+        "--source-run",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\counterfactual",
+        "--output",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\paironly_batch5",
+        "--burst-dir",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\TrainingDomains",
+        "--profile",
+        "accuracy",
+        "--seed",
+        "42",
+        "--device",
+        "cuda",
+        "--context-lr",
+        "0.0005",
+        "--context-alpha",
+        "0.8",
+        "--gamma",
+        "0.95",
+        "--budget-fraction",
+        "0.2",
+        "--eval-epsilon",
+        "0.05",
+        "--update-policy",
+        "learned",
+        "--modes",
+        "learned",
+        "--warm-start-enhancement",
+        "--aligned-sequence",
+        "--one-context-rl-training",
+        "--query-value-only-training",
+        "--paired-query-only-training",
+        "--context-count",
+        "1",
+        "--query-schedule",
+        "policy",
+        "--paid-replay-mode",
+        "batch5",
+        "--levels",
+        "0",
+        "--epochs",
+        "12",
+        "--patience",
+        "5"
+      ]
+    },
+    "inputs": {
+      "initial_cnn_model.pth": "9e832d83841bb5cf6d2a1875e066365fca44c6e2bb0666d3bf45c9f41480f5c5",
+      "adversarial_best_context.pth": "97a0b5ae0b651bef64625b8f148134b05c3c8c0a9bd9220ee60d89db4b41edb5",
+      "protocol_preprocessing.joblib": "db837df19641e08d364ab57f71882a0d3a18fceb46e8af141795f2cdd271ae39",
+      "final_enhancement.pth": "406fdf6ea19fe51163863e263826b5e7cc3febfdf5cc2db6fe29b5559344014f"
+    }
+  },
+  "outputs": {
+    "Models/adversarial_best_context.pth": "97a0b5ae0b651bef64625b8f148134b05c3c8c0a9bd9220ee60d89db4b41edb5",
+    "Models/enhanced_context.pth": "0948e184e2c81a8135ab1b573c567ff831650eca9132d8541a55aa1b33c8ecd4",
+    "Models/final_enhancement.pth": "96e67bff39ef3cf6b93b16c2f0f5a82f66c3c5fc2b95bbdf08ccd0077bf33c01",
+    "Models/initial_cnn_model.pth": "9e832d83841bb5cf6d2a1875e066365fca44c6e2bb0666d3bf45c9f41480f5c5",
+    "Models/protocol_preprocessing.joblib": "db837df19641e08d364ab57f71882a0d3a18fceb46e8af141795f2cdd271ae39",
+    "enhancement_training.json": "87514b6b360193eb41577fa34198792a22caaef1631e6c21a23c5bbd4d33277b"
+  }
+}

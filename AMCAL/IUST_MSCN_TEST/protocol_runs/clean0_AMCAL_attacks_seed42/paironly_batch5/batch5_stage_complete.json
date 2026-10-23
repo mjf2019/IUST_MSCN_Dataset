@@ -1,0 +1,70 @@
+{
+  "fingerprint": {
+    "stage": {
+      "name": "paironly_batch5",
+      "kind": "enhancement",
+      "source": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\counterfactual",
+      "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\paironly_batch5",
+      "args": [
+        "train",
+        "--source-run",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\counterfactual",
+        "--output",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\paironly_batch5",
+        "--burst-dir",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\TrainingDomains",
+        "--profile",
+        "accuracy",
+        "--seed",
+        "42",
+        "--device",
+        "cuda",
+        "--context-lr",
+        "0.0005",
+        "--context-alpha",
+        "0.8",
+        "--gamma",
+        "0.95",
+        "--budget-fraction",
+        "0.2",
+        "--eval-epsilon",
+        "0.05",
+        "--update-policy",
+        "learned",
+        "--modes",
+        "learned",
+        "--warm-start-enhancement",
+        "--aligned-sequence",
+        "--one-context-rl-training",
+        "--query-value-only-training",
+        "--paired-query-only-training",
+        "--context-count",
+        "1",
+        "--query-schedule",
+        "policy",
+        "--paid-replay-mode",
+        "batch5",
+        "--levels",
+        "0",
+        "--epochs",
+        "12",
+        "--patience",
+        "5"
+      ]
+    },
+    "inputs": {
+      "initial_cnn_model.pth": "2aa258271c5660217fba5086c48853472f5d888b170d03d2a4f90c46d7de3ca5",
+      "adversarial_best_context.pth": "808838f0c9a6b7d998e2aa94f6381fdb85bcab572a4c9394767a216bb6029594",
+      "protocol_preprocessing.joblib": "3404d5ec2206bf11f3b6117c798ec46b4f9495460ffcde1b0bef1c1e2dab0933",
+      "final_enhancement.pth": "dd6ff37c682f9f4f0dad48cae0758b87d622a9b4099ed63497e0d21b5623aba8"
+    }
+  },
+  "outputs": {
+    "Models/adversarial_best_context.pth": "808838f0c9a6b7d998e2aa94f6381fdb85bcab572a4c9394767a216bb6029594",
+    "Models/enhanced_context.pth": "be695c27b7ecc4c131c25e0ec6f8405833886678d48dd9d9b1eb8bd884878297",
+    "Models/final_enhancement.pth": "ff17419225f0ff7f297301aafd545c00864acc3a3b2df9c71013b0334039999d",
+    "Models/initial_cnn_model.pth": "2aa258271c5660217fba5086c48853472f5d888b170d03d2a4f90c46d7de3ca5",
+    "Models/protocol_preprocessing.joblib": "3404d5ec2206bf11f3b6117c798ec46b4f9495460ffcde1b0bef1c1e2dab0933",
+    "enhancement_training.json": "a0f085ebc433e8bd687ac539bdaa6ebbcbb2f18b6ca2f6490af171351086a3c2"
+  }
+}

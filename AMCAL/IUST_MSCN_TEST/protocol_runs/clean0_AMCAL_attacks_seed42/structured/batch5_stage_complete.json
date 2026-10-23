@@ -1,0 +1,48 @@
+{
+  "fingerprint": {
+    "stage": {
+      "name": "structured",
+      "kind": "structured",
+      "source": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\source",
+      "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\structured",
+      "args": [
+        "train",
+        "--source-run",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\source",
+        "--output",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\structured",
+        "--burst-dir",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\TrainingDomains",
+        "--levels",
+        "0",
+        "--balanced-reward-reference",
+        "--query-schedule",
+        "policy",
+        "--context-lr",
+        ".0005",
+        "--epochs",
+        "12",
+        "--patience",
+        "5",
+        "--seed",
+        "42",
+        "--device",
+        "cuda"
+      ]
+    },
+    "inputs": {
+      "initial_cnn_model.pth": "2aa258271c5660217fba5086c48853472f5d888b170d03d2a4f90c46d7de3ca5",
+      "adversarial_best_context.pth": "808838f0c9a6b7d998e2aa94f6381fdb85bcab572a4c9394767a216bb6029594",
+      "protocol_preprocessing.joblib": "3404d5ec2206bf11f3b6117c798ec46b4f9495460ffcde1b0bef1c1e2dab0933"
+    }
+  },
+  "outputs": {
+    "Models/adversarial_best_context.pth": "808838f0c9a6b7d998e2aa94f6381fdb85bcab572a4c9394767a216bb6029594",
+    "Models/adversarial_best_dqn.pth": "7d92708ccd28d9803f3fe623191d961bb45d216fd9bab32ade7604622c24634c",
+    "Models/initial_cnn_model.pth": "2aa258271c5660217fba5086c48853472f5d888b170d03d2a4f90c46d7de3ca5",
+    "Models/protocol_manifest.json": "0e1bdb8b1cee4f457645593b542800f4f6321128d5c3dda5aa12bb10b3d4fb97",
+    "Models/protocol_preprocessing.joblib": "3404d5ec2206bf11f3b6117c798ec46b4f9495460ffcde1b0bef1c1e2dab0933",
+    "Models/structured_bank_ddqn.pth": "3543847d21a8fbbe397b259556f79a9a04bca521133a6be0c5e811cbd2e0d07a",
+    "structured_training.json": "a7d33ca40a63744550a658eca1c85c2f678cec045f9ea6930d4b027e29f2a781"
+  }
+}

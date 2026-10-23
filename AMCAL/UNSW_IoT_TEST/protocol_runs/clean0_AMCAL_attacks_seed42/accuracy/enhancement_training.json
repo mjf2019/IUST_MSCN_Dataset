@@ -1,0 +1,142 @@
+{
+  "config": {
+    "profile": "accuracy",
+    "architecture": "legacy",
+    "joint_router": false,
+    "rank_weight": 0.2,
+    "paired_weight": 0.5,
+    "route_prior_weight": 0.001,
+    "route_lr_online": 0.0003,
+    "version_half_life": 8.0,
+    "source_capacity": 64,
+    "historical_capacity": 64,
+    "recent_capacity": 128,
+    "reference_size": 32,
+    "memory_replay_size": 8,
+    "memory_ce_weight": 0.1,
+    "residual_weight": 0.001,
+    "damage_limit": 0.02,
+    "damage_weight": 1.0,
+    "protected_reference": true,
+    "routed_utility": false,
+    "token_width": 32,
+    "transformer_layers": 2,
+    "feedforward_width": 128,
+    "residual_bound": 2.0,
+    "bank_executor": "sequential",
+    "cascade": false,
+    "cascade_confidence": 0.8,
+    "cascade_margin": 0.15,
+    "cascade_audit_fraction": 0.05,
+    "cascade_max_gap": 32,
+    "compute_cost": 0.02,
+    "prerouter_weight": 0.2
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "domain": 0,
+      "validation_accuracy": 0.9460708782742681,
+      "reference_drop_pp": 1.2326656394453073,
+      "selection_score": 0.9460708782742681,
+      "train_labels": 600
+    },
+    {
+      "epoch": 2,
+      "domain": 0,
+      "validation_accuracy": 0.9553158705701078,
+      "reference_drop_pp": 2.773497688751936,
+      "selection_score": 0.9475808936825885,
+      "train_labels": 600
+    },
+    {
+      "epoch": 3,
+      "domain": 0,
+      "validation_accuracy": 0.9414483821263482,
+      "reference_drop_pp": 4.314329738058554,
+      "selection_score": 0.9183050847457627,
+      "train_labels": 600
+    },
+    {
+      "epoch": 4,
+      "domain": 0,
+      "validation_accuracy": 0.9537750385208013,
+      "reference_drop_pp": 3.2357473035439233,
+      "selection_score": 0.941417565485362,
+      "train_labels": 600
+    },
+    {
+      "epoch": 5,
+      "domain": 0,
+      "validation_accuracy": 0.9460708782742681,
+      "reference_drop_pp": 3.6979969183358996,
+      "selection_score": 0.9290909090909091,
+      "train_labels": 600
+    },
+    {
+      "epoch": 6,
+      "domain": 0,
+      "validation_accuracy": 0.9599383667180277,
+      "reference_drop_pp": 0.46224961479198745,
+      "selection_score": 0.9599383667180277,
+      "train_labels": 491
+    },
+    {
+      "epoch": 7,
+      "domain": 0,
+      "validation_accuracy": 0.926040061633282,
+      "reference_drop_pp": 2.3112480739599484,
+      "selection_score": 0.9229275808936825,
+      "train_labels": 600
+    },
+    {
+      "epoch": 8,
+      "domain": 0,
+      "validation_accuracy": 0.9522342064714946,
+      "reference_drop_pp": 2.3112480739599484,
+      "selection_score": 0.9491217257318951,
+      "train_labels": 536
+    },
+    {
+      "epoch": 9,
+      "domain": 0,
+      "validation_accuracy": 0.9429892141756548,
+      "reference_drop_pp": 0.6163328197226536,
+      "selection_score": 0.9429892141756548,
+      "train_labels": 491
+    },
+    {
+      "epoch": 10,
+      "domain": 0,
+      "validation_accuracy": 0.9476117103235747,
+      "reference_drop_pp": 3.852080123266566,
+      "selection_score": 0.9290909090909091,
+      "train_labels": 600
+    },
+    {
+      "epoch": 11,
+      "domain": 0,
+      "validation_accuracy": 0.9537750385208013,
+      "reference_drop_pp": 0.9244992295839749,
+      "selection_score": 0.9537750385208013,
+      "train_labels": 551
+    }
+  ],
+  "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\structured",
+  "model_hashes": {
+    "initial_cnn_model.pth": "9e832d83841bb5cf6d2a1875e066365fca44c6e2bb0666d3bf45c9f41480f5c5",
+    "adversarial_best_context.pth": "97a0b5ae0b651bef64625b8f148134b05c3c8c0a9bd9220ee60d89db4b41edb5",
+    "protocol_preprocessing.joblib": "db837df19641e08d364ab57f71882a0d3a18fceb46e8af141795f2cdd271ae39",
+    "enhanced_context.pth": "0948e184e2c81a8135ab1b573c567ff831650eca9132d8541a55aa1b33c8ecd4"
+  },
+  "training_domains": {
+    "0": "b802624fdcec195e8d59cf3563c92c8bd91f5030e056499196b41d653aa6c2ac"
+  },
+  "warm_start_selector": true,
+  "warm_start_enhancement": false,
+  "selected_epoch": 6,
+  "parent_checkpoint_sha256": null,
+  "training_protocol": null,
+  "evaluation_policy": "source-disjoint, pre-feedback",
+  "min_max": "selector maximizes correctness/transfer return; selected Context minimizes current and protected-memory loss"
+}

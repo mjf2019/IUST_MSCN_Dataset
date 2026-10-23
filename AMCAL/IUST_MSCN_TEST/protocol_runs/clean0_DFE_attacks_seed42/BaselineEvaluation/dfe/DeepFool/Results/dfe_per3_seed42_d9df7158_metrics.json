@@ -1,0 +1,191 @@
+{
+  "method": "DFE-Burst-adapted",
+  "accuracy": 0.8110294117647059,
+  "macro_f1": 0.8293120396477637,
+  "weighted_f1": 0.8070100938961657,
+  "samples": 1360,
+  "labels": 272,
+  "label_cap": 272,
+  "actual_label_fraction": 0.2,
+  "budget_utilization_pct": 100.0,
+  "labels_remaining": 0,
+  "online_gradient_steps": 0,
+  "query_protocol": "label-blind uniform exact cap",
+  "protocol": "predict-score-query-update; fresh model per level; reference/same-level observers never feed learning",
+  "online_seconds": 15.968548799981363,
+  "prediction_seconds": 11.62267120135948,
+  "selection_seconds": 0.042093200027011335,
+  "update_seconds": 4.1702933012275025,
+  "cache_seconds": 0.0,
+  "other_seconds": 0.13349109736736864,
+  "online_ms_per_sample": 11.741579999986296,
+  "samples_per_second": 85.16741358498321,
+  "update_ms_per_label": 15.331960666277583,
+  "timing_device": "cuda",
+  "timing_protocol": "synchronized wall time; prediction includes frozen-cache construction; update includes Context/classifier, reward probes and selector learning; excludes model loading, initialization, endpoint retention observers, file I/O and human label latency; other includes stream bookkeeping, oracle scoring and progress output",
+  "same_level": {
+    "all_rows": {
+      "n": 1360,
+      "initial": 0.7125,
+      "final": 0.8227941176470588,
+      "drop_pp": -11.029411764705877,
+      "broken": 108,
+      "fixed": 258
+    },
+    "unqueried": {
+      "n": 1088,
+      "initial": 0.7104779411764706,
+      "final": 0.8189338235294118,
+      "drop_pp": -10.845588235294123,
+      "broken": 90,
+      "fixed": 208
+    }
+  },
+  "reference": {
+    "n": 1369,
+    "initial": 0.8991964937910883,
+    "final": 0.7969320672023374,
+    "drop_pp": 10.22644265887509,
+    "broken": 221,
+    "fixed": 81
+  },
+  "level": 3,
+  "execution_config": {
+    "seed": 42,
+    "budget": 0.2,
+    "af_online_lr": 1e-05,
+    "protocol_version": 1,
+    "timing_version": 1
+  },
+  "training_provenance": {
+    "version": 1,
+    "train_levels": [
+      0
+    ],
+    "training_domains_sha256": {
+      "0": "4ab98b57627ca15f8fbdba768efdcb43902a7fbda5e17a67d34da7fe966b6267"
+    },
+    "source_preprocessing_sha256": "3404d5ec2206bf11f3b6117c798ec46b4f9495460ffcde1b0bef1c1e2dab0933",
+    "partition_sha256": {
+      "train_ids": "e403f2742e9b409b5a81535fb6be1e5c8fd6480992bfb046ca89ac3dd966513a",
+      "val_ids": "efb7523079780d940213922939a8cadd77db4231dac9b8208fb9ba1666b7adca",
+      "test_ids": "dfdae46ff139a570c3d3a47bb3f094b560a252e2a00a54253caf020e07a5ae4c"
+    },
+    "config": {
+      "command": "train",
+      "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_DFE_attacks_seed42\\source",
+      "independent_source": true,
+      "training_domain_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_DFE_attacks_seed42\\TrainingDomains",
+      "test_scaler": "training",
+      "full_unseen_levels": false,
+      "include_seen_levels": false,
+      "burst_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_DFE_attacks_seed42\\TrainingDomains",
+      "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_DFE_attacks_seed42\\DFE",
+      "methods": [
+        "dfe"
+      ],
+      "allow_af_extension": false,
+      "train_levels": [
+        0
+      ],
+      "levels": [
+        5,
+        7,
+        10,
+        12,
+        15,
+        17,
+        20
+      ],
+      "seed": 42,
+      "budget_fraction": 0.2,
+      "dfe_epochs": 200,
+      "af_epochs": 30,
+      "patience": 10,
+      "batch_size": 32,
+      "dfe_lr": 0.001,
+      "af_lr": 1e-05,
+      "dfe_alpha1": 0.5,
+      "dfe_alpha2": 2.0,
+      "dfe_eta": 0.5,
+      "dfe_lambda": 1.0,
+      "dfe_betas": [
+        0.01,
+        0.02,
+        0.03,
+        0.04,
+        0.05,
+        0.05
+      ],
+      "templates": 20,
+      "arf_trees": 10,
+      "arf_train_passes": 1,
+      "active_models": 10,
+      "active_window": 500,
+      "active_random_ratio": 0.1,
+      "calmid_threshold": 0.5,
+      "calmid_step": 0.01,
+      "micfoal_threshold": 0.9,
+      "micfoal_step": 0.1,
+      "micfoal_fixed_budget": false,
+      "ral_update_window": 0,
+      "ral_budget_mode": "prefix",
+      "progress_every": 200,
+      "jobs": -1,
+      "device": "cuda",
+      "classes": [
+        "HTTP",
+        "SFTP",
+        "SMTP",
+        "SSH",
+        "VIDEO"
+      ]
+    },
+    "classes": [
+      "HTTP",
+      "SFTP",
+      "SMTP",
+      "SSH",
+      "VIDEO"
+    ],
+    "feature_names": [
+      "pRetran",
+      "SrcRetra",
+      "PCRatio",
+      "SrcWin",
+      "SrcLoss",
+      "DstRate",
+      "SrcLoad",
+      "Load",
+      "DstLoad",
+      "TcpRtt",
+      "Sum",
+      "AckDat",
+      "dTtl",
+      "Min",
+      "pLoss",
+      "DstLoss",
+      "Loss",
+      "StdDev",
+      "Rate",
+      "SrcRate",
+      "IdleTime",
+      "Dur",
+      "SrcPkts",
+      "SrcGap",
+      "DstBytes",
+      "DstGap",
+      "sTtl",
+      "DstWin",
+      "TotPkts",
+      "DstPkts",
+      "Mean",
+      "SrcBytes",
+      "TotBytes",
+      "dMeanPktSz",
+      "DstRetra",
+      "SynAck"
+    ]
+  },
+  "target_sha256": "37bd5cc2e2f56350a9f6a45c9be8113f43a6673299612dcb0ab95c9783c546a9"
+}

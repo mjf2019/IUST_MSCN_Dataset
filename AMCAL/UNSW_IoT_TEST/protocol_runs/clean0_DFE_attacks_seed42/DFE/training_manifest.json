@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "train_levels": [
+    0
+  ],
+  "training_domains_sha256": {
+    "0": "b802624fdcec195e8d59cf3563c92c8bd91f5030e056499196b41d653aa6c2ac"
+  },
+  "source_preprocessing_sha256": "db837df19641e08d364ab57f71882a0d3a18fceb46e8af141795f2cdd271ae39",
+  "partition_sha256": {
+    "train_ids": "31168d507a3222982ac68348495892b87ae492994b143b200904e077c563a451",
+    "val_ids": "47a10449a2a83ced5542f06b10cfce7883325448fb53ff39733262bf82da58f0",
+    "test_ids": "d3e3a1d123909b0c4aeb872a5007d649988ec9b1f6b3540bbd4e4cb59d7b0bf6"
+  },
+  "config": {
+    "command": "train",
+    "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_DFE_attacks_seed42\\source",
+    "independent_source": true,
+    "training_domain_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_DFE_attacks_seed42\\TrainingDomains",
+    "test_scaler": "training",
+    "full_unseen_levels": false,
+    "include_seen_levels": false,
+    "burst_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_DFE_attacks_seed42\\TrainingDomains",
+    "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_DFE_attacks_seed42\\DFE",
+    "methods": [
+      "dfe"
+    ],
+    "allow_af_extension": false,
+    "train_levels": [
+      0
+    ],
+    "levels": [
+      5,
+      7,
+      10,
+      12,
+      15,
+      17,
+      20
+    ],
+    "seed": 42,
+    "budget_fraction": 0.2,
+    "dfe_epochs": 200,
+    "af_epochs": 30,
+    "patience": 10,
+    "batch_size": 32,
+    "dfe_lr": 0.001,
+    "af_lr": 1e-05,
+    "dfe_alpha1": 0.5,
+    "dfe_alpha2": 2.0,
+    "dfe_eta": 0.5,
+    "dfe_lambda": 1.0,
+    "dfe_betas": [
+      0.01,
+      0.02,
+      0.03,
+      0.04,
+      0.05,
+      0.05
+    ],
+    "templates": 20,
+    "arf_trees": 10,
+    "arf_train_passes": 1,
+    "active_models": 10,
+    "active_window": 500,
+    "active_random_ratio": 0.1,
+    "calmid_threshold": 0.5,
+    "calmid_step": 0.01,
+    "micfoal_threshold": 0.9,
+    "micfoal_step": 0.1,
+    "micfoal_fixed_budget": false,
+    "ral_update_window": 0,
+    "ral_budget_mode": "prefix",
+    "progress_every": 200,
+    "jobs": -1,
+    "device": "cuda",
+    "classes": [
+      "AmazonEcho",
+      "BelkinCamera",
+      "NetatmoWeatherStation",
+      "PhilipsHue",
+      "iHome"
+    ]
+  },
+  "classes": [
+    "AmazonEcho",
+    "BelkinCamera",
+    "NetatmoWeatherStation",
+    "PhilipsHue",
+    "iHome"
+  ],
+  "feature_names": [
+    "flowSeqNum",
+    "srcNumPackets",
+    "dstNumPackets",
+    "srcPayloadSize",
+    "dstPayloadSize",
+    "srcAvgPayloadSize",
+    "dstAvgPayloadSize",
+    "srcMaxPayloadSize",
+    "dstMaxPayloadSize",
+    "srcStdDevPayloadSize",
+    "dstStdDevPayloadSize",
+    "flowDuration",
+    "srcAvgInterarrivalTime",
+    "dstAvgInterarrivalTime",
+    "avgInterarrivalTime",
+    "srcStdDevInterarrivalTime",
+    "dstStdDevInterarrivalTime",
+    "stdDevInterarrivalTime"
+  ]
+}

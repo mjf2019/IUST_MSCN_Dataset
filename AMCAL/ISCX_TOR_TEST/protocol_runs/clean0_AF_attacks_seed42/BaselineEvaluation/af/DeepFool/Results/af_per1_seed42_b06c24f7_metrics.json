@@ -1,0 +1,133 @@
+{
+  "method": "AF-Burst-online-extension-NOT-paper",
+  "accuracy": 0.9155178508306823,
+  "macro_f1": 0.8461379808968974,
+  "weighted_f1": 0.9163103688570748,
+  "samples": 2829,
+  "labels": 565,
+  "label_cap": 565,
+  "actual_label_fraction": 0.19971721456344999,
+  "budget_utilization_pct": 100.0,
+  "labels_remaining": 0,
+  "online_gradient_steps": 564,
+  "query_protocol": "label-blind uniform exact cap",
+  "protocol": "predict-score-query-update; fresh model per level; reference/same-level observers never feed learning",
+  "online_seconds": 46.71013930009212,
+  "prediction_seconds": 25.00316009542439,
+  "selection_seconds": 0.030425101751461625,
+  "update_seconds": 21.566660699783824,
+  "cache_seconds": 0.0,
+  "other_seconds": 0.10989340313244611,
+  "online_ms_per_sample": 16.51118391661086,
+  "samples_per_second": 60.5650088479702,
+  "update_ms_per_label": 38.17108088457314,
+  "timing_device": "cuda",
+  "timing_protocol": "synchronized wall time; prediction includes frozen-cache construction; update includes Context/classifier, reward probes and selector learning; excludes model loading, initialization, endpoint retention observers, file I/O and human label latency; other includes stream bookkeeping, oracle scoring and progress output",
+  "same_level": {
+    "all_rows": {
+      "n": 2829,
+      "initial": 0.9133969600565571,
+      "final": 0.936373276776246,
+      "drop_pp": -2.2976316719688916,
+      "broken": 48,
+      "fixed": 113
+    },
+    "unqueried": {
+      "n": 2264,
+      "initial": 0.9125441696113075,
+      "final": 0.9204946996466431,
+      "drop_pp": -0.7950530035335635,
+      "broken": 48,
+      "fixed": 66
+    }
+  },
+  "reference": {
+    "n": 2837,
+    "initial": 0.9407825167430384,
+    "final": 0.9386676066267183,
+    "drop_pp": 0.21149101163200346,
+    "broken": 8,
+    "fixed": 2
+  },
+  "level": 1,
+  "execution_config": {
+    "seed": 42,
+    "budget": 0.2,
+    "af_online_lr": 1e-05,
+    "protocol_version": 1,
+    "timing_version": 1,
+    "af_historical_online_extension": true
+  },
+  "training_provenance": {
+    "version": 1,
+    "train_levels": [
+      0
+    ],
+    "training_domains_sha256": {
+      "0": "42542cc12f34e97c4f7fd48f7fcd586d12ac78d919b7ae2872055aca4ee32320"
+    },
+    "source_preprocessing_sha256": "21eb0647d60750d169838724dcb0d92bbb568cbf2f66b6eb8a586bbdda3e103e",
+    "partition_sha256": {
+      "train_ids": "3b8734ae307f8e878592a480812a5b0497ef22b3765deeecd52ff3d2ed33e5e1",
+      "val_ids": "58eafa8046fe83f12ff0cce297b4fb84fb3f73b1168d73cb93febd0667019f8b",
+      "test_ids": "9650b71b94a2b8590b5234a4f2391231a615465f3170a5688ed4ec8d89116682"
+    },
+    "classes": [
+      "audio",
+      "browsing",
+      "chat",
+      "ftp",
+      "mail",
+      "p2p",
+      "video",
+      "voip"
+    ],
+    "feature_names": [
+      "pRetran",
+      "SrcRetra",
+      "PCRatio",
+      "SrcWin",
+      "SrcLoss",
+      "DstRate",
+      "SrcLoad",
+      "Load",
+      "DstLoad",
+      "TcpRtt",
+      "Sum",
+      "AckDat",
+      "dTtl",
+      "Min",
+      "pLoss",
+      "DstLoss",
+      "Loss",
+      "StdDev",
+      "Rate",
+      "SrcRate",
+      "IdleTime",
+      "Dur",
+      "SrcPkts",
+      "SrcGap",
+      "DstBytes",
+      "DstGap",
+      "sTtl",
+      "DstWin",
+      "TotPkts",
+      "DstPkts",
+      "Mean",
+      "SrcBytes",
+      "TotBytes",
+      "dMeanPktSz",
+      "DstRetra",
+      "SynAck"
+    ],
+    "config": {
+      "seed": 42,
+      "initialization": "clean supervised CE only; no target domain",
+      "epochs": 30,
+      "lr": 1e-05,
+      "architecture": "existing tabular AF network",
+      "online": "existing historical AF paid-feedback DANN extension; NOT original AF"
+    }
+  },
+  "target_sha256": "f8867809431cca428e52a86b8ea4c09080177ee7db672539a9a4a135b338f33e"
+}

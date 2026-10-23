@@ -1,0 +1,62 @@
+{
+  "fingerprint": {
+    "stage": {
+      "name": "accuracy",
+      "kind": "enhancement",
+      "source": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\structured",
+      "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\accuracy",
+      "args": [
+        "train",
+        "--source-run",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\structured",
+        "--output",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\accuracy",
+        "--burst-dir",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\TrainingDomains",
+        "--profile",
+        "accuracy",
+        "--seed",
+        "42",
+        "--device",
+        "cuda",
+        "--context-lr",
+        "0.0005",
+        "--context-alpha",
+        "0.8",
+        "--gamma",
+        "0.95",
+        "--budget-fraction",
+        "0.2",
+        "--eval-epsilon",
+        "0.05",
+        "--update-policy",
+        "learned",
+        "--modes",
+        "learned",
+        "--warm-start-selector",
+        "--query-schedule",
+        "policy",
+        "--levels",
+        "0",
+        "--epochs",
+        "12",
+        "--patience",
+        "5"
+      ]
+    },
+    "inputs": {
+      "initial_cnn_model.pth": "9e832d83841bb5cf6d2a1875e066365fca44c6e2bb0666d3bf45c9f41480f5c5",
+      "adversarial_best_context.pth": "97a0b5ae0b651bef64625b8f148134b05c3c8c0a9bd9220ee60d89db4b41edb5",
+      "protocol_preprocessing.joblib": "db837df19641e08d364ab57f71882a0d3a18fceb46e8af141795f2cdd271ae39",
+      "structured_bank_ddqn.pth": "8cd8feb666ec0315d7bb0b1276c9300d5ade0b391abcd1815f440bcf999d3dc4"
+    }
+  },
+  "outputs": {
+    "Models/adversarial_best_context.pth": "97a0b5ae0b651bef64625b8f148134b05c3c8c0a9bd9220ee60d89db4b41edb5",
+    "Models/enhanced_context.pth": "0948e184e2c81a8135ab1b573c567ff831650eca9132d8541a55aa1b33c8ecd4",
+    "Models/final_enhancement.pth": "798e8e8f588945be86d4ad7bb05d57cf004e479763ca5250830c04208f84e203",
+    "Models/initial_cnn_model.pth": "9e832d83841bb5cf6d2a1875e066365fca44c6e2bb0666d3bf45c9f41480f5c5",
+    "Models/protocol_preprocessing.joblib": "db837df19641e08d364ab57f71882a0d3a18fceb46e8af141795f2cdd271ae39",
+    "enhancement_training.json": "adcd1d552de0aa89f1421543444f8fec5887d2bd03af9f6cf0057f590f95aaef"
+  }
+}

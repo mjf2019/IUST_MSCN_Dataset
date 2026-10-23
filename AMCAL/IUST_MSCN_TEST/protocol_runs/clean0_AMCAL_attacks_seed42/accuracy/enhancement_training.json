@@ -1,0 +1,134 @@
+{
+  "config": {
+    "profile": "accuracy",
+    "architecture": "legacy",
+    "joint_router": false,
+    "rank_weight": 0.2,
+    "paired_weight": 0.5,
+    "route_prior_weight": 0.001,
+    "route_lr_online": 0.0003,
+    "version_half_life": 8.0,
+    "source_capacity": 64,
+    "historical_capacity": 64,
+    "recent_capacity": 128,
+    "reference_size": 32,
+    "memory_replay_size": 8,
+    "memory_ce_weight": 0.1,
+    "residual_weight": 0.001,
+    "damage_limit": 0.02,
+    "damage_weight": 1.0,
+    "protected_reference": true,
+    "routed_utility": false,
+    "token_width": 32,
+    "transformer_layers": 2,
+    "feedforward_width": 128,
+    "residual_bound": 2.0,
+    "bank_executor": "sequential",
+    "cascade": false,
+    "cascade_confidence": 0.8,
+    "cascade_margin": 0.15,
+    "cascade_audit_fraction": 0.05,
+    "cascade_max_gap": 32,
+    "compute_cost": 0.02,
+    "prerouter_weight": 0.2
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "domain": 0,
+      "validation_accuracy": 0.8889700511322133,
+      "reference_drop_pp": 0.21913805697588717,
+      "selection_score": 0.8889700511322133,
+      "train_labels": 856
+    },
+    {
+      "epoch": 2,
+      "domain": 0,
+      "validation_accuracy": 0.8882395909422937,
+      "reference_drop_pp": 0.29218407596786067,
+      "selection_score": 0.8882395909422937,
+      "train_labels": 856
+    },
+    {
+      "epoch": 3,
+      "domain": 0,
+      "validation_accuracy": 0.8860482103725347,
+      "reference_drop_pp": 0.9495982468955444,
+      "selection_score": 0.8860482103725347,
+      "train_labels": 856
+    },
+    {
+      "epoch": 4,
+      "domain": 0,
+      "validation_accuracy": 0.8904309715120526,
+      "reference_drop_pp": 0.0730460189919735,
+      "selection_score": 0.8904309715120526,
+      "train_labels": 856
+    },
+    {
+      "epoch": 5,
+      "domain": 0,
+      "validation_accuracy": 0.8918918918918919,
+      "reference_drop_pp": 0.6574141709276837,
+      "selection_score": 0.8918918918918919,
+      "train_labels": 856
+    },
+    {
+      "epoch": 6,
+      "domain": 0,
+      "validation_accuracy": 0.8911614317019723,
+      "reference_drop_pp": 0.43827611395178545,
+      "selection_score": 0.8911614317019723,
+      "train_labels": 856
+    },
+    {
+      "epoch": 7,
+      "domain": 0,
+      "validation_accuracy": 0.8838568298027758,
+      "reference_drop_pp": 1.241782322863405,
+      "selection_score": 0.8838568298027758,
+      "train_labels": 856
+    },
+    {
+      "epoch": 8,
+      "domain": 0,
+      "validation_accuracy": 0.8918918918918919,
+      "reference_drop_pp": 0.14609203798392478,
+      "selection_score": 0.8918918918918919,
+      "train_labels": 856
+    },
+    {
+      "epoch": 9,
+      "domain": 0,
+      "validation_accuracy": 0.8904309715120526,
+      "reference_drop_pp": 0.6574141709276837,
+      "selection_score": 0.8904309715120526,
+      "train_labels": 856
+    },
+    {
+      "epoch": 10,
+      "domain": 0,
+      "validation_accuracy": 0.8889700511322133,
+      "reference_drop_pp": 0.21913805697589828,
+      "selection_score": 0.8889700511322133,
+      "train_labels": 856
+    }
+  ],
+  "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\IUST_MSCN_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\structured",
+  "model_hashes": {
+    "initial_cnn_model.pth": "2aa258271c5660217fba5086c48853472f5d888b170d03d2a4f90c46d7de3ca5",
+    "adversarial_best_context.pth": "808838f0c9a6b7d998e2aa94f6381fdb85bcab572a4c9394767a216bb6029594",
+    "protocol_preprocessing.joblib": "3404d5ec2206bf11f3b6117c798ec46b4f9495460ffcde1b0bef1c1e2dab0933",
+    "enhanced_context.pth": "be695c27b7ecc4c131c25e0ec6f8405833886678d48dd9d9b1eb8bd884878297"
+  },
+  "training_domains": {
+    "0": "4ab98b57627ca15f8fbdba768efdcb43902a7fbda5e17a67d34da7fe966b6267"
+  },
+  "warm_start_selector": true,
+  "warm_start_enhancement": false,
+  "selected_epoch": 5,
+  "parent_checkpoint_sha256": null,
+  "training_protocol": null,
+  "evaluation_policy": "source-disjoint, pre-feedback",
+  "min_max": "selector maximizes correctness/transfer return; selected Context minimizes current and protected-memory loss"
+}

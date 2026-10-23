@@ -1,0 +1,110 @@
+{
+  "config": {
+    "profile": "accuracy",
+    "architecture": "legacy",
+    "joint_router": false,
+    "rank_weight": 0.2,
+    "paired_weight": 0.5,
+    "route_prior_weight": 0.001,
+    "route_lr_online": 0.0003,
+    "version_half_life": 8.0,
+    "source_capacity": 64,
+    "historical_capacity": 64,
+    "recent_capacity": 128,
+    "reference_size": 32,
+    "memory_replay_size": 8,
+    "memory_ce_weight": 0.1,
+    "residual_weight": 0.001,
+    "damage_limit": 0.02,
+    "damage_weight": 1.0,
+    "protected_reference": true,
+    "routed_utility": false,
+    "token_width": 32,
+    "transformer_layers": 2,
+    "feedforward_width": 128,
+    "residual_bound": 2.0,
+    "bank_executor": "sequential",
+    "cascade": false,
+    "cascade_confidence": 0.8,
+    "cascade_margin": 0.15,
+    "cascade_audit_fraction": 0.05,
+    "cascade_max_gap": 32,
+    "compute_cost": 0.02,
+    "prerouter_weight": 0.2
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "domain": 0,
+      "validation_accuracy": 0.9143461402890377,
+      "reference_drop_pp": 1.0574550581600284,
+      "selection_score": 0.9143461402890377,
+      "train_labels": 1729
+    },
+    {
+      "epoch": 2,
+      "domain": 0,
+      "validation_accuracy": 0.927035600986958,
+      "reference_drop_pp": -0.03524850193866724,
+      "selection_score": 0.927035600986958,
+      "train_labels": 1729
+    },
+    {
+      "epoch": 3,
+      "domain": 0,
+      "validation_accuracy": 0.9231582657737046,
+      "reference_drop_pp": -1.0222065562213611,
+      "selection_score": 0.9231582657737046,
+      "train_labels": 1729
+    },
+    {
+      "epoch": 4,
+      "domain": 0,
+      "validation_accuracy": 0.9062389848431441,
+      "reference_drop_pp": -0.21149101163200346,
+      "selection_score": 0.9062389848431441,
+      "train_labels": 1729
+    },
+    {
+      "epoch": 5,
+      "domain": 0,
+      "validation_accuracy": 0.9125837151921043,
+      "reference_drop_pp": 2.6436376454000765,
+      "selection_score": 0.9061473387381036,
+      "train_labels": 1729
+    },
+    {
+      "epoch": 6,
+      "domain": 0,
+      "validation_accuracy": 0.9203383856186113,
+      "reference_drop_pp": 2.2206556221360585,
+      "selection_score": 0.9181318293972507,
+      "train_labels": 1729
+    },
+    {
+      "epoch": 7,
+      "domain": 0,
+      "validation_accuracy": 0.9136411702502644,
+      "reference_drop_pp": 1.2689460697920318,
+      "selection_score": 0.9136411702502644,
+      "train_labels": 1729
+    }
+  ],
+  "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ISCX_TOR_TEST\\protocol_runs\\clean0_AMCAL_attacks_seed42\\structured",
+  "model_hashes": {
+    "initial_cnn_model.pth": "7c609cc028c3f1796ced0e1986e15f5382d29097565b7c0f607725a762453fb5",
+    "adversarial_best_context.pth": "03b73cbe000eba2cb75990eccfd12b2e6f1bfa2d50f2180a497eba09ca2efdc6",
+    "protocol_preprocessing.joblib": "21eb0647d60750d169838724dcb0d92bbb568cbf2f66b6eb8a586bbdda3e103e",
+    "enhanced_context.pth": "baa1f1b51a48105d1958bacbf4d6446132e299bf34d8b3248cf226819a317df0"
+  },
+  "training_domains": {
+    "0": "42542cc12f34e97c4f7fd48f7fcd586d12ac78d919b7ae2872055aca4ee32320"
+  },
+  "warm_start_selector": true,
+  "warm_start_enhancement": false,
+  "selected_epoch": 2,
+  "parent_checkpoint_sha256": null,
+  "training_protocol": null,
+  "evaluation_policy": "source-disjoint, pre-feedback",
+  "min_max": "selector maximizes correctness/transfer return; selected Context minimizes current and protected-memory loss"
+}

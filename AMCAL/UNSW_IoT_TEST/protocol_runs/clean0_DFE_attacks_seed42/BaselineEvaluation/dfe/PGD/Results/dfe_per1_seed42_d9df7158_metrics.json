@@ -1,0 +1,173 @@
+{
+  "method": "DFE-Burst-adapted",
+  "accuracy": 0.8917609046849758,
+  "macro_f1": 0.8477319231268682,
+  "weighted_f1": 0.8968192096030354,
+  "samples": 619,
+  "labels": 123,
+  "label_cap": 123,
+  "actual_label_fraction": 0.1987075928917609,
+  "budget_utilization_pct": 100.0,
+  "labels_remaining": 0,
+  "online_gradient_steps": 0,
+  "query_protocol": "label-blind uniform exact cap",
+  "protocol": "predict-score-query-update; fresh model per level; reference/same-level observers never feed learning",
+  "online_seconds": 4.121505699935369,
+  "prediction_seconds": 3.0503318996634334,
+  "selection_seconds": 0.004712300607934594,
+  "update_seconds": 1.0492609004722908,
+  "cache_seconds": 0.0,
+  "other_seconds": 0.017200599191710353,
+  "online_ms_per_sample": 6.658329079055524,
+  "samples_per_second": 150.18783062940003,
+  "update_ms_per_label": 8.530576426603991,
+  "timing_device": "cuda",
+  "timing_protocol": "synchronized wall time; prediction includes frozen-cache construction; update includes Context/classifier, reward probes and selector learning; excludes model loading, initialization, endpoint retention observers, file I/O and human label latency; other includes stream bookkeeping, oracle scoring and progress output",
+  "same_level": {
+    "all_rows": {
+      "n": 619,
+      "initial": 0.8982229402261712,
+      "final": 0.8901453957996769,
+      "drop_pp": 0.8077544426494332,
+      "broken": 19,
+      "fixed": 14
+    },
+    "unqueried": {
+      "n": 496,
+      "initial": 0.8991935483870968,
+      "final": 0.8931451612903226,
+      "drop_pp": 0.6048387096774133,
+      "broken": 15,
+      "fixed": 12
+    }
+  },
+  "reference": {
+    "n": 649,
+    "initial": 0.9183359013867488,
+    "final": 0.8967642526964561,
+    "drop_pp": 2.157164869029271,
+    "broken": 25,
+    "fixed": 11
+  },
+  "level": 1,
+  "execution_config": {
+    "seed": 42,
+    "budget": 0.2,
+    "af_online_lr": 1e-05,
+    "protocol_version": 1,
+    "timing_version": 1
+  },
+  "training_provenance": {
+    "version": 1,
+    "train_levels": [
+      0
+    ],
+    "training_domains_sha256": {
+      "0": "b802624fdcec195e8d59cf3563c92c8bd91f5030e056499196b41d653aa6c2ac"
+    },
+    "source_preprocessing_sha256": "db837df19641e08d364ab57f71882a0d3a18fceb46e8af141795f2cdd271ae39",
+    "partition_sha256": {
+      "train_ids": "31168d507a3222982ac68348495892b87ae492994b143b200904e077c563a451",
+      "val_ids": "47a10449a2a83ced5542f06b10cfce7883325448fb53ff39733262bf82da58f0",
+      "test_ids": "d3e3a1d123909b0c4aeb872a5007d649988ec9b1f6b3540bbd4e4cb59d7b0bf6"
+    },
+    "config": {
+      "command": "train",
+      "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_DFE_attacks_seed42\\source",
+      "independent_source": true,
+      "training_domain_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_DFE_attacks_seed42\\TrainingDomains",
+      "test_scaler": "training",
+      "full_unseen_levels": false,
+      "include_seen_levels": false,
+      "burst_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_DFE_attacks_seed42\\TrainingDomains",
+      "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\UNSW_IoT_TEST\\protocol_runs\\clean0_DFE_attacks_seed42\\DFE",
+      "methods": [
+        "dfe"
+      ],
+      "allow_af_extension": false,
+      "train_levels": [
+        0
+      ],
+      "levels": [
+        5,
+        7,
+        10,
+        12,
+        15,
+        17,
+        20
+      ],
+      "seed": 42,
+      "budget_fraction": 0.2,
+      "dfe_epochs": 200,
+      "af_epochs": 30,
+      "patience": 10,
+      "batch_size": 32,
+      "dfe_lr": 0.001,
+      "af_lr": 1e-05,
+      "dfe_alpha1": 0.5,
+      "dfe_alpha2": 2.0,
+      "dfe_eta": 0.5,
+      "dfe_lambda": 1.0,
+      "dfe_betas": [
+        0.01,
+        0.02,
+        0.03,
+        0.04,
+        0.05,
+        0.05
+      ],
+      "templates": 20,
+      "arf_trees": 10,
+      "arf_train_passes": 1,
+      "active_models": 10,
+      "active_window": 500,
+      "active_random_ratio": 0.1,
+      "calmid_threshold": 0.5,
+      "calmid_step": 0.01,
+      "micfoal_threshold": 0.9,
+      "micfoal_step": 0.1,
+      "micfoal_fixed_budget": false,
+      "ral_update_window": 0,
+      "ral_budget_mode": "prefix",
+      "progress_every": 200,
+      "jobs": -1,
+      "device": "cuda",
+      "classes": [
+        "AmazonEcho",
+        "BelkinCamera",
+        "NetatmoWeatherStation",
+        "PhilipsHue",
+        "iHome"
+      ]
+    },
+    "classes": [
+      "AmazonEcho",
+      "BelkinCamera",
+      "NetatmoWeatherStation",
+      "PhilipsHue",
+      "iHome"
+    ],
+    "feature_names": [
+      "flowSeqNum",
+      "srcNumPackets",
+      "dstNumPackets",
+      "srcPayloadSize",
+      "dstPayloadSize",
+      "srcAvgPayloadSize",
+      "dstAvgPayloadSize",
+      "srcMaxPayloadSize",
+      "dstMaxPayloadSize",
+      "srcStdDevPayloadSize",
+      "dstStdDevPayloadSize",
+      "flowDuration",
+      "srcAvgInterarrivalTime",
+      "dstAvgInterarrivalTime",
+      "avgInterarrivalTime",
+      "srcStdDevInterarrivalTime",
+      "dstStdDevInterarrivalTime",
+      "stdDevInterarrivalTime"
+    ]
+  },
+  "target_sha256": "f2099ca5bca9eb51430ea938dfcf7f303625dccdf4c13bb4552bcba57965f392"
+}
