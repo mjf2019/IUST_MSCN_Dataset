@@ -1,0 +1,103 @@
+{
+  "config": {
+    "profile": "accuracy",
+    "architecture": "legacy",
+    "joint_router": false,
+    "rank_weight": 0.2,
+    "paired_weight": 0.5,
+    "route_prior_weight": 0.001,
+    "route_lr_online": 0.0003,
+    "version_half_life": 8.0,
+    "source_capacity": 64,
+    "historical_capacity": 64,
+    "recent_capacity": 128,
+    "reference_size": 32,
+    "memory_replay_size": 8,
+    "memory_ce_weight": 0.1,
+    "residual_weight": 0.001,
+    "damage_limit": 0.02,
+    "damage_weight": 1.0,
+    "protected_reference": true,
+    "routed_utility": false,
+    "token_width": 32,
+    "transformer_layers": 2,
+    "feedforward_width": 128,
+    "residual_bound": 2.0,
+    "bank_executor": "sequential",
+    "cascade": false,
+    "cascade_confidence": 0.8,
+    "cascade_margin": 0.15,
+    "cascade_audit_fraction": 0.05,
+    "cascade_max_gap": 32,
+    "compute_cost": 0.02,
+    "prerouter_weight": 0.2
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "domain": 0,
+      "validation_accuracy": 0.6537744641192917,
+      "reference_drop_pp": 0.7455731593662696,
+      "selection_score": 0.6537744641192917,
+      "train_labels": 644
+    },
+    {
+      "epoch": 2,
+      "domain": 1,
+      "validation_accuracy": 0.6533084808946878,
+      "reference_drop_pp": 0.2795899347623476,
+      "selection_score": 0.6533084808946878,
+      "train_labels": 609
+    },
+    {
+      "epoch": 3,
+      "domain": 0,
+      "validation_accuracy": 0.6696178937558248,
+      "reference_drop_pp": -0.372786579683132,
+      "selection_score": 0.6696178937558248,
+      "train_labels": 587
+    },
+    {
+      "epoch": 4,
+      "domain": 1,
+      "validation_accuracy": 0.6486486486486487,
+      "reference_drop_pp": 0.37278657968312645,
+      "selection_score": 0.6486486486486487,
+      "train_labels": 571
+    },
+    {
+      "epoch": 5,
+      "domain": 0,
+      "validation_accuracy": 0.6481826654240448,
+      "reference_drop_pp": -0.1397949673811738,
+      "selection_score": 0.6481826654240448,
+      "train_labels": 644
+    },
+    {
+      "epoch": 6,
+      "domain": 1,
+      "validation_accuracy": 0.6514445479962722,
+      "reference_drop_pp": 0.0,
+      "selection_score": 0.6514445479962722,
+      "train_labels": 535
+    }
+  ],
+  "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42_retry1\\structured",
+  "model_hashes": {
+    "initial_cnn_model.pth": "f929b950a5c14cb0d63f8d66c83f574a8e687408cfdeb5cfe09307d56f342e13",
+    "adversarial_best_context.pth": "3e5946a74c584151c186932bf1b6c050288adbdb22927a51d9b743484dca72d1",
+    "protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+    "enhanced_context.pth": "f20fff85300d757c1271f7235cbd464c261552f03aa2735911b1d5d046d6c935"
+  },
+  "training_domains": {
+    "0": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+    "1": "e09b4aeb1bf8328e57ff0170837cfc78307cadba604d1aa308009d8e8c714e62"
+  },
+  "warm_start_selector": true,
+  "warm_start_enhancement": false,
+  "selected_epoch": 3,
+  "parent_checkpoint_sha256": null,
+  "training_protocol": null,
+  "evaluation_policy": "source-disjoint, pre-feedback",
+  "min_max": "selector maximizes correctness/transfer return; selected Context minimizes current and protected-memory loss"
+}

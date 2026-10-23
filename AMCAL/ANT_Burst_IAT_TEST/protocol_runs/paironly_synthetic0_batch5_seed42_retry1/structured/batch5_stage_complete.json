@@ -1,0 +1,48 @@
+{
+  "fingerprint": {
+    "stage": {
+      "name": "structured",
+      "kind": "structured",
+      "source": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42_retry1\\source",
+      "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42_retry1\\structured",
+      "args": [
+        "train",
+        "--source-run",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42_retry1\\source",
+        "--output",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42_retry1\\structured",
+        "--burst-dir",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42_retry1\\SyntheticDomains",
+        "--levels",
+        "0",
+        "1",
+        "--balanced-reward-reference",
+        "--query-schedule",
+        "policy",
+        "--context-lr",
+        ".0005",
+        "--epochs",
+        "6",
+        "--patience",
+        "3",
+        "--seed",
+        "42",
+        "--device",
+        "cuda"
+      ]
+    },
+    "inputs": {
+      "initial_cnn_model.pth": "f929b950a5c14cb0d63f8d66c83f574a8e687408cfdeb5cfe09307d56f342e13",
+      "adversarial_best_context.pth": "3e5946a74c584151c186932bf1b6c050288adbdb22927a51d9b743484dca72d1",
+      "protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b"
+    }
+  },
+  "outputs": {
+    "Models/adversarial_best_context.pth": "3e5946a74c584151c186932bf1b6c050288adbdb22927a51d9b743484dca72d1",
+    "Models/adversarial_best_dqn.pth": "b8430729fe653bf16d2c477395785ce26102f09c726a11aaec3fccf2e8cc6a5c",
+    "Models/initial_cnn_model.pth": "f929b950a5c14cb0d63f8d66c83f574a8e687408cfdeb5cfe09307d56f342e13",
+    "Models/protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+    "Models/structured_bank_ddqn.pth": "ba04a7a454e06f2df431dc5ce5a1069bf440e91606c47f20fdd75121458f2d58",
+    "structured_training.json": "e7ff49caa581dd98f2f34ed2937e1f9e96e4d6b3a23627747d1b46a6ec9bcf91"
+  }
+}

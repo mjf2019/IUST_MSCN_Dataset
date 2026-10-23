@@ -1,0 +1,63 @@
+{
+  "fingerprint": {
+    "stage": {
+      "name": "accuracy",
+      "kind": "enhancement",
+      "source": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42_retry1\\structured",
+      "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42_retry1\\accuracy",
+      "args": [
+        "train",
+        "--source-run",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42_retry1\\structured",
+        "--output",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42_retry1\\accuracy",
+        "--burst-dir",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42_retry1\\SyntheticDomains",
+        "--profile",
+        "accuracy",
+        "--seed",
+        "42",
+        "--device",
+        "cuda",
+        "--context-lr",
+        "0.0005",
+        "--context-alpha",
+        "0.8",
+        "--gamma",
+        "0.95",
+        "--budget-fraction",
+        "0.2",
+        "--eval-epsilon",
+        "0.05",
+        "--update-policy",
+        "learned",
+        "--modes",
+        "learned",
+        "--warm-start-selector",
+        "--query-schedule",
+        "policy",
+        "--levels",
+        "0",
+        "1",
+        "--epochs",
+        "6",
+        "--patience",
+        "3"
+      ]
+    },
+    "inputs": {
+      "initial_cnn_model.pth": "f929b950a5c14cb0d63f8d66c83f574a8e687408cfdeb5cfe09307d56f342e13",
+      "adversarial_best_context.pth": "3e5946a74c584151c186932bf1b6c050288adbdb22927a51d9b743484dca72d1",
+      "protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+      "structured_bank_ddqn.pth": "ba04a7a454e06f2df431dc5ce5a1069bf440e91606c47f20fdd75121458f2d58"
+    }
+  },
+  "outputs": {
+    "Models/adversarial_best_context.pth": "3e5946a74c584151c186932bf1b6c050288adbdb22927a51d9b743484dca72d1",
+    "Models/enhanced_context.pth": "f20fff85300d757c1271f7235cbd464c261552f03aa2735911b1d5d046d6c935",
+    "Models/final_enhancement.pth": "d26c7ba5dc9ac759b26229665b694c32bd1775f046657906fa11489c47611851",
+    "Models/initial_cnn_model.pth": "f929b950a5c14cb0d63f8d66c83f574a8e687408cfdeb5cfe09307d56f342e13",
+    "Models/protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+    "enhancement_training.json": "9f6f41e06b92e00b0ba77b8a670a077278a60a3dd99ab7efb96f9d4f83468780"
+  }
+}
