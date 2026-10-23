@@ -1,0 +1,1153 @@
+{
+  "version": 1,
+  "dataset": "IAT",
+  "method": "CALMID",
+  "seed": 62,
+  "level": 10,
+  "online": {
+    "accuracy": 0.3821062441752097,
+    "macro_precision": 0.4392203650865496,
+    "macro_recall": 0.3686816895817668,
+    "macro_f1": 0.3717934213227385,
+    "confusion_matrix": [
+      [
+        1,
+        8,
+        18,
+        35,
+        0,
+        41
+      ],
+      [
+        2,
+        37,
+        2,
+        5,
+        0,
+        33
+      ],
+      [
+        5,
+        14,
+        67,
+        107,
+        1,
+        88
+      ],
+      [
+        0,
+        6,
+        13,
+        112,
+        3,
+        84
+      ],
+      [
+        0,
+        0,
+        8,
+        23,
+        39,
+        10
+      ],
+      [
+        1,
+        15,
+        27,
+        114,
+        0,
+        154
+      ]
+    ],
+    "trace_sha256": "d7bbf5fe2c26a1784e6265272f7e80a6996f2ac83a2f72f1c84742b7ea278b67"
+  },
+  "target_gain_pp": {
+    "accuracy": 2.095459837019792,
+    "macro_precision": -1.6991677768810387,
+    "macro_recall": 6.947214599222046,
+    "macro_f1": 5.320790944036402
+  },
+  "reference_drop_pp": {
+    "accuracy": 1.3979496738117436,
+    "macro_precision": 0.9061869233675857,
+    "macro_recall": 1.0231193081511547,
+    "macro_f1": 1.1276089302858228
+  },
+  "target_endpoint": {
+    "version": 1,
+    "initial": {
+      "samples": 859,
+      "classes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "confusion_matrix": [
+        [
+          3,
+          6,
+          14,
+          29,
+          0,
+          33
+        ],
+        [
+          3,
+          22,
+          0,
+          5,
+          0,
+          31
+        ],
+        [
+          4,
+          14,
+          47,
+          77,
+          1,
+          78
+        ],
+        [
+          0,
+          10,
+          11,
+          84,
+          1,
+          66
+        ],
+        [
+          0,
+          0,
+          7,
+          30,
+          25,
+          2
+        ],
+        [
+          1,
+          12,
+          23,
+          78,
+          0,
+          142
+        ]
+      ],
+      "accuracy": 0.3760186263096624,
+      "macro_precision": 0.4473040543433428,
+      "macro_recall": 0.3403840219388585,
+      "macro_f1": 0.3459602824935642
+    },
+    "final": {
+      "samples": 859,
+      "classes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "confusion_matrix": [
+        [
+          0,
+          6,
+          14,
+          31,
+          0,
+          34
+        ],
+        [
+          2,
+          38,
+          0,
+          2,
+          0,
+          19
+        ],
+        [
+          5,
+          9,
+          54,
+          85,
+          1,
+          67
+        ],
+        [
+          0,
+          13,
+          11,
+          85,
+          1,
+          62
+        ],
+        [
+          0,
+          0,
+          6,
+          16,
+          39,
+          3
+        ],
+        [
+          3,
+          17,
+          25,
+          86,
+          0,
+          125
+        ]
+      ],
+      "accuracy": 0.3969732246798603,
+      "macro_precision": 0.4303123765745324,
+      "macro_recall": 0.409856167931079,
+      "macro_f1": 0.3991681919339282
+    },
+    "gain_pp": {
+      "accuracy": 2.095459837019792,
+      "macro_precision": -1.6991677768810387,
+      "macro_recall": 6.947214599222046,
+      "macro_f1": 5.320790944036402
+    },
+    "drop_pp": {
+      "accuracy": -2.095459837019792,
+      "macro_precision": 1.6991677768810387,
+      "macro_recall": -6.947214599222046,
+      "macro_f1": -5.320790944036402
+    },
+    "scope": "same masked rows at both endpoints; observer-only; macro scores use source class vocabulary"
+  },
+  "reference_endpoint": {
+    "version": 1,
+    "initial": {
+      "samples": 1073,
+      "classes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "confusion_matrix": [
+        [
+          2,
+          0,
+          21,
+          37,
+          0,
+          40
+        ],
+        [
+          1,
+          37,
+          1,
+          14,
+          0,
+          25
+        ],
+        [
+          4,
+          3,
+          74,
+          94,
+          4,
+          101
+        ],
+        [
+          0,
+          16,
+          20,
+          128,
+          3,
+          54
+        ],
+        [
+          0,
+          0,
+          8,
+          12,
+          57,
+          3
+        ],
+        [
+          3,
+          15,
+          31,
+          85,
+          0,
+          180
+        ]
+      ],
+      "accuracy": 0.44547996272134205,
+      "macro_precision": 0.4802945309029192,
+      "macro_recall": 0.43726310277499864,
+      "macro_f1": 0.43336011036576555
+    },
+    "final": {
+      "samples": 1073,
+      "classes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "confusion_matrix": [
+        [
+          3,
+          1,
+          18,
+          36,
+          0,
+          42
+        ],
+        [
+          1,
+          35,
+          2,
+          22,
+          0,
+          18
+        ],
+        [
+          4,
+          8,
+          71,
+          95,
+          5,
+          97
+        ],
+        [
+          0,
+          16,
+          21,
+          128,
+          3,
+          53
+        ],
+        [
+          0,
+          0,
+          9,
+          11,
+          57,
+          3
+        ],
+        [
+          4,
+          15,
+          34,
+          92,
+          0,
+          169
+        ]
+      ],
+      "accuracy": 0.4315004659832246,
+      "macro_precision": 0.4712326616692433,
+      "macro_recall": 0.4270319096934871,
+      "macro_f1": 0.4220840210629073
+    },
+    "gain_pp": {
+      "accuracy": -1.3979496738117436,
+      "macro_precision": -0.9061869233675857,
+      "macro_recall": -1.0231193081511547,
+      "macro_f1": -1.1276089302858228
+    },
+    "drop_pp": {
+      "accuracy": 1.3979496738117436,
+      "macro_precision": 0.9061869233675857,
+      "macro_recall": 1.0231193081511547,
+      "macro_f1": 1.1276089302858228
+    },
+    "scope": "same masked rows at both endpoints; observer-only; macro scores use source class vocabulary"
+  },
+  "endpoint_phase": "whole online adaptation; initial checkpoint to end of stream",
+  "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/calmid_micfoal_levels1_3_seed42/Results/calmid_per10_seed62_5fc00b89_metrics.json",
+  "source_sha256": "7dc76953fab32e445cf627453040f6d99af38e9740b0674154e5cc8d0bcf01c2",
+  "trace": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/calmid_micfoal_levels1_3_seed42/Results/calmid_per10_seed62_5fc00b89_trace.csv",
+  "trace_sha256": "d7bbf5fe2c26a1784e6265272f7e80a6996f2ac83a2f72f1c84742b7ea278b67",
+  "prior_comparison": {
+    "accuracy_delta": 0.0,
+    "macro_f1_delta": 0.0,
+    "labels_match": true,
+    "prior_source": "AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\calmid_micfoal_levels1_3_seed42\\Results\\calmid_per10_seed62_0a700ac5_metrics.json"
+  },
+  "original": {
+    "method": "CALMID-paper-River",
+    "accuracy": 0.3821062441752097,
+    "macro_f1": 0.3717934213227385,
+    "weighted_f1": 0.365649866935937,
+    "samples": 1073,
+    "labels": 214,
+    "label_cap": 214,
+    "actual_label_fraction": 0.19944082013047532,
+    "budget_utilization_pct": 100.0,
+    "labels_remaining": 0,
+    "online_gradient_steps": 0,
+    "query_protocol": "paper hybrid random/uncertainty/selective with native ratio gate and strict global cap",
+    "protocol": "predict-score-query-update; fresh model per level; reference/same-level observers never feed learning",
+    "online_seconds": 5.100468999939039,
+    "prediction_seconds": 1.6885533006861806,
+    "selection_seconds": 1.5772092995466664,
+    "update_seconds": 1.8180566999362782,
+    "cache_seconds": 0.0,
+    "other_seconds": 0.01664969976991415,
+    "online_ms_per_sample": 4.753465983167791,
+    "samples_per_second": 210.37281081657872,
+    "update_ms_per_label": 8.495592055777001,
+    "timing_device": "cpu",
+    "timing_protocol": "synchronized wall time; prediction includes frozen-cache construction; update includes Context/classifier, reward probes and selector learning; excludes model loading, initialization, endpoint retention observers, file I/O and human label latency; other includes stream bookkeeping, oracle scoring and progress output",
+    "active_learning": {
+      "implementation_version": 1,
+      "native_budget_final": 0.2,
+      "native_budget_initial": 0.2,
+      "stream_seen": 1073,
+      "acquired_labels": 214,
+      "query_counts": {
+        "uncertain": 111,
+        "random": 103
+      },
+      "last_training_weight": 1.0318609243729147,
+      "periodic_evaluations": 0,
+      "last_period_macro_f1": null,
+      "drifts": 0,
+      "random_window_labels": 55,
+      "current_window_classes": 6,
+      "threshold_matrix": [
+        [
+          0.5,
+          0.495,
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        [
+          0.5,
+          0.5,
+          0.47074007470049994,
+          0.495,
+          0.5,
+          0.47074007470049994
+        ],
+        [
+          0.5,
+          0.5,
+          0.5,
+          0.49005,
+          0.49005,
+          0.43002917732064416
+        ],
+        [
+          0.5,
+          0.5,
+          0.45675862374182036,
+          0.5,
+          0.5,
+          0.3735860471657981
+        ],
+        [
+          0.5,
+          0.5,
+          0.5,
+          0.49005,
+          0.5,
+          0.49005
+        ],
+        [
+          0.5,
+          0.5,
+          0.40486393411062915,
+          0.4089534687986154,
+          0.495,
+          0.5
+        ]
+      ],
+      "per_class_cache_size": 9,
+      "cached_samples": 54,
+      "bootstrap_protocol": "available TRAIN labels; Poisson(6); neutral source-cache weights",
+      "bagging_protocol": "paper Poisson(computed weight), including age-decayed replacement"
+    },
+    "river_version": "0.26.1",
+    "online_update_calls": 214,
+    "source_initialization": "all available source TRAIN rows; no test bootstrap labels",
+    "same_level": {
+      "all_rows": {
+        "n": 1073,
+        "initial": 0.37371854613233924,
+        "final": 0.40540540540540543,
+        "drop_pp": -3.168685927306619,
+        "broken": 36,
+        "fixed": 70,
+        "metric_pairs": {
+          "version": 1,
+          "initial": {
+            "samples": 1073,
+            "classes": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "confusion_matrix": [
+              [
+                3,
+                10,
+                15,
+                35,
+                0,
+                40
+              ],
+              [
+                3,
+                34,
+                0,
+                5,
+                0,
+                37
+              ],
+              [
+                4,
+                15,
+                61,
+                103,
+                1,
+                98
+              ],
+              [
+                0,
+                12,
+                11,
+                105,
+                2,
+                88
+              ],
+              [
+                0,
+                1,
+                9,
+                36,
+                31,
+                3
+              ],
+              [
+                2,
+                16,
+                27,
+                99,
+                0,
+                167
+              ]
+            ],
+            "accuracy": 0.37371854613233924,
+            "macro_precision": 0.45064933848824246,
+            "macro_recall": 0.346991147545578,
+            "macro_f1": 0.3504660212106741
+          },
+          "final": {
+            "samples": 1073,
+            "classes": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "confusion_matrix": [
+              [
+                3,
+                7,
+                15,
+                38,
+                0,
+                40
+              ],
+              [
+                2,
+                52,
+                0,
+                4,
+                0,
+                21
+              ],
+              [
+                5,
+                10,
+                70,
+                113,
+                1,
+                83
+              ],
+              [
+                0,
+                16,
+                12,
+                109,
+                3,
+                78
+              ],
+              [
+                0,
+                0,
+                8,
+                19,
+                49,
+                4
+              ],
+              [
+                4,
+                21,
+                28,
+                106,
+                0,
+                152
+              ]
+            ],
+            "accuracy": 0.40540540540540543,
+            "macro_precision": 0.4730029835042391,
+            "macro_recall": 0.4228044987925841,
+            "macro_f1": 0.4146663670566448
+          },
+          "gain_pp": {
+            "accuracy": 3.168685927306619,
+            "macro_precision": 2.235364501599663,
+            "macro_recall": 7.5813351247006056,
+            "macro_f1": 6.420034584597067
+          },
+          "drop_pp": {
+            "accuracy": -3.168685927306619,
+            "macro_precision": -2.235364501599663,
+            "macro_recall": -7.5813351247006056,
+            "macro_f1": -6.420034584597067
+          },
+          "scope": "same masked rows at both endpoints; observer-only; macro scores use source class vocabulary"
+        }
+      },
+      "unqueried": {
+        "n": 859,
+        "initial": 0.3760186263096624,
+        "final": 0.3969732246798603,
+        "drop_pp": -2.095459837019792,
+        "broken": 30,
+        "fixed": 48,
+        "metric_pairs": {
+          "version": 1,
+          "initial": {
+            "samples": 859,
+            "classes": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "confusion_matrix": [
+              [
+                3,
+                6,
+                14,
+                29,
+                0,
+                33
+              ],
+              [
+                3,
+                22,
+                0,
+                5,
+                0,
+                31
+              ],
+              [
+                4,
+                14,
+                47,
+                77,
+                1,
+                78
+              ],
+              [
+                0,
+                10,
+                11,
+                84,
+                1,
+                66
+              ],
+              [
+                0,
+                0,
+                7,
+                30,
+                25,
+                2
+              ],
+              [
+                1,
+                12,
+                23,
+                78,
+                0,
+                142
+              ]
+            ],
+            "accuracy": 0.3760186263096624,
+            "macro_precision": 0.4473040543433428,
+            "macro_recall": 0.3403840219388585,
+            "macro_f1": 0.3459602824935642
+          },
+          "final": {
+            "samples": 859,
+            "classes": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "confusion_matrix": [
+              [
+                0,
+                6,
+                14,
+                31,
+                0,
+                34
+              ],
+              [
+                2,
+                38,
+                0,
+                2,
+                0,
+                19
+              ],
+              [
+                5,
+                9,
+                54,
+                85,
+                1,
+                67
+              ],
+              [
+                0,
+                13,
+                11,
+                85,
+                1,
+                62
+              ],
+              [
+                0,
+                0,
+                6,
+                16,
+                39,
+                3
+              ],
+              [
+                3,
+                17,
+                25,
+                86,
+                0,
+                125
+              ]
+            ],
+            "accuracy": 0.3969732246798603,
+            "macro_precision": 0.4303123765745324,
+            "macro_recall": 0.409856167931079,
+            "macro_f1": 0.3991681919339282
+          },
+          "gain_pp": {
+            "accuracy": 2.095459837019792,
+            "macro_precision": -1.6991677768810387,
+            "macro_recall": 6.947214599222046,
+            "macro_f1": 5.320790944036402
+          },
+          "drop_pp": {
+            "accuracy": -2.095459837019792,
+            "macro_precision": 1.6991677768810387,
+            "macro_recall": -6.947214599222046,
+            "macro_f1": -5.320790944036402
+          },
+          "scope": "same masked rows at both endpoints; observer-only; macro scores use source class vocabulary"
+        }
+      }
+    },
+    "reference": {
+      "n": 1073,
+      "initial": 0.44547996272134205,
+      "final": 0.4315004659832246,
+      "drop_pp": 1.3979496738117436,
+      "broken": 34,
+      "fixed": 19,
+      "metric_pairs": {
+        "version": 1,
+        "initial": {
+          "samples": 1073,
+          "classes": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "confusion_matrix": [
+            [
+              2,
+              0,
+              21,
+              37,
+              0,
+              40
+            ],
+            [
+              1,
+              37,
+              1,
+              14,
+              0,
+              25
+            ],
+            [
+              4,
+              3,
+              74,
+              94,
+              4,
+              101
+            ],
+            [
+              0,
+              16,
+              20,
+              128,
+              3,
+              54
+            ],
+            [
+              0,
+              0,
+              8,
+              12,
+              57,
+              3
+            ],
+            [
+              3,
+              15,
+              31,
+              85,
+              0,
+              180
+            ]
+          ],
+          "accuracy": 0.44547996272134205,
+          "macro_precision": 0.4802945309029192,
+          "macro_recall": 0.43726310277499864,
+          "macro_f1": 0.43336011036576555
+        },
+        "final": {
+          "samples": 1073,
+          "classes": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "confusion_matrix": [
+            [
+              3,
+              1,
+              18,
+              36,
+              0,
+              42
+            ],
+            [
+              1,
+              35,
+              2,
+              22,
+              0,
+              18
+            ],
+            [
+              4,
+              8,
+              71,
+              95,
+              5,
+              97
+            ],
+            [
+              0,
+              16,
+              21,
+              128,
+              3,
+              53
+            ],
+            [
+              0,
+              0,
+              9,
+              11,
+              57,
+              3
+            ],
+            [
+              4,
+              15,
+              34,
+              92,
+              0,
+              169
+            ]
+          ],
+          "accuracy": 0.4315004659832246,
+          "macro_precision": 0.4712326616692433,
+          "macro_recall": 0.4270319096934871,
+          "macro_f1": 0.4220840210629073
+        },
+        "gain_pp": {
+          "accuracy": -1.3979496738117436,
+          "macro_precision": -0.9061869233675857,
+          "macro_recall": -1.0231193081511547,
+          "macro_f1": -1.1276089302858228
+        },
+        "drop_pp": {
+          "accuracy": 1.3979496738117436,
+          "macro_precision": 0.9061869233675857,
+          "macro_recall": 1.0231193081511547,
+          "macro_f1": 1.1276089302858228
+        },
+        "scope": "same masked rows at both endpoints; observer-only; macro scores use source class vocabulary"
+      }
+    },
+    "level": 10,
+    "execution_config": {
+      "seed": 62,
+      "budget": 0.2,
+      "af_online_lr": 1e-05,
+      "protocol_version": 1,
+      "timing_version": 1,
+      "endpoint_metrics_version": 1,
+      "endpoint_metrics_methods": [
+        "calmid"
+      ],
+      "active_protocol_version": 1
+    },
+    "training_provenance": {
+      "version": 1,
+      "train_levels": [
+        0,
+        1,
+        3
+      ],
+      "training_domains_sha256": {
+        "0": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+        "1": "bf92f8d8088d7199d1a83187c2f04079c13aa0fb115878e3649c5bd85d8a6cc6",
+        "3": "391285a6f89750c0025eb225a7d2b4beca1314852c9d630e8105108a352eaa53"
+      },
+      "source_preprocessing_sha256": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+      "partition_sha256": {
+        "train_ids": "45d655cf6438a0305588c9279099331c4443ab58d3df40bc611b8ad697754c17",
+        "val_ids": "4767222d8415edc8cd197bcc4bae2af7023ddc792b92a629cf008ac8155710d5",
+        "test_ids": "fab8909d80feb1a230e03a6d7365759e65ed4df3cfb11d59a90c0f445edb69c3"
+      },
+      "config": {
+        "command": "train",
+        "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\structured_bank3_policy_lr0p0005_seed42",
+        "burst_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\Dataset_official_v1\\AdvBurst_FTSC-IAT",
+        "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\calmid_micfoal_levels1_3_seed42",
+        "methods": [
+          "calmid",
+          "micfoal"
+        ],
+        "train_levels": [
+          0,
+          1,
+          3
+        ],
+        "levels": [
+          5,
+          7,
+          10,
+          12,
+          15,
+          17,
+          20
+        ],
+        "seed": 42,
+        "budget_fraction": 0.2,
+        "dfe_epochs": 200,
+        "af_epochs": 30,
+        "patience": 10,
+        "batch_size": 32,
+        "dfe_lr": 0.001,
+        "af_lr": 1e-05,
+        "dfe_alpha1": 0.5,
+        "dfe_alpha2": 2.0,
+        "dfe_eta": 0.5,
+        "dfe_lambda": 1.0,
+        "dfe_betas": [
+          0.01,
+          0.02,
+          0.03,
+          0.04,
+          0.05,
+          0.05
+        ],
+        "templates": 20,
+        "arf_trees": 10,
+        "arf_train_passes": 1,
+        "active_models": 10,
+        "active_window": 500,
+        "active_random_ratio": 0.1,
+        "calmid_threshold": 0.5,
+        "calmid_step": 0.01,
+        "micfoal_threshold": 0.9,
+        "micfoal_step": 0.1,
+        "micfoal_fixed_budget": false,
+        "ral_budget_mode": "prefix",
+        "progress_every": 200,
+        "jobs": -1,
+        "device": "cpu",
+        "classes": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ]
+      },
+      "classes": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "feature_names": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48",
+        "49",
+        "50",
+        "51",
+        "52",
+        "53",
+        "54",
+        "55",
+        "56",
+        "57",
+        "58",
+        "59",
+        "60",
+        "61",
+        "62",
+        "63",
+        "64",
+        "65",
+        "66",
+        "67",
+        "68",
+        "69",
+        "70",
+        "71",
+        "72",
+        "73",
+        "74",
+        "75",
+        "76",
+        "77",
+        "78",
+        "79",
+        "80",
+        "81",
+        "82",
+        "83",
+        "84",
+        "85",
+        "86",
+        "87",
+        "88",
+        "89",
+        "90",
+        "91",
+        "92",
+        "93",
+        "94",
+        "95",
+        "96",
+        "97",
+        "98",
+        "99",
+        "100"
+      ]
+    },
+    "target_sha256": "19d6375eb244a72fd4c3a79a99a7b4afce3e29af4f069a6402cfc5eb93f28120"
+  }
+}
