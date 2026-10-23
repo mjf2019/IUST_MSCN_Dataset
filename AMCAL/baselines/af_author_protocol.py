@@ -197,7 +197,7 @@ def target_knn(support_z, support_y, shots):
     return model.fit(support_z, support_y)
 
 
-def fit(source_x, source_y, target_x, target_y, classes, seed, p=AFParameters(), device='cpu'):
+def fit(source_x, source_y, target_x, target_y, classes, seed, p=AFParameters(), device='cpu', before_tuning=None):
     """Fit without a test/validation argument; target labels are used in tuning only."""
     if min(len(source_x), len(target_x)) < 2:
         raise ValueError('AF requires at least two examples in each domain.')
@@ -224,6 +224,14 @@ def fit(source_x, source_y, target_x, target_y, classes, seed, p=AFParameters(),
         if iteration == 0 or (iteration+1) % 100 == 0 or iteration+1 == p.iterations:
             logs.append(dict(iteration=iteration+1, combined=losses[0], discriminator=losses[1]))
             print(f'AF adaptation {iteration+1}/{p.iterations} | loss {losses[0]:.4f}', flush=True)
+    # Optional observer after DANN, before feature-layer reset and supervised tuning.
+    # Does not change fitting inputs, parameters, optimizer states or RNG streams.
+    if before_tuning is not None:
+        was_training = model.extractor.training
+        try:
+            before_tuning(model)
+        finally:
+            model.extractor.train(was_training)
     # Author test.tuning_model uses a NEW linear softmax head on the embedding,
     # Adam defaults, 30 epochs, batch64, stopping on TRAIN accuracy, patience10.
     # test.copy_weights copies feature_model.layers[:-3]: all convolution/BN
@@ -263,3 +271,4 @@ def fit(source_x, source_y, target_x, target_y, classes, seed, p=AFParameters(),
     return model, dict(parameters=asdict(p), adaptation=logs, tuning=tuning,
                        actual_adversarial_batch_size=min(p.batch_size, len(source_x), len(target_x)),
                        author_commit=AUTHOR_COMMIT, protocol_version=PROTOCOL_VERSION)
+

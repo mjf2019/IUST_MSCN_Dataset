@@ -62,6 +62,10 @@ def run(a):
     if a.output.exists():
         raise ValueError('Use a fresh --output directory; previous evaluations are preserved.')
     artifact, classes, source, tasks = prepare(a)  # Validate ALL levels before starting work.
+    endpoint_audit=getattr(a,'endpoint_metrics',False)
+    if endpoint_audit:
+        from baselines.endpoint_metrics import paired
+        reference=arrays(shared.read_domain(a.burst_dir,artifact,0,'val_ids'))
     p = AFParameters(iterations=a.iterations, tuning_epochs=a.tuning_epochs)
     config = dict(method='AF-author-structure-Burst-PyTorch-port', protocol_version=PROTOCOL_VERSION,
                   author_commit=AUTHOR_COMMIT, seed=a.seed, shots=a.shots, levels=a.levels,
@@ -80,6 +84,11 @@ def run(a):
                                'all heldout TEST rows instead of 70/class' if not a.test_per_class else
                                f'{a.test_per_class} heldout TEST rows/class'],
                   comparison='offline target-calibrated few-shot accuracy, NOT online prequential accuracy; no stream label cap')
+    if endpoint_audit:
+        config['endpoint_metrics']=dict(version=1,phase='after_DANN_before_feature_reset_and_supervised_target_tuning_to_final',
+            interpretation='supervised tuning stage audit; NOT whole-method forgetting from a source-only checkpoint',
+            prediction='same target-only cosine kNN rule and same labelled target supports at both endpoints',
+            reference='original-domain VAL source IDs; observer only')
     a.output.mkdir(parents=True)
     json_file(a.output/'execution.json', config)
     rows = []
@@ -94,10 +103,20 @@ def run(a):
             if a.device == 'cuda':
                 torch.cuda.synchronize()
             start = time.perf_counter()
-            model, training = fit(source[0], source[1], tx, ty, classes, a.seed, p, a.device)
+            endpoint_before={}
+            observer_seconds=[0.]
+            def before_tuning(model):
+                tick=time.perf_counter()
+                support=target_knn(embed(model.extractor,tx,a.device),ty,shots)
+                endpoint_before['target']=support.predict(embed(model.extractor,qx,a.device))
+                endpoint_before['reference']=support.predict(embed(model.extractor,reference[0],a.device))
+                if a.device=='cuda':torch.cuda.synchronize()
+                observer_seconds[0]+=time.perf_counter()-tick
+            model, training = fit(source[0], source[1], tx, ty, classes, a.seed, p, a.device,
+                                  before_tuning=before_tuning if endpoint_audit else None)
             if a.device == 'cuda':
                 torch.cuda.synchronize()
-            training_seconds = time.perf_counter()-start
+            training_seconds = time.perf_counter()-start-observer_seconds[0]
             start = time.perf_counter()
             knn = target_knn(embed(model.extractor, tx, a.device), ty, shots)
             predicted = knn.predict(embed(model.extractor, qx, a.device))
@@ -112,6 +131,19 @@ def run(a):
                            inference_seconds=inference_seconds, source_ids=source[2].tolist(),
                            target_calibration_ids=tids.tolist(), test_ids=qids.tolist(),
                            training=training, execution=config)
+            if endpoint_audit:
+                final_reference=knn.predict(embed(model.extractor,reference[0],a.device))
+                target_pair=paired(endpoint_before['target'],predicted,qy,np.ones(len(qy),dtype=bool),classes)
+                reference_pair=paired(endpoint_before['reference'],final_reference,reference[1],np.ones(len(reference[1]),dtype=bool),classes)
+                metrics['endpoint_metrics_version']=1
+                metrics['endpoint_phase']=config['endpoint_metrics']
+                metrics['same_level']={'all_rows':{'metric_pairs':target_pair},'unqueried':{'metric_pairs':target_pair}}
+                metrics['reference']={'metric_pairs':reference_pair}
+                shared.base.write_trace(root/'endpoint_predictions.csv',
+                    [dict(domain=domain,source_row=int(i),truth=int(y),initial_prediction=int(b),final_prediction=int(f))
+                     for domain,ids,truth,before,after in [('target',qids,qy,endpoint_before['target'],predicted),
+                                                         ('reference0',reference[2],reference[1],endpoint_before['reference'],final_reference)]
+                     for i,y,b,f in zip(ids,truth,before,after)])
             torch.save(dict(state=model.state_dict(),classes=len(classes),parameters=asdict(p)), root/'af.pth')
             json_file(root/'metrics.json', metrics)
             shared.base.write_trace(root/'predictions.csv', [dict(source_row=int(i),truth=int(y),prediction=int(z))
@@ -130,6 +162,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--levels', type=int, nargs='+', default=[5,7,10,12,15,17,20])
     parser.add_argument('--shots', type=int, nargs='+', choices=[1,5,10,15,20], default=[5])
+    parser.add_argument('--endpoint-metrics',action='store_true',help='Observer-only audit of the supervised tuning stage; not whole-AF forgetting.')
     parser.add_argument('--test-per-class', type=int, default=0, help='0: common heldout TEST set; 70: author count.')
     parser.add_argument('--iterations', type=int, default=1000)
     parser.add_argument('--tuning-epochs', type=int, default=30)
@@ -149,3 +182,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

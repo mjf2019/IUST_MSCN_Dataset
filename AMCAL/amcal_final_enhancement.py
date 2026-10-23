@@ -781,6 +781,7 @@ def parser():
     p.add_argument('--architecture-ablation',choices=['none','no_context','no_rl','frozen'],default='none')
     p.add_argument('--query-budget-bonus',type=float,default=0.,help='Evaluation-only deficit-dependent bonus for legal query action scores; zero preserves baseline.')
     p.add_argument('--evaluation-tag', default='', help='Unique repeat label for identical-trajectory timing repetitions.')
+    p.add_argument('--endpoint-metrics',action='store_true',help='Observer-only paired AC/PR/RC/F1 audit.')
     p.add_argument('--router-refresh', action='store_true',
                    help='After paid feedback, recalibrate routing on existing references with current-bank targets.')
     p.add_argument('--router-informative-weight', type=float, default=1.,
@@ -917,6 +918,11 @@ def main(argv=None):
     if a.aligned_sequence and len(a.levels) < 2 and a.levels != [0]:
         p.error('Aligned training requires multiple TRAIN domains, or the explicit clean-only level [0].')
     a.bank_utility = False; a.balanced_reward_reference = True
+    if a.endpoint_metrics:
+        if a.command!='evaluate':p.error('--endpoint-metrics is evaluation only.')
+        from baselines.endpoint_metrics import install_amcal
+        install_amcal(legacy)
+        a.evaluation_tag=(a.evaluation_tag+'_endpoint_metrics_v1').strip('_')
     if a.command == 'calibrate-utility':
         calibrate_utility(a)
     elif a.command == 'train':
@@ -936,4 +942,5 @@ def main(argv=None):
 
 
 if __name__ == '__main__': main()
+
 

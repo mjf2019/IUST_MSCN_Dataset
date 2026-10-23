@@ -440,6 +440,9 @@ def evaluate(a,artifact):
     root=a.output/'Results';root.mkdir(exist_ok=True)
     reference=shared.read_domain(a.burst_dir,artifact,0,'val_ids')[:2]
     config=dict(seed=a.seed,budget=a.budget_fraction,af_online_lr=a.af_lr,protocol_version=1,timing_version=1)
+    if getattr(a,'endpoint_metrics',False):
+        config['endpoint_metrics_version']=1
+        config['endpoint_metrics_methods']=a.methods
     if 'af' in a.methods:config['af_historical_online_extension']=True
     attack_artifact=artifact
     if getattr(a,'test_scaler','training')=='notebook':
@@ -529,6 +532,7 @@ def main():
     parser.add_argument('--burst-dir',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path)
     parser.add_argument('--methods',nargs='+',choices=list(METHOD_NAMES),default=[m for m in METHOD_NAMES if m!='af'])
+    parser.add_argument('--endpoint-metrics',action='store_true',help='Observer-only AC/PR/RC/F1 endpoint audit; distinct result tag.')
     parser.add_argument('--allow-af-extension',action='store_true',help='Explicitly reproduce historical AF online extension; NEVER report it as original AF.')
     parser.add_argument('--train-levels',type=int,nargs='+',default=[0,1,3])
     parser.add_argument('--levels',type=int,nargs='+',default=[5,7,10,12,15,17,20])
@@ -602,9 +606,14 @@ def main():
     if any(not len(v) for v in partitions) or len(np.unique(ids))!=len(ids) or (ids<0).any() or (ids>=artifact['source_rows']).any():parser.error('Invalid/disjoint source partitions.')
     if core.file_sha256(a.burst_dir/'AdvBurstTrainedBurst_size_0_Step_2000.csv')!=artifact['source_sha256']:parser.error('Clean source provenance mismatch.')
     a.classes=[str(c) for c in artifact['label_encoder'].classes_]
+    if a.endpoint_metrics:
+        if a.command!='evaluate':parser.error('--endpoint-metrics is evaluation only.')
+        from baselines.endpoint_metrics import install_baseline
+        install_baseline(sys.modules[__name__],range(len(a.classes)))
     if a.command=='train':train(a,artifact)
     else:evaluate(a,artifact)
 
 
 if __name__=='__main__':main()
+
 
