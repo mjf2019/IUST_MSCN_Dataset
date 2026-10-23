@@ -55,8 +55,10 @@ fixed. It must likewise be labelled as an adapted online experiment.
 
 Outputs: each dataset's protocol_runs/clean0_paironly_batch5_attacks_seed42/.
 The top-level Results/clean_attack_comparison.csv contains 36 rows per dataset.
-AF/DFE do not require completed AMCAL RL training. Use -Methods AF,DFE separately
-after source initialization, or -Methods AMCAL for AMCAL only. Original source
-initialization is shared. Repeat -Action Evaluate to evaluate saved models.
+AF/DFE runs prepare only shared clean partitions and the TRAIN-fitted scaler;
+they never train, load or require AMCAL CNN/Context/RL models. Use -Methods AF,DFE
+for baselines, or -Methods AMCAL for AMCAL only. Clean preprocessing is shared.
+When restarting an interrupted older baseline run, valid existing preprocessing
+is verified and reused; extraneous CNN/Context files are preserved but ignored. Repeat -Action Evaluate to evaluate saved models.
 Never push Models or exported Domains; push JSON manifests and result CSV/JSON.
 No numerical experiments were executed; Python syntax/static checks only.

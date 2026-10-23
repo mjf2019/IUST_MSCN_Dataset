@@ -162,6 +162,41 @@ def prepare(a):
     return training, manifest_value
 
 
+def preprocessing_stage(a, training, manifest):
+    """AF/DFE need clean partitions and scaling, never AMCAL model training."""
+    root=a.output/'source'; models=root/'Models'
+    path=models/'protocol_preprocessing.joblib'
+    frame=pd.read_csv(training/domain_name(0)); parts=manifest['recipe']['partitions']
+    train,val,test=[np.asarray(parts[k],dtype=np.int64) for k in ('train','validation','test')]
+    expected_scaler=StandardScaler().fit(frame.iloc[train,:-1])
+    encoder=LabelEncoder().fit(frame.iloc[train,-1])
+    if path.exists():
+        artifact=joblib.load(path)
+        valid=(artifact['source_sha256']==digest(training/domain_name(0))
+               and artifact['feature_names']==list(frame.columns[:-1])
+               and artifact['label_name']==frame.columns[-1]
+               and np.array_equal(artifact['source_labels'],frame.iloc[:,-1].to_numpy())
+               and np.array_equal(artifact['label_encoder'].classes_,encoder.classes_)
+               and all(np.array_equal(artifact[key],ids) for key,ids in
+                       zip(('train_ids','val_ids','test_ids'),(train,val,test))))
+        valid=valid and all(np.allclose(getattr(artifact['scaler'],key),getattr(expected_scaler,key))
+                            for key in ('mean_','scale_','var_'))
+        if not valid:raise ValueError('Existing clean preprocessing mismatch; use fresh output.')
+        # Reuse valid preprocessing from an interrupted old CNN/Context stage.
+        # Preserve any unrelated model files; neither load nor train them.
+        print('Reusing verified preprocessing only; no AMCAL model training.',flush=True)
+    else:
+        root.mkdir(parents=True,exist_ok=True)
+        counts=np.bincount(encoder.transform(frame.iloc[train,-1]),minlength=len(encoder.classes_))
+        core.RUN_SEED=a.seed
+        with cwd(root):
+            core.save_preprocessing(frame,str(training),domain_name(0),expected_scaler,encoder,counts,train,val,test)
+        print('Prepared clean TRAIN scaling/partitions only; no AMCAL model training.',flush=True)
+    write(root/'clean_preprocessing_complete.json',dict(recipe=manifest['recipe'],
+        preprocessing_sha256=digest(path),trained_models=[],purpose='independent AF/DFE preprocessing only'))
+    return root
+
+
 def source_stage(a, training, manifest):
     root=a.output/'source'; marker=root/'clean_source_complete.json'
     if marker.exists():
@@ -355,10 +390,13 @@ def main():
     a.output_root=a.output;a.source_run=a.output/'source'
     a.online_context_lr=.00025;a.query_budget_bonus=1.;a.replay_weight=.1;a.evaluation_tag=''
     if a.action in ('All','Train'):
-        source=source_stage(a,training,manifest)
+        source=(source_stage(a,training,manifest) if 'AMCAL' in a.methods
+                else preprocessing_stage(a,training,manifest))
         models=source/'Models'
+        source_names=runner.SOURCE_FILES if 'AMCAL' in a.methods else ('protocol_preprocessing.joblib',)
         write(source/'baseline_source.json',dict(training_levels=[0],seed=a.seed,
-            model_hashes={n:digest(models/n) for n in runner.SOURCE_FILES},test_used=False))
+            model_hashes={n:digest(models/n) for n in source_names},test_used=False,
+            amcal_models_required='AMCAL' in a.methods))
         if 'AMCAL' in a.methods:train_amcal(a,source)
         baseline(a,source,True)
     if a.action in ('All','Evaluate'):
