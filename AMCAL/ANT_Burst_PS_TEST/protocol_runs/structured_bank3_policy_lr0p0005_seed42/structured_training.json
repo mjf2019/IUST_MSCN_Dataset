@@ -1,0 +1,164 @@
+{
+  "config": {
+    "command": "train",
+    "source_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\three_action_twostage_levels1_3_contextpre20_seed42",
+    "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\structured_bank3_policy_lr0p0005_seed42",
+    "burst_dir": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\Dataset_official_v1\\AdvBurst_FTSC-PS",
+    "levels": [
+      0,
+      1,
+      3
+    ],
+    "seed": 42,
+    "epochs": 12,
+    "patience": 5,
+    "router_warmup_episodes": 3,
+    "context_lr": 0.0005,
+    "budget_fraction": 0.2,
+    "selection_cost": 0.0001,
+    "gain_weight": 1,
+    "retention_weight": 1,
+    "gamma": 0.95,
+    "train_epsilon": 0.2,
+    "eval_epsilon": 0,
+    "query_schedule": "policy",
+    "update_policy": "learned",
+    "bank_utility": false,
+    "modes": [
+      "learned",
+      "random"
+    ],
+    "device": "cuda",
+    "classes": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+    ]
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "level": 0,
+      "train_accuracy": 0.8117647058823529,
+      "validation_accuracy": 0.7637209302325582,
+      "labels": 646,
+      "slot_queries": [
+        230,
+        209,
+        207
+      ]
+    },
+    {
+      "epoch": 2,
+      "level": 1,
+      "train_accuracy": 0.7829721362229102,
+      "validation_accuracy": 0.7693023255813953,
+      "labels": 646,
+      "slot_queries": [
+        217,
+        192,
+        237
+      ]
+    },
+    {
+      "epoch": 3,
+      "level": 3,
+      "train_accuracy": 0.9287925696594427,
+      "validation_accuracy": 0.7677519379844963,
+      "labels": 646,
+      "slot_queries": [
+        170,
+        339,
+        137
+      ]
+    },
+    {
+      "epoch": 4,
+      "level": 0,
+      "train_accuracy": 0.8188854489164087,
+      "validation_accuracy": 0.7693023255813953,
+      "labels": 646,
+      "slot_queries": [
+        234,
+        241,
+        171
+      ]
+    },
+    {
+      "epoch": 5,
+      "level": 1,
+      "train_accuracy": 0.8157894736842105,
+      "validation_accuracy": 0.7773643410852712,
+      "labels": 581,
+      "slot_queries": [
+        199,
+        188,
+        194
+      ]
+    },
+    {
+      "epoch": 6,
+      "level": 3,
+      "train_accuracy": 0.9250773993808049,
+      "validation_accuracy": 0.7733333333333333,
+      "labels": 646,
+      "slot_queries": [
+        238,
+        261,
+        147
+      ]
+    },
+    {
+      "epoch": 7,
+      "level": 0,
+      "train_accuracy": 0.8207430340557276,
+      "validation_accuracy": 0.764031007751938,
+      "labels": 646,
+      "slot_queries": [
+        192,
+        209,
+        245
+      ]
+    },
+    {
+      "epoch": 8,
+      "level": 1,
+      "train_accuracy": 0.7928792569659443,
+      "validation_accuracy": 0.7655813953488373,
+      "labels": 646,
+      "slot_queries": [
+        166,
+        262,
+        218
+      ]
+    },
+    {
+      "epoch": 9,
+      "level": 3,
+      "train_accuracy": 0.903405572755418,
+      "validation_accuracy": 0.7689922480620156,
+      "labels": 646,
+      "slot_queries": [
+        213,
+        190,
+        243
+      ]
+    },
+    {
+      "epoch": 10,
+      "level": 0,
+      "train_accuracy": 0.8294117647058824,
+      "validation_accuracy": 0.7733333333333334,
+      "labels": 646,
+      "slot_queries": [
+        220,
+        240,
+        186
+      ]
+    }
+  ],
+  "best_validation": 0.7773643410852712
+}

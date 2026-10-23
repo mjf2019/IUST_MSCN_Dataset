@@ -1,0 +1,16 @@
+{
+  "protocol": "synthetic magnitude shifts v1; clean-only frozen CNN",
+  "real_attack_levels_used": [],
+  "synthetic_domain_ids": [
+    0,
+    1,
+    2
+  ],
+  "max_strength": 0.7,
+  "noise_ratio": 0.25,
+  "bounds": "per-feature maximum absolute clean training value",
+  "preserves": "sign and zero padding; labels unchanged by construction, semantic validity not certified",
+  "validation": "independent fixed synthetic shifts; clean validation IDs only",
+  "heldout_scoring_during_training": false,
+  "seed": 42
+}

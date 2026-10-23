@@ -1,0 +1,340 @@
+{
+  "version": 1,
+  "dataset": "IAT",
+  "group": "AF",
+  "seeds": [
+    42,
+    48,
+    54,
+    62,
+    72
+  ],
+  "levels": [
+    5,
+    7,
+    10,
+    12,
+    15,
+    17,
+    20
+  ],
+  "online_training_seed": 42,
+  "protocol": "Online evaluation seeds with fixed offline checkpoints; AF independently fitted/calibrated per seed",
+  "entries": [
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 42,
+      "level": 5,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed42_20261023_170709_600/af_fewshot/level5_shot5/metrics.json",
+      "source_sha256": "d5268c1fdc4360a8a6537974acf7c4765e4eb47947fa9871207afa22e56b2ac7"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 42,
+      "level": 7,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed42_20261023_170709_600/af_fewshot/level7_shot5/metrics.json",
+      "source_sha256": "c8c0b43067ce64e28ae75cf9d3607e6dbc578ae509cb6d0348923a4079a91af9"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 42,
+      "level": 10,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed42_20261023_170709_600/af_fewshot/level10_shot5/metrics.json",
+      "source_sha256": "d4ab55fb783d47adec19e07ae4128550b03d015989fb2143ddde99af4a79bcc5"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 42,
+      "level": 12,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed42_20261023_170709_600/af_fewshot/level12_shot5/metrics.json",
+      "source_sha256": "f9adf7f01effcb6d773ac13d0bf09dc10992376f9a81d181dd8b0d1f085ec6a5"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 42,
+      "level": 15,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed42_20261023_170709_600/af_fewshot/level15_shot5/metrics.json",
+      "source_sha256": "cb8e4f935c5aba1acc6017e2e31609e699a56326edf4fb49581a4d3140efd473"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 42,
+      "level": 17,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed42_20261023_170709_600/af_fewshot/level17_shot5/metrics.json",
+      "source_sha256": "cd6b0840cb4dacd4b84b75df7d148f22ae4a41084456c4993c8b938db48decd2"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 42,
+      "level": 20,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed42_20261023_170709_600/af_fewshot/level20_shot5/metrics.json",
+      "source_sha256": "f7974a4547be81dc78b4c3c522e429f4ac2b8328934b3520d33623b8913a5700"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 48,
+      "level": 5,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed48_20261023_174437_711850/af_fewshot/level5_shot5/metrics.json",
+      "source_sha256": "66da6cf361d909e7e4c2a19dd34280069c726181236b3b6abe4e90322f69beed"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 48,
+      "level": 7,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed48_20261023_174437_711850/af_fewshot/level7_shot5/metrics.json",
+      "source_sha256": "0aff86c02b87142f9a9180848a1714be036c5c7f6eaff95c37269411b7e2d582"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 48,
+      "level": 10,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed48_20261023_174437_711850/af_fewshot/level10_shot5/metrics.json",
+      "source_sha256": "426d0dbbe1fd9d954e4fb0ab74c9a5373457c2f2de9cdf9a24e92ec2128a90fe"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 48,
+      "level": 12,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed48_20261023_174437_711850/af_fewshot/level12_shot5/metrics.json",
+      "source_sha256": "358010b6a87119d10eb34675092e7204bc6b0842770ed7dd7fe82ac374ee12a1"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 48,
+      "level": 15,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed48_20261023_174437_711850/af_fewshot/level15_shot5/metrics.json",
+      "source_sha256": "670e191fbbcf96da862c07f6acedc16f1b73be88b7684506ad94a26355ed26a7"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 48,
+      "level": 17,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed48_20261023_174437_711850/af_fewshot/level17_shot5/metrics.json",
+      "source_sha256": "b28c7694f972301cbd08df9251f82cbfb6264b86bd83a600e688d7c88ceed6a0"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 48,
+      "level": 20,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed48_20261023_174437_711850/af_fewshot/level20_shot5/metrics.json",
+      "source_sha256": "cf2472fb13b8bdfedd8f59df3f9059818cbfee673ce74b6919a4d83532957487"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 54,
+      "level": 5,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed54_20261023_175105_109702/af_fewshot/level5_shot5/metrics.json",
+      "source_sha256": "721043100148a2272cc9249294df8fbfe75e13ad5c11e04212d61c941a56bc91"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 54,
+      "level": 7,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed54_20261023_175105_109702/af_fewshot/level7_shot5/metrics.json",
+      "source_sha256": "435d9d38aee1ebe803e880833929ba55c470d8bc4867a6cfbff5bf31d215b36e"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 54,
+      "level": 10,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed54_20261023_175105_109702/af_fewshot/level10_shot5/metrics.json",
+      "source_sha256": "326b34ad337bc9d37fae1ab991cfdc337df72d42f6d156ea5e302e47ad5c7de1"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 54,
+      "level": 12,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed54_20261023_175105_109702/af_fewshot/level12_shot5/metrics.json",
+      "source_sha256": "1269c5be296f604094b134333392aacfca53fb8080545dc376f2248849378582"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 54,
+      "level": 15,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed54_20261023_175105_109702/af_fewshot/level15_shot5/metrics.json",
+      "source_sha256": "352b088eaa49e6e3057d434583aba5780d397906766036e16a7380df789ceb9e"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 54,
+      "level": 17,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed54_20261023_175105_109702/af_fewshot/level17_shot5/metrics.json",
+      "source_sha256": "aa29dd81e84ab819033a68310de977a60e6d0a8d00e3dee4dec8c7ccc204f3b8"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 54,
+      "level": 20,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed54_20261023_175105_109702/af_fewshot/level20_shot5/metrics.json",
+      "source_sha256": "16878ac773ad1e01b9a6eca102b673bb726af9ff0c2cd502b8adf84b169ca2d9"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 62,
+      "level": 5,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed62_20261023_175810_373638/af_fewshot/level5_shot5/metrics.json",
+      "source_sha256": "eef7f8710452c65acf11af73703777e70b66ccf26f1c1c2de2c641eb32a0471d"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 62,
+      "level": 7,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed62_20261023_175810_373638/af_fewshot/level7_shot5/metrics.json",
+      "source_sha256": "23dd3e18007e1f7517c3134d8cded1861b2483247825e1494b16cddf3a06ce21"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 62,
+      "level": 10,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed62_20261023_175810_373638/af_fewshot/level10_shot5/metrics.json",
+      "source_sha256": "2f13a4e33439e4a73f404ec6ef4393dcffb28360e141c4d82750b17f6c80a7a2"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 62,
+      "level": 12,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed62_20261023_175810_373638/af_fewshot/level12_shot5/metrics.json",
+      "source_sha256": "1c2aed20b91efe9f9e15d5c90ccda82a20674fa803b9bf0420f5803552be2195"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 62,
+      "level": 15,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed62_20261023_175810_373638/af_fewshot/level15_shot5/metrics.json",
+      "source_sha256": "aca6e78c4320940ab70d09ef9286d402b493434b1867ac2cf8bd0506f108939a"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 62,
+      "level": 17,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed62_20261023_175810_373638/af_fewshot/level17_shot5/metrics.json",
+      "source_sha256": "79746e5792ed5453357f11e02f0d5e41c1fa227b93f75903fbaf6b33c0d6f257"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 62,
+      "level": 20,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed62_20261023_175810_373638/af_fewshot/level20_shot5/metrics.json",
+      "source_sha256": "ff86db1dd3fcef6022a1eb6e4e680e43c0d9a57a1d682e12e7f7ee4d577cb019"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 72,
+      "level": 5,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed72_20261023_180527_140392/af_fewshot/level5_shot5/metrics.json",
+      "source_sha256": "f2bc8d05a9a43778418181932e3b7dfd2bace185a9046484309471890f8c6370"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 72,
+      "level": 7,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed72_20261023_180527_140392/af_fewshot/level7_shot5/metrics.json",
+      "source_sha256": "c26cdf7f338b4eb6452b7bc43cc533f3dec6ba09ed58364db3ae1a93a96dac48"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 72,
+      "level": 10,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed72_20261023_180527_140392/af_fewshot/level10_shot5/metrics.json",
+      "source_sha256": "f5ce1097e5d7fa20b9ade5ad27905d43934694087abb2734d12437621aa21bf2"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 72,
+      "level": 12,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed72_20261023_180527_140392/af_fewshot/level12_shot5/metrics.json",
+      "source_sha256": "4c7bff87a28230ff6b385231b044154237ca16a03dbbcee101e8a391f036a26c"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 72,
+      "level": 15,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed72_20261023_180527_140392/af_fewshot/level15_shot5/metrics.json",
+      "source_sha256": "273b8e634418cc55de7b45e44ea4d6d6cb0a4553729b0b56b0664924e64367f0"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 72,
+      "level": 17,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed72_20261023_180527_140392/af_fewshot/level17_shot5/metrics.json",
+      "source_sha256": "e7baa87de6969dc720c40c80221e20aab0795b8060cb680135e17bdef86cf5b6"
+    },
+    {
+      "dataset": "IAT",
+      "method": "af_cal",
+      "seed": 72,
+      "level": 20,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_IAT_TEST/protocol_runs/af_author_burst_seed72_20261023_180527_140392/af_fewshot/level20_shot5/metrics.json",
+      "source_sha256": "357ec8790b24bd33d9075c8f3bb2458b36d1f21c465a1b08f62a1a12831d51de"
+    }
+  ]
+}

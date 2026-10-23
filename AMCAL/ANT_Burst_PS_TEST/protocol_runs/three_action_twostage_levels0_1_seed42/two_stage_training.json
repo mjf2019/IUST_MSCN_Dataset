@@ -1,0 +1,24 @@
+{
+  "refine_routing_only": false,
+  "reused_run": null,
+  "stage2_pretrain_epochs": 20,
+  "stage1_domains": [
+    0
+  ],
+  "stage1_rl_epochs": 12,
+  "cnn_refinement_domains": [
+    0,
+    1
+  ],
+  "cnn_refinement_max_epochs": 30,
+  "stage2_rl_domains": [
+    0,
+    1
+  ],
+  "stage2_rl_max_epochs": 12,
+  "context_warm_start": true,
+  "policy_warm_start": true,
+  "selector_replay_reset": true,
+  "heldout_scoring_during_training": false,
+  "preprocessing_sha256": "c95ec9dd4a051a8959197642fd759a2e683320987793c5f1f2a6181ec0771609"
+}

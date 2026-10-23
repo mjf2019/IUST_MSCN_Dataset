@@ -1,0 +1,137 @@
+{
+  "protocol": "author RAL core; clean-only source and independent held-out levels",
+  "author_commit": "2a34a4b1b1e11054a718233e19de0c2134fd68e8",
+  "author_source_sha256": "cd05e438e9bc2e2f2dfbdb08f02e97994c258ea8adbeafebbba160cdeb244c93",
+  "dataset": "IAT",
+  "seed": 42,
+  "budget_fraction": 0.2,
+  "source_files": {
+    "csv_sha256": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+    "row_map_sha256": "43666a3a6dc7a421ebab7942f89555c40f0fc5d2635e7a9d91d9eb52426057e0"
+  },
+  "partition_artifact_sha256": "ef3d6cb7e47006e56fad1f2b398fc7695f6b89f67ee56006604fb14ac7cc8458",
+  "initial_fraction": 0.005,
+  "initial_fraction_denominator": "all rows in level-0 CSV; rows selected only from eligible TRAIN in file order",
+  "initial_labels": 27,
+  "initial_source_ids": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26
+  ],
+  "initial_class_counts": {
+    "0": 27
+  },
+  "training_levels": [
+    0
+  ],
+  "test_levels": [
+    1,
+    3,
+    5,
+    7,
+    10,
+    12,
+    15,
+    17,
+    20
+  ],
+  "checkpoint_sha256": "4dac280d70fa60806de5e88c94b9c106c5950f13a1c1ae6afde2f2ddf7a67ac4",
+  "model_reset": "deserialize the same clean-0 checkpoint before EVERY level; counters/alpha/threshold/history reset",
+  "test_order": "fixed seed permutation of held-out source IDs, matching AMCAL stream order",
+  "preprocessing": "raw numeric permitted features; saved scaler ignored; template supplies schema/identity partitions only",
+  "parameters": {
+    "threshold_uncertainty": 0.9,
+    "threshold_greedy": 0.025,
+    "eta": 0.01,
+    "reward": 1,
+    "penalty": -1,
+    "model_update_frequency": 1
+  },
+  "classifiers": [
+    {
+      "name": "KNeighborsClassifier",
+      "parameters": {
+        "algorithm": "auto",
+        "leaf_size": 30,
+        "metric": "minkowski",
+        "metric_params": null,
+        "n_jobs": null,
+        "n_neighbors": 5,
+        "p": 2,
+        "weights": "uniform"
+      }
+    },
+    {
+      "name": "RandomForestClassifier",
+      "parameters": {
+        "bootstrap": true,
+        "ccp_alpha": 0.0,
+        "class_weight": null,
+        "criterion": "gini",
+        "max_depth": null,
+        "max_features": "sqrt",
+        "max_leaf_nodes": null,
+        "max_samples": null,
+        "min_impurity_decrease": 0.0,
+        "min_samples_leaf": 1,
+        "min_samples_split": 2,
+        "min_weight_fraction_leaf": 0.0,
+        "monotonic_cst": null,
+        "n_estimators": 100,
+        "n_jobs": null,
+        "oob_score": false,
+        "random_state": null,
+        "verbose": 0,
+        "warm_start": false
+      }
+    },
+    {
+      "name": "DecisionTreeClassifier",
+      "parameters": {
+        "ccp_alpha": 0.0,
+        "class_weight": null,
+        "criterion": "gini",
+        "max_depth": null,
+        "max_features": null,
+        "max_leaf_nodes": null,
+        "min_impurity_decrease": 0.0,
+        "min_samples_leaf": 1,
+        "min_samples_split": 2,
+        "min_weight_fraction_leaf": 0.0,
+        "monotonic_cst": null,
+        "random_state": null,
+        "splitter": "best"
+      }
+    }
+  ],
+  "environment": {
+    "python": "3.11.9",
+    "numpy": "2.4.0",
+    "sklearn": "1.8.0"
+  },
+  "adaptation_note": "native author budget gate plus requested strict floor(budget*N) ceiling per level; not original one-file example split"
+}

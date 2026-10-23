@@ -1,0 +1,23 @@
+{
+  "fingerprint": {
+    "stage": {
+      "name": "source",
+      "kind": "source",
+      "source": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\structured_bank3_balancedref_lr0p0005_seed42",
+      "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\light_ps_paironly_batch5_trainseed42\\source",
+      "args": []
+    },
+    "inputs": {
+      "initial_cnn_model.pth": "e401c910b4fc5db501d5c926454a44170b33a2734686a2b88b734ed7614f211f",
+      "adversarial_best_context.pth": "3d8e85521a2754749432c05b46ad65df02eaba0cafc8fc1e16cddabb3354e49f",
+      "protocol_preprocessing.joblib": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663"
+    }
+  },
+  "outputs": {
+    "Models/adversarial_best_context.pth": "252e26c42e43e97412e9a93d84532d1ba59b8208d7e6ea6bf3dd681aaf1c9060",
+    "Models/adversarial_best_dqn.pth": "5dbb4f33b75162a5c6a723da6f1380089cb6de11c9a9b55d36a6efcb26df1b9d",
+    "Models/initial_cnn_model.pth": "bd00a78d2eb5ac14325a2f33f03f9cf38f1877e18af89348f86b1e79dc815575",
+    "Models/protocol_preprocessing.joblib": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663",
+    "source_training.json": "adfeef2bd14995904a06c7e4d1e7a3efd07785cf7d58b169895b4bb69daa11cb"
+  }
+}

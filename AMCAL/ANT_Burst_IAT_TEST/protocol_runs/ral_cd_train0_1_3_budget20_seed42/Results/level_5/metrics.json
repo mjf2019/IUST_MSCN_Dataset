@@ -1,0 +1,431 @@
+{
+  "method": "RAL-CD",
+  "level": 5,
+  "seed": 42,
+  "online": {
+    "accuracy": 0.7185461323392358,
+    "precision": 0.7154104731863189,
+    "recall": 0.6966300667988744,
+    "macro_f1": 0.7050495073012059,
+    "confusion_matrix": [
+      [
+        48,
+        5,
+        4,
+        19,
+        3,
+        24
+      ],
+      [
+        5,
+        60,
+        1,
+        3,
+        0,
+        10
+      ],
+      [
+        3,
+        2,
+        253,
+        7,
+        7,
+        10
+      ],
+      [
+        9,
+        3,
+        3,
+        146,
+        1,
+        56
+      ],
+      [
+        4,
+        0,
+        1,
+        5,
+        58,
+        12
+      ],
+      [
+        23,
+        7,
+        15,
+        58,
+        2,
+        206
+      ]
+    ],
+    "samples": 1073
+  },
+  "labels": 176,
+  "label_cap": 214,
+  "initial": {
+    "accuracy": 0.6915191053122087,
+    "precision": 0.6852293155626428,
+    "recall": 0.6558800919486282,
+    "macro_f1": 0.6621393331507112,
+    "confusion_matrix": [
+      [
+        47,
+        5,
+        9,
+        18,
+        1,
+        23
+      ],
+      [
+        6,
+        63,
+        0,
+        2,
+        0,
+        8
+      ],
+      [
+        8,
+        5,
+        234,
+        22,
+        4,
+        9
+      ],
+      [
+        8,
+        4,
+        2,
+        153,
+        3,
+        48
+      ],
+      [
+        4,
+        7,
+        2,
+        9,
+        39,
+        19
+      ],
+      [
+        31,
+        7,
+        12,
+        54,
+        1,
+        206
+      ]
+    ],
+    "samples": 1073
+  },
+  "final": {
+    "accuracy": 0.7837837837837838,
+    "precision": 0.7905638600270767,
+    "recall": 0.7795395723525393,
+    "macro_f1": 0.784696358172449,
+    "confusion_matrix": [
+      [
+        63,
+        4,
+        8,
+        8,
+        3,
+        17
+      ],
+      [
+        3,
+        67,
+        0,
+        1,
+        0,
+        8
+      ],
+      [
+        5,
+        1,
+        260,
+        6,
+        0,
+        10
+      ],
+      [
+        11,
+        1,
+        4,
+        156,
+        1,
+        45
+      ],
+      [
+        1,
+        0,
+        2,
+        6,
+        68,
+        3
+      ],
+      [
+        20,
+        5,
+        9,
+        49,
+        1,
+        227
+      ]
+    ],
+    "samples": 1073
+  },
+  "reference_initial": {
+    "accuracy": 0.7054986020503262,
+    "precision": 0.7013255497438707,
+    "recall": 0.702703972737225,
+    "macro_f1": 0.6989124583780312,
+    "confusion_matrix": [
+      [
+        35,
+        4,
+        21,
+        11,
+        5,
+        24
+      ],
+      [
+        5,
+        62,
+        4,
+        3,
+        1,
+        3
+      ],
+      [
+        7,
+        5,
+        222,
+        14,
+        5,
+        27
+      ],
+      [
+        11,
+        1,
+        20,
+        138,
+        2,
+        49
+      ],
+      [
+        0,
+        0,
+        2,
+        0,
+        75,
+        3
+      ],
+      [
+        12,
+        7,
+        26,
+        41,
+        3,
+        225
+      ]
+    ],
+    "samples": 1073
+  },
+  "reference_final": {
+    "accuracy": 0.7017707362534948,
+    "precision": 0.7050347190270383,
+    "recall": 0.7003511928207508,
+    "macro_f1": 0.7000508572135424,
+    "confusion_matrix": [
+      [
+        42,
+        3,
+        20,
+        13,
+        1,
+        21
+      ],
+      [
+        6,
+        59,
+        3,
+        1,
+        0,
+        9
+      ],
+      [
+        5,
+        6,
+        218,
+        13,
+        6,
+        32
+      ],
+      [
+        13,
+        2,
+        20,
+        138,
+        6,
+        42
+      ],
+      [
+        0,
+        0,
+        5,
+        0,
+        73,
+        2
+      ],
+      [
+        7,
+        9,
+        31,
+        42,
+        2,
+        223
+      ]
+    ],
+    "samples": 1073
+  },
+  "gain_pp": 9.226467847157505,
+  "forgetting_pp": 0.37278657968313755,
+  "unqueried_initial": {
+    "accuracy": 0.7157190635451505,
+    "precision": 0.6944504803458634,
+    "recall": 0.6777844054105874,
+    "macro_f1": 0.680847645908155,
+    "confusion_matrix": [
+      [
+        31,
+        5,
+        9,
+        14,
+        1,
+        14
+      ],
+      [
+        5,
+        53,
+        0,
+        0,
+        0,
+        6
+      ],
+      [
+        7,
+        5,
+        208,
+        17,
+        4,
+        7
+      ],
+      [
+        5,
+        2,
+        2,
+        135,
+        3,
+        38
+      ],
+      [
+        4,
+        4,
+        2,
+        5,
+        37,
+        13
+      ],
+      [
+        25,
+        5,
+        11,
+        42,
+        0,
+        178
+      ]
+    ],
+    "samples": 897
+  },
+  "unqueried_final": {
+    "accuracy": 0.7413600891861761,
+    "precision": 0.7373924734406683,
+    "recall": 0.7236100303049691,
+    "macro_f1": 0.7299764463923646,
+    "confusion_matrix": [
+      [
+        34,
+        4,
+        8,
+        8,
+        3,
+        17
+      ],
+      [
+        3,
+        52,
+        0,
+        1,
+        0,
+        8
+      ],
+      [
+        5,
+        1,
+        226,
+        6,
+        0,
+        10
+      ],
+      [
+        11,
+        1,
+        4,
+        123,
+        1,
+        45
+      ],
+      [
+        1,
+        0,
+        2,
+        6,
+        53,
+        3
+      ],
+      [
+        20,
+        5,
+        9,
+        49,
+        1,
+        177
+      ]
+    ],
+    "samples": 897
+  },
+  "timing": {
+    "online_seconds": 247.0702557999175,
+    "prediction_seconds": 20.192452799412422,
+    "query_seconds": 19.204254901385866,
+    "update_seconds": 207.65674739994574,
+    "ms_per_row": 230.26118900271902,
+    "scope": "CPU wall time; includes prediction, query, ADWIN and all refits; excludes initialization, observers and disk I/O"
+  },
+  "adaptation": {
+    "drift_count": 0,
+    "drifts": [],
+    "retained_training_rows": 9839,
+    "initial_memory_removed": false,
+    "refits": 176,
+    "max_fit_rows": 9839,
+    "reward_window": 161,
+    "adwin_backend": "river",
+    "adwin_library_version": "0.26.1"
+  },
+  "protocol": "predict-score-query-update; independent initial checkpoint per level",
+  "order": "seeded global permutation; same convention as existing Burst baseline runner",
+  "test_domain_sha256": "9f5d476c5a0bdccf881e720949b09da4aca9aefa62a8fd5b946556ee0bea4215",
+  "checkpoint_sha256": "80be691135906c549976064572ae2e8453834834fafcf7967f27c39bdba270ab"
+}

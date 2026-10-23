@@ -1,0 +1,52 @@
+{
+  "inputs": {
+    "args": [
+      "train",
+      "--source-run",
+      "AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\paironly_pipeline_seed42\\accuracy",
+      "--output",
+      "AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\paironly_pipeline_seed42\\counterfactual",
+      "--burst-dir",
+      "AMCAL\\ANT_Burst_PS_TEST\\Dataset_official_v1\\AdvBurst_FTSC-PS",
+      "--profile",
+      "accuracy",
+      "--seed",
+      "42",
+      "--device",
+      "cuda",
+      "--context-lr",
+      "0.0005",
+      "--context-alpha",
+      "0.8",
+      "--gamma",
+      "0.95",
+      "--budget-fraction",
+      "0.2",
+      "--eval-epsilon",
+      "0.05",
+      "--update-policy",
+      "learned",
+      "--warm-start-enhancement",
+      "--aligned-sequence",
+      "--counterfactual-utility",
+      "--query-schedule",
+      "uniform",
+      "--levels",
+      "0",
+      "1",
+      "3",
+      "--epochs",
+      "3",
+      "--patience",
+      "3"
+    ],
+    "input_hashes": {
+      "initial_cnn_model.pth": "e401c910b4fc5db501d5c926454a44170b33a2734686a2b88b734ed7614f211f",
+      "adversarial_best_context.pth": "3d8e85521a2754749432c05b46ad65df02eaba0cafc8fc1e16cddabb3354e49f",
+      "protocol_preprocessing.joblib": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663",
+      "final_enhancement.pth": "087e109fe3d576d5ededc666dc51f1e29710020db0878e1ac74dd2a17850b275"
+    }
+  },
+  "checkpoint_sha256": "91bf2ed15f8baac4aa68c41220cbd053a70275894e6d32a19148a2f70a4f22c4",
+  "training_log_sha256": "d6284d82ee02223e206fa75d0a04eba858f7bef14d6da1f96b2f8f90b0018277"
+}

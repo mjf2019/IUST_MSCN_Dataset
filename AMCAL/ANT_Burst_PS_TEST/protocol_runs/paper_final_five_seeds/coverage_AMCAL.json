@@ -1,0 +1,340 @@
+{
+  "version": 1,
+  "dataset": "PS",
+  "group": "AMCAL",
+  "seeds": [
+    42,
+    48,
+    54,
+    62,
+    72
+  ],
+  "levels": [
+    5,
+    7,
+    10,
+    12,
+    15,
+    17,
+    20
+  ],
+  "online_training_seed": 42,
+  "protocol": "Online evaluation seeds with fixed offline checkpoints; AF independently fitted/calibrated per seed",
+  "entries": [
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 42,
+      "level": 5,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_1d9696b8d388/learned_level5_metrics.json",
+      "source_sha256": "4a08b199d60457aa385e3ef0c15121cbbe9ec5d9a97f95fbd97ee2942c980e2f"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 42,
+      "level": 7,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_1d9696b8d388/learned_level7_metrics.json",
+      "source_sha256": "4aeac54144b0a1490a6df6b5a23bb604e3a745f8f841cdfef899300d8c75e227"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 42,
+      "level": 10,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_1d9696b8d388/learned_level10_metrics.json",
+      "source_sha256": "005584171917c70d16728321ffc4782951787e5bce8e676d0b434b1aef48884e"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 42,
+      "level": 12,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_1d9696b8d388/learned_level12_metrics.json",
+      "source_sha256": "63d1cdd1b20c89b57aebf2f039f25a668a87283fe24e39e01eaaf37a580eb17e"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 42,
+      "level": 15,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_1d9696b8d388/learned_level15_metrics.json",
+      "source_sha256": "49cbaca2c5b0f6632d31e0e1e0b832bd4b2bff25da3a59315b9fb50c892e5a18"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 42,
+      "level": 17,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_1d9696b8d388/learned_level17_metrics.json",
+      "source_sha256": "b3942a3d8fd5575bedd24471cc1b345a489ddd3bd85f4420595d1072428cf526"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 42,
+      "level": 20,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_1d9696b8d388/learned_level20_metrics.json",
+      "source_sha256": "8e60ea3f4a32ea9d9b91e27e424d6de0d4fd31eae03bcb74a3f24e3ec65b64b5"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 48,
+      "level": 5,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_df0bfeb2410d/learned_level5_metrics.json",
+      "source_sha256": "4557e14f4c3103dd483d05b5bad2d706865e8be2adbe728485ff650f8390f1b9"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 48,
+      "level": 7,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_df0bfeb2410d/learned_level7_metrics.json",
+      "source_sha256": "dd00c8d5bebf5a937d970faafd99bc16531b87a8a0e56968e0ce894cce3882b1"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 48,
+      "level": 10,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_df0bfeb2410d/learned_level10_metrics.json",
+      "source_sha256": "2be968283ad6769c0827136dd3b1cd88560852de488b19ae1035806d030c7c1d"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 48,
+      "level": 12,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_df0bfeb2410d/learned_level12_metrics.json",
+      "source_sha256": "e9af82f02d18a09789da6b6316f69609bf492acd0a0462843d8e2e9c71548936"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 48,
+      "level": 15,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_df0bfeb2410d/learned_level15_metrics.json",
+      "source_sha256": "4fe30ec60263d79132acd21e2c99f0787229b7900eef034df871afd765c900b9"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 48,
+      "level": 17,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_df0bfeb2410d/learned_level17_metrics.json",
+      "source_sha256": "25e7d74ca89c03468e4901a22bdc47b6cbe82d6a6acc5fde80f3b2b28c457fab"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 48,
+      "level": 20,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_df0bfeb2410d/learned_level20_metrics.json",
+      "source_sha256": "d7a07e45ce153973d0e6746832e10b6f478c2b605c1f3e4918ece2bcbb052bd8"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 54,
+      "level": 5,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_6ea3ce645b0d/learned_level5_metrics.json",
+      "source_sha256": "ee2fe13638c9cde28a30dda3b2b39143c750663ef04f163e3b7f04812a50a01e"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 54,
+      "level": 7,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_6ea3ce645b0d/learned_level7_metrics.json",
+      "source_sha256": "d9ffb646de340211d0438749945064134cc134ebc569e154a8e190bb6d6036eb"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 54,
+      "level": 10,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_6ea3ce645b0d/learned_level10_metrics.json",
+      "source_sha256": "de062f355876ffc166472a042b81c99501e1a917cb947d1349cb1f5f754be992"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 54,
+      "level": 12,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_6ea3ce645b0d/learned_level12_metrics.json",
+      "source_sha256": "3a956d08c7002cbbf97feadf536c1511bcadf60564aa90659a887fece1abf59c"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 54,
+      "level": 15,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_6ea3ce645b0d/learned_level15_metrics.json",
+      "source_sha256": "4bb6ffac988e4dea64c2f46c9235ca01797361eb7c2a295dadecd9a1949b892c"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 54,
+      "level": 17,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_6ea3ce645b0d/learned_level17_metrics.json",
+      "source_sha256": "9378de4fb6db0572f3239d1257065b5eef70e2fe4020fd13b9766f850dd780a5"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 54,
+      "level": 20,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_6ea3ce645b0d/learned_level20_metrics.json",
+      "source_sha256": "416cacd4665ed26caeae5f4440dc58ed93b2b733abcbeb7bec33e8c044f717dd"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 62,
+      "level": 5,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_126dbbeac37e/learned_level5_metrics.json",
+      "source_sha256": "407221307cfededc6ccaa57c8bc58d726b23fbf3eedfcfa00fbd59471937475d"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 62,
+      "level": 7,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_126dbbeac37e/learned_level7_metrics.json",
+      "source_sha256": "83368252387a104a112262911e22e8c4daf69ac80f793aea7772bec1d200ee1c"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 62,
+      "level": 10,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_126dbbeac37e/learned_level10_metrics.json",
+      "source_sha256": "b1613676efaad1206b1ececbcc626a99f9fb831a8206b7d9adadcd7add62394f"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 62,
+      "level": 12,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_126dbbeac37e/learned_level12_metrics.json",
+      "source_sha256": "fcb3bbd33832579260176ecd7ab1f847f135e21f9a5541812b23a04f509c2bd5"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 62,
+      "level": 15,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_126dbbeac37e/learned_level15_metrics.json",
+      "source_sha256": "9ad64a040260aad325c9ea7e3f9e1a39cebf23d28e0424d4f1f7db1636895907"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 62,
+      "level": 17,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_126dbbeac37e/learned_level17_metrics.json",
+      "source_sha256": "cd8f0ed7c2a76e3ea26a03ef6dc44457e134c391558c230386e4e99edec3ef59"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 62,
+      "level": 20,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_126dbbeac37e/learned_level20_metrics.json",
+      "source_sha256": "46e0f8781670517453938576b437918803b56c9d9a1187498e3d1eb7972a33d1"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 72,
+      "level": 5,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_0631549636df/learned_level5_metrics.json",
+      "source_sha256": "0d87f609fec17326967223c2e7233e41be175562b63da77487bcf3a9547dd41a"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 72,
+      "level": 7,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_0631549636df/learned_level7_metrics.json",
+      "source_sha256": "fa9bd74250c8b981d1903563da3070177971be6b315054629f733fb54b309386"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 72,
+      "level": 10,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_0631549636df/learned_level10_metrics.json",
+      "source_sha256": "1bab9b1308f7c9dad6d867cd18110638dab84e63941abe997ce4b9b7333f246d"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 72,
+      "level": 12,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_0631549636df/learned_level12_metrics.json",
+      "source_sha256": "9136c7bf96408a9b7e6f1898a98a96a8b2a8b151d08f723d599b15cc5c55f35f"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 72,
+      "level": 15,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_0631549636df/learned_level15_metrics.json",
+      "source_sha256": "e0220da0d06ba489aba0d6ab962cb7bdbc64f93e4f0e49696b4b0a76587e1e19"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 72,
+      "level": 17,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_0631549636df/learned_level17_metrics.json",
+      "source_sha256": "59f424d461c74ff6718e0694a2482ddba502508b3e345d99d8ecf21ef0931936"
+    },
+    {
+      "dataset": "PS",
+      "method": "amcal",
+      "seed": 72,
+      "level": 20,
+      "status": "complete",
+      "source": "AMCAL/ANT_Burst_PS_TEST/protocol_runs/light_ps_paironly_batch5_trainseed42/paironly_batch5/Results/evaluation_0631549636df/learned_level20_metrics.json",
+      "source_sha256": "e2e90ed61bb2fd148115d30c00022b5162050b185cb79eff317a805d379f9cb4"
+    }
+  ]
+}

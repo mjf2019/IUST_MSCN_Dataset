@@ -1,0 +1,23 @@
+{
+  "stage1_domains": [
+    0
+  ],
+  "stage1_rl_epochs": 12,
+  "cnn_refinement_domains": [
+    0,
+    3,
+    12
+  ],
+  "cnn_refinement_max_epochs": 30,
+  "stage2_rl_domains": [
+    0,
+    3,
+    12
+  ],
+  "stage2_rl_max_epochs": 30,
+  "context_warm_start": true,
+  "policy_warm_start": true,
+  "selector_replay_reset": true,
+  "heldout_scoring_during_training": false,
+  "preprocessing_sha256": "e3968c7fd8d0054fb4520277e6a25f2ce6127dd59c94ee661c52dcc5a2188355"
+}

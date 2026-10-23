@@ -1,0 +1,18 @@
+{
+  "protocol": "independent supervised route head; uniform paid training labels only; ties excluded",
+  "input_width": 112,
+  "seed": 42,
+  "levels": [
+    0,
+    1,
+    3
+  ],
+  "context_lr": 0.0001,
+  "budget_fraction": 0.2,
+  "validation_accuracy": 0.7275551413482448,
+  "model_hashes": {
+    "initial_cnn_model.pth": "16b2c531add95691a04aaef7f9bd041212cb212112eb1702efbb415786b98d54",
+    "adversarial_best_context.pth": "92f1f4b5949630058ab652627870e40430d350f08bce20f92345b833dd62f62b",
+    "protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b"
+  }
+}

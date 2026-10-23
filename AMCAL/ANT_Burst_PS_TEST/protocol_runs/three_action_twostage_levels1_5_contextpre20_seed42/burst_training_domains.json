@@ -1,0 +1,44 @@
+{
+  "train_ids": {
+    "rows": 3230,
+    "domains": [
+      {
+        "level": 0.0,
+        "sha256": "0232a51c02cc7b91e073df3ec9c01f59db0b4824a5c9094b9c6ee126161f6c9b",
+        "alignment": "level-0 source IDs"
+      },
+      {
+        "level": 1.0,
+        "sha256": "ea6002429f709aa139baf0766715f7616a3635c31d5a32ecba5e5d96f2b4e891",
+        "alignment": "explicit source_row map"
+      },
+      {
+        "level": 5.0,
+        "sha256": "369b5bd9a05c19eb9a1af87e61233701bec8e3d033249f8cdc00f359295563e7",
+        "alignment": "explicit source_row map"
+      }
+    ],
+    "protocol": "supplied Burst CSVs, not generated FGSM; fixed level-0 source partition"
+  },
+  "val_ids": {
+    "rows": 1075,
+    "domains": [
+      {
+        "level": 0.0,
+        "sha256": "0232a51c02cc7b91e073df3ec9c01f59db0b4824a5c9094b9c6ee126161f6c9b",
+        "alignment": "level-0 source IDs"
+      },
+      {
+        "level": 1.0,
+        "sha256": "ea6002429f709aa139baf0766715f7616a3635c31d5a32ecba5e5d96f2b4e891",
+        "alignment": "explicit source_row map"
+      },
+      {
+        "level": 5.0,
+        "sha256": "369b5bd9a05c19eb9a1af87e61233701bec8e3d033249f8cdc00f359295563e7",
+        "alignment": "explicit source_row map"
+      }
+    ],
+    "protocol": "supplied Burst CSVs, not generated FGSM; fixed level-0 source partition"
+  }
+}

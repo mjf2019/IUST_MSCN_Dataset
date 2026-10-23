@@ -1,0 +1,24 @@
+{
+  "method": "RAL-author-core-clean0-bootstrap",
+  "budget": 0.2,
+  "mean_online_accuracy": 70.66716829696514,
+  "mean_macro_f1": 70.81344766900237,
+  "labels": 1105,
+  "mean_source_drop_pp": -1.65374677002584,
+  "independent_levels": true,
+  "initial_labels": 27,
+  "training_levels": [
+    0
+  ],
+  "test_levels": [
+    1,
+    3,
+    5,
+    7,
+    10,
+    12,
+    15,
+    17,
+    20
+  ]
+}

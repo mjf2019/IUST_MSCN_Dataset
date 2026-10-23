@@ -1,0 +1,22 @@
+{
+  "method": "RAL-author-Git-example",
+  "dataset": "IAT",
+  "level": 0,
+  "seed": 42,
+  "initial_validation_accuracy": 0.06397515527950311,
+  "final_validation_accuracy": 0.5652173913043478,
+  "final_validation_macro_f1": 0.5397953846091438,
+  "online_accuracy": 0.5512064343163539,
+  "online_macro_f1": 0.5525661401001486,
+  "labels": 646,
+  "stream_rows": 3730,
+  "initial_labels": 27,
+  "actual_label_fraction": 0.17319034852546916,
+  "native_budget": 0.2,
+  "hard_global_cap_added": false,
+  "online_update_window": "all initial rows plus acquired feedback",
+  "final_history_rows": 673,
+  "stream_seconds": 351.9043529999908,
+  "rf_actual_n_estimators": 100,
+  "metrics_note": "initial/final validation follows author evaluate_performance including its refit; online metric is additional predict-before-feedback observation"
+}

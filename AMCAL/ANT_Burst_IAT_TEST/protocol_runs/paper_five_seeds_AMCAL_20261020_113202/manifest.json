@@ -1,0 +1,24 @@
+﻿{
+    "Budget":  0.2,
+    "ContextLR":  0.0005,
+    "Group":  "AMCAL",
+    "Epsilon":  0.05,
+    "TrainingSeed":  42,
+    "Protocol":  "Repeated online streams from fixed source checkpoints",
+    "Seeds":  [
+                  42,
+                  48,
+                  54,
+                  62,
+                  72
+              ],
+    "Levels":  [
+                   5,
+                   7,
+                   10,
+                   12,
+                   15,
+                   17,
+                   20
+               ]
+}

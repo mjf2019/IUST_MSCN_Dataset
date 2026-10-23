@@ -1,0 +1,48 @@
+{
+  "fingerprint": {
+    "stage": {
+      "name": "structured",
+      "kind": "structured",
+      "source": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42\\source",
+      "output": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42\\structured",
+      "args": [
+        "train",
+        "--source-run",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42\\source",
+        "--output",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42\\structured",
+        "--burst-dir",
+        "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\paironly_synthetic0_batch5_seed42\\SyntheticDomains",
+        "--levels",
+        "0",
+        "1",
+        "--balanced-reward-reference",
+        "--query-schedule",
+        "policy",
+        "--context-lr",
+        ".0005",
+        "--epochs",
+        "6",
+        "--patience",
+        "3",
+        "--seed",
+        "42",
+        "--device",
+        "cuda"
+      ]
+    },
+    "inputs": {
+      "initial_cnn_model.pth": "a896aad5805eea19cbc2511fe39918cff03b08e3e3a3a8b99792e4e6f740334e",
+      "adversarial_best_context.pth": "148913d4ba82b2a3272a32d0c8341d700c0d0fd3cea4d2b71d7d5d9d06d4c7bc",
+      "protocol_preprocessing.joblib": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663"
+    }
+  },
+  "outputs": {
+    "Models/adversarial_best_context.pth": "148913d4ba82b2a3272a32d0c8341d700c0d0fd3cea4d2b71d7d5d9d06d4c7bc",
+    "Models/adversarial_best_dqn.pth": "b8430729fe653bf16d2c477395785ce26102f09c726a11aaec3fccf2e8cc6a5c",
+    "Models/initial_cnn_model.pth": "a896aad5805eea19cbc2511fe39918cff03b08e3e3a3a8b99792e4e6f740334e",
+    "Models/protocol_preprocessing.joblib": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663",
+    "Models/structured_bank_ddqn.pth": "aa0fd52532e747bc98b11ba68b87198234d7dbcdbbcd96582b0d209bdf920def",
+    "structured_training.json": "55702d8cc2bff87c362fd6eff9299d13abcaf5477eed36857bcc1b8f9245c7a3"
+  }
+}

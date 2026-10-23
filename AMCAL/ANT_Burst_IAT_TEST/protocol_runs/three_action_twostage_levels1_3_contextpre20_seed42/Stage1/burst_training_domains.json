@@ -1,0 +1,24 @@
+{
+  "train_ids": {
+    "rows": 3221,
+    "domains": [
+      {
+        "level": 0.0,
+        "sha256": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+        "alignment": "level-0 source IDs"
+      }
+    ],
+    "protocol": "supplied Burst CSVs, not generated FGSM; fixed level-0 source partition"
+  },
+  "val_ids": {
+    "rows": 1073,
+    "domains": [
+      {
+        "level": 0.0,
+        "sha256": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+        "alignment": "level-0 source IDs"
+      }
+    ],
+    "protocol": "supplied Burst CSVs, not generated FGSM; fixed level-0 source partition"
+  }
+}

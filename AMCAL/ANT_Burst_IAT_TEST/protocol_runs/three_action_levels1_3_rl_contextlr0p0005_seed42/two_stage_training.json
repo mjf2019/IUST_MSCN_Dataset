@@ -1,0 +1,26 @@
+{
+  "refine_routing_only": true,
+  "reused_run": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\three_action_twostage_levels1_3_contextpre20_seed42",
+  "stage2_pretrain_epochs": 0,
+  "stage1_domains": [
+    0
+  ],
+  "stage1_rl_epochs": 12,
+  "cnn_refinement_domains": [
+    0,
+    1,
+    3
+  ],
+  "cnn_refinement_max_epochs": 30,
+  "stage2_rl_domains": [
+    0,
+    1,
+    3
+  ],
+  "stage2_rl_max_epochs": 12,
+  "context_warm_start": true,
+  "policy_warm_start": true,
+  "selector_replay_reset": true,
+  "heldout_scoring_during_training": false,
+  "preprocessing_sha256": "28704eadc4c09572c3acdfc3a3cb22324906dee002d45ad04e4dfa28cb6d78aa"
+}
