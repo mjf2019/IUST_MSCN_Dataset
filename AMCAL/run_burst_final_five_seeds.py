@@ -48,6 +48,8 @@ def amcal_execution(e, seed):
     return (e.get("seed") == seed and e.get("budget_fraction") == .2
             and e.get("context_lr") == .00025 and not e.get("continual")
             and e.get("context_count") == 1 and e.get("action_count") == 3
+            and e.get("modes") == ["learned"]
+            and e.get("query_schedule") == "policy" and e.get("update_policy") == "learned"
             and not e.get("architecture_ablation")
             and e.get("query_budget_bonus", {}).get("strength") == 1
             and e.get("paid_replay", {}).get("mode") == "batch5"
@@ -134,7 +136,9 @@ def complete(dataset, method, seed):
         invoke(["AMCAL/amcal_final_enhancement.py", "evaluate", "--output", main,
                 "--burst-dir", burst, "--levels", *LEVELS, "--seed", seed,
                 "--budget-fraction", ".2", "--context-lr", ".00025",
-                "--context-count", "1", "--paid-replay-mode", "batch5",
+                "--context-count", "1", "--modes", "learned",
+                "--query-schedule", "policy", "--update-policy", "learned",
+                "--paid-replay-mode", "batch5",
                 "--query-budget-bonus", "1", "--online-memory-ce-weight", ".1",
                 "--evaluation-tag", "final_five_seeds_bonus1_batch5_lr0p00025",
                 "--device", "cuda"])
