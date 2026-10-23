@@ -1,0 +1,24 @@
+{
+  "protocol_version": 3,
+  "seed": 42,
+  "training_perturbations": [
+    0.0,
+    1.0,
+    3.0
+  ],
+  "source_sha256": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+  "source_rows": 5367,
+  "split_sizes": {
+    "train": 3221,
+    "validation": 1073,
+    "test": 1073
+  },
+  "split_rule": "official train/validation/test; exact-feature overlap removed from later partitions; no oversampling",
+  "selector_target": "DDQN gamma=0.95; next sample; terminal at budget exhaustion or stream end",
+  "uncertainty": "1 - max softmax of modulated input",
+  "target_sync": "offline: 15 epochs; online: 15 successful selector optimizer steps",
+  "preprocessing": "fit on training only",
+  "offline_labels": "fully supervised train partition",
+  "loss": "0.8*context_ce + 0.2/(1 + original_ce/(context_ce+1e-8)); no clamp",
+  "limitation": "Exact-feature grouping does not establish session/time independence."
+}
