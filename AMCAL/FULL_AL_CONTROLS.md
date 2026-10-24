@@ -23,7 +23,7 @@ decisions. Despite the inherited mode name, no selector inference or learning
 occurs. Compute each route's maximum class softmax probability. Predict with
 the route having the larger confidence (ties choose Frozen), including on
 queried rows. Query when 1 minus that confidence reaches a fixed threshold,
-until the cap. The threshold is the 80th percentile of the same routed score
+until the cap. The threshold is the 75th percentile of the same routed score
 on original-domain VAL features with the initial CNN and Context. No VAL
 labels or target data calibrate the threshold. Do not fill unused budget.
 Actual label use may be below 20% and must be reported.
@@ -41,3 +41,9 @@ in separate terminals. Each runs Random and Uncertainty serially. Add
 After all four runs finish, use `push_amcal_full_al_controls.ps1`.
 
 Validation: Python syntax checked; no experiments or package installations run.
+
+
+The current runner passes `--uncertainty-quantile 0.75`; budget remains 0.2.
+Calibration quantile and feedback cap are separate parameters. The new
+`component_full_uncertainty_q75_seed42` tag preserves archived q80 outputs.
+The push helper selects the existing Random control and the new q75 control.

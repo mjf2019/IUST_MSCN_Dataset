@@ -12,7 +12,7 @@ try {
                 $e = Get-Content $_.FullName -Raw | ConvertFrom-Json
                 $e.seed -eq $Seed -and (
                     $e.evaluation_tag -like "component_full_random_seed${Seed}*" -or
-                    $e.evaluation_tag -like "component_full_uncertainty_seed${Seed}*"
+                    $e.evaluation_tag -like "component_full_uncertainty_q75_seed${Seed}*"
                 )
             } |
             Select-Object -ExpandProperty DirectoryName -Unique
@@ -42,3 +42,4 @@ try {
 } finally {
     Pop-Location
 }
+

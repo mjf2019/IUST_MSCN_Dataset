@@ -22,6 +22,7 @@ try {
     foreach ($item in $controls) {
         $mode = if ($item -eq 'Random') { 'random_al' } else { 'learned' }
         $tag = 'component_full_' + $item.ToLowerInvariant() + '_seed' + $Seed
+        if ($item -eq 'Uncertainty') { $tag = 'component_full_uncertainty_q75_seed' + $Seed }
         $runArgs = @(
             'AMCAL/amcal_final_enhancement.py', 'evaluate',
             '--output', "$root/protocol_runs/$model/paironly_batch5",
@@ -36,7 +37,7 @@ try {
             '--evaluation-tag', $tag, '--skip-existing-completed'
         )
         if ($item -eq 'Uncertainty') {
-            $runArgs += @('--uncertainty-query','--uncertainty-routing')
+            $runArgs += @('--uncertainty-query','--uncertainty-routing','--uncertainty-quantile','0.75')
         }
         & $python @runArgs
         if ($LASTEXITCODE -ne 0) { throw "Evaluation failed: $Dataset / $item" }
@@ -44,3 +45,4 @@ try {
 } finally {
     Pop-Location
 }
+

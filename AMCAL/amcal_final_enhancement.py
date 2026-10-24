@@ -486,7 +486,7 @@ def evaluate(a):
     if a.router_refresh and not config.protected_reference:
         raise ValueError('Router refresh requires protected TRAIN/paid-label references.')
     for key, value in saved['training_args'].items():
-        if key in ('seed', 'budget_fraction', 'uncertainty_query', 'uncertainty_routing'): continue
+        if key in ('seed', 'budget_fraction', 'uncertainty_query', 'uncertainty_routing', 'uncertainty_quantile'): continue
         if key in ('context_lr', 'context_alpha') and getattr(a, key) is not None: continue
         setattr(a, key, value)
     legacy.core.SELECTION_COST = a.selection_cost
@@ -516,7 +516,7 @@ def evaluate(a):
                 del calibration_bank, calibration_executor, initial_context, chunks, output
             else:
                 scores = (1 - calibration_logits.softmax(1).amax(1)).cpu().numpy()
-        a.uncertainty_threshold = float(np.quantile(scores, 1 - a.budget_fraction))
+        a.uncertainty_threshold = float(np.quantile(scores, a.uncertainty_quantile))
         a.uncertainty_calibration_rows = len(scores)
         del calibration_cnn, calibration_logits, scores
     domains = {level: legacy.read_domain(a.burst_dir, artifact, level, 'test_ids') for level in a.levels}
@@ -545,7 +545,7 @@ def evaluate(a):
             score='1 - max frozen softmax', threshold=a.uncertainty_threshold,
             calibration='level-0 VAL features only; no target data or labels',
             calibration_rows=a.uncertainty_calibration_rows,
-            quantile=1-a.budget_fraction,
+            quantile=a.uncertainty_quantile,
             query='request on score >= threshold until hard cap; unused budget allowed',
             routing='inherited learned prediction routing on non-query rows',
             adaptation='unchanged batch5 Context adaptation and paid-only selector updates')
@@ -833,6 +833,7 @@ def parser():
     p.add_argument('--evaluation-tag', default='', help='Unique repeat label for identical-trajectory timing repetitions.')
     p.add_argument('--endpoint-metrics',action='store_true',help='Observer-only paired AC/PR/RC/F1 audit.')
     p.add_argument('--uncertainty-query', action='store_true', help='Replace query decisions by source-VAL-calibrated Frozen least confidence.')
+    p.add_argument('--uncertainty-quantile', type=float, default=.75, help='Source-VAL uncertainty calibration quantile; independent of the label budget (default .75).')
     p.add_argument('--uncertainty-routing', action='store_true', help='Also replace RL routing by least uncertainty and disable all selector inference/learning.')
     p.add_argument('--router-refresh', action='store_true',
                    help='After paid feedback, recalibrate routing on existing references with current-bank targets.')
@@ -858,6 +859,8 @@ def main(argv=None):
             p.error('Random AL requires independent single-Context evaluation with Bonus=0 and no other routing controls.')
     if a.uncertainty_routing and not a.uncertainty_query:
         p.error('--uncertainty-routing requires --uncertainty-query.')
+    if a.uncertainty_query and (not np.isfinite(a.uncertainty_quantile) or not 0 < a.uncertainty_quantile < 1):
+        p.error('--uncertainty-quantile must be finite and in (0,1).')
     if a.uncertainty_query:
         if (a.command != 'evaluate' or a.context_count != 1 or a.modes != ['learned']
                 or a.query_schedule != 'policy' or a.update_policy != 'learned'
@@ -1012,6 +1015,7 @@ def main(argv=None):
 
 
 if __name__ == '__main__': main()
+
 
 
 
