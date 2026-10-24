@@ -90,6 +90,9 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             warmup=False, rollout_seed=None, reference=None, same_level=False, continuation=None,
             paid_supervision=False, next_domain_features=None, domain_level=None):
     config = a.config
+    uncertainty_threshold = getattr(a, 'uncertainty_threshold', None)
+    if uncertainty_threshold is not None and (training or warmup or mode != 'learned' or len(bank) != 1 or a.query_schedule != 'policy'):
+        raise ValueError('Uncertainty querying is an evaluation-only one-Context policy control.')
     ablation=getattr(a,'architecture_ablation','none')
     no_selector=ablation in ('no_rl','frozen')
     no_context=ablation in ('no_context','frozen')
@@ -157,6 +160,10 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     audit_rng = np.random.default_rng(seed + 260917)
     timer = StreamTimer(x.device, enabled=not training)
     with timer.stage('cache'): frozen, embeddings = legacy.base_cache(cnn, x)
+    uncertainty_scores = None
+    if uncertainty_threshold is not None:
+        with timer.stage('cache'):
+            uncertainty_scores = (1 - frozen.softmax(1).amax(1)).detach().cpu().numpy()
     boundary_cache = None
     if next_domain_features is not None:
         boundary_x, boundary_count = next_domain_features
@@ -181,6 +188,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         inputs = x[pos:pos+1]
         versions = agent.versions.copy()
         gate = int(pos in schedule) if schedule is not None else -1
+        if uncertainty_scores is not None:
+            gate = int(used < cap and uncertainty_scores[pos] >= uncertainty_threshold)
         state_gate = 2 + int(destinations[pos]) if a.update_policy == 'fixed' and gate == 1 else gate
         with timer.stage('selection'):
             full = True; candidate = 0
@@ -262,6 +271,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             zero = torch.zeros_like(state) if state is not None else None
             skip_next = zero
             next_gate = int(pos+1 in schedule) if schedule is not None else -1
+            if uncertainty_scores is not None:
+                next_gate = int(pos+1 < n and used < cap and uncertainty_scores[min(pos+1,n-1)] >= uncertainty_threshold)
             if bridge and schedule is not None:
                 next_schedule = np.random.default_rng(seed+819003).choice(next_count,next_cap,replace=False)
                 next_gate = int(0 in next_schedule)
@@ -414,6 +425,9 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             reward=reward, gain=gain, harm=harm, reference_counts=reference_counts,
             predictions=[int(v) if known else None for v, known in zip(route_predictions, observed)],
             scores=scores))
+        if uncertainty_scores is not None:
+            traces[-1]['uncertainty_score'] = float(uncertainty_scores[pos])
+            traces[-1]['uncertainty_threshold'] = uncertainty_threshold
         if getattr(a, 'query_budget_bonus', 0.) > 0:
             traces[-1]['query_budget_bonus'] = query_bonus
             traces[-1]['selection_scores'] = None if values is None else values.detach().cpu().tolist()
@@ -506,4 +520,5 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     if continuation is not None:
         continuation.update(optimizers=optimizers, history=history, memory=memory, previous_count=n)
     return metrics, traces
+
 

@@ -463,6 +463,8 @@ def evaluate(a):
         raise ValueError('Routing oracle audit requires a full-bank evaluation without cascade.')
     if a.architecture_ablation!='none' and (config.cascade or config.routed_utility or config.architecture!='legacy'):
         raise ValueError('Component ablations require the original full-bank Context architecture without routed utility.')
+    if a.uncertainty_query and (config.cascade or config.routed_utility or config.architecture != 'legacy'):
+        raise ValueError('Uncertainty querying requires the original full-bank Context architecture.')
     a.config = config
     temporal_credit = saved.get('training_protocol', {}).get('temporal_credit')
     if temporal_credit is not None:
@@ -482,7 +484,7 @@ def evaluate(a):
     if a.router_refresh and not config.protected_reference:
         raise ValueError('Router refresh requires protected TRAIN/paid-label references.')
     for key, value in saved['training_args'].items():
-        if key in ('seed', 'budget_fraction'): continue
+        if key in ('seed', 'budget_fraction', 'uncertainty_query'): continue
         if key in ('context_lr', 'context_alpha') and getattr(a, key) is not None: continue
         setattr(a, key, value)
     legacy.core.SELECTION_COST = a.selection_cost
@@ -495,6 +497,14 @@ def evaluate(a):
     a.classes = [str(c) for c in artifact['label_encoder'].classes_]
     anchors = legacy.read_domain(a.burst_dir, artifact, 0, 'train_ids')[:2]
     clean = legacy.read_domain(a.burst_dir, artifact, 0, 'val_ids')[:2]
+    if a.uncertainty_query:
+        calibration_cnn = load_cnn(models, artifact)
+        with torch.no_grad():
+            calibration_logits, _ = legacy.base_cache(calibration_cnn, clean[0])
+            scores = (1 - calibration_logits.softmax(1).amax(1)).cpu().numpy()
+        a.uncertainty_threshold = float(np.quantile(scores, 1 - a.budget_fraction))
+        a.uncertainty_calibration_rows = len(scores)
+        del calibration_cnn, calibration_logits, scores
     domains = {level: legacy.read_domain(a.burst_dir, artifact, level, 'test_ids') for level in a.levels}
     audits = None
     if a.continual:
@@ -516,6 +526,15 @@ def evaluate(a):
                      runtime=dict(python=sys.version.split()[0], torch=str(torch.__version__),
                          numpy=np.__version__, device=str(legacy.core.device), cuda=torch.version.cuda,
                          gpu=torch.cuda.get_device_name(legacy.core.device) if legacy.core.device.type == 'cuda' else None))
+    if a.uncertainty_query:
+        execution['uncertainty_query'] = dict(version=1,
+            score='1 - max frozen softmax', threshold=a.uncertainty_threshold,
+            calibration='level-0 VAL features only; no target data or labels',
+            calibration_rows=a.uncertainty_calibration_rows,
+            quantile=1-a.budget_fraction,
+            query='request on score >= threshold until hard cap; unused budget allowed',
+            routing='inherited learned prediction routing on non-query rows',
+            adaptation='unchanged batch5 Context adaptation and paid-only selector updates')
     if a.architecture_ablation!='none':
         execution['architecture_ablation']=dict(version=1,mode=a.architecture_ablation,
             scope='component removal from fixed trained checkpoint; no retraining',
@@ -782,6 +801,7 @@ def parser():
     p.add_argument('--query-budget-bonus',type=float,default=0.,help='Evaluation-only deficit-dependent bonus for legal query action scores; zero preserves baseline.')
     p.add_argument('--evaluation-tag', default='', help='Unique repeat label for identical-trajectory timing repetitions.')
     p.add_argument('--endpoint-metrics',action='store_true',help='Observer-only paired AC/PR/RC/F1 audit.')
+    p.add_argument('--uncertainty-query', action='store_true', help='Replace query decisions by source-VAL-calibrated Frozen least confidence.')
     p.add_argument('--router-refresh', action='store_true',
                    help='After paid feedback, recalibrate routing on existing references with current-bank targets.')
     p.add_argument('--router-informative-weight', type=float, default=1.,
@@ -797,6 +817,14 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.uncertainty_query:
+        if (a.command != 'evaluate' or a.context_count != 1 or a.modes != ['learned']
+                or a.query_schedule != 'policy' or a.update_policy != 'learned'
+                or a.architecture_ablation != 'none' or a.continual
+                or a.query_budget_bonus or a.router_refresh or a.router_protected_replay
+                or a.context_damage_guard or not 0 < a.budget_fraction < 1):
+            p.error('Uncertainty querying requires independent one-Context learned evaluation, Budget in (0,1), Bonus=0, and no other routing controls.')
+
     if a.architecture_ablation!='none':
         if a.command!='evaluate' or a.context_count!=1 or a.modes!=['learned'] or a.query_schedule!='policy':
             p.error('Architecture removal requires one-Context learned policy checkpoint evaluation.')
@@ -942,5 +970,6 @@ def main(argv=None):
 
 
 if __name__ == '__main__': main()
+
 
 
