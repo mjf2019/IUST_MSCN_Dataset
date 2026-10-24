@@ -900,10 +900,11 @@ def main(argv=None):
         allowed_train = (a.command == 'train' and a.paid_replay_mode in ('batch3','batch5','batch7')
                          and a.paired_query_only_training and a.one_context_rl_training)
         if ((a.command != 'evaluate' and not allowed_train)
-                or a.context_count != 1 or a.modes != ['learned']
+                or a.context_count != 1
+                or (a.modes != ['learned'] and not (a.command == 'evaluate' and a.modes == ['random_al']))
                 or a.query_schedule != 'policy' or a.update_policy != 'learned'
                 or a.context_damage_guard or a.router_protected_replay or a.routed_utility):
-            p.error('Paid replay requires one-Context learned evaluation or dedicated PairOnly batch3/5/7 training.')
+            p.error('Paid replay requires one-Context learned/random_al evaluation or dedicated PairOnly batch3/5/7 training.')
     if a.paired_query_only_training and not a.query_value_only_training:
         p.error('--paired-query-only-training requires --query-value-only-training.')
     if a.connected_sequence_td and not a.paired_query_only_training:
@@ -1011,6 +1012,7 @@ def main(argv=None):
 
 
 if __name__ == '__main__': main()
+
 
 
 
