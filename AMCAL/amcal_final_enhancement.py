@@ -463,6 +463,8 @@ def evaluate(a):
         raise ValueError('Routing oracle audit requires a full-bank evaluation without cascade.')
     if a.architecture_ablation!='none' and (config.cascade or config.routed_utility or config.architecture!='legacy'):
         raise ValueError('Component ablations require the original full-bank Context architecture without routed utility.')
+    if 'random_al' in a.modes and (config.cascade or config.routed_utility or config.architecture != 'legacy'):
+        raise ValueError('Random AL requires the original full-bank Context architecture.')
     if a.uncertainty_query and (config.cascade or config.routed_utility or config.architecture != 'legacy'):
         raise ValueError('Uncertainty querying requires the original full-bank Context architecture.')
     a.config = config
@@ -484,7 +486,7 @@ def evaluate(a):
     if a.router_refresh and not config.protected_reference:
         raise ValueError('Router refresh requires protected TRAIN/paid-label references.')
     for key, value in saved['training_args'].items():
-        if key in ('seed', 'budget_fraction', 'uncertainty_query'): continue
+        if key in ('seed', 'budget_fraction', 'uncertainty_query', 'uncertainty_routing'): continue
         if key in ('context_lr', 'context_alpha') and getattr(a, key) is not None: continue
         setattr(a, key, value)
     legacy.core.SELECTION_COST = a.selection_cost
@@ -501,7 +503,19 @@ def evaluate(a):
         calibration_cnn = load_cnn(models, artifact)
         with torch.no_grad():
             calibration_logits, _ = legacy.base_cache(calibration_cnn, clean[0])
-            scores = (1 - calibration_logits.softmax(1).amax(1)).cpu().numpy()
+            if a.uncertainty_routing:
+                from enhancements.models import BankExecutor
+                initial_context = torch.load(models/'enhanced_context.pth', map_location='cpu', weights_only=False)['initial_state_dict']
+                calibration_bank = build_bank(models, artifact, config, initial_context, slots=1)
+                calibration_executor = BankExecutor(calibration_cnn, calibration_bank, config.bank_executor)
+                chunks = []
+                for start in range(0, len(clean[0]), 64):
+                    output = calibration_executor.outputs(clean[0][start:start+64], calibration_logits[start:start+64])
+                    chunks.append((1-output[0].softmax(2).amax(2).amax(1)).cpu().numpy())
+                scores = np.concatenate(chunks)
+                del calibration_bank, calibration_executor, initial_context, chunks, output
+            else:
+                scores = (1 - calibration_logits.softmax(1).amax(1)).cpu().numpy()
         a.uncertainty_threshold = float(np.quantile(scores, 1 - a.budget_fraction))
         a.uncertainty_calibration_rows = len(scores)
         del calibration_cnn, calibration_logits, scores
@@ -535,6 +549,15 @@ def evaluate(a):
             query='request on score >= threshold until hard cap; unused budget allowed',
             routing='inherited learned prediction routing on non-query rows',
             adaptation='unchanged batch5 Context adaptation and paid-only selector updates')
+    if a.uncertainty_routing:
+        execution['uncertainty_query'].update(version=2,
+            score='1 - max route confidence; route confidence = max class softmax',
+            routing='larger max class softmax; ties choose Frozen; includes queried rows',
+            learning='no RL inference or learning; only paid Context adaptation retained')
+        execution['uncertainty_routing'] = dict(version=1,
+            prediction='least-uncertain route before feedback',
+            query='uncertainty of that route versus fixed source-VAL threshold',
+            selector='no DDQN forwards or optimizer steps')
     if a.architecture_ablation!='none':
         execution['architecture_ablation']=dict(version=1,mode=a.architecture_ablation,
             scope='component removal from fixed trained checkpoint; no retraining',
@@ -572,6 +595,12 @@ def evaluate(a):
             prediction='frozen correctness head argmax; no exploration; independent of query',
             learning='no selector learning; paid Context adaptation and memory retained',
             trace='action encodes feedback destination on queried rows; route encodes prediction')
+    if 'random_al' in a.modes:
+        execution['random_al_control'] = dict(version=1,
+            query='uniform legal-action draw; probability 1/3 until the hard cap',
+            prediction='independent uniform Frozen/Context route draw, including queried rows',
+            selector='no DDQN inference or learning',
+            adaptation='unchanged paid batch5 Context updates and protected replay')
     if 'random' in a.modes:
         execution['random_control'] = dict(version=2,
             actions='uniform among legal actions; random prediction routes after budget exhaustion',
@@ -655,6 +684,7 @@ def evaluate(a):
             for context in bank:context.forward=MethodType(lambda self,x:x,context)
         agent = new_agent(a, cnn, artifact, saved=saved)
         agent.architecture_ablation=a.architecture_ablation
+        agent.uncertainty_routing=a.uncertainty_routing
         continuation = {} if a.continual else None
         audit_matrix = []
         clean_scores = []
@@ -685,6 +715,7 @@ def evaluate(a):
             if not a.continual:
                 agent = new_agent(a, cnn, artifact, saved=saved)
                 agent.architecture_ablation=a.architecture_ablation
+                agent.uncertainty_routing=a.uncertainty_routing
             m, traces = episode(a, cnn, bank, initial, agent, domains[level], anchors,
                 mode=mode, reference=clean, same_level=True, continuation=continuation,
                 next_domain_features=next_sequence_features(a, domains, stage-1, a.seed) if a.continual else None,
@@ -783,7 +814,7 @@ def parser():
     p.add_argument('--router-protected-replay', action='store_true', help='Mix current-bank source/historical supervision into the paid routing optimizer step.')
     p.add_argument('--routing-oracle-audit', action='store_true', help='Observer-only routing ceiling on unchanged learner trajectories.')
     p.add_argument('--paid-replay-mode', choices=['off', 'sequential', 'batch', 'batch_all', 'batch3', 'batch5', 'batch7', 'batch8'], default='off')
-    p.add_argument('--modes', nargs='+', choices=['learned', 'random', 'random_query', 'random_query_online'], default=['learned', 'random'])
+    p.add_argument('--modes', nargs='+', choices=['learned', 'random', 'random_query', 'random_query_online', 'random_al'], default=['learned', 'random'])
     p.add_argument('--query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--update-policy', choices=['learned', 'fixed'], default='learned')
     p.add_argument('--max-reference-drop', type=float, default=2.)
@@ -802,6 +833,7 @@ def parser():
     p.add_argument('--evaluation-tag', default='', help='Unique repeat label for identical-trajectory timing repetitions.')
     p.add_argument('--endpoint-metrics',action='store_true',help='Observer-only paired AC/PR/RC/F1 audit.')
     p.add_argument('--uncertainty-query', action='store_true', help='Replace query decisions by source-VAL-calibrated Frozen least confidence.')
+    p.add_argument('--uncertainty-routing', action='store_true', help='Also replace RL routing by least uncertainty and disable all selector inference/learning.')
     p.add_argument('--router-refresh', action='store_true',
                    help='After paid feedback, recalibrate routing on existing references with current-bank targets.')
     p.add_argument('--router-informative-weight', type=float, default=1.,
@@ -817,6 +849,15 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if 'random_al' in a.modes:
+        if (a.command != 'evaluate' or a.modes != ['random_al'] or a.context_count != 1
+                or a.query_schedule != 'policy' or a.update_policy != 'learned'
+                or a.architecture_ablation != 'none' or a.query_budget_bonus
+                or a.uncertainty_query or a.router_refresh or a.router_protected_replay
+                or a.context_damage_guard or a.continual):
+            p.error('Random AL requires independent single-Context evaluation with Bonus=0 and no other routing controls.')
+    if a.uncertainty_routing and not a.uncertainty_query:
+        p.error('--uncertainty-routing requires --uncertainty-query.')
     if a.uncertainty_query:
         if (a.command != 'evaluate' or a.context_count != 1 or a.modes != ['learned']
                 or a.query_schedule != 'policy' or a.update_policy != 'learned'
@@ -884,7 +925,7 @@ def main(argv=None):
     if a.online_memory_ce_weight is not None:
         if not np.isfinite(a.online_memory_ce_weight) or a.online_memory_ce_weight < 0:
             p.error('Online memory CE weight must be finite and nonnegative.')
-        matched_policy = (a.query_schedule == 'policy' and a.modes == ['learned']
+        matched_policy = (a.query_schedule == 'policy' and a.modes in (['learned'], ['random_al'])
                           and a.paid_replay_mode in ('batch3','batch5','batch7'))
         if (a.command != 'evaluate' or a.context_count != 1 or a.update_policy != 'learned'
                 or (a.query_schedule != 'uniform' and not matched_policy)):
@@ -970,6 +1011,7 @@ def main(argv=None):
 
 
 if __name__ == '__main__': main()
+
 
 
 

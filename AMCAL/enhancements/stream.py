@@ -55,7 +55,9 @@ def observer(cnn, bank, agent, x, y, history, used, cap, position, seed, config,
             outputs = executor.outputs(bx, z[start:start + 64])
             if ablation in ('no_context','frozen','no_rl'):
                 routes=torch.full((len(bx),),1 if ablation=='no_rl' else 0,dtype=torch.long,device=x.device)
-            elif mode == 'random':
+            elif getattr(agent, 'uncertainty_routing', False):
+                routes = outputs[0].softmax(2).amax(2).argmax(1)
+            elif mode in ('random', 'random_al'):
                 routes = torch.tensor(rng.integers(0, len(bank)+1, len(bx)), device=x.device)
             else:
                 state = build_state(outputs, h[start:start + 64], history, used, cap,
@@ -94,7 +96,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     if uncertainty_threshold is not None and (training or warmup or mode != 'learned' or len(bank) != 1 or a.query_schedule != 'policy'):
         raise ValueError('Uncertainty querying is an evaluation-only one-Context policy control.')
     ablation=getattr(a,'architecture_ablation','none')
-    no_selector=ablation in ('no_rl','frozen')
+    uncertainty_routing = getattr(a, 'uncertainty_routing', False)
+    no_selector=ablation in ('no_rl','frozen') or uncertainty_routing or mode == 'random_al'
     no_context=ablation in ('no_context','frozen')
     random_no_rl = no_selector or (mode == 'random' and not training and not warmup)
     random_queries = mode in ('random_query', 'random_query_online')
@@ -161,7 +164,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     timer = StreamTimer(x.device, enabled=not training)
     with timer.stage('cache'): frozen, embeddings = legacy.base_cache(cnn, x)
     uncertainty_scores = None
-    if uncertainty_threshold is not None:
+    if uncertainty_threshold is not None and not uncertainty_routing:
         with timer.stage('cache'):
             uncertainty_scores = (1 - frozen.softmax(1).amax(1)).detach().cpu().numpy()
     boundary_cache = None
@@ -202,6 +205,12 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         with timer.stage('selection'):
             state = None; values = None; raw_values = None; update_values = None; route_logits = None
             if full:
+                if uncertainty_routing:
+                    with torch.no_grad():
+                        route_confidence = outputs[0].softmax(2).amax(2)[0]
+                        uncertainty_route = int(route_confidence.argmax())
+                        current_uncertainty = float(1-route_confidence[uncertainty_route])
+                    gate = int(used < cap and current_uncertainty >= uncertainty_threshold)
                 if not random_no_rl:
                     state = build_state(outputs, embeddings[pos:pos+1], history, used, cap, pos, n, state_gate)
                 allowed = legacy.base.legal_actions(slots, cap-used, gate)
@@ -228,8 +237,15 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                         greedy = int(valid[values[valid].argmax()])
                 epsilon = a.train_epsilon if training else a.eval_epsilon
                 action = greedy if random_queries else (int(rng.choice(allowed)) if mode == 'random' or warmup or rng.random() < epsilon else greedy)
-                if no_selector:action=(routes if gate==1 else 1) if ablation=='no_rl' else 0
-                route = legacy.base.route_index(action, slots)
+                if mode == 'random_al':
+                    query_draw = int(rng.choice(allowed))
+                    random_route = int(rng.integers(routes))
+                    action = routes if query_draw >= routes else random_route
+                elif uncertainty_routing:
+                    action = routes if gate == 1 else uncertainty_route
+                elif no_selector:action=(routes if gate==1 else 1) if ablation=='no_rl' else 0
+                route = uncertainty_route if uncertainty_routing else legacy.base.route_index(action, slots)
+                if mode == 'random_al': route = random_route
                 if random_queries:
                     # Match the full-random query draw; choose prediction independently.
                     draw = int(rng.choice(allowed))
@@ -425,6 +441,10 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             reward=reward, gain=gain, harm=harm, reference_counts=reference_counts,
             predictions=[int(v) if known else None for v, known in zip(route_predictions, observed)],
             scores=scores))
+        if uncertainty_routing:
+            traces[-1]['uncertainty_score'] = current_uncertainty
+            traces[-1]['uncertainty_threshold'] = uncertainty_threshold
+            traces[-1]['route_confidences'] = route_confidence.detach().cpu().tolist()
         if uncertainty_scores is not None:
             traces[-1]['uncertainty_score'] = float(uncertainty_scores[pos])
             traces[-1]['uncertainty_threshold'] = uncertainty_threshold
@@ -506,6 +526,10 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         metrics['counterfactual_loss'] = agent.last_losses.get('counterfactual')
         metrics['counterfactual_selected_max_error'] = max(counterfactual_errors, default=0.)
         metrics['supervision_protocol'] = 'paid TRAIN feedback; three isolated alternatives; update-value head only'
+    if uncertainty_routing or mode == 'random_al':
+        if metrics['route_updates'] or metrics['td_updates'] or metrics['fresh_route_updates']:
+            raise RuntimeError('A full AL replacement performed selector learning.')
+        metrics['al_replacement'] = 'uncertainty' if uncertainty_routing else 'random'
     metrics.update(timer.metrics(n, used))
     if not training:
         metrics['response_ms_percentiles'] = dict(zip(('p50', 'p95', 'p99'), np.percentile(response_times, [50, 95, 99]).tolist()))
@@ -520,5 +544,6 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     if continuation is not None:
         continuation.update(optimizers=optimizers, history=history, memory=memory, previous_count=n)
     return metrics, traces
+
 
 
