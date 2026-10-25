@@ -223,10 +223,13 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
     x, y, ids = x[torch.as_tensor(order, device=x.device)], np.asarray(y)[order], np.asarray(ids)[order]
     n, cap = len(y), int(a.budget_fraction * len(y))
     if n == 0: raise ValueError('Empty stream.')
-    query_schedule = getattr(a, 'eval_query_schedule', 'policy')
-    if query_schedule not in ('policy', 'uniform'): raise ValueError('Unknown evaluation query schedule.')
-    if training and query_schedule != 'policy':
+    evaluation_schedule = getattr(a, 'eval_query_schedule', 'policy')
+    training_schedule = getattr(a, 'train_query_schedule', 'policy')
+    if evaluation_schedule not in ('policy', 'uniform') or training_schedule not in ('policy', 'uniform'):
+        raise ValueError('Unknown query schedule.')
+    if training and evaluation_schedule != 'policy':
         raise ValueError('Uniform requests are an evaluation-only control; TRAIN must use the original policy.')
+    query_schedule = training_schedule if training else evaluation_schedule
     if diagnostic_sink is not None and not training:
         raise ValueError('The TRAIN diagnostic recorder must not collect TEST/VAL targets.')
     steps = n if max_steps is None else min(n, max_steps)
@@ -369,7 +372,7 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
     runtime = cnn, context, agent, query
     validate_trace(trace, cap)
     if query_schedule == 'uniform' and steps == n and used != cap:
-        raise RuntimeError('Uniform evaluation did not consume its exact per-level label cap.')
+        raise RuntimeError('Uniform collection did not consume its exact per-level label cap.')
     if training:
         training_state.update(context_optimizer=optimizer, query_optimizer=query_optimizer, workspace=workspace)
     source_after = endpoint(a, cnn, context, agent, clean, history, used, cap, n) if not training else {}
@@ -431,6 +434,13 @@ def train(a):
     if getattr(a, 'actor_train_cache', None):
         from enhancements.standardized_actor import prepare_experiment
         a.actor_experiment = prepare_experiment(a)
+        if getattr(a, 'train_query_schedule', 'policy') == 'uniform':
+            a.actor_experiment['training_collection'] = dict(version=1, query_schedule='uniform',
+                budget_fraction=a.budget_fraction,
+                scope='TRAIN only; evenly spaced committed feedback independent of Actor probability',
+                actor='same original signed full-information max loss; no importance ratio or bootstrap',
+                validation='Actor policy at threshold 0.5; fresh adaptive state per VAL intensity',
+                objective_scope='same per-state surrogate; behavior/state distribution differs from on-policy training')
     if (a.output/'Models'/'minimax_query.pth').exists():
         if not (a.output/'training_complete.json').exists():
             raise ValueError('Interrupted training preserved; use a fresh --output directory.')
@@ -656,6 +666,7 @@ def parser():
     p.add_argument('--actor-train-cache', type=Path)
     p.add_argument('--actor-control', choices=['natural', 'balanced'], default='natural')
     p.add_argument('--eval-query-schedule', choices=['policy', 'uniform'], default='policy')
+    p.add_argument('--train-query-schedule', choices=['policy', 'uniform'], default='policy')
     return p
 
 
@@ -663,6 +674,10 @@ def main(argv=None):
     p = parser(); a = p.parse_args(argv)
     if a.eval_query_schedule != 'policy' and a.action != 'Evaluate':
         p.error('Uniform query control requires --action Evaluate; it must not retrain or change VAL selection.')
+    if a.train_query_schedule == 'uniform' and a.action in ('Train', 'All') and a.actor_train_cache is None:
+        p.error('Uniform TRAIN collection requires --actor-train-cache for the standardized Actor experiment.')
+    if a.train_query_schedule == 'uniform' and a.action == 'Diagnose':
+        p.error('Uniform TRAIN collection must use the training entry point, not Diagnose.')
     if a.actor_control == 'balanced' and a.actor_train_cache is None and a.action != 'Evaluate':
         p.error('Balanced Actor control requires --actor-train-cache.')
     if a.actor_train_cache is not None and a.action == 'Diagnose':
@@ -681,8 +696,10 @@ def main(argv=None):
     a.source_run = a.source_run or root/'protocol_runs'/f'{stem}_trainseed{a.seed}'/'paironly_batch5'
     a.burst_dir = a.burst_dir or root/'Dataset_official_v1'/f'AdvBurst_FTSC-{a.dataset}'
     regular = root/'protocol_runs'/f'minimax_query_batch5_seed{a.seed}_v{VERSION}_h{a.horizon}_c{a.cost:g}'
-    if a.actor_train_cache is not None:
+    if a.actor_train_cache is not None or a.train_query_schedule == 'uniform':
         regular = regular.with_name(regular.name+'_actorstd_'+a.actor_control)
+    if a.train_query_schedule == 'uniform':
+        regular = regular.with_name(regular.name+'_trainuniform')
     a.v2_run = a.v2_run or regular
     if a.action == 'Diagnose':
         a.output = a.output or root/'protocol_runs'/f'minimax_diagnostics_seed{a.seed}_n{a.diagnostic_rows}'

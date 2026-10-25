@@ -7,6 +7,7 @@ param(
     [string]$CacheRun = '',
     [string]$SourceRun = '',
     [switch]$UniformQueries,
+    [switch]$UniformTraining,
     [ValidateSet('cuda','cpu','auto')][string]$Device = 'cuda'
 )
 $ErrorActionPreference = 'Stop'
@@ -30,6 +31,10 @@ try {
     foreach ($item in $controls) {
         if ($UniformQueries) { Write-Host "Uniform-query TEST: $Dataset / $item | exact 20% cap | no retraining" }
         $output = "AMCAL/ANT_Burst_${Dataset}_TEST/protocol_runs/minimax_query_batch5_seed${Seed}_v2_h16_c0.05_actorstd_${item}"
+        if ($UniformTraining) {
+            $output += '_trainuniform'
+            Write-Host "Uniform TRAIN collection: $Dataset / $item | VAL uses Actor requests | no CNN retraining"
+        }
         $runArgs = @('AMCAL/amcal_minimax_paironly.py', '--dataset', $Dataset,
             '--action', $Action, '--seed', "$Seed", '--device', $Device,
             '--epochs', "$Epochs", '--horizon', '16', '--cost', '0.05',
@@ -39,6 +44,7 @@ try {
         if ($Action -ne 'Evaluate') { $runArgs += @('--actor-train-cache', $CacheRun, '--train-diagnostics') }
         if ($SourceRun) { $runArgs += @('--source-run', $SourceRun) }
         if ($UniformQueries) { $runArgs += @('--eval-query-schedule', 'uniform') }
+        if ($UniformTraining) { $runArgs += @('--train-query-schedule', 'uniform') }
         & $python @runArgs
         if ($LASTEXITCODE -ne 0) { throw "Standardized Actor failed: $Dataset / $item / $Action" }
     }

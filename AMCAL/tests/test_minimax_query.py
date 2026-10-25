@@ -384,6 +384,29 @@ class StreamContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run(a, runtime, domain, domain, reference, domain, 42, training=True)
 
+    def test_uniform_train_collection_does_not_force_val_requests(self):
+        run, a, runtime, domain, reference, calls = self.fixture(training=True)
+        a.train_query_schedule = 'uniform'
+        with torch.no_grad(): runtime[3].actor[-1].bias.fill_(-80.)
+        initial_value = deepcopy(runtime[3].value.state_dict())
+        state = {}
+        with contextlib.redirect_stdout(io.StringIO()):
+            trained, result, trace = run(a, runtime, domain, domain, reference, domain, 42,
+                training=True, training_state=state)
+        self.assertEqual(result['labels'], 2)
+        self.assertEqual([r['step'] for r in trace if r['queried']], [3, 8])
+        self.assertEqual(len(calls), 8)
+        self.assertTrue(any(not torch.equal(v, trained[3].value.state_dict()[k]) for k,v in initial_value.items()))
+        # VAL gets a fresh independent runtime snapshot, and uses the Actor.
+        validation = deepcopy(trained)
+        with torch.no_grad(): validation[3].actor[-1].weight.zero_(); validation[3].actor[-1].bias.fill_(-80.)
+        calls_before = len(calls)
+        with contextlib.redirect_stdout(io.StringIO()):
+            _, val, val_trace = run(a, validation, domain, domain, None, domain, 42)
+        self.assertEqual(val['labels'], 0)
+        self.assertFalse(any(r['queried'] for r in val_trace))
+        self.assertEqual(len(calls), calls_before)
+
     def test_training_stops_forks_at_cap_and_preserves_adam_between_domains(self):
         run, a, runtime, domain, reference, calls = self.fixture(training=True)
         state = {}

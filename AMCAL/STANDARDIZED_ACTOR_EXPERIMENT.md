@@ -58,7 +58,47 @@ After reviewing TRAIN/VAL, explicitly evaluate a chosen control if needed:
 .\AMCAL\run_amcal_standardized_actor.ps1 -Dataset IAT -Control Natural -Action Evaluate
 ```
 
-## Uniform-query diagnostic control, no retraining
+## Uniform TRAIN collection, Actor-policy VAL
+
+```powershell
+.\AMCAL\run_amcal_standardized_actor.ps1 -Dataset IAT -Control Natural -UniformTraining
+.\AMCAL\run_amcal_standardized_actor.ps1 -Dataset PS -Control Natural -UniformTraining
+.\AMCAL\push_amcal_standardized_actor.ps1 -Dataset Both
+```
+
+This is a separate training experiment, stored with the `_trainuniform` suffix.
+It restarts from the same existing CNN, initial pretrained Context and source
+router, fits the same fixed TRAIN-only Actor normalizer, and creates a fresh
+Actor. CNN is frozen, never retrained. Uniform requests commit exactly 20%
+(after flooring) feedback updates per TRAIN level. Context and routing use only
+this acquired feedback; independent future/reference TRAIN probes still supply
+the original signed Actor target at eligible positions. These offline targets
+are full-information supervision, not counted as acquired online labels.
+
+The Actor's original per-state max loss and Context min update are unchanged.
+Because TRAIN feedback is now supplied by a fixed behavior schedule, the state
+distribution differs from on-policy learning. This is a surrogate-learning
+control on behavior-generated states, not an unbiased off-policy policy-gradient
+claim. No importance correction is needed for the explicit per-state
+full-information loss, and no rollout-return equivalence is claimed.
+Uniform behavior also removes Actor control of TRAIN query locations. Retaining
+the local loss formulas does not by itself establish equivalence to the original
+joint on-policy min-max training game; this experiment tests experience
+collection before making any such theoretical claim.
+
+VAL always uses the Actor threshold 0.5, with fresh models/optimizers/memory at
+each 0/1/3 intensity and the unchanged 20% cap. It does not use uniform requests.
+Default Action Train therefore runs TRAIN and VAL only; previous checkpoints
+and TEST evaluations are preserved. Six epochs and patience three are unchanged.
+Use Natural alone for the first run; balanced weighting is not the chosen method.
+Training logs, actual target distributions and checkpoint selection are sent by
+the same push helper. Uniform TRAIN is opt-in and does not alter existing runs.
+
+To evaluate the selected new checkpoint later, retain `-UniformTraining` to select
+the new run directory and add `-Action Evaluate`. TEST then uses Actor requests
+unless `-UniformQueries` is explicitly provided as a separate diagnostic control.
+
+## Uniform-query TEST diagnostic control, no retraining
 
 ```powershell
 .\AMCAL\run_amcal_standardized_actor.ps1 -Dataset IAT -Action Evaluate -UniformQueries
