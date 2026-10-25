@@ -4,6 +4,7 @@ param(
     [ValidateSet('Train','Evaluate','All')][string]$Action = 'Train',
     [int]$Seed = 42,
     [int]$Epochs = 6,
+    [ValidateRange(0,2147483647)][int]$PilotRows = 0,
     [string]$CacheRun = '',
     [string]$SourceRun = '',
     [switch]$UniformQueries,
@@ -35,6 +36,10 @@ try {
             $output += '_trainuniform'
             Write-Host "Uniform TRAIN collection: $Dataset / $item | VAL uses Actor requests | no CNN retraining"
         }
+        if ($PilotRows -gt 0) {
+            $output += "_pilot${PilotRows}_ep${Epochs}"
+            Write-Host "Small-data diagnostic: at most $PilotRows rows per TRAIN/VAL/TEST domain; $Epochs epochs"
+        }
         $runArgs = @('AMCAL/amcal_minimax_paironly.py', '--dataset', $Dataset,
             '--action', $Action, '--seed', "$Seed", '--device', $Device,
             '--epochs', "$Epochs", '--horizon', '16', '--cost', '0.05',
@@ -45,6 +50,7 @@ try {
         if ($SourceRun) { $runArgs += @('--source-run', $SourceRun) }
         if ($UniformQueries) { $runArgs += @('--eval-query-schedule', 'uniform') }
         if ($UniformTraining) { $runArgs += @('--train-query-schedule', 'uniform') }
+        if ($PilotRows -gt 0) { $runArgs += @('--pilot-rows', "$PilotRows") }
         & $python @runArgs
         if ($LASTEXITCODE -ne 0) { throw "Standardized Actor failed: $Dataset / $item / $Action" }
     }

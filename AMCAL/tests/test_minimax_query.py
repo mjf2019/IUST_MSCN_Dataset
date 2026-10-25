@@ -83,7 +83,7 @@ class TraceContractTests(unittest.TestCase):
 @unittest.skipIf(np is None, 'Requires the existing NumPy dependency')
 class ProbePartitionTests(unittest.TestCase):
     def functions(self):
-        names = ('balanced_draw', 'reference_partition', 'subset')
+        names = ('balanced_draw', 'reference_partition', 'subset', 'pilot_indices')
         nodes = [n for n in ast.parse(runner_source.read_text()).body
             if isinstance(n, ast.FunctionDef) and n.name in names]
         ns = dict(np=np, torch=types.SimpleNamespace(as_tensor=lambda data, **kwargs: np.asarray(data)))
@@ -99,6 +99,20 @@ class ProbePartitionTests(unittest.TestCase):
         self.assertEqual(set(labels[indices]), {0, 1, 2})
         self.assertEqual(len(draw(labels, 100, np.random.default_rng(42))), len(labels))
         self.assertEqual(draw(labels, 0, np.random.default_rng(42)), [])
+
+    def test_pilot_sampling_is_fixed_unique_bounded_and_keeps_classes(self):
+        sample = self.functions()['pilot_indices']
+        labels = np.repeat(np.arange(6), [90,30,15,9,6,3])
+        first, repeated = sample(labels, 60, 42), sample(labels, 60, 42)
+        np.testing.assert_array_equal(first, repeated)
+        self.assertEqual(len(first), 60)
+        self.assertEqual(len(set(first)), 60)
+        self.assertTrue(all((labels[first] == cls).sum() >= 3 for cls in range(6)))
+        self.assertTrue(np.all(first[:-1] < first[1:]))
+        np.testing.assert_array_equal(sample(labels, 0, 42), np.arange(len(labels)))
+        np.testing.assert_array_equal(sample(labels, 999, 42), np.arange(len(labels)))
+        with self.assertRaises(ValueError): sample(labels, 10, 42)
+        with self.assertRaises(ValueError): sample(labels, -1, 42)
 
     def test_reference_ids_are_stratified_and_excluded_from_train(self):
         class Array(np.ndarray):

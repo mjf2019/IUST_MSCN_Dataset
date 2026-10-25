@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
     $names = if ($Dataset -eq 'Both') { @('IAT','PS') } else { @($Dataset) }
-    $pattern = '^AMCAL/ANT_Burst_(' + ($names -join '|') + ')_TEST/protocol_runs/minimax_query_batch5_seed[^/]+_v2_h16_c0\.05_actorstd_(natural|balanced)(_trainuniform)?/(.+\.(json|csv))$'
+    $pattern = '^AMCAL/ANT_Burst_(' + ($names -join '|') + ')_TEST/protocol_runs/minimax_query_batch5_seed[^/]+_v2_h16_c0\.05_actorstd_(natural|balanced)(_trainuniform)?(_pilot[0-9]+_ep[0-9]+)?/(.+\.(json|csv))$'
     $staged = @(git diff --cached --name-only)
     if ($LASTEXITCODE -ne 0) { throw 'Checking staged paths failed.' }
     if (@($staged | Where-Object { $_ -notmatch $pattern }).Count) {

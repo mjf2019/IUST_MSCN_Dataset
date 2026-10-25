@@ -60,6 +60,31 @@ After reviewing TRAIN/VAL, explicitly evaluate a chosen control if needed:
 
 ## Uniform TRAIN collection, Actor-policy VAL
 
+For a quick small-data pilot, cap each TRAIN, VAL and TEST domain at 300 rows
+and use two epochs:
+
+```powershell
+.\AMCAL\run_amcal_standardized_actor.ps1 -Dataset IAT -Control Natural -UniformTraining -PilotRows 300 -Epochs 2 -Action All
+.\AMCAL\run_amcal_standardized_actor.ps1 -Dataset PS -Control Natural -UniformTraining -PilotRows 300 -Epochs 2 -Action All
+.\AMCAL\push_amcal_standardized_actor.ps1 -Dataset Both
+```
+
+This uses a separate `_pilot300_ep2` directory. The deterministic sampling is
+applied inside each existing split before streaming, so the 20% cap is based
+on the actual sampled stream (60 labels for 300 rows), not the original full
+domain. TRAIN/VAL/TEST remain disjoint. Source TRAIN anchors/reference and the
+clean VAL/TEST forgetting observers are also sampled with fixed role seeds.
+Up to three examples per available class are retained; remaining slots are
+sampled uniformly. This changes the evaluated sample, so pilot metrics must
+not be substituted into full-benchmark tables. TRAIN selected IDs and roles
+are recorded in `pilot_sampling.json`; TEST IDs appear in the normal traces.
+The checkpoint stores the pilot protocol and evaluation restores its row cap.
+Use the same PilotRows/Epochs flags to locate this run in a later Evaluate call.
+Pretrained CNN/Context/router and the previously fitted TRAIN-only normalizer
+are reused; only this experimental training/evaluation stage is reduced.
+
+The original full-data experiment remains available without PilotRows:
+
 ```powershell
 .\AMCAL\run_amcal_standardized_actor.ps1 -Dataset IAT -Control Natural -UniformTraining
 .\AMCAL\run_amcal_standardized_actor.ps1 -Dataset PS -Control Natural -UniformTraining

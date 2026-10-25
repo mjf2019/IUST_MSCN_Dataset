@@ -65,6 +65,39 @@ def subset(domain, mask):
     return x[at], np.asarray(y)[mask], np.asarray(ids)[mask]
 
 
+def pilot_indices(labels, limit, seed):
+    """Seeded pilot subset, retaining up to three rows per available class."""
+    labels = np.asarray(labels)
+    if limit < 0: raise ValueError('Pilot row limit must be nonnegative.')
+    if limit == 0 or len(labels) <= limit: return np.arange(len(labels))
+    rng = np.random.default_rng(seed)
+    chosen = []
+    for cls in np.unique(labels):
+        indices = np.flatnonzero(labels == cls)
+        chosen.extend(rng.permutation(indices)[:min(3, len(indices))].tolist())
+    if len(chosen) > limit: raise ValueError('Pilot row limit is too small to retain the classes.')
+    remaining = np.setdiff1d(np.arange(len(labels)), chosen)
+    chosen.extend(rng.permutation(remaining)[:limit-len(chosen)].tolist())
+    return np.sort(chosen)
+
+
+def pilot_domain(a, domain, offset):
+    limit = getattr(a, 'pilot_rows', 0)
+    if not limit: return domain
+    selected = pilot_indices(domain[1], limit, a.seed+offset)
+    mask = np.zeros(len(domain[1]), dtype=bool); mask[selected] = True
+    return subset(domain, mask)
+
+
+def pilot_spec(a):
+    rows = getattr(a, 'pilot_rows', 0)
+    return dict(version=1, rows_per_domain=rows,
+        scope='small-data diagnostic, not full benchmark; TRAIN/VAL/TEST capped separately',
+        sampling='fixed seeded subset with up to three guaranteed rows per class; remaining slots sampled uniformly',
+        cap='floor(0.2 * actual sampled stream size) under the 20% budget',
+        initialization='existing pretrained CNN/Context/router; only the experimental streams are reduced') if rows else None
+
+
 def reference_partition(domain, seed, fraction=.1):
     """Reserve source IDs across all training intensities, stratified by class."""
     _, y, ids = domain
@@ -454,7 +487,8 @@ def train(a):
                 or completed['settings'] != {key: getattr(a, key) for key in SETTING_KEYS}
                 or completed['source_checkpoint_sha256'] != digest(a.models/'final_enhancement.pth')
                 or completed.get('dataset') != a.dataset
-                or completed.get('actor_experiment') != a.actor_experiment):
+                or completed.get('actor_experiment') != a.actor_experiment
+                or completed.get('pilot') != pilot_spec(a)):
             raise ValueError('Completed checkpoint settings differ; use a fresh --output directory.')
         print('Using completed experimental checkpoint; train was not repeated.', flush=True)
         return
@@ -468,6 +502,7 @@ def train(a):
         shutil.copy2(a.models/name, models/name)
     source_checkpoint_hash = digest(a.models/'final_enhancement.pth')
     source_domain = base.legacy.read_domain(a.burst_dir, artifact, 0, 'train_ids')
+    source_domain = pilot_domain(a, source_domain, 701)
     anchors, reference, reserved = reference_partition(source_domain, a.seed)
     # A source reference cannot be a future probe or update at another intensity.
     reference_keys = set(feature_keys(reference[0]))
@@ -476,11 +511,16 @@ def train(a):
         domain = base.legacy.read_domain(a.burst_dir, artifact, level, 'train_ids')
         mask = np.asarray([int(i) not in reserved and key not in reference_keys
             for i, key in zip(domain[2], feature_keys(domain[0]))])
-        train_domains[level] = subset(domain, mask)
+        train_domains[level] = pilot_domain(a, subset(domain, mask), 702)
         if len(train_domains[level][1]) <= a.horizon:
             raise ValueError('TRAIN stream is too short for the requested future horizon.')
-    clean_val = base.legacy.read_domain(a.burst_dir, artifact, 0, 'val_ids')
-    validations = {level: base.legacy.read_domain(a.burst_dir, artifact, level, 'val_ids') for level in TRAIN_LEVELS}
+    clean_val = pilot_domain(a, base.legacy.read_domain(a.burst_dir, artifact, 0, 'val_ids'), 703)
+    validations = {level: pilot_domain(a, base.legacy.read_domain(a.burst_dir, artifact, level, 'val_ids'), 703) for level in TRAIN_LEVELS}
+    if pilot_spec(a):
+        write_json(a.output/'pilot_sampling.json', dict(protocol=pilot_spec(a),
+            train_ids={str(k): d[2].tolist() for k,d in train_domains.items()},
+            val_ids={str(k): d[2].tolist() for k,d in validations.items()},
+            anchors=anchors[2].tolist(), reference=reference[2].tolist()))
     runtime = new_runtime(a, artifact, inherited, initial)
     training_state = {}
     recorder = None
@@ -522,6 +562,7 @@ def train(a):
         print(f'Epoch {epoch+1}/{a.epochs}: VAL AC {accuracy:.2f}% | source forgetting {drop:+.2f} pp', flush=True)
         write_json(a.output/'training.json', dict(version=VERSION, dataset=a.dataset,
             settings={key: getattr(a, key) for key in SETTING_KEYS}, epochs=log,
+            **({'pilot': pilot_spec(a)} if pilot_spec(a) else {}),
             **({'actor_experiment': a.actor_experiment} if a.actor_experiment else {})))
         if score > best:
             best, stale = score, 0
@@ -544,6 +585,7 @@ def train(a):
                     minmax_scope='shared batch5 gap; protected replay is an auxiliary Context regularizer'))
             temporary = models/'minimax_query.pth.tmp'
             if a.actor_experiment: saved['actor_experiment'] = a.actor_experiment
+            if pilot_spec(a): saved['pilot'] = pilot_spec(a)
             torch.save(saved, temporary)
             temporary.replace(models/'minimax_query.pth')
         else:
@@ -560,6 +602,10 @@ def evaluate(a):
     if saved['version'] != VERSION: raise ValueError('Unsupported minimax pilot version.')
     if saved['dataset'] != a.dataset: raise ValueError('Checkpoint dataset mismatch.')
     if saved['settings']['seed'] != a.seed: raise ValueError('Requested seed differs from the trained checkpoint.')
+    saved_pilot_rows = (saved.get('pilot') or {}).get('rows_per_domain', 0)
+    if getattr(a, 'pilot_rows', 0) not in (0, saved_pilot_rows):
+        raise ValueError('Requested pilot size differs from the checkpoint.')
+    a.pilot_rows = saved_pilot_rows
     for key, value in saved['settings'].items(): setattr(a, key, value)
     a.actor_experiment = saved.get('actor_experiment')
     a.config = EnhancementConfig(**saved['config']).validated()
@@ -572,9 +618,10 @@ def evaluate(a):
         if digest(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv') != expected:
             raise ValueError('Training data changed after experimental training.')
     source = base.legacy.read_domain(a.burst_dir, artifact, 0, 'train_ids')
+    source = pilot_domain(a, source, 701)
     reserved = set(saved['provenance']['reference_source_ids'])
     anchors = subset(source, np.asarray([int(i) not in reserved for i in source[2]]))
-    clean = base.legacy.read_domain(a.burst_dir, artifact, 0, 'test_ids')
+    clean = pilot_domain(a, base.legacy.read_domain(a.burst_dir, artifact, 0, 'test_ids'), 704)
     execution = dict(version=VERSION, seed=a.seed, settings=saved['settings'], levels=TEST_LEVELS,
         checkpoint_sha256=digest(a.models/'minimax_query.pth'), prediction='before feedback; best scored route',
         reset='all model, optimizer, reliability and feedback memory state at each intensity',
@@ -582,6 +629,7 @@ def evaluate(a):
         route_head_online='paid labels only', context_online='current plus up to four previous paid labels and source replay',
         metrics='macro PR/RC/F1; pre-feedback online; source forgetting in percentage points')
     if a.actor_experiment: execution['actor_experiment'] = a.actor_experiment
+    if pilot_spec(a): execution['pilot'] = pilot_spec(a)
     if getattr(a, 'eval_query_schedule', 'policy') == 'uniform':
         execution['query_schedule'] = dict(mode='uniform', version=1,
             rule='round-half-up cumulative cap*seen/n; evenly spaced exact cap',
@@ -617,6 +665,7 @@ def evaluate(a):
             base.legacy.core.set_seed(a.seed)
             runtime = new_runtime(a, artifact, saved, saved['context_state_dict'], saved['query_state_dict'])
             domain = base.legacy.read_domain(a.burst_dir, artifact, level, 'test_ids')
+            domain = pilot_domain(a, domain, 704)
             _, result, trace = stream(a, runtime, domain, anchors, None, clean, a.seed)
             result['level'] = level
             write_csv(root/f'level_{level}_trace.csv', trace)
@@ -667,11 +716,15 @@ def parser():
     p.add_argument('--actor-control', choices=['natural', 'balanced'], default='natural')
     p.add_argument('--eval-query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--train-query-schedule', choices=['policy', 'uniform'], default='policy')
+    p.add_argument('--pilot-rows', type=int, default=0)
     return p
 
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.pilot_rows < 0: p.error('Pilot rows must be nonnegative; zero means the full domain.')
+    if a.pilot_rows and a.pilot_rows <= a.horizon: p.error('Pilot rows must exceed the future horizon.')
+    if a.pilot_rows and a.action == 'Diagnose': p.error('Pilot row limits apply to Train/Evaluate, not Diagnose.')
     if a.eval_query_schedule != 'policy' and a.action != 'Evaluate':
         p.error('Uniform query control requires --action Evaluate; it must not retrain or change VAL selection.')
     if a.train_query_schedule == 'uniform' and a.action in ('Train', 'All') and a.actor_train_cache is None:
@@ -700,6 +753,8 @@ def main(argv=None):
         regular = regular.with_name(regular.name+'_actorstd_'+a.actor_control)
     if a.train_query_schedule == 'uniform':
         regular = regular.with_name(regular.name+'_trainuniform')
+    if a.pilot_rows:
+        regular = regular.with_name(regular.name+f'_pilot{a.pilot_rows}_ep{a.epochs}')
     a.v2_run = a.v2_run or regular
     if a.action == 'Diagnose':
         a.output = a.output or root/'protocol_runs'/f'minimax_diagnostics_seed{a.seed}_n{a.diagnostic_rows}'
