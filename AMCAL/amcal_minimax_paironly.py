@@ -336,6 +336,8 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
                 actor_probability_after=None, actor_grad_norm=None,
                 target_status='budget_exhausted' if used >= cap else 'insufficient_future')
         target = None
+        if getattr(a, 'query_target', 'competitive') == 'update_utility':
+            record.update(target_definition='update_utility', competitive_score=None)
         if training and getattr(a, 'actor_logit_penalty', 0) > 0:
             record.update(actor_score_loss=None, actor_logit_penalty_loss=None, actor_logit=None)
         label = torch.tensor([truth], device=x.device)
@@ -362,6 +364,9 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
                 (inputs, label), paid_rows, replay,
                 (future_x, torch.as_tensor(y[pos+1:pos+1+a.horizon][future_mask], device=x.device)),
                 reference_batch, a.replay_weight, a.gain_weight, a.forgetting_weight, a.cost, workspace)
+            if getattr(a, 'query_target', 'competitive') == 'update_utility':
+                target = dict(target, competitive_score=target['score'],
+                    score=a.gain_weight*target['gain']-a.forgetting_weight*target['harm']-a.cost)
             # Full-information TRAIN actor max step; no successor/bootstrap term.
             record.update(target)
             experiment = getattr(a, 'actor_experiment', None)
@@ -473,6 +478,14 @@ def train(a):
     if getattr(a, 'actor_train_cache', None):
         from enhancements.standardized_actor import prepare_experiment
         a.actor_experiment = prepare_experiment(a)
+        if getattr(a, 'query_target', 'competitive') == 'update_utility':
+            a.actor_experiment['request_target'] = dict(version=1, mode='update_utility',
+                formula='gain_weight*G - forgetting_weight*F; zero cost', cost=0.,
+                gap='recorded for diagnosis and retained in Context minimization, excluded from query target',
+                scope='TRAIN targets only; VAL/TEST use pre-feedback Actor estimates',
+                theory='separate utility-max query and unchanged gap-min Context objectives; original shared min-max equivalence not claimed')
+            a.actor_experiment['reward'] = 'signed update utility G-F; no competitive gap or request cost'
+            a.actor_experiment['balance_scope'] = 'natural TRAIN weighting; utility-only query objective'
         if getattr(a, 'actor_logit_penalty', 0) > 0:
             a.actor_experiment['actor_regularizer'] = dict(version=1,
                 type='quadratic_logit', coefficient=a.actor_logit_penalty,
@@ -489,6 +502,8 @@ def train(a):
                 objective_scope='same per-state surrogate; behavior/state distribution differs from on-policy training')
             if getattr(a, 'actor_logit_penalty', 0) > 0:
                 a.actor_experiment['training_collection']['actor'] = 'original signed max term plus recorded quadratic logit regularizer'
+            if getattr(a, 'query_target', 'competitive') == 'update_utility':
+                a.actor_experiment['training_collection']['actor'] = 'signed G-F utility max; zero request cost, no logit penalty'
     if (a.output/'Models'/'minimax_query.pth').exists():
         if not (a.output/'training_complete.json').exists():
             raise ValueError('Interrupted training preserved; use a fresh --output directory.')
@@ -600,6 +615,9 @@ def train(a):
                     minmax_scope='shared batch5 gap; protected replay is an auxiliary Context regularizer'))
             temporary = models/'minimax_query.pth.tmp'
             if a.actor_experiment: saved['actor_experiment'] = a.actor_experiment
+            if getattr(a, 'query_target', 'competitive') == 'update_utility':
+                saved['provenance']['objective'] = 'query Actor maximizes signed update utility G-F; Context gap/replay update unchanged'
+                saved['provenance']['minmax_scope'] = 'separate local objectives; original shared on-policy min-max equivalence not claimed'
             if pilot_spec(a): saved['pilot'] = pilot_spec(a)
             torch.save(saved, temporary)
             temporary.replace(models/'minimax_query.pth')
@@ -623,6 +641,7 @@ def evaluate(a):
     a.pilot_rows = saved_pilot_rows
     for key, value in saved['settings'].items(): setattr(a, key, value)
     a.actor_experiment = saved.get('actor_experiment')
+    a.query_target = (a.actor_experiment or {}).get('request_target', {}).get('mode', 'competitive')
     a.config = EnhancementConfig(**saved['config']).validated()
     a.context_count, a.gamma = 1, .95
     artifact = base.load_artifact(a.models, a.burst_dir)
@@ -733,11 +752,18 @@ def parser():
     p.add_argument('--train-query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--pilot-rows', type=int, default=0)
     p.add_argument('--actor-logit-penalty', type=float, default=0.)
+    p.add_argument('--query-target', choices=['competitive', 'update_utility'], default='competitive')
     return p
 
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.query_target == 'update_utility':
+        if a.cost != 0 or a.actor_logit_penalty != 0 or a.actor_control != 'natural':
+            p.error('Utility-target control requires zero cost, zero logit penalty and Natural weighting.')
+        if a.action == 'Diagnose': p.error('Utility-target control requires Train/Evaluate, not Diagnose.')
+        if a.action in ('Train', 'All') and a.actor_train_cache is None:
+            p.error('Utility-target training requires the existing TRAIN Actor normalizer cache.')
     if not math.isfinite(a.actor_logit_penalty) or a.actor_logit_penalty < 0:
         p.error('Actor logit penalty must be finite and nonnegative.')
     if a.actor_logit_penalty > 0:
@@ -772,7 +798,7 @@ def main(argv=None):
     a.source_run = a.source_run or root/'protocol_runs'/f'{stem}_trainseed{a.seed}'/'paironly_batch5'
     a.burst_dir = a.burst_dir or root/'Dataset_official_v1'/f'AdvBurst_FTSC-{a.dataset}'
     regular = root/'protocol_runs'/f'minimax_query_batch5_seed{a.seed}_v{VERSION}_h{a.horizon}_c{a.cost:g}'
-    if a.actor_train_cache is not None or a.train_query_schedule == 'uniform':
+    if a.actor_train_cache is not None or a.train_query_schedule == 'uniform' or a.query_target == 'update_utility':
         regular = regular.with_name(regular.name+'_actorstd_'+a.actor_control)
     if a.train_query_schedule == 'uniform':
         regular = regular.with_name(regular.name+'_trainuniform')
@@ -780,6 +806,8 @@ def main(argv=None):
         regular = regular.with_name(regular.name+f'_pilot{a.pilot_rows}_ep{a.epochs}')
     if a.actor_logit_penalty > 0:
         regular = regular.with_name(regular.name+'_logitreg'+f'{a.actor_logit_penalty:g}'.replace('.', 'p'))
+    if a.query_target == 'update_utility':
+        regular = regular.with_name(regular.name+'_utility')
     a.v2_run = a.v2_run or regular
     if a.action == 'Diagnose':
         a.output = a.output or root/'protocol_runs'/f'minimax_diagnostics_seed{a.seed}_n{a.diagnostic_rows}'

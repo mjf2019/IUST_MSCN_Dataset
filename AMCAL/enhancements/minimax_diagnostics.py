@@ -48,9 +48,14 @@ def summarize_targets(rows):
     positive = [r for r in targets if number(r['score']) > 0]
     negative = [r for r in targets if number(r['score']) < 0]
     for row in targets:
-        expected = number(row['gap'])+number(row['weighted_gain'])-number(row['weighted_harm'])-number(row['request_cost'])
+        mode = row.get('target_definition') or 'competitive'
+        if mode not in ('competitive', 'update_utility'): raise ValueError('Unknown TRAIN target definition.')
+        utility = number(row['weighted_gain'])-number(row['weighted_harm'])-number(row['request_cost'])
+        expected = utility+(number(row['gap']) if mode == 'competitive' else 0.)
         if not math.isclose(expected, number(row['score']), rel_tol=1e-5, abs_tol=1e-6):
-            raise ValueError('Logged score does not equal d + beta G - lambda F - cost.')
+            raise ValueError('Logged score disagrees with its declared target definition.')
+        if mode == 'update_utility' and not math.isclose(number(row['competitive_score']), number(row['gap'])+utility, rel_tol=1e-5, abs_tol=1e-6):
+            raise ValueError('Counterfactual competitive diagnostic score is inconsistent.')
         if not truth(row['query_legal']): raise ValueError('A target was created for an illegal query.')
     return dict(rows=len(rows), eligible_targets=len(targets), positive=len(positive), negative=len(negative),
         zero=len(targets)-len(positive)-len(negative),
@@ -588,3 +593,4 @@ def diagnose(a, api):
             a.seed, a.diagnostic_fit_steps, a.query_lr, api.base.legacy.core.device)
         print('Actor scale diagnostic: '+report['status'], flush=True)
     print(f'Diagnostics: {a.output}', flush=True)
+

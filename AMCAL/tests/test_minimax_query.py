@@ -421,6 +421,28 @@ class StreamContractTests(unittest.TestCase):
         self.assertFalse(any(r['queried'] for r in val_trace))
         self.assertEqual(len(calls), calls_before)
 
+    def test_utility_target_changes_actor_supervision_not_uniform_context_updates(self):
+        run, a, runtime, domain, reference, _ = self.fixture(training=True)
+        a.train_query_schedule = 'uniform'; a.cost = 0.
+        twin = deepcopy(runtime)
+        with contextlib.redirect_stdout(io.StringIO()):
+            baseline, _, old_trace = run(a, runtime, domain, domain, reference, domain, 42, training=True)
+            a.query_target = 'update_utility'
+            utility, result, trace = run(a, twin, domain, domain, reference, domain, 42, training=True)
+        self.assertEqual(result['labels'], 2)
+        self.assertEqual([r['queried'] for r in trace], [r['queried'] for r in old_trace])
+        measured = [r for r in trace if r['score'] is not None]
+        self.assertGreater(len(measured), 0)
+        for row in measured:
+            self.assertAlmostEqual(row['score'], row['gain']-row['harm'])
+            self.assertAlmostEqual(row['competitive_score'], row['gap']+row['score'])
+            self.assertEqual(row['target_definition'], 'update_utility')
+        for k,v in baseline[1].state_dict().items(): torch.testing.assert_close(v, utility[1].state_dict()[k])
+        for k,v in baseline[0].state_dict().items(): torch.testing.assert_close(v, utility[0].state_dict()[k])
+        for old, new in zip(old_trace, trace):
+            if old['score'] is not None:
+                self.assertAlmostEqual(old['gain'], new['gain']); self.assertAlmostEqual(old['harm'], new['harm'])
+
     def test_training_stops_forks_at_cap_and_preserves_adam_between_domains(self):
         run, a, runtime, domain, reference, calls = self.fixture(training=True)
         state = {}
@@ -473,4 +495,5 @@ class StreamContractTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
 
