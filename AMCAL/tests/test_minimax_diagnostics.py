@@ -33,6 +33,16 @@ class DiagnosticArithmeticTests(unittest.TestCase):
         self.assertEqual(result['positive_targets_with_p_below_0p01'], 1)
         self.assertAlmostEqual(result['positive_percent'], 100/3)
 
+    def test_utility_target_does_not_penalize_context_for_beating_frozen(self):
+        sample = row(1, .09)
+        sample.update(target_definition='update_utility', gap=-.75, weighted_gain=.10,
+            weighted_harm=.01, request_cost=0., competitive_score=-.66)
+        result = diag.summarize_targets([sample])
+        self.assertEqual(result['positive'], 1)
+        for field, value in [('score', -.66), ('competitive_score', 0.), ('target_definition', 'unknown')]:
+            corrupted = dict(sample); corrupted[field] = value
+            with self.assertRaises(ValueError): diag.summarize_targets([corrupted])
+
     def test_inconsistent_or_illegal_target_is_rejected(self):
         for key, value in [('score', 10), ('query_legal', False)]:
             sample = row(1, .2); sample[key] = value
@@ -165,3 +175,4 @@ class ActorAuditTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+

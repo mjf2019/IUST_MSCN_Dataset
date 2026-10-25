@@ -1,5 +1,40 @@
 # Standardized Actor: TRAIN and independent VAL
 
+## Minimal utility-target control, zero cost and no logit penalty
+
+```powershell
+.\AMCAL\run_amcal_standardized_actor.ps1 -Dataset IAT -Control Natural -UniformTraining -PilotRows 300 -Epochs 2 -QueryUtilityTarget -Action All
+.\AMCAL\run_amcal_standardized_actor.ps1 -Dataset PS -Control Natural -UniformTraining -PilotRows 300 -Epochs 2 -QueryUtilityTarget -Action All
+.\AMCAL\push_amcal_standardized_actor.ps1 -Dataset Both
+```
+
+The request target is gain_weight*G - forgetting_weight*F, with cost fixed at
+zero and logit regularization disabled. With the prescribed unit weights this
+is G-F. The gap is still computed and logged, and the Context update remains
+unchanged. The original counterfactual helper is untouched: the request target
+is adjusted at the caller, retaining its original score as competitive_score.
+TRAIN traces declare target_definition=update_utility, and diagnostic arithmetic
+checks that formula and the separately retained competitive score.
+
+This tests two identified target-design issues (the non-marginal competitive
+gap in the request target, and the positive request cost) together. It does not
+isolate their individual effects, guarantee useful queries, or prove that the
+original shared min-max objective has been preserved. The query Actor now
+maximizes update utility; Context retains its previous local gap/replay
+minimization. These are separate local objectives. No manuscript claim changes.
+
+The architecture, fixed normalizer, optimizer hyperparameters, routing and
+batch5/replay update are unchanged. TRAIN feedback is uniform at 20%; VAL/TEST
+requests remain Actor decisions at threshold 0.5 with a 20% cap. Source CNN is
+frozen. Streams are capped at 300 rows per level and two training epochs, with
+the same deterministic pilot IDs as the previous small-data run. Under uniform
+TRAIN collection, changing the Actor target should not change the committed
+Context trajectory; a small numerical contract verifies that property.
+
+Runs use c0 and a final _utility suffix, preserving all earlier outputs. The
+checkpoint records the new request target and restores it for evaluation.
+The same push helper sends only JSON/CSV outside Models, including this run.
+
 ## Small Actor saturation control
 
 ```powershell
