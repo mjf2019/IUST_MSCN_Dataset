@@ -24,13 +24,15 @@ from enhancements.config import EnhancementConfig
 from enhancements.models import BankExecutor
 from enhancements.state import build_state
 from enhancements.memory import ProtectedMemory
-from enhancements.minimax_query import QueryMaximizer, maximize_step, context_min_step, counterfactual_step
+from enhancements.minimax_query import (QueryMaximizer, maximize_step, context_min_step,
+    counterfactual_step, CounterfactualWorkspace, query_target_allowed)
 
-VERSION = 1
+VERSION = 2
 TRAIN_LEVELS = [0, 1, 3]
 TEST_LEVELS = [5, 7, 10, 12, 15, 17, 20]
 SETTING_KEYS = ['horizon', 'cost', 'gain_weight', 'forgetting_weight', 'context_lr',
-    'query_lr', 'replay_weight', 'budget_fraction', 'seed', 'validation_retention_weight', 'epochs', 'patience']
+    'query_lr', 'replay_weight', 'budget_fraction', 'seed', 'validation_retention_weight',
+    'epochs', 'patience', 'reference_size']
 
 
 def digest(path):
@@ -82,47 +84,87 @@ def feature_key(row):
     return row.detach().cpu().contiguous().numpy().tobytes()
 
 
+def feature_keys(x):
+    """One device transfer for a domain, rather than one per feature comparison."""
+    return [row.tobytes() for row in x.detach().cpu().contiguous().numpy()]
+
+
+def balanced_draw(labels, count, rng):
+    labels = np.asarray(labels)
+    queues = {int(c): rng.permutation(np.flatnonzero(labels == c)).tolist() for c in np.unique(labels)}
+    chosen = []
+    while len(chosen) < min(count, len(labels)):
+        for cls in rng.permutation(list(queues)):
+            if queues[cls]: chosen.append(queues[cls].pop())
+            if len(chosen) == min(count, len(labels)): break
+    return chosen
+
+
+def validate_trace(rows, cap):
+    used = 0
+    for position, row in enumerate(rows, start=1):
+        if row['step'] != position or row['route'] not in (0, 1):
+            raise RuntimeError('Invalid stream step or route.')
+        if row['queried'] != (row['action'] == 2):
+            raise RuntimeError('Query action and feedback flag disagree.')
+        if not row['queried'] and row['action'] != row['route']:
+            raise RuntimeError('Skip action and prediction route disagree.')
+        used += int(row['queried'])
+        if used > cap or row['labels_used'] != used:
+            raise RuntimeError('Feedback usage violates the hard cap or causal accounting.')
+        best = 0 if row['frozen_route_score'] >= row['context_route_score'] else 1
+        if row['route'] != best:
+            raise RuntimeError('Prediction did not use the best pre-feedback route score.')
+        key = 'frozen_prediction' if row['route'] == 0 else 'context_prediction'
+        if row['prediction'] != row[key]:
+            raise RuntimeError('Recorded prediction differs from its pre-feedback route.')
+
+
 class Replay:
     """TRAIN anchors and paid feedback only; exclude IDs and feature duplicates."""
     def __init__(self, anchors, seed, config, classes):
         self.rng = np.random.default_rng(seed)
         self.config = config
         self.storage = ProtectedMemory(anchors[:2], classes, config, seed)
-        self.ids = {feature_key(anchors[0][j:j+1]): int(i) for j, i in enumerate(anchors[2])}
+        self.ids = {}
+        for key, source_id in zip(feature_keys(anchors[0]), anchors[2]):
+            self.ids.setdefault(key, set()).add(int(source_id))
 
-    def inventory(self, rows, device):
-        return [(self.ids[r[2]], r[0].to(device), r[1], r[2]) for r in rows]
+    def inventory(self, rows):
+        return [(self.ids[r[2]], r[0], r[1], r[2]) for r in rows]
 
-    def draw(self, current_id, current, future_ids=(), future_x=None, reference_keys=()):
+    def draw(self, current_id, current, future_ids=(), future_x=None, reference_keys=(),
+             current_key=None, future_keys=None):
         blocked_ids = {int(current_id), *map(int, future_ids)}
-        blocked_keys = {feature_key(current), *reference_keys}
-        if future_x is not None:
-            blocked_keys.update(feature_key(row[None]) for row in future_x)
-        def take(pool, count):
+        blocked_keys = {current_key if current_key is not None else feature_key(current), *reference_keys}
+        if future_keys is not None: blocked_keys.update(future_keys)
+        elif future_x is not None: blocked_keys.update(feature_keys(future_x))
+        def take(pool, count, balanced=False):
             eligible = []
             seen = set(blocked_keys)
             for row in pool:
-                if row[0] not in blocked_ids and row[3] not in seen:
+                if not row[0].intersection(blocked_ids) and row[3] not in seen:
                     eligible.append(row); seen.add(row[3])
             if not eligible: return []
-            indices = self.rng.choice(len(eligible), min(count, len(eligible)), replace=False)
+            indices = (balanced_draw([r[2] for r in eligible], count, self.rng) if balanced else
+                self.rng.choice(len(eligible), min(count, len(eligible)), replace=False))
             return [eligible[int(i)] for i in indices]
         stored_paid = [*self.storage.recent, *(r for group in self.storage.historical for r in group)]
-        paid = take(self.inventory(stored_paid, current.device), 4)
+        paid = take(self.inventory(stored_paid), 4)
         # The two replay pools must also be disjoint from each other.
-        blocked_ids.update(r[0] for r in paid)
+        blocked_ids.update(i for r in paid for i in r[0])
         blocked_keys.update(r[3] for r in paid)
         old = [*self.storage.source, *(r for group in self.storage.historical for r in group)]
-        source = take(self.inventory(old, current.device), self.config.memory_replay_size)
+        source = take(self.inventory(old), self.config.memory_replay_size, balanced=True)
         def tensors(rows):
             if not rows: return None
-            return torch.cat([r[1] for r in rows]), torch.tensor([r[2] for r in rows], device=current.device)
-        return [(r[1], torch.tensor([r[2]], device=current.device)) for r in paid], tensors(source)
+            return torch.cat([r[1] for r in rows]).to(current.device), torch.tensor([r[2] for r in rows], device=current.device)
+        return [(r[1].to(current.device), torch.tensor([r[2]], device=current.device)) for r in paid], tensors(source)
 
     def add(self, source_id, x, truth):
         key = feature_key(x)
         self.storage.add(x, torch.tensor([truth], device=x.device))
-        self.ids[key] = int(source_id)
+        self.ids.setdefault(key, set()).add(int(source_id))
         retained = {r[2] for r in self.storage.source}
         retained.update(r[2] for r in self.storage.recent)
         retained.update(r[2] for group in self.storage.historical for r in group)
@@ -156,7 +198,8 @@ def endpoint(a, cnn, context, agent, domain, history, used, cap, position):
     return metrics(y, predicted, len(a.classes))
 
 
-def stream(a, runtime, domain, anchors, reference, clean, seed, training=False):
+def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
+           training_state=None, target_endpoints=True):
     cnn, context, agent, query = runtime
     core = base.legacy.core
     x, y, ids = domain
@@ -164,60 +207,85 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False):
     x, y, ids = x[torch.as_tensor(order, device=x.device)], np.asarray(y)[order], np.asarray(ids)[order]
     n, cap = len(y), int(a.budget_fraction * len(y))
     if n == 0: raise ValueError('Empty stream.')
+    if training and reference is None: raise ValueError('TRAIN requires an independent forgetting reference.')
+    keys = feature_keys(x)
     history = DeviceReliability(len(a.classes), x.device, routes=2)
     memory = Replay(anchors, seed + 61, a.config, len(a.classes))
-    optimizer = torch.optim.Adam(context.parameters(), lr=a.context_lr, weight_decay=1e-4)
-    query_optimizer = torch.optim.Adam(query.parameters(), lr=a.query_lr, weight_decay=1e-4) if training else None
+    if training_state is None: training_state = {}
+    optimizer = training_state.get('context_optimizer') if training else None
+    if optimizer is None: optimizer = torch.optim.Adam(context.parameters(), lr=a.context_lr, weight_decay=1e-4)
+    query_optimizer = training_state.get('query_optimizer') if training else None
+    if training and query_optimizer is None:
+        query_optimizer = torch.optim.Adam(query.parameters(), lr=a.query_lr, weight_decay=1e-4)
+    workspace = training_state.get('workspace', CounterfactualWorkspace()) if training else None
     query.requires_grad_(training)
     query.eval()
     rng = np.random.default_rng(seed + 71)
     z, h = base.legacy.base_cache(cnn, x)
     used, trace, predicted = 0, [], []
-    reference_keys = {feature_key(row[None]) for row in reference[0]} if reference is not None else set()
+    reference_keys = set(feature_keys(reference[0])) if reference is not None else set()
     reference_probe = (reference[0], torch.as_tensor(reference[1], dtype=torch.long, device=x.device)) if reference is not None else None
-    source_before = endpoint(a, cnn, context, agent, clean, history, used, cap, 0)
-    target_before = endpoint(a, cnn, context, agent, (x, y), history, used, cap, 0)
+    reference_labels = np.asarray(reference[1]) if reference is not None else None
+    probe_rng = np.random.default_rng(seed + 131)
+    source_before = endpoint(a, cnn, context, agent, clean, history, used, cap, 0) if not training else {}
+    target_before = endpoint(a, cnn, context, agent, (x, y), history, used, cap, 0) if not training and target_endpoints else {}
     frozen_state = deepcopy(cnn.state_dict())
     future_state = deepcopy(agent.policy.future.state_dict())
     utility_state = deepcopy(agent.policy.update_value.state_dict())
     query_initial = deepcopy(query.state_dict()) if not training else None
     for pos in range(n):
         inputs = x[pos:pos+1]
+        versions = agent.versions.copy()
         with torch.no_grad():
             outputs = BankExecutor(cnn, [context]).outputs(inputs, z[pos:pos+1])
             state = build_state(outputs, h[pos:pos+1], history, used, cap, pos, n, -1)
-            route = int(agent.policy.route_logits(state).argmax(1))
-            logit, estimate = query(state)
-            probability = float(logit.sigmoid()[0])
+            route_scores = agent.policy.route_logits(state)[0].cpu().tolist()
+            if not all(math.isfinite(value) for value in route_scores):
+                raise ValueError('Nonfinite routing scores.')
+            route = int(route_scores[1] > route_scores[0])
+            if used < cap:
+                logit, estimate = query(state)
+                probability, estimated_score = float(logit.sigmoid()[0]), float(estimate[0])
+                if not math.isfinite(probability) or not math.isfinite(estimated_score):
+                    raise ValueError('Nonfinite query scores.')
+            else:
+                probability, estimated_score = 0., None
             paid = used < cap and (rng.random() < probability if training else probability >= .5)
             # Route choice is identical for query and skip, and precedes truth access.
             prediction = int(outputs[0][0, route].argmax())
             correct_predictions = outputs[0].argmax(2)
+            route_predictions = correct_predictions[0].cpu().tolist()
         predicted.append(prediction)
         truth = int(y[pos])
         record = dict(step=pos+1, source_row=int(ids[pos]), truth=truth, prediction=prediction,
             route=route, action=2 if paid else route, queried=paid,
-            query_probability=probability, estimated_score=float(estimate[0]),
+            frozen_prediction=route_predictions[0], context_prediction=route_predictions[1],
+            frozen_route_score=route_scores[0], context_route_score=route_scores[1],
+            query_probability=probability, estimated_score=estimated_score,
             gap=None, gain=None, harm=None, score=None, replay_loss=None, actor_loss=None, value_loss=None)
         target = None
         label = torch.tensor([truth], device=x.device)
         # Only the offline TRAIN path can ever access future labels.
-        if training and pos + a.horizon < n:
+        if query_target_allowed(training, used, cap, pos, n, a.horizon):
             future_x = x[pos+1:pos+1+a.horizon]
             future_ids = ids[pos+1:pos+1+a.horizon]
-            blocked = {feature_key(inputs), *reference_keys}
-            future_mask = np.asarray([int(i) != int(ids[pos]) and feature_key(future_x[j:j+1]) not in blocked
+            blocked = {keys[pos], *reference_keys}
+            block_keys = keys[pos+1:pos+1+a.horizon]
+            future_mask = np.asarray([int(i) != int(ids[pos]) and block_keys[j] not in blocked
                 for j, i in enumerate(future_ids)])
             future_at = torch.as_tensor(np.flatnonzero(future_mask), device=x.device)
             future_x, future_ids = future_x[future_at], future_ids[future_mask]
         else:
             future_x = None
         if future_x is not None and len(future_x):
-            paid_rows, replay = memory.draw(ids[pos], inputs, future_ids, future_x, reference_keys)
+            paid_rows, replay = memory.draw(ids[pos], inputs, future_ids, reference_keys=reference_keys,
+                current_key=keys[pos], future_keys=[k for k, keep in zip(block_keys, future_mask) if keep])
+            ref_at = torch.as_tensor(balanced_draw(reference_labels, a.reference_size, probe_rng), device=x.device)
+            reference_batch = reference_probe[0][ref_at], reference_probe[1][ref_at]
             candidate, candidate_optimizer, target = counterfactual_step(context, optimizer, cnn,
                 (inputs, label), paid_rows, replay,
                 (future_x, torch.as_tensor(y[pos+1:pos+1+a.horizon][future_mask], device=x.device)),
-                reference_probe, a.replay_weight, a.gain_weight, a.forgetting_weight, a.cost)
+                reference_batch, a.replay_weight, a.gain_weight, a.forgetting_weight, a.cost, workspace)
             # Full-information TRAIN actor max step; no successor/bootstrap term.
             record.update(target)
             record.update(maximize_step(query, query_optimizer, state,
@@ -226,9 +294,11 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False):
             history.observe_paid(outputs[0].softmax(2), truth)
             if target is not None:
                 # Commit precisely the measured branch, including Adam moments.
+                old_context, old_optimizer = context, optimizer
                 context, optimizer = candidate, candidate_optimizer
+                workspace.recycle(old_context, old_optimizer)
             else:
-                paid_rows, replay = memory.draw(ids[pos], inputs, reference_keys=reference_keys)
+                paid_rows, replay = memory.draw(ids[pos], inputs, reference_keys=reference_keys, current_key=keys[pos])
                 context_min_step(context, optimizer, cnn, (inputs, label), paid_rows, replay, a.replay_weight)
             with torch.no_grad():
                 new_probs = cnn(context(inputs)).softmax(1)
@@ -236,14 +306,20 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False):
             history.updated(1, pos+1, change)
             used += 1
             memory.add(ids[pos], inputs, truth)
+            agent.versions[0] += 1
             # Correctness labels refer to predictions made before feedback/update.
-            agent.observe_routes(state, (correct_predictions[0] == truth).float())
+            agent.observe_routes(state, (correct_predictions[0] == truth).float(), versions=versions)
         agent.clock += 1
         record['labels_used'] = used
         trace.append(record)
+        if pos == 0 or (pos+1) % a.progress_every == 0 or pos+1 == n:
+            print(f'{"TRAIN" if training else "EVAL"}: {pos+1}/{n} | labels {used}/{cap}', flush=True)
     runtime = cnn, context, agent, query
-    source_after = endpoint(a, cnn, context, agent, clean, history, used, cap, n)
-    target_after = endpoint(a, cnn, context, agent, (x, y), history, used, cap, n)
+    validate_trace(trace, cap)
+    if training:
+        training_state.update(context_optimizer=optimizer, query_optimizer=query_optimizer, workspace=workspace)
+    source_after = endpoint(a, cnn, context, agent, clean, history, used, cap, n) if not training else {}
+    target_after = endpoint(a, cnn, context, agent, (x, y), history, used, cap, n) if not training and target_endpoints else {}
     for name, before in (('future', future_state), ('update_value', utility_state)):
         if any(not torch.equal(v, getattr(agent.policy, name).state_dict()[k]) for k, v in before.items()):
             raise RuntimeError('A frozen legacy head changed: ' + name)
@@ -272,6 +348,8 @@ def initialize(a):
     if is_light != (a.dataset == 'PS'):
         raise ValueError('Expected original CNN for IAT and Light CNN for PS; source architecture differs.')
     saved = torch.load(source/'final_enhancement.pth', map_location='cpu', weights_only=False)
+    if saved.get('format_version') != base.FORMAT_VERSION:
+        raise ValueError('Unsupported source enhancement checkpoint format.')
     if saved.get('training_context_count') != 1 or set(saved['training_levels']) != set(TRAIN_LEVELS):
         raise ValueError('Source must be the one-Context PairOnly run trained on 0/1/3.')
     for name, expected in saved['model_hashes'].items():
@@ -280,9 +358,12 @@ def initialize(a):
         if digest(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv') != expected:
             raise ValueError('Source training-domain provenance mismatch.')
     a.config = replace(EnhancementConfig(**saved['config']), memory_ce_weight=a.replay_weight).validated()
-    if a.config.architecture != 'legacy' or a.config.cascade or a.config.joint_router:
-        raise ValueError('This pilot requires the full-bank legacy Context architecture.')
+    if (a.config.architecture != 'legacy' or a.config.cascade or a.config.joint_router
+            or a.config.routed_utility or not a.config.protected_reference):
+        raise ValueError('This pilot requires protected full-bank legacy Contexts without routed utility.')
     a.classes = list(artifact['label_encoder'].classes_)
+    if a.reference_size < len(a.classes):
+        raise ValueError('Reference size must cover every source class.')
     a.context_count, a.gamma = 1, .95
     initial = torch.load(source/'enhanced_context.pth', map_location='cpu', weights_only=False)['initial_state_dict']
     return artifact, saved, initial
@@ -294,7 +375,11 @@ def train(a):
         if not (a.output/'training_complete.json').exists():
             raise ValueError('Interrupted training preserved; use a fresh --output directory.')
         completed = torch.load(a.output/'Models'/'minimax_query.pth', map_location='cpu', weights_only=False)
-        if (completed['settings'] != {key: getattr(a, key) for key in SETTING_KEYS}
+        completion = json.loads((a.output/'training_complete.json').read_text())
+        if completion['checkpoint_sha256'] != digest(a.output/'Models'/'minimax_query.pth'):
+            raise ValueError('Completed checkpoint checksum mismatch.')
+        if (completed.get('version') != VERSION
+                or completed['settings'] != {key: getattr(a, key) for key in SETTING_KEYS}
                 or completed['source_checkpoint_sha256'] != digest(a.models/'final_enhancement.pth')
                 or completed.get('dataset') != a.dataset):
             raise ValueError('Completed checkpoint settings differ; use a fresh --output directory.')
@@ -310,23 +395,25 @@ def train(a):
     source_domain = base.legacy.read_domain(a.burst_dir, artifact, 0, 'train_ids')
     anchors, reference, reserved = reference_partition(source_domain, a.seed)
     # A source reference cannot be a future probe or update at another intensity.
-    reference_keys = {feature_key(row[None]) for row in reference[0]}
+    reference_keys = set(feature_keys(reference[0]))
     train_domains = {}
     for level in TRAIN_LEVELS:
         domain = base.legacy.read_domain(a.burst_dir, artifact, level, 'train_ids')
-        mask = np.asarray([int(i) not in reserved and feature_key(domain[0][j:j+1]) not in reference_keys
-            for j, i in enumerate(domain[2])])
+        mask = np.asarray([int(i) not in reserved and key not in reference_keys
+            for i, key in zip(domain[2], feature_keys(domain[0]))])
         train_domains[level] = subset(domain, mask)
         if len(train_domains[level][1]) <= a.horizon:
             raise ValueError('TRAIN stream is too short for the requested future horizon.')
     clean_val = base.legacy.read_domain(a.burst_dir, artifact, 0, 'val_ids')
     validations = {level: base.legacy.read_domain(a.burst_dir, artifact, level, 'val_ids') for level in TRAIN_LEVELS}
     runtime = new_runtime(a, artifact, inherited, initial)
+    training_state = {}
     best, stale, log = -math.inf, 0, []
     for epoch in range(a.epochs):
         for level in TRAIN_LEVELS:
+            print(f'Epoch {epoch+1}/{a.epochs} | TRAIN level {level}', flush=True)
             runtime, result, _ = stream(a, runtime, train_domains[level], anchors, reference, clean_val,
-                a.seed + epoch*1009 + level*101, training=True)
+                a.seed + epoch*1009 + level*101, training=True, training_state=training_state)
         cnn, context, agent, query = runtime
         snapshot = dict(policy_state_dict=deepcopy(agent.policy.state_dict()),
             prerouter_state_dict=deepcopy(agent.pre_router.state_dict()))
@@ -335,7 +422,7 @@ def train(a):
         for level in TRAIN_LEVELS:
             temporary = new_runtime(a, artifact, snapshot, context_state, query_state)
             _, val, _ = stream(a, temporary, validations[level], anchors, None, clean_val,
-                a.seed + 50003 + level)
+                a.seed + 50003 + level, target_endpoints=False)
             val_rows.append(val)
         accuracy = float(np.mean([r['online']['AC'] for r in val_rows]))
         drop = float(np.mean([r['original_domain_forgetting']['AC'] for r in val_rows]))
@@ -344,7 +431,8 @@ def train(a):
             selection_score=score, validation=val_rows)
         log.append(entry)
         print(f'Epoch {epoch+1}/{a.epochs}: VAL AC {accuracy:.2f}% | source forgetting {drop:+.2f} pp', flush=True)
-        write_json(a.output/'training.json', dict(epochs=log))
+        write_json(a.output/'training.json', dict(version=VERSION, dataset=a.dataset,
+            settings={key: getattr(a, key) for key in SETTING_KEYS}, epochs=log))
         if score > best:
             best, stale = score, 0
             saved = dict(version=VERSION, dataset=a.dataset, config=a.config.as_dict(), **snapshot,
@@ -361,9 +449,12 @@ def train(a):
                     initialization='existing PairOnly routing; pretrained initial Context; new query actor/value',
                     future_scope='next TRAIN block, no updates within block',
                     test_used_for_selection=False, query_bonus=0, bootstrap=False,
-                    objective='adversarial current-row gap plus detached gain/harm/cost; selected-label replay regularizer',
-                    minmax_scope='shared current-row gap; replay is an auxiliary Context regularizer'))
-            torch.save(saved, models/'minimax_query.pth')
+                    objective='adversarial equal-weight batch5 gap plus detached gain/harm/cost; protected replay regularizer',
+                    reference_sampling='class-balanced TRAIN reference mini-probes, excluded from all experimental updates',
+                    minmax_scope='shared batch5 gap; protected replay is an auxiliary Context regularizer'))
+            temporary = models/'minimax_query.pth.tmp'
+            torch.save(saved, temporary)
+            temporary.replace(models/'minimax_query.pth')
         else:
             stale += 1
             if stale >= a.patience: break
@@ -376,6 +467,7 @@ def evaluate(a):
     saved = torch.load(a.models/'minimax_query.pth', map_location='cpu', weights_only=False)
     if saved['version'] != VERSION: raise ValueError('Unsupported minimax pilot version.')
     if saved['dataset'] != a.dataset: raise ValueError('Checkpoint dataset mismatch.')
+    if saved['settings']['seed'] != a.seed: raise ValueError('Requested seed differs from the trained checkpoint.')
     for key, value in saved['settings'].items(): setattr(a, key, value)
     a.config = EnhancementConfig(**saved['config']).validated()
     a.context_count, a.gamma = 1, .95
@@ -399,6 +491,16 @@ def evaluate(a):
     root = a.output/'Results'/('evaluation_' + hashlib.sha256(json.dumps(execution, sort_keys=True).encode()).hexdigest()[:12])
     if (root/'completed.json').exists():
         if json.loads((root/'execution.json').read_text()) != execution: raise ValueError('Execution mismatch.')
+        completed = json.loads((root/'completed.json').read_text())
+        if digest(root/'summary.csv') != completed.get('summary_sha256'):
+            raise ValueError('Completed evaluation summary is missing or changed.')
+        for level in TEST_LEVELS:
+            metrics_path = root/f'level_{level}_metrics.json'
+            if digest(metrics_path) != completed.get('metrics_sha256', {}).get(str(level)):
+                raise ValueError('Completed evaluation metrics are missing or changed.')
+            row = json.loads(metrics_path.read_text())
+            if digest(root/f'level_{level}_trace.csv') != row.get('trace_sha256'):
+                raise ValueError('Completed evaluation trace is missing or changed.')
         print(f'Using completed evaluation: {root}', flush=True)
         return
     root.mkdir(parents=True, exist_ok=True)
@@ -426,7 +528,9 @@ def evaluate(a):
         print(f'Level {level}: AC {result["online"]["AC"]:.2f}% | labels {result["labels"]}/{result["cap"]} | '
               f'forgetting {result["original_domain_forgetting"]["AC"]:+.2f} pp', flush=True)
     write_csv(root/'summary.csv', rows)
-    write_json(root/'completed.json', dict(levels=len(rows), checkpoint_sha256=execution['checkpoint_sha256']))
+    write_json(root/'completed.json', dict(levels=len(rows), checkpoint_sha256=execution['checkpoint_sha256'],
+        summary_sha256=digest(root/'summary.csv'),
+        metrics_sha256={str(level): digest(root/f'level_{level}_metrics.json') for level in TEST_LEVELS}))
     print(f'Results: {root}', flush=True)
 
 
@@ -442,6 +546,8 @@ def parser():
     p.add_argument('--epochs', type=int, default=6)
     p.add_argument('--patience', type=int, default=3)
     p.add_argument('--horizon', type=int, default=16)
+    p.add_argument('--reference-size', type=int, default=32)
+    p.add_argument('--progress-every', type=int, default=250)
     p.add_argument('--cost', type=float, default=.05)
     p.add_argument('--gain-weight', type=float, default=1.)
     p.add_argument('--forgetting-weight', type=float, default=1.)
@@ -455,7 +561,8 @@ def parser():
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
-    if a.horizon < 1 or a.epochs < 1 or a.patience < 1: p.error('Horizon/epochs/patience must be positive.')
+    if min(a.horizon, a.epochs, a.patience, a.reference_size, a.progress_every) < 1:
+        p.error('Horizon/epochs/patience/reference-size/progress-every must be positive.')
     if not 0 < a.budget_fraction <= 1: p.error('Budget must be in (0,1].')
     for key in ['cost', 'gain_weight', 'forgetting_weight', 'context_lr', 'query_lr', 'replay_weight', 'validation_retention_weight']:
         if not math.isfinite(getattr(a, key)) or getattr(a, key) < 0: p.error(key + ' must be finite and nonnegative.')
@@ -464,7 +571,7 @@ def main(argv=None):
     stem = 'light_ps_paironly_batch5' if a.dataset == 'PS' else 'paironly_batch5'
     a.source_run = a.source_run or root/'protocol_runs'/f'{stem}_trainseed{a.seed}'/'paironly_batch5'
     a.burst_dir = a.burst_dir or root/'Dataset_official_v1'/f'AdvBurst_FTSC-{a.dataset}'
-    a.output = a.output or root/'protocol_runs'/f'minimax_query_batch5_seed{a.seed}_h{a.horizon}_c{a.cost:g}'
+    a.output = a.output or root/'protocol_runs'/f'minimax_query_batch5_seed{a.seed}_v{VERSION}_h{a.horizon}_c{a.cost:g}'
     if a.device == 'cuda' and not torch.cuda.is_available(): p.error('CUDA is unavailable; use --device cpu.')
     base.legacy.core.device = torch.device('cuda' if a.device == 'cuda' or (a.device == 'auto' and torch.cuda.is_available()) else 'cpu')
     base.legacy.core.set_seed(a.seed)

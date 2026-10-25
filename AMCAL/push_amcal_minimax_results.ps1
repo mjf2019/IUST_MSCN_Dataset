@@ -6,7 +6,7 @@ try {
     $paths = @()
     foreach ($name in $datasets) {
         $root = "AMCAL/ANT_Burst_${name}_TEST/protocol_runs"
-        $runs = @(Get-ChildItem $root -Directory -Filter 'minimax_query_batch5_seed*')
+        $runs = @(Get-ChildItem $root -Directory -Filter 'minimax_query_batch5_seed*_v2_*')
         foreach ($run in $runs) {
             $training = Join-Path $run.FullName 'training.json'
             if (Test-Path $training) { $paths += $training }
@@ -27,8 +27,10 @@ try {
     if ($paths.Count -eq 0) { throw 'No experimental results were found.' }
     $staged = @(git diff --cached --name-only)
     if ($LASTEXITCODE -ne 0) { throw 'Checking staged paths failed.' }
+    $datasetPattern = ($datasets | ForEach-Object { [regex]::Escape($_) }) -join '|'
+    $allowedPattern = '^AMCAL/ANT_Burst_(' + $datasetPattern + ')_TEST/protocol_runs/minimax_query_batch5_seed[^/]+_v2_[^/]+/(training(_complete)?\.json|Results/)'
     $outside = @($staged | Where-Object {
-        $_ -notmatch '^AMCAL/ANT_Burst_(IAT|PS)_TEST/protocol_runs/minimax_query_batch5_seed[^/]+/(training(_complete)?\.json|Results/)'
+        $_ -notmatch $allowedPattern
     })
     if ($outside.Count) { throw 'Unrelated changes are staged. Commit them separately before pushing results.' }
     foreach ($path in $paths) {
@@ -39,7 +41,7 @@ try {
     git diff --cached --quiet
     $diffCode = $LASTEXITCODE
     if ($diffCode -eq 1) {
-        git commit -m 'Add experimental minimax PairOnly results'
+        git commit -m 'Add experimental minimax v2 PairOnly results'
         if ($LASTEXITCODE -ne 0) { throw 'Commit failed.' }
     } elseif ($diffCode -ne 0) { throw 'Checking staged results failed.' }
     git push origin HEAD

@@ -7,21 +7,24 @@ installed by the scripts.
 ## What is optimized
 
 For each TRAIN state, first fix the prediction using the larger of the two
-pre-feedback routing scores. The current-row gap is
-`d = CE(Context(x), y) - CE(Frozen(x), y)`.
+pre-feedback routing scores. Let B contain the current row and up to four
+previously paid rows. The shared competitive gap is
+`d_B = mean_B CE(Context(x), y) - mean_B CE(Frozen(x), y)`.
 
 Copy the Context together with its Adam state, execute one candidate update,
 and measure:
 
 - `G`: signed mean CE reduction on the next independent TRAIN block;
 - `F`: mean positive CE increase on an independent clean TRAIN reference;
-- `S = d + gain_weight*G - forgetting_weight*F - cost`.
+- `S = d_B + gain_weight*G - forgetting_weight*F - cost`.
 
 There are no updates within the future block and no bootstrap. All three
 quantities have CE-loss units. The default weights are pilot settings, not a
 claim that the components have equal distributions or that the settings are
 optimal. The future block is of length 16 before removing duplicate features;
-the final 16 TRAIN positions have no future-block target.
+the final 16 TRAIN positions have no future-block target. Once the budget is
+exhausted there are no further counterfactuals or query-head training targets:
+querying is not a legal action in those states.
 
 The query actor directly minimizes `-sigmoid(actor(s))*stopgrad(S)`: this is
 the max step of a frozen-round, two-action full-information surrogate. A
@@ -29,21 +32,32 @@ parameter-disjoint value head also regresses `S` for diagnostics. The value-head
 regression is not described as performing the max optimization. TEST decisions
 use the actor, not the diagnostic value head.
 
-The Context minimizes the same current-row gap, with prior-feedback/source
-replay as a retention regularizer. A single forward/backward combines the
-current row, up to four previously paid labels (batch5), and protected replay.
-Current-row CE has weight one; retained rows have mean weight 0.1. This replaces
-the legacy nonlinear alpha objective intentionally, so its gradient matches
-the gap used in the adversarial component.
+The Context minimizes the same batch-mean gap plus `0.1 * mean protected CE`.
+All available batch5 rows have equal weight. Protected source/historical replay
+is a separate retention regularizer. This replaces the legacy nonlinear alpha
+objective intentionally, so the adversarial gradients correspond to the same
+batch gap. Version 1 incorrectly grouped the four paid rows into the low-weight
+protected regularizer; version 2 corrects this.
 
-**Scope of the min-max claim:** it is the shared current-row gap in alternating
+**Scope of the min-max claim:** it is the shared batch-mean gap in alternating
 query-max / Context-min optimization, augmented by detached one-update utility
 and harm for the actor and a selected-label replay regularizer for the Context.
 It is not an implementation of differentiation through the entire future
 adaptation process, a convergence guarantee, or a claim that the separately
-supervised routing objective is part of one zero-sum game. In particular, replay
-is conditional on a paid update; it is not the unconditional replay term of the
-idealized discussion equation.
+supervised routing objective is part of one zero-sum game. More precisely, for
+a fixed round k the regularized surrogate is
+
+`J_k(phi,theta) = E[p_theta(s) * (d_B(phi) + beta*G_k - lambda*F_k - c)
+                      + alpha*stopgrad(p_k(s))*L_protected(phi)]`.
+
+The max step differentiates only p_theta, with G_k/F_k detached. The input
+state s_k and batch B are fixed within the round; no gradients pass through
+state construction, probe measurement, or the Adam trajectory. The paid-label
+Context step is a stochastic min step at theta_k: sampling a query with p_k
+weights both the batch gap and protected replay in expectation. The stopped
+p_k in the regularizer makes its actor gradient zero. This describes the
+conditional replay implementation; it is different from an unconditional
+replay penalty applied on every skipped sample.
 
 ## Data and state isolation
 
@@ -55,18 +69,28 @@ idealized discussion equation.
   experimental updates/future probes at all TRAIN intensities. These rows may
   have been seen during existing source pretraining; independence applies to
   the experimental update being measured, not to the full source pretraining.
+  Keep the entire reserved reference, but measure F on a fresh class-balanced
+  mini-probe (default 32) per TRAIN target. Both branches use exactly that same
+  mini-probe. This changes the stochastic F estimator, not the data exclusion
+  rules. `-ReferenceSize` can increase the mini-probe up to the whole reference.
 - Current row, future block, and reference are excluded from replay using
   source IDs and feature hashes. Paid batch rows and protected replay are also
   disjoint. Feature-identical copies of the current row are removed from the
   future block. Empty future blocks do not create a target.
 - Keep the existing protected-memory source/recent/historical capacities and
-  reservoir rules. Probe exclusions change eligible replay rows. This pilot
-  samples the eligible protected rows uniformly, not with the legacy segment/
-  class quotas, so it is a new experimental protocol.
+  reservoir rules. Probe exclusions change eligible replay rows. Paid feedback
+  is sampled uniformly; protected replay is class-balanced over eligible source
+  and historical rows, without the legacy reference-batch segment quotas.
 - The cloned Context/Adam branch never mutates the live model, optimizer,
   memory or Torch RNG. If the pre-feedback decision requests a label, commit
   exactly that measured branch, including its Adam moments. Otherwise discard
   it. TRAIN future labels are never inserted into paid memory by probing.
+  Version 2 reuses a separate shadow module and clones Adam tensor state when
+  loading it; the shadow and live parameters never share storage. Future and
+  old-domain probe rows are concatenated into one before/after forward pass.
+- Context and query Adam states persist across TRAIN levels and epochs along
+  with their weights. Paid memory and reliability reset at a TRAIN boundary.
+  Every VAL or TEST level receives fresh optimizers and feedback state.
 - VAL selects the best epoch using mean online accuracy minus positive
   clean-source accuracy drop. Horizon, cost and weights are explicit pilot
   choices; compare runs on VAL before fixing them. Do not select on TEST.
@@ -102,13 +126,15 @@ first performs the isolated CPU preflight checks below. Completed
 training/evaluation is reused; an interrupted training directory is preserved
 and requires a fresh `-Output`. An interrupted evaluation resumes at the first
 level without a completed metrics/trace pair. Changed training parameters need
-a different output directory; the default name includes horizon and cost.
+a different output directory; the default name includes version, horizon and
+cost (`minimax_query_batch5_seed42_v2_h16_c0.05`). Version 1 outputs are never
+reused as version 2 checkpoints. Progress is printed every 250 stream rows.
 
 ```powershell
 .\AMCAL\push_amcal_minimax_results.ps1 -Dataset Both
 ```
 
-Only these experimental JSON/CSV outputs are staged. Unrelated staged files
+Only version 2 experimental JSON/CSV outputs are staged. Unrelated staged files
 cause an explicit stop; model checkpoints and raw datasets are not added.
 
 Optional isolated CPU checks, using the existing environment:
@@ -116,3 +142,9 @@ Optional isolated CPU checks, using the existing environment:
 ```powershell
 .\venv\Scripts\python.exe -m unittest discover -s AMCAL/tests -p test_minimax_query.py -v
 ```
+
+The tests cover budget legality, prediction/feedback trace invariants, batch5
+weights, signed actor optimization, detached targets, Context/Adam/RNG branch
+isolation, shadow reuse, and tiny synthetic TRAIN/TEST stream contracts. They do
+not substitute for a real-data GPU run. No runtime test is claimed to have
+passed when its PyTorch dependency is unavailable.
