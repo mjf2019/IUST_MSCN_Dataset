@@ -64,6 +64,40 @@ Repeat only the cached Actor audit, without recomputing counterfactual targets:
 .\AMCAL\run_amcal_minimax_diagnostics.ps1 -Dataset PS -Phase Actor
 ```
 
+## Next audit: input scaling, target magnitude and sign prevalence
+
+Reuse the existing local TRAIN cache without re-running Context updates or
+counterfactual probes:
+
+```powershell
+.\AMCAL\run_amcal_minimax_diagnostics.ps1 -Dataset IAT -Phase ActorScale -FitSteps 1000
+.\AMCAL\run_amcal_minimax_diagnostics.ps1 -Dataset PS -Phase ActorScale -FitSteps 1000
+.\AMCAL\push_amcal_minimax_diagnostics.ps1 -Dataset Both
+```
+
+The eight controls cross raw/standardized TRAIN states, original-utility/sign
+targets, and natural/balanced sign weighting. All start from the same cached
+initial Actor and use identical minibatch IDs. Standardization uses only the
+fitting TRAIN rows; constant dimensions are centered with scale one. Natural
+weighting reconstructs full logged sign prevalence because the cache itself
+is a per-sign reservoir. It does not reconstruct the full original trajectory.
+
+`actor_scale_steps1000.json` reports each control's learning curve, balanced
+accuracy, AUC, saturation, gradient norm and original-utility regret weighted
+by the observed natural prevalence. Binary accuracy and utility can disagree:
+the original loss weights errors by target magnitude, whereas sign targets
+are a different diagnostic objective. Improved sign accuracy alone does not
+demonstrate improved useful requests. The separate value head has disjoint
+parameters and is omitted here; a numerical contract checks that the Actor
+update with unit weights matches the original implementation.
+
+No fitted model or normalization is deployed. The reward implementation,
+Context, routing, existing models and earlier `actor_fit.json` stay unchanged.
+The local `TRAIN/actor_cache.pt` must still exist; pushed JSON files alone are
+not sufficient. These same-cache controls diagnose optimization/representation
+issues, not generalization or final traffic accuracy. If learning curves are
+still improving, more fit steps may be required before interpreting a plateau.
+
 ## Optional independent routing control
 
 ```powershell

@@ -267,6 +267,97 @@ def actor_audit(cache_path, output, seed, steps, learning_rate, device, trained_
     return report
 
 
+def diagnostic_actor_step(actor, optimizer, states, targets, weights):
+    """Actor-only version of the original loss, with explicit diagnostic weights."""
+    import torch
+    logits = actor(states.detach()).squeeze(-1)
+    loss = -(logits.sigmoid()*targets.detach()*weights.detach()).mean()
+    if not torch.isfinite(loss): raise ValueError('Nonfinite diagnostic Actor loss.')
+    optimizer.zero_grad(set_to_none=True); loss.backward()
+    grad = torch.nn.utils.clip_grad_norm_(actor.parameters(), 1., error_if_nonfinite=True)
+    optimizer.step()
+    return float(grad)
+
+
+def actor_scale_audit(cache_path, output, seed, steps, learning_rate, device):
+    """TRAIN-only factorial audit; no fitted model is saved or deployed."""
+    import torch
+    from .minimax_query import QueryMaximizer
+    if steps < 1 or not math.isfinite(learning_rate) or learning_rate <= 0:
+        raise ValueError('Fit steps and learning rate must be positive.')
+    cached = torch.load(cache_path, map_location='cpu', weights_only=False)
+    if cached.get('version') != DIAGNOSTIC_VERSION:
+        raise ValueError('Unsupported diagnostic cache version.')
+    positives = [r for r in cached['samples'] if r['score'] > 0]
+    negatives = [r for r in cached['samples'] if r['score'] < 0]
+    report = dict(version=1, scope='TRAIN same-cache diagnostic; not generalization or traffic accuracy',
+        steps=steps, learning_rate=learning_rate, deployment_changed=False,
+        cache_sha256=__import__('hashlib').sha256(Path(cache_path).read_bytes()).hexdigest(),
+        raw_target_counts=cached['seen'], controls={},
+        limitations=['Natural prevalence is reconstructed from full trace sign counts, with reservoir samples within each sign.',
+            'Sign targets change the diagnostic objective; they are not equivalent to maximizing the original signed utility.',
+            'The separate value head is omitted; it has no shared Actor parameters.',
+            'Same-cache fitting cannot demonstrate generalization or guarantee sufficient optimization.'])
+    if min(len(positives), len(negatives)) < 8:
+        report['status'] = 'insufficient_sign_diversity'; write_json(output, report); return report
+    rng = random.Random(seed+271)
+    count = min(len(positives), len(negatives), 256)
+    chosen = rng.sample(positives, count)+rng.sample(negatives, count)
+    states = torch.stack([r['state'] for r in chosen]).to(device)
+    scores = torch.tensor([r['score'] for r in chosen], device=device)
+    if not torch.isfinite(states).all() or not torch.isfinite(scores).all():
+        raise ValueError('Nonfinite cached states or scores.')
+    # Statistics are fitted exclusively on these cached TRAIN rows.
+    mean = states.double().mean(0)
+    std = states.double().std(0, unbiased=False)
+    scale = torch.where(std < 1e-6, torch.ones_like(std), std)
+    standardized = ((states.double()-mean)/scale).to(states.dtype)
+    seen_positive, seen_negative = cached['seen'].get('positive', 0), cached['seen'].get('negative', 0)
+    if min(seen_positive, seen_negative) < 1:
+        raise ValueError('Full TRAIN sign counts must include both signs.')
+    prevalence = seen_positive/(seen_positive+seen_negative)
+    natural_weights = torch.where(scores > 0, 2*prevalence, 2*(1-prevalence))
+    report.update(status='measured', fitting_rows=len(chosen), natural_positive_fraction=prevalence,
+        input_profile=dict(dimensions=states.shape[1], constant_or_near_constant_dimensions=int((std < 1e-6).sum()),
+            dimension_mean=mean.cpu().tolist(), dimension_std=std.cpu().tolist(),
+            raw_max_abs=float(states.abs().max()), standardized_max_abs=float(standardized.abs().max())),
+        score_profile=dict(positive=distribution(scores[:count].cpu().tolist()),
+            negative=distribution(scores[count:].cpu().tolist())))
+    devices = [states.device.index] if states.is_cuda else []
+    with torch.random.fork_rng(devices=devices):
+        torch.manual_seed(seed)
+        initial = QueryMaximizer(states.shape[1]).to(device).eval()
+        initial.load_state_dict(cached['initial_query'])
+        for input_name, inputs in [('raw', states), ('standardized', standardized)]:
+            for target_name, target in [('utility', scores), ('sign', scores.sign())]:
+                for balance_name, weights in [('natural', natural_weights), ('balanced', torch.ones_like(scores))]:
+                    name = f'{input_name}_{target_name}_{balance_name}'
+                    actor = deepcopy(initial.actor)
+                    optimizer = torch.optim.Adam(actor.parameters(), lr=learning_rate, weight_decay=1e-4)
+                    sample_rng = random.Random(seed+317)
+                    trajectory = []
+                    for step in range(steps):
+                        ids = sample_rng.sample(range(count), min(16, count))
+                        ids += [count+i for i in sample_rng.sample(range(count), min(16, count))]
+                        at = torch.tensor(ids, device=device)
+                        grad = diagnostic_actor_step(actor, optimizer, inputs[at], target[at], weights[at])
+                        if step == 0 or (step+1) % 100 == 0 or step+1 == steps:
+                            with torch.no_grad():
+                                p = actor(inputs).squeeze(-1).sigmoid()
+                                original_utility = (natural_weights*p*scores).mean()
+                                oracle_utility = (natural_weights*scores.clamp_min(0)).mean()
+                            trajectory.append(dict(step=step+1,
+                                **binary_report(scores.cpu().tolist(), p.cpu().tolist()),
+                                natural_original_utility=float(original_utility),
+                                natural_original_utility_regret=float(oracle_utility-original_utility),
+                                saturated_fraction=float(((p < .01) | (p > .99)).float().mean()),
+                                last_preclip_gradient_norm=float(grad)))
+                    report['controls'][name] = dict(final=trajectory[-1], trajectory=trajectory)
+                    print(f'Actor scale audit: {name} completed ({steps} steps)', flush=True)
+    write_json(output, report)
+    return report
+
+
 def routing_report(rows):
     rows = list(rows); count = len(rows)
     if not count: return dict(samples=0)
@@ -486,4 +577,14 @@ def diagnose(a, api):
         report = inspect_existing_routes(a, api)
         print('Routing diagnostic: '+report['status'], flush=True)
     if a.diagnostic_phase == 'FixedRouter': fixed_old_router(a, api)
+    if a.diagnostic_phase == 'ActorScale':
+        path = a.output/'TRAIN'/'actor_cache.pt'
+        if not protocol_path.exists() or not (a.output/'collection_complete.json').exists() or not path.exists():
+            raise ValueError('Complete TRAIN collection first; the local actor_cache.pt is required.')
+        completion = json.loads((a.output/'collection_complete.json').read_text(encoding='utf-8'))
+        if api.digest(path) != completion['cache_sha256']:
+            raise ValueError('Diagnostic TRAIN cache checksum mismatch.')
+        report = actor_scale_audit(path, a.output/f'actor_scale_steps{a.diagnostic_fit_steps}.json',
+            a.seed, a.diagnostic_fit_steps, a.query_lr, api.base.legacy.core.device)
+        print('Actor scale diagnostic: '+report['status'], flush=True)
     print(f'Diagnostics: {a.output}', flush=True)

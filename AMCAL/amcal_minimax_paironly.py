@@ -595,7 +595,7 @@ def parser():
     p.add_argument('--budget-fraction', type=float, default=.2)
     p.add_argument('--validation-retention-weight', type=float, default=1.)
     p.add_argument('--train-diagnostics', action='store_true')
-    p.add_argument('--diagnostic-phase', choices=['All', 'Collect', 'Actor', 'Routing', 'FixedRouter'], default='All')
+    p.add_argument('--diagnostic-phase', choices=['All', 'Collect', 'Actor', 'ActorScale', 'Routing', 'FixedRouter'], default='All')
     p.add_argument('--diagnostic-rows', type=int, default=256)
     p.add_argument('--diagnostic-cache-rows', type=int, default=1024)
     p.add_argument('--diagnostic-fit-steps', type=int, default=300)

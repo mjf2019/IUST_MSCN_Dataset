@@ -82,6 +82,52 @@ except ImportError:
 
 @unittest.skipIf(torch is None, 'Requires the existing PyTorch experiment environment')
 class ActorAuditTests(unittest.TestCase):
+    def test_diagnostic_actor_step_matches_original_actor_update(self):
+        sys.path.insert(0, str(ROOT))
+        try:
+            from copy import deepcopy
+            from enhancements.minimax_diagnostics import diagnostic_actor_step
+            from enhancements.minimax_query import QueryMaximizer, maximize_step
+            torch.manual_seed(42)
+            head = QueryMaximizer(2)
+            actor = deepcopy(head.actor)
+            original_optimizer = torch.optim.Adam(head.parameters(), lr=.001, weight_decay=1e-4)
+            diagnostic_optimizer = torch.optim.Adam(actor.parameters(), lr=.001, weight_decay=1e-4)
+            states = torch.tensor([[1., 2.], [-2., 3.]], requires_grad=True)
+            scores = torch.tensor([.2, -.7], requires_grad=True)
+            for _ in range(3):
+                maximize_step(head, original_optimizer, states, scores)
+                diagnostic_actor_step(actor, diagnostic_optimizer, states, scores, torch.ones(2))
+            for actual, expected in zip(actor.parameters(), head.actor.parameters()):
+                torch.testing.assert_close(actual, expected)
+            self.assertIsNone(states.grad); self.assertIsNone(scores.grad)
+        finally: sys.path.pop(0)
+
+    def test_scale_audit_controls_reuse_cache_and_train_only_statistics(self):
+        sys.path.insert(0, str(ROOT))
+        try:
+            from enhancements.minimax_diagnostics import actor_scale_audit
+            from enhancements.minimax_query import QueryMaximizer
+            samples = [dict(state=torch.tensor([sign*1000., 7.]), score=sign*(.2 if sign > 0 else .8))
+                for sign in (1., -1.) for _ in range(8)]
+            with tempfile.TemporaryDirectory() as root:
+                path = Path(root)/'cache.pt'
+                torch.save(dict(version=diag.DIAGNOSTIC_VERSION, samples=samples,
+                    initial_query=QueryMaximizer(2).state_dict(), seen={'positive':10, 'negative':90}), path)
+                before = path.read_bytes()
+                with contextlib.redirect_stdout(io.StringIO()):
+                    report = actor_scale_audit(path, Path(root)/'report.json', 42, 2, .001, 'cpu')
+                self.assertEqual(len(report['controls']), 8)
+                self.assertEqual(report['natural_positive_fraction'], .1)
+                self.assertEqual(report['input_profile']['constant_or_near_constant_dimensions'], 1)
+                self.assertEqual(report['input_profile']['standardized_max_abs'], 1.)
+                self.assertEqual(path.read_bytes(), before)
+                self.assertEqual({p.name for p in Path(root).iterdir()}, {'cache.pt', 'report.json'})
+                for control in report['controls'].values():
+                    self.assertEqual(control['final']['n'], 16)
+                    self.assertGreaterEqual(control['final']['natural_original_utility_regret'], -1e-7)
+        finally: sys.path.pop(0)
+
     def test_actual_gradient_contract_and_tiny_signed_fit(self):
         sys.path.insert(0, str(ROOT))
         try:

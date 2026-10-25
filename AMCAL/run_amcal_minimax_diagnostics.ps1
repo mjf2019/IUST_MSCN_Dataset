@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true)][ValidateSet('IAT','PS')][string]$Dataset,
-    [ValidateSet('All','Collect','Actor','Routing','FixedRouter')][string]$Phase = 'All',
+    [ValidateSet('All','Collect','Actor','ActorScale','Routing','FixedRouter')][string]$Phase = 'All',
     [int]$Seed = 42,
     [int]$Rows = 256,
     [int]$FitSteps = 300,
