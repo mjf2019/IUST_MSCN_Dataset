@@ -11,6 +11,7 @@ import json
 import math
 from pathlib import Path
 import shutil
+import sys
 
 import numpy as np
 import torch
@@ -199,7 +200,7 @@ def endpoint(a, cnn, context, agent, domain, history, used, cap, position):
 
 
 def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
-           training_state=None, target_endpoints=True):
+           training_state=None, target_endpoints=True, diagnostic_sink=None, max_steps=None):
     cnn, context, agent, query = runtime
     core = base.legacy.core
     x, y, ids = domain
@@ -207,6 +208,10 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
     x, y, ids = x[torch.as_tensor(order, device=x.device)], np.asarray(y)[order], np.asarray(ids)[order]
     n, cap = len(y), int(a.budget_fraction * len(y))
     if n == 0: raise ValueError('Empty stream.')
+    if diagnostic_sink is not None and not training:
+        raise ValueError('The TRAIN diagnostic recorder must not collect TEST/VAL targets.')
+    steps = n if max_steps is None else min(n, max_steps)
+    if steps < 1: raise ValueError('Diagnostic prefix must be positive.')
     if training and reference is None: raise ValueError('TRAIN requires an independent forgetting reference.')
     keys = feature_keys(x)
     history = DeviceReliability(len(a.classes), x.device, routes=2)
@@ -233,7 +238,7 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
     future_state = deepcopy(agent.policy.future.state_dict())
     utility_state = deepcopy(agent.policy.update_value.state_dict())
     query_initial = deepcopy(query.state_dict()) if not training else None
-    for pos in range(n):
+    for pos in range(steps):
         inputs = x[pos:pos+1]
         versions = agent.versions.copy()
         with torch.no_grad():
@@ -263,6 +268,15 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             frozen_route_score=route_scores[0], context_route_score=route_scores[1],
             query_probability=probability, estimated_score=estimated_score,
             gap=None, gain=None, harm=None, score=None, replay_loss=None, actor_loss=None, value_loss=None)
+        if diagnostic_sink is not None:
+            record.update(label_cap=cap, domain_samples=n, budget_used_before=used,
+                budget_remaining_before=cap-used, query_legal=used < cap,
+                request_cost=a.cost, weighted_gain=None, weighted_harm=None,
+                frozen_correct=int(route_predictions[0] == truth), context_correct=int(route_predictions[1] == truth),
+                routing_supervision='paid_feedback' if paid else 'observer_only',
+                actor_logit_before=float(logit[0]) if used < cap else None,
+                actor_probability_after=None, actor_grad_norm=None,
+                target_status='budget_exhausted' if used >= cap else 'insufficient_future')
         target = None
         label = torch.tensor([truth], device=x.device)
         # Only the offline TRAIN path can ever access future labels.
@@ -277,6 +291,8 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             future_x, future_ids = future_x[future_at], future_ids[future_mask]
         else:
             future_x = None
+        if diagnostic_sink is not None and future_x is not None and len(future_x) == 0:
+            record['target_status'] = 'empty_future_probe'
         if future_x is not None and len(future_x):
             paid_rows, replay = memory.draw(ids[pos], inputs, future_ids, reference_keys=reference_keys,
                 current_key=keys[pos], future_keys=[k for k, keep in zip(block_keys, future_mask) if keep])
@@ -290,6 +306,13 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             record.update(target)
             record.update(maximize_step(query, query_optimizer, state,
                 state.new_tensor([target['score']])))
+            if diagnostic_sink is not None:
+                with torch.no_grad():
+                    record.update(weighted_gain=a.gain_weight*target['gain'],
+                        weighted_harm=a.forgetting_weight*target['harm'], target_status='measured',
+                        actor_probability_after=float(query(state)[0].sigmoid()[0]),
+                        actor_grad_norm=float(sum(p.grad.detach().square().sum()
+                            for p in query.actor.parameters() if p.grad is not None).sqrt()))
         if paid:
             history.observe_paid(outputs[0].softmax(2), truth)
             if target is not None:
@@ -312,8 +335,9 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
         agent.clock += 1
         record['labels_used'] = used
         trace.append(record)
-        if pos == 0 or (pos+1) % a.progress_every == 0 or pos+1 == n:
-            print(f'{"TRAIN" if training else "EVAL"}: {pos+1}/{n} | labels {used}/{cap}', flush=True)
+        if diagnostic_sink is not None: diagnostic_sink.observe(state, record)
+        if pos == 0 or (pos+1) % a.progress_every == 0 or pos+1 == steps:
+            print(f'{"TRAIN" if training else "EVAL"}: {pos+1}/{steps} | labels {used}/{cap}', flush=True)
     runtime = cnn, context, agent, query
     validate_trace(trace, cap)
     if training:
@@ -327,14 +351,15 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
         raise RuntimeError('Frozen classifier changed.')
     if query_initial is not None and any(not torch.equal(v, query.state_dict()[k]) for k, v in query_initial.items()):
         raise RuntimeError('The query head changed online.')
-    result = dict(online=metrics(y, predicted, len(a.classes)), samples=n, labels=used, cap=cap,
-        labels_percent=100 * used/n, source_before=source_before, source_after=source_after,
+    result = dict(online=metrics(y[:steps], predicted, len(a.classes)), samples=steps, labels=used, cap=cap,
+        labels_percent=100 * used/steps, source_before=source_before, source_after=source_after,
         original_domain_forgetting={k: source_before[k]-source_after[k] for k in source_before},
         target_before=target_before, target_after=target_after,
         target_gain={k: target_after[k]-target_before[k] for k in target_before},
         target_endpoint_protocol='same scored stream, descriptive endpoint; not independent generalization',
         classifier_unchanged=True, query_head_unchanged=not training,
         legacy_future_and_utility_unchanged=True)
+    if steps != n: result.update(diagnostic_prefix=True, domain_samples=n, cap_scope='original full domain')
     return runtime, result, trace
 
 
@@ -374,6 +399,8 @@ def train(a):
     if (a.output/'Models'/'minimax_query.pth').exists():
         if not (a.output/'training_complete.json').exists():
             raise ValueError('Interrupted training preserved; use a fresh --output directory.')
+        if getattr(a, 'train_diagnostics', False) and not (a.output/'TrainDiagnostics'/'target_summary.json').exists():
+            raise ValueError('This completed run has no TRAIN diagnostics; use a fresh --output.')
         completed = torch.load(a.output/'Models'/'minimax_query.pth', map_location='cpu', weights_only=False)
         completion = json.loads((a.output/'training_complete.json').read_text())
         if completion['checkpoint_sha256'] != digest(a.output/'Models'/'minimax_query.pth'):
@@ -408,12 +435,22 @@ def train(a):
     validations = {level: base.legacy.read_domain(a.burst_dir, artifact, level, 'val_ids') for level in TRAIN_LEVELS}
     runtime = new_runtime(a, artifact, inherited, initial)
     training_state = {}
+    recorder = None
+    if getattr(a, 'train_diagnostics', False):
+        from enhancements.minimax_diagnostics import TrainingRecorder
+        recorder = TrainingRecorder(a.output/'TrainDiagnostics', a.seed, a.diagnostic_cache_rows,
+            deepcopy(runtime[3].state_dict()))
     best, stale, log = -math.inf, 0, []
     for epoch in range(a.epochs):
         for level in TRAIN_LEVELS:
             print(f'Epoch {epoch+1}/{a.epochs} | TRAIN level {level}', flush=True)
-            runtime, result, _ = stream(a, runtime, train_domains[level], anchors, reference, clean_val,
-                a.seed + epoch*1009 + level*101, training=True, training_state=training_state)
+            if recorder is not None: recorder.start_stage(epoch+1, level)
+            try:
+                runtime, result, _ = stream(a, runtime, train_domains[level], anchors, reference, clean_val,
+                    a.seed + epoch*1009 + level*101, training=True, training_state=training_state,
+                    diagnostic_sink=recorder)
+            finally:
+                if recorder is not None: recorder.finish_stage()
         cnn, context, agent, query = runtime
         snapshot = dict(policy_state_dict=deepcopy(agent.policy.state_dict()),
             prerouter_state_dict=deepcopy(agent.pre_router.state_dict()))
@@ -458,6 +495,7 @@ def train(a):
         else:
             stale += 1
             if stale >= a.patience: break
+    if recorder is not None: recorder.finalize()
     write_json(a.output/'training_complete.json', dict(epochs=len(log), best_score=best,
         checkpoint_sha256=digest(models/'minimax_query.pth')))
 
@@ -537,7 +575,7 @@ def evaluate(a):
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--dataset', choices=['IAT', 'PS'], required=True)
-    p.add_argument('--action', choices=['All', 'Train', 'Evaluate'], default='All')
+    p.add_argument('--action', choices=['All', 'Train', 'Evaluate', 'Diagnose'], default='All')
     p.add_argument('--source-run', type=Path)
     p.add_argument('--output', type=Path)
     p.add_argument('--burst-dir', type=Path)
@@ -556,6 +594,12 @@ def parser():
     p.add_argument('--replay-weight', type=float, default=.1)
     p.add_argument('--budget-fraction', type=float, default=.2)
     p.add_argument('--validation-retention-weight', type=float, default=1.)
+    p.add_argument('--train-diagnostics', action='store_true')
+    p.add_argument('--diagnostic-phase', choices=['All', 'Collect', 'Actor', 'Routing', 'FixedRouter'], default='All')
+    p.add_argument('--diagnostic-rows', type=int, default=256)
+    p.add_argument('--diagnostic-cache-rows', type=int, default=1024)
+    p.add_argument('--diagnostic-fit-steps', type=int, default=300)
+    p.add_argument('--v2-run', type=Path)
     return p
 
 
@@ -567,14 +611,26 @@ def main(argv=None):
     for key in ['cost', 'gain_weight', 'forgetting_weight', 'context_lr', 'query_lr', 'replay_weight', 'validation_retention_weight']:
         if not math.isfinite(getattr(a, key)) or getattr(a, key) < 0: p.error(key + ' must be finite and nonnegative.')
     if a.context_lr == 0 or a.query_lr == 0: p.error('Learning rates must be positive.')
+    if min(a.diagnostic_rows, a.diagnostic_cache_rows, a.diagnostic_fit_steps) < 1:
+        p.error('Diagnostic sizes and fit steps must be positive.')
+    if a.diagnostic_cache_rows < 2: p.error('Diagnostic cache must permit at least two rows.')
     root = Path(__file__).resolve().parent/f'ANT_Burst_{a.dataset}_TEST'
     stem = 'light_ps_paironly_batch5' if a.dataset == 'PS' else 'paironly_batch5'
     a.source_run = a.source_run or root/'protocol_runs'/f'{stem}_trainseed{a.seed}'/'paironly_batch5'
     a.burst_dir = a.burst_dir or root/'Dataset_official_v1'/f'AdvBurst_FTSC-{a.dataset}'
-    a.output = a.output or root/'protocol_runs'/f'minimax_query_batch5_seed{a.seed}_v{VERSION}_h{a.horizon}_c{a.cost:g}'
+    regular = root/'protocol_runs'/f'minimax_query_batch5_seed{a.seed}_v{VERSION}_h{a.horizon}_c{a.cost:g}'
+    a.v2_run = a.v2_run or regular
+    if a.action == 'Diagnose':
+        a.output = a.output or root/'protocol_runs'/f'minimax_diagnostics_seed{a.seed}_n{a.diagnostic_rows}'
+    else:
+        a.output = a.output or (regular.with_name(regular.name+'_logged') if a.train_diagnostics else regular)
     if a.device == 'cuda' and not torch.cuda.is_available(): p.error('CUDA is unavailable; use --device cpu.')
     base.legacy.core.device = torch.device('cuda' if a.device == 'cuda' or (a.device == 'auto' and torch.cuda.is_available()) else 'cpu')
     base.legacy.core.set_seed(a.seed)
+    if a.action == 'Diagnose':
+        from enhancements.minimax_diagnostics import diagnose
+        diagnose(a, sys.modules[__name__])
+        return
     if a.action in ('All', 'Train'): train(a)
     if a.action in ('All', 'Evaluate'): evaluate(a)
 

@@ -366,5 +366,25 @@ class StreamContractTests(unittest.TestCase):
         self.assertEqual(first[0]['route'], second[0]['route'])
         self.assertEqual(first[0]['queried'], second[0]['queried'])
 
+    def test_logging_does_not_change_training_trajectory(self):
+        run, a, runtime, domain, reference, _ = self.fixture(training=True)
+        twin = deepcopy(runtime)
+        class Sink:
+            def __init__(self): self.rows = []
+            def observe(self, state, record): self.rows.append(dict(record))
+        sink = Sink()
+        with contextlib.redirect_stdout(io.StringIO()):
+            plain, _, first = run(a, runtime, domain, domain, reference, domain, 42, training=True)
+            logged, _, second = run(a, twin, domain, domain, reference, domain, 42,
+                training=True, diagnostic_sink=sink)
+        self.assertEqual([r['queried'] for r in first], [r['queried'] for r in second])
+        self.assertEqual(len(sink.rows), len(domain[1]))
+        for before, after in ((plain[1], logged[1]), (plain[3], logged[3])):
+            for key, value in before.state_dict().items(): torch.testing.assert_close(value, after.state_dict()[key])
+        measured = [r for r in sink.rows if r['score'] is not None]
+        self.assertTrue(all(r['query_legal'] for r in measured))
+        for r in measured:
+            self.assertAlmostEqual(r['score'], r['gap']+r['weighted_gain']-r['weighted_harm']-r['request_cost'])
+
 
 if __name__ == '__main__': unittest.main()
