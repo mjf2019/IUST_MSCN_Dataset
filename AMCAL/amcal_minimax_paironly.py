@@ -179,7 +179,13 @@ def new_runtime(a, artifact, saved, context_state, query_state=None):
     # Only routing heads may change online. There is no TD/future learning here.
     agent.policy.requires_grad_(False)
     for parameter in agent.policy.routing_parameters(): parameter.requires_grad_(True)
-    query = QueryMaximizer(2 * agent.policy.route_width + 3).to(base.legacy.core.device)
+    width = 2 * agent.policy.route_width + 3
+    experiment = getattr(a, 'actor_experiment', None)
+    if experiment:
+        from enhancements.standardized_actor import StandardizedQueryMaximizer
+        query = StandardizedQueryMaximizer(width, experiment['normalizer']).to(base.legacy.core.device)
+    else:
+        query = QueryMaximizer(width).to(base.legacy.core.device)
     if query_state is not None: query.load_state_dict(query_state)
     return cnn, context, agent, query
 
@@ -304,8 +310,14 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
                 reference_batch, a.replay_weight, a.gain_weight, a.forgetting_weight, a.cost, workspace)
             # Full-information TRAIN actor max step; no successor/bootstrap term.
             record.update(target)
-            record.update(maximize_step(query, query_optimizer, state,
-                state.new_tensor([target['score']])))
+            experiment = getattr(a, 'actor_experiment', None)
+            if experiment and experiment['control'] == 'balanced':
+                from enhancements.standardized_actor import balanced_actor_step
+                record.update(balanced_actor_step(query, query_optimizer, state,
+                    state.new_tensor([target['score']]), experiment['normalizer']['positive_fraction']))
+            else:
+                record.update(maximize_step(query, query_optimizer, state,
+                    state.new_tensor([target['score']])))
             if diagnostic_sink is not None:
                 with torch.no_grad():
                     record.update(weighted_gain=a.gain_weight*target['gain'],
@@ -396,6 +408,10 @@ def initialize(a):
 
 def train(a):
     artifact, inherited, initial = initialize(a)
+    a.actor_experiment = None
+    if getattr(a, 'actor_train_cache', None):
+        from enhancements.standardized_actor import prepare_experiment
+        a.actor_experiment = prepare_experiment(a)
     if (a.output/'Models'/'minimax_query.pth').exists():
         if not (a.output/'training_complete.json').exists():
             raise ValueError('Interrupted training preserved; use a fresh --output directory.')
@@ -408,7 +424,8 @@ def train(a):
         if (completed.get('version') != VERSION
                 or completed['settings'] != {key: getattr(a, key) for key in SETTING_KEYS}
                 or completed['source_checkpoint_sha256'] != digest(a.models/'final_enhancement.pth')
-                or completed.get('dataset') != a.dataset):
+                or completed.get('dataset') != a.dataset
+                or completed.get('actor_experiment') != a.actor_experiment):
             raise ValueError('Completed checkpoint settings differ; use a fresh --output directory.')
         print('Using completed experimental checkpoint; train was not repeated.', flush=True)
         return
@@ -416,6 +433,8 @@ def train(a):
         raise ValueError('Partial run preserved. Use a fresh --output directory.')
     models = a.output/'Models'
     models.mkdir(parents=True)
+    if a.actor_experiment:
+        write_json(a.output/'actor_experiment.json', a.actor_experiment)
     for name in ['protocol_preprocessing.joblib', 'initial_cnn_model.pth', 'enhanced_context.pth']:
         shutil.copy2(a.models/name, models/name)
     source_checkpoint_hash = digest(a.models/'final_enhancement.pth')
@@ -442,6 +461,7 @@ def train(a):
             deepcopy(runtime[3].state_dict()))
     best, stale, log = -math.inf, 0, []
     for epoch in range(a.epochs):
+        train_rows = []
         for level in TRAIN_LEVELS:
             print(f'Epoch {epoch+1}/{a.epochs} | TRAIN level {level}', flush=True)
             if recorder is not None: recorder.start_stage(epoch+1, level)
@@ -449,6 +469,8 @@ def train(a):
                 runtime, result, _ = stream(a, runtime, train_domains[level], anchors, reference, clean_val,
                     a.seed + epoch*1009 + level*101, training=True, training_state=training_state,
                     diagnostic_sink=recorder)
+                train_rows.append(dict(level=level, samples=result['samples'], labels=result['labels'],
+                    cap=result['cap'], labels_percent=result['labels_percent'], online=result['online']))
             finally:
                 if recorder is not None: recorder.finish_stage()
         cnn, context, agent, query = runtime
@@ -466,10 +488,12 @@ def train(a):
         score = accuracy - a.validation_retention_weight * max(0., drop)
         entry = dict(epoch=epoch+1, validation_AC=accuracy, original_domain_forgetting=drop,
             selection_score=score, validation=val_rows)
+        if a.actor_experiment: entry['training'] = train_rows
         log.append(entry)
         print(f'Epoch {epoch+1}/{a.epochs}: VAL AC {accuracy:.2f}% | source forgetting {drop:+.2f} pp', flush=True)
         write_json(a.output/'training.json', dict(version=VERSION, dataset=a.dataset,
-            settings={key: getattr(a, key) for key in SETTING_KEYS}, epochs=log))
+            settings={key: getattr(a, key) for key in SETTING_KEYS}, epochs=log,
+            **({'actor_experiment': a.actor_experiment} if a.actor_experiment else {})))
         if score > best:
             best, stale = score, 0
             saved = dict(version=VERSION, dataset=a.dataset, config=a.config.as_dict(), **snapshot,
@@ -490,6 +514,7 @@ def train(a):
                     reference_sampling='class-balanced TRAIN reference mini-probes, excluded from all experimental updates',
                     minmax_scope='shared batch5 gap; protected replay is an auxiliary Context regularizer'))
             temporary = models/'minimax_query.pth.tmp'
+            if a.actor_experiment: saved['actor_experiment'] = a.actor_experiment
             torch.save(saved, temporary)
             temporary.replace(models/'minimax_query.pth')
         else:
@@ -507,6 +532,7 @@ def evaluate(a):
     if saved['dataset'] != a.dataset: raise ValueError('Checkpoint dataset mismatch.')
     if saved['settings']['seed'] != a.seed: raise ValueError('Requested seed differs from the trained checkpoint.')
     for key, value in saved['settings'].items(): setattr(a, key, value)
+    a.actor_experiment = saved.get('actor_experiment')
     a.config = EnhancementConfig(**saved['config']).validated()
     a.context_count, a.gamma = 1, .95
     artifact = base.load_artifact(a.models, a.burst_dir)
@@ -526,6 +552,7 @@ def evaluate(a):
         query_head_online='fixed', future_head_online='fixed and unused',
         route_head_online='paid labels only', context_online='current plus up to four previous paid labels and source replay',
         metrics='macro PR/RC/F1; pre-feedback online; source forgetting in percentage points')
+    if a.actor_experiment: execution['actor_experiment'] = a.actor_experiment
     root = a.output/'Results'/('evaluation_' + hashlib.sha256(json.dumps(execution, sort_keys=True).encode()).hexdigest()[:12])
     if (root/'completed.json').exists():
         if json.loads((root/'execution.json').read_text()) != execution: raise ValueError('Execution mismatch.')
@@ -600,11 +627,17 @@ def parser():
     p.add_argument('--diagnostic-cache-rows', type=int, default=1024)
     p.add_argument('--diagnostic-fit-steps', type=int, default=300)
     p.add_argument('--v2-run', type=Path)
+    p.add_argument('--actor-train-cache', type=Path)
+    p.add_argument('--actor-control', choices=['natural', 'balanced'], default='natural')
     return p
 
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.actor_control == 'balanced' and a.actor_train_cache is None and a.action != 'Evaluate':
+        p.error('Balanced Actor control requires --actor-train-cache.')
+    if a.actor_train_cache is not None and a.action == 'Diagnose':
+        p.error('Actor standardization is a training experiment, not a diagnostic collection option.')
     if min(a.horizon, a.epochs, a.patience, a.reference_size, a.progress_every) < 1:
         p.error('Horizon/epochs/patience/reference-size/progress-every must be positive.')
     if not 0 < a.budget_fraction <= 1: p.error('Budget must be in (0,1].')
@@ -619,6 +652,8 @@ def main(argv=None):
     a.source_run = a.source_run or root/'protocol_runs'/f'{stem}_trainseed{a.seed}'/'paironly_batch5'
     a.burst_dir = a.burst_dir or root/'Dataset_official_v1'/f'AdvBurst_FTSC-{a.dataset}'
     regular = root/'protocol_runs'/f'minimax_query_batch5_seed{a.seed}_v{VERSION}_h{a.horizon}_c{a.cost:g}'
+    if a.actor_train_cache is not None:
+        regular = regular.with_name(regular.name+'_actorstd_'+a.actor_control)
     a.v2_run = a.v2_run or regular
     if a.action == 'Diagnose':
         a.output = a.output or root/'protocol_runs'/f'minimax_diagnostics_seed{a.seed}_n{a.diagnostic_rows}'
