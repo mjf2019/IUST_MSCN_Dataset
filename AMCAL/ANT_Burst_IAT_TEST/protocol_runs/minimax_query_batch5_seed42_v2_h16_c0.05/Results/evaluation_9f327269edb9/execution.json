@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "seed": 42,
+  "settings": {
+    "horizon": 16,
+    "cost": 0.05,
+    "gain_weight": 1.0,
+    "forgetting_weight": 1.0,
+    "context_lr": 0.00025,
+    "query_lr": 0.0001,
+    "replay_weight": 0.1,
+    "budget_fraction": 0.2,
+    "seed": 42,
+    "validation_retention_weight": 1.0,
+    "epochs": 6,
+    "patience": 3,
+    "reference_size": 32
+  },
+  "levels": [
+    5,
+    7,
+    10,
+    12,
+    15,
+    17,
+    20
+  ],
+  "checkpoint_sha256": "bdba9ffab08829f2279d43bb0d72996a96bee5201d05913a23bb1b052d8379ce",
+  "prediction": "before feedback; best scored route",
+  "reset": "all model, optimizer, reliability and feedback memory state at each intensity",
+  "query_head_online": "fixed",
+  "future_head_online": "fixed and unused",
+  "route_head_online": "paid labels only",
+  "context_online": "current plus up to four previous paid labels and source replay",
+  "metrics": "macro PR/RC/F1; pre-feedback online; source forgetting in percentage points"
+}
