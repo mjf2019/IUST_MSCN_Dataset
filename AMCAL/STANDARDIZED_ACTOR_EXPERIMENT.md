@@ -58,7 +58,35 @@ After reviewing TRAIN/VAL, explicitly evaluate a chosen control if needed:
 .\AMCAL\run_amcal_standardized_actor.ps1 -Dataset IAT -Control Natural -Action Evaluate
 ```
 
-This uses the checkpoint normalizer, resets all models at each of TEST levels
+## Uniform-query diagnostic control, no retraining
+
+```powershell
+.\AMCAL\run_amcal_standardized_actor.ps1 -Dataset IAT -Action Evaluate -UniformQueries
+.\AMCAL\run_amcal_standardized_actor.ps1 -Dataset PS -Action Evaluate -UniformQueries
+.\AMCAL\push_amcal_standardized_actor.ps1 -Dataset Both
+```
+
+Both previously selected natural/balanced checkpoints are evaluated by default;
+`-Control Natural` can restrict this to the natural checkpoint. This option is
+rejected for Train/All, so it cannot change TRAIN or VAL checkpoint selection.
+Only the request decision is overridden. Requests are spread deterministically
+over the entire shuffled stream by nearest-integer cumulative budget progress.
+They use stream position/known length only and consume exactly floor(0.2*N)
+labels per level (214 for current IAT and 177 for current PS). Prediction and
+route selection still precede label access. Context adapts with the unchanged
+batch5/protected replay update, and routing learns from acquired feedback just
+as in the policy run. The Actor/value heads remain fixed; logged Actor request
+probabilities are observational and do not drive the uniform control.
+
+Schedule metadata changes the evaluation fingerprint, preserving policy-run
+results in separate evaluation directories. The same existing push helper
+includes the new JSON/CSV results and never sends models. This intervention
+tests the effect of supplying distributed feedback; it does not equate label
+counts to the collapsed Actor or prove optimal RL selection. Low forgetting
+with zero feedback is not evidence for successful retention under adaptation.
+
+Evaluation uses the checkpoint normalizer, resets all models at each of TEST levels
 5/7/10/12/15/17/20 and preserves the 20% cap. TEST must not guide subsequent
 threshold, reward or control selection. The original v2 entry point remains
 unchanged when the new Actor flags are absent. Nothing is installed by scripts.
+

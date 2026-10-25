@@ -6,9 +6,11 @@ param(
     [int]$Epochs = 6,
     [string]$CacheRun = '',
     [string]$SourceRun = '',
+    [switch]$UniformQueries,
     [ValidateSet('cuda','cpu','auto')][string]$Device = 'cuda'
 )
 $ErrorActionPreference = 'Stop'
+if ($UniformQueries -and $Action -ne 'Evaluate') { throw 'UniformQueries requires Action Evaluate. No training is performed by this control.' }
 $repo = Split-Path -Parent $PSScriptRoot
 $python = Join-Path $repo 'venv/Scripts/python.exe'
 if (-not (Test-Path $python)) { $python = 'python' }
@@ -26,6 +28,7 @@ try {
     }
     $controls = if ($Control -eq 'Both') { @('natural','balanced') } else { @($Control.ToLowerInvariant()) }
     foreach ($item in $controls) {
+        if ($UniformQueries) { Write-Host "Uniform-query TEST: $Dataset / $item | exact 20% cap | no retraining" }
         $output = "AMCAL/ANT_Burst_${Dataset}_TEST/protocol_runs/minimax_query_batch5_seed${Seed}_v2_h16_c0.05_actorstd_${item}"
         $runArgs = @('AMCAL/amcal_minimax_paironly.py', '--dataset', $Dataset,
             '--action', $Action, '--seed', "$Seed", '--device', $Device,
@@ -35,7 +38,9 @@ try {
             '--replay-weight', '0.1', '--output', $output, '--actor-control', $item)
         if ($Action -ne 'Evaluate') { $runArgs += @('--actor-train-cache', $CacheRun, '--train-diagnostics') }
         if ($SourceRun) { $runArgs += @('--source-run', $SourceRun) }
+        if ($UniformQueries) { $runArgs += @('--eval-query-schedule', 'uniform') }
         & $python @runArgs
         if ($LASTEXITCODE -ne 0) { throw "Standardized Actor failed: $Dataset / $item / $Action" }
     }
 } finally { Pop-Location }
+

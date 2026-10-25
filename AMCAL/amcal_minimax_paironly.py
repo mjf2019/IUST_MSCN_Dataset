@@ -205,6 +205,15 @@ def endpoint(a, cnn, context, agent, domain, history, used, cap, position):
     return metrics(y, predicted, len(a.classes))
 
 
+def uniform_query_at(position, count, cap):
+    """Deterministic evenly spaced requests, exact cap, no labels/features used."""
+    if count < 1 or not 0 <= cap <= count or not 0 <= position < count:
+        raise ValueError('Invalid uniform query schedule arguments.')
+    before = (2*position*cap+count)//(2*count)
+    after = (2*(position+1)*cap+count)//(2*count)
+    return after > before
+
+
 def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
            training_state=None, target_endpoints=True, diagnostic_sink=None, max_steps=None):
     cnn, context, agent, query = runtime
@@ -214,6 +223,10 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
     x, y, ids = x[torch.as_tensor(order, device=x.device)], np.asarray(y)[order], np.asarray(ids)[order]
     n, cap = len(y), int(a.budget_fraction * len(y))
     if n == 0: raise ValueError('Empty stream.')
+    query_schedule = getattr(a, 'eval_query_schedule', 'policy')
+    if query_schedule not in ('policy', 'uniform'): raise ValueError('Unknown evaluation query schedule.')
+    if training and query_schedule != 'policy':
+        raise ValueError('Uniform requests are an evaluation-only control; TRAIN must use the original policy.')
     if diagnostic_sink is not None and not training:
         raise ValueError('The TRAIN diagnostic recorder must not collect TEST/VAL targets.')
     steps = n if max_steps is None else min(n, max_steps)
@@ -261,7 +274,10 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
                     raise ValueError('Nonfinite query scores.')
             else:
                 probability, estimated_score = 0., None
-            paid = used < cap and (rng.random() < probability if training else probability >= .5)
+            if query_schedule == 'uniform':
+                paid = used < cap and uniform_query_at(pos, n, cap)
+            else:
+                paid = used < cap and (rng.random() < probability if training else probability >= .5)
             # Route choice is identical for query and skip, and precedes truth access.
             prediction = int(outputs[0][0, route].argmax())
             correct_predictions = outputs[0].argmax(2)
@@ -352,6 +368,8 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             print(f'{"TRAIN" if training else "EVAL"}: {pos+1}/{steps} | labels {used}/{cap}', flush=True)
     runtime = cnn, context, agent, query
     validate_trace(trace, cap)
+    if query_schedule == 'uniform' and steps == n and used != cap:
+        raise RuntimeError('Uniform evaluation did not consume its exact per-level label cap.')
     if training:
         training_state.update(context_optimizer=optimizer, query_optimizer=query_optimizer, workspace=workspace)
     source_after = endpoint(a, cnn, context, agent, clean, history, used, cap, n) if not training else {}
@@ -372,6 +390,7 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
         classifier_unchanged=True, query_head_unchanged=not training,
         legacy_future_and_utility_unchanged=True)
     if steps != n: result.update(diagnostic_prefix=True, domain_samples=n, cap_scope='original full domain')
+    if query_schedule == 'uniform': result['query_schedule'] = 'uniform'
     return runtime, result, trace
 
 
@@ -553,6 +572,13 @@ def evaluate(a):
         route_head_online='paid labels only', context_online='current plus up to four previous paid labels and source replay',
         metrics='macro PR/RC/F1; pre-feedback online; source forgetting in percentage points')
     if a.actor_experiment: execution['actor_experiment'] = a.actor_experiment
+    if getattr(a, 'eval_query_schedule', 'policy') == 'uniform':
+        execution['query_schedule'] = dict(mode='uniform', version=1,
+            rule='round-half-up cumulative cap*seen/n; evenly spaced exact cap',
+            scope='query decision only; same checkpoint, route argmax and paid-feedback Context/router updates',
+            actor_probability='logged for observation only; ignored for requests',
+            information='positions and known stream length only; no current or future labels',
+            budget='floor(budget_fraction*n) per intensity; all adaptive state reset')
     root = a.output/'Results'/('evaluation_' + hashlib.sha256(json.dumps(execution, sort_keys=True).encode()).hexdigest()[:12])
     if (root/'completed.json').exists():
         if json.loads((root/'execution.json').read_text()) != execution: raise ValueError('Execution mismatch.')
@@ -629,11 +655,14 @@ def parser():
     p.add_argument('--v2-run', type=Path)
     p.add_argument('--actor-train-cache', type=Path)
     p.add_argument('--actor-control', choices=['natural', 'balanced'], default='natural')
+    p.add_argument('--eval-query-schedule', choices=['policy', 'uniform'], default='policy')
     return p
 
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if a.eval_query_schedule != 'policy' and a.action != 'Evaluate':
+        p.error('Uniform query control requires --action Evaluate; it must not retrain or change VAL selection.')
     if a.actor_control == 'balanced' and a.actor_train_cache is None and a.action != 'Evaluate':
         p.error('Balanced Actor control requires --actor-train-cache.')
     if a.actor_train_cache is not None and a.action == 'Diagnose':
@@ -671,3 +700,4 @@ def main(argv=None):
 
 
 if __name__ == '__main__': main()
+

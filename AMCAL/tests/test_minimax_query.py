@@ -23,6 +23,26 @@ runner_source = Path(__file__).resolve().parents[1]/'amcal_minimax_paironly.py'
 trace_ast = next(node for node in ast.parse(runner_source.read_text()).body
     if isinstance(node, ast.FunctionDef) and node.name == 'validate_trace')
 exec(compile(ast.Module(body=[trace_ast], type_ignores=[]), str(runner_source), 'exec'), gate_namespace)
+uniform_ast = next(node for node in ast.parse(runner_source.read_text()).body
+    if isinstance(node, ast.FunctionDef) and node.name == 'uniform_query_at')
+exec(compile(ast.Module(body=[uniform_ast], type_ignores=[]), str(runner_source), 'exec'), gate_namespace)
+
+
+class UniformScheduleTests(unittest.TestCase):
+    def test_exact_cap_and_even_prefix_consumption(self):
+        schedule = gate_namespace['uniform_query_at']
+        for count in range(1, 101):
+            for cap in range(count+1):
+                used = 0
+                for pos in range(count):
+                    used += int(schedule(pos, count, cap))
+                    self.assertLessEqual(abs(used-(pos+1)*cap/count), .5+1e-9)
+                self.assertEqual(used, cap)
+        self.assertEqual([i for i in range(10) if schedule(i, 10, 2)], [2, 7])
+
+    def test_invalid_schedule_arguments_are_rejected(self):
+        for args in [(0, 0, 0), (-1, 10, 2), (10, 10, 2), (0, 10, 11), (0, 10, -1)]:
+            with self.assertRaises(ValueError): gate_namespace['uniform_query_at'](*args)
 
 
 class BudgetContractTests(unittest.TestCase):
@@ -300,7 +320,7 @@ class StreamContractTests(unittest.TestCase):
             return module.counterfactual_step(*args, **kwargs)
         path = Path(__file__).resolve().parents[1]/'amcal_minimax_paironly.py'
         functions = [node for node in ast.parse(path.read_text()).body
-            if isinstance(node, ast.FunctionDef) and node.name in ('stream', 'feature_keys', 'feature_key', 'balanced_draw', 'validate_trace')]
+            if isinstance(node, ast.FunctionDef) and node.name in ('stream', 'feature_keys', 'feature_key', 'balanced_draw', 'validate_trace', 'uniform_query_at')]
         namespace = dict(torch=torch, np=np, deepcopy=deepcopy, math=math,
             base=types.SimpleNamespace(legacy=types.SimpleNamespace(core=object(), base_cache=cache)),
             DeviceReliability=TinyHistory, Replay=TinyMemory, BankExecutor=TinyExecutor,
@@ -335,6 +355,34 @@ class StreamContractTests(unittest.TestCase):
             self.assertFalse(row['queried'])
             self.assertEqual(row['query_probability'], 0.)
         for key, value in initial.items(): torch.testing.assert_close(updated[3].state_dict()[key], value)
+
+    def test_uniform_evaluation_overrides_collapsed_actor_causally(self):
+        run, a, runtime, domain, reference, calls = self.fixture()
+        a.eval_query_schedule = 'uniform'
+        with torch.no_grad(): runtime[3].actor[-1].bias.fill_(-80.)
+        query_before = deepcopy(runtime[3].state_dict())
+        context_before = deepcopy(runtime[1].state_dict())
+        twin = deepcopy(runtime)
+        flipped = domain[0], 1-domain[1], domain[2]
+        with contextlib.redirect_stdout(io.StringIO()):
+            updated, result, trace = run(a, runtime, domain, domain, None, domain, 42)
+            _, _, altered = run(a, twin, flipped, domain, None, domain, 42)
+        self.assertEqual(calls, [])
+        self.assertEqual(result['labels'], 2)
+        self.assertEqual([r['step'] for r in trace if r['queried']], [3, 8])
+        self.assertEqual([r['queried'] for r in trace], [r['queried'] for r in altered])
+        # Prediction and route at the first feedback event precede its label.
+        self.assertEqual(trace[2]['prediction'], altered[2]['prediction'])
+        self.assertEqual(trace[2]['route'], altered[2]['route'])
+        self.assertEqual(len(updated[2].feedback), 2)
+        self.assertTrue(any(not torch.equal(v, updated[1].state_dict()[k]) for k,v in context_before.items()))
+        for k,v in query_before.items(): torch.testing.assert_close(v, updated[3].state_dict()[k])
+
+    def test_uniform_control_cannot_enter_training(self):
+        run, a, runtime, domain, reference, _ = self.fixture(training=True)
+        a.eval_query_schedule = 'uniform'
+        with self.assertRaises(ValueError):
+            run(a, runtime, domain, domain, reference, domain, 42, training=True)
 
     def test_training_stops_forks_at_cap_and_preserves_adam_between_domains(self):
         run, a, runtime, domain, reference, calls = self.fixture(training=True)
@@ -388,3 +436,4 @@ class StreamContractTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
