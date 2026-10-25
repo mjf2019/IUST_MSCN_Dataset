@@ -1,0 +1,475 @@
+"""Opt-in adversarial query experiment; existing PairOnly entry points are untouched.
+
+TRAIN 0/1/3, VAL-only checkpoint selection, independent TEST 5/7/10/12/15/17/20.
+This is a new method variant, not a drop-in evaluation of an old checkpoint.
+"""
+import argparse
+from copy import deepcopy
+from dataclasses import replace
+import hashlib
+import json
+import math
+from pathlib import Path
+import shutil
+
+import numpy as np
+import torch
+from torch import nn
+import torch.nn.functional as F
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+
+import amcal_final_enhancement as base
+from enhancements.agent import DeviceReliability
+from enhancements.config import EnhancementConfig
+from enhancements.models import BankExecutor
+from enhancements.state import build_state
+from enhancements.memory import ProtectedMemory
+from enhancements.minimax_query import QueryMaximizer, maximize_step, context_min_step, counterfactual_step
+
+VERSION = 1
+TRAIN_LEVELS = [0, 1, 3]
+TEST_LEVELS = [5, 7, 10, 12, 15, 17, 20]
+SETTING_KEYS = ['horizon', 'cost', 'gain_weight', 'forgetting_weight', 'context_lr',
+    'query_lr', 'replay_weight', 'budget_fraction', 'seed', 'validation_retention_weight', 'epochs', 'patience']
+
+
+def digest(path):
+    return base.legacy.core.file_sha256(path)
+
+
+def write_json(path, value):
+    temporary = path.with_name(path.name + '.tmp')
+    base.write_json(temporary, value)
+    temporary.replace(path)
+
+
+def write_csv(path, rows):
+    temporary = path.with_name(path.name + '.tmp')
+    base.write_csv(temporary, rows)
+    temporary.replace(path)
+
+
+def metrics(y, predicted, classes):
+    pr, rc, f1, _ = precision_recall_fscore_support(y, predicted,
+        labels=list(range(classes)), average='macro', zero_division=0)
+    return dict(AC=100 * accuracy_score(y, predicted), PR=100 * pr,
+        RC=100 * rc, F1=100 * f1)
+
+
+def subset(domain, mask):
+    x, y, ids = domain
+    at = torch.as_tensor(np.flatnonzero(mask), device=x.device)
+    return x[at], np.asarray(y)[mask], np.asarray(ids)[mask]
+
+
+def reference_partition(domain, seed, fraction=.1):
+    """Reserve source IDs across all training intensities, stratified by class."""
+    _, y, ids = domain
+    rng = np.random.default_rng(seed + 901)
+    chosen = []
+    for cls in np.unique(y):
+        indices = np.flatnonzero(np.asarray(y) == cls)
+        if len(indices) < 3:
+            raise ValueError('At least three source TRAIN rows per class are required.')
+        chosen.extend(rng.permutation(indices)[:max(1, int(len(indices) * fraction))])
+    selected = set(int(ids[i]) for i in chosen)
+    mask = np.asarray([int(i) in selected for i in ids])
+    held = subset(domain, mask)
+    return subset(domain, ~mask), held, selected
+
+
+def feature_key(row):
+    return row.detach().cpu().contiguous().numpy().tobytes()
+
+
+class Replay:
+    """TRAIN anchors and paid feedback only; exclude IDs and feature duplicates."""
+    def __init__(self, anchors, seed, config, classes):
+        self.rng = np.random.default_rng(seed)
+        self.config = config
+        self.storage = ProtectedMemory(anchors[:2], classes, config, seed)
+        self.ids = {feature_key(anchors[0][j:j+1]): int(i) for j, i in enumerate(anchors[2])}
+
+    def inventory(self, rows, device):
+        return [(self.ids[r[2]], r[0].to(device), r[1], r[2]) for r in rows]
+
+    def draw(self, current_id, current, future_ids=(), future_x=None, reference_keys=()):
+        blocked_ids = {int(current_id), *map(int, future_ids)}
+        blocked_keys = {feature_key(current), *reference_keys}
+        if future_x is not None:
+            blocked_keys.update(feature_key(row[None]) for row in future_x)
+        def take(pool, count):
+            eligible = []
+            seen = set(blocked_keys)
+            for row in pool:
+                if row[0] not in blocked_ids and row[3] not in seen:
+                    eligible.append(row); seen.add(row[3])
+            if not eligible: return []
+            indices = self.rng.choice(len(eligible), min(count, len(eligible)), replace=False)
+            return [eligible[int(i)] for i in indices]
+        stored_paid = [*self.storage.recent, *(r for group in self.storage.historical for r in group)]
+        paid = take(self.inventory(stored_paid, current.device), 4)
+        # The two replay pools must also be disjoint from each other.
+        blocked_ids.update(r[0] for r in paid)
+        blocked_keys.update(r[3] for r in paid)
+        old = [*self.storage.source, *(r for group in self.storage.historical for r in group)]
+        source = take(self.inventory(old, current.device), self.config.memory_replay_size)
+        def tensors(rows):
+            if not rows: return None
+            return torch.cat([r[1] for r in rows]), torch.tensor([r[2] for r in rows], device=current.device)
+        return [(r[1], torch.tensor([r[2]], device=current.device)) for r in paid], tensors(source)
+
+    def add(self, source_id, x, truth):
+        key = feature_key(x)
+        self.storage.add(x, torch.tensor([truth], device=x.device))
+        self.ids[key] = int(source_id)
+        retained = {r[2] for r in self.storage.source}
+        retained.update(r[2] for r in self.storage.recent)
+        retained.update(r[2] for group in self.storage.historical for r in group)
+        self.ids = {k: v for k, v in self.ids.items() if k in retained}
+
+
+def new_runtime(a, artifact, saved, context_state, query_state=None):
+    cnn = base.load_cnn(a.models, artifact)
+    context = base.build_bank(a.models, artifact, a.config, context_state, slots=1)[0]
+    agent = base.new_agent(a, cnn, artifact, saved=saved)
+    # Only routing heads may change online. There is no TD/future learning here.
+    agent.policy.requires_grad_(False)
+    for parameter in agent.policy.routing_parameters(): parameter.requires_grad_(True)
+    query = QueryMaximizer(2 * agent.policy.route_width + 3).to(base.legacy.core.device)
+    if query_state is not None: query.load_state_dict(query_state)
+    return cnn, context, agent, query
+
+
+@torch.no_grad()
+def endpoint(a, cnn, context, agent, domain, history, used, cap, position):
+    x, y = domain[:2]
+    z, h = base.legacy.base_cache(cnn, x)
+    executor = BankExecutor(cnn, [context])
+    predicted = []
+    for start in range(0, len(x), 64):
+        out = executor.outputs(x[start:start+64], z[start:start+64])
+        state = build_state(out, h[start:start+64], history, used, cap, position, max(position, 1), -1)
+        route = agent.policy.route_logits(state).argmax(1)
+        per_route = out[0].argmax(2)
+        predicted.extend(per_route[torch.arange(len(route), device=x.device), route].cpu().tolist())
+    return metrics(y, predicted, len(a.classes))
+
+
+def stream(a, runtime, domain, anchors, reference, clean, seed, training=False):
+    cnn, context, agent, query = runtime
+    core = base.legacy.core
+    x, y, ids = domain
+    order = np.random.default_rng(seed).permutation(len(y))
+    x, y, ids = x[torch.as_tensor(order, device=x.device)], np.asarray(y)[order], np.asarray(ids)[order]
+    n, cap = len(y), int(a.budget_fraction * len(y))
+    if n == 0: raise ValueError('Empty stream.')
+    history = DeviceReliability(len(a.classes), x.device, routes=2)
+    memory = Replay(anchors, seed + 61, a.config, len(a.classes))
+    optimizer = torch.optim.Adam(context.parameters(), lr=a.context_lr, weight_decay=1e-4)
+    query_optimizer = torch.optim.Adam(query.parameters(), lr=a.query_lr, weight_decay=1e-4) if training else None
+    query.requires_grad_(training)
+    query.eval()
+    rng = np.random.default_rng(seed + 71)
+    z, h = base.legacy.base_cache(cnn, x)
+    used, trace, predicted = 0, [], []
+    reference_keys = {feature_key(row[None]) for row in reference[0]} if reference is not None else set()
+    reference_probe = (reference[0], torch.as_tensor(reference[1], dtype=torch.long, device=x.device)) if reference is not None else None
+    source_before = endpoint(a, cnn, context, agent, clean, history, used, cap, 0)
+    target_before = endpoint(a, cnn, context, agent, (x, y), history, used, cap, 0)
+    frozen_state = deepcopy(cnn.state_dict())
+    future_state = deepcopy(agent.policy.future.state_dict())
+    utility_state = deepcopy(agent.policy.update_value.state_dict())
+    query_initial = deepcopy(query.state_dict()) if not training else None
+    for pos in range(n):
+        inputs = x[pos:pos+1]
+        with torch.no_grad():
+            outputs = BankExecutor(cnn, [context]).outputs(inputs, z[pos:pos+1])
+            state = build_state(outputs, h[pos:pos+1], history, used, cap, pos, n, -1)
+            route = int(agent.policy.route_logits(state).argmax(1))
+            logit, estimate = query(state)
+            probability = float(logit.sigmoid()[0])
+            paid = used < cap and (rng.random() < probability if training else probability >= .5)
+            # Route choice is identical for query and skip, and precedes truth access.
+            prediction = int(outputs[0][0, route].argmax())
+            correct_predictions = outputs[0].argmax(2)
+        predicted.append(prediction)
+        truth = int(y[pos])
+        record = dict(step=pos+1, source_row=int(ids[pos]), truth=truth, prediction=prediction,
+            route=route, action=2 if paid else route, queried=paid,
+            query_probability=probability, estimated_score=float(estimate[0]),
+            gap=None, gain=None, harm=None, score=None, replay_loss=None, actor_loss=None, value_loss=None)
+        target = None
+        label = torch.tensor([truth], device=x.device)
+        # Only the offline TRAIN path can ever access future labels.
+        if training and pos + a.horizon < n:
+            future_x = x[pos+1:pos+1+a.horizon]
+            future_ids = ids[pos+1:pos+1+a.horizon]
+            blocked = {feature_key(inputs), *reference_keys}
+            future_mask = np.asarray([int(i) != int(ids[pos]) and feature_key(future_x[j:j+1]) not in blocked
+                for j, i in enumerate(future_ids)])
+            future_at = torch.as_tensor(np.flatnonzero(future_mask), device=x.device)
+            future_x, future_ids = future_x[future_at], future_ids[future_mask]
+        else:
+            future_x = None
+        if future_x is not None and len(future_x):
+            paid_rows, replay = memory.draw(ids[pos], inputs, future_ids, future_x, reference_keys)
+            candidate, candidate_optimizer, target = counterfactual_step(context, optimizer, cnn,
+                (inputs, label), paid_rows, replay,
+                (future_x, torch.as_tensor(y[pos+1:pos+1+a.horizon][future_mask], device=x.device)),
+                reference_probe, a.replay_weight, a.gain_weight, a.forgetting_weight, a.cost)
+            # Full-information TRAIN actor max step; no successor/bootstrap term.
+            record.update(target)
+            record.update(maximize_step(query, query_optimizer, state,
+                state.new_tensor([target['score']])))
+        if paid:
+            history.observe_paid(outputs[0].softmax(2), truth)
+            if target is not None:
+                # Commit precisely the measured branch, including Adam moments.
+                context, optimizer = candidate, candidate_optimizer
+            else:
+                paid_rows, replay = memory.draw(ids[pos], inputs, reference_keys=reference_keys)
+                context_min_step(context, optimizer, cnn, (inputs, label), paid_rows, replay, a.replay_weight)
+            with torch.no_grad():
+                new_probs = cnn(context(inputs)).softmax(1)
+                change = (new_probs - outputs[0][:, 1].softmax(1)).abs().mean()
+            history.updated(1, pos+1, change)
+            used += 1
+            memory.add(ids[pos], inputs, truth)
+            # Correctness labels refer to predictions made before feedback/update.
+            agent.observe_routes(state, (correct_predictions[0] == truth).float())
+        agent.clock += 1
+        record['labels_used'] = used
+        trace.append(record)
+    runtime = cnn, context, agent, query
+    source_after = endpoint(a, cnn, context, agent, clean, history, used, cap, n)
+    target_after = endpoint(a, cnn, context, agent, (x, y), history, used, cap, n)
+    for name, before in (('future', future_state), ('update_value', utility_state)):
+        if any(not torch.equal(v, getattr(agent.policy, name).state_dict()[k]) for k, v in before.items()):
+            raise RuntimeError('A frozen legacy head changed: ' + name)
+    if any(not torch.equal(v, cnn.state_dict()[k]) for k, v in frozen_state.items()):
+        raise RuntimeError('Frozen classifier changed.')
+    if query_initial is not None and any(not torch.equal(v, query.state_dict()[k]) for k, v in query_initial.items()):
+        raise RuntimeError('The query head changed online.')
+    result = dict(online=metrics(y, predicted, len(a.classes)), samples=n, labels=used, cap=cap,
+        labels_percent=100 * used/n, source_before=source_before, source_after=source_after,
+        original_domain_forgetting={k: source_before[k]-source_after[k] for k in source_before},
+        target_before=target_before, target_after=target_after,
+        target_gain={k: target_after[k]-target_before[k] for k in target_before},
+        target_endpoint_protocol='same scored stream, descriptive endpoint; not independent generalization',
+        classifier_unchanged=True, query_head_unchanged=not training,
+        legacy_future_and_utility_unchanged=True)
+    return runtime, result, trace
+
+
+def initialize(a):
+    source = a.source_run / 'Models'
+    a.models = source
+    artifact = base.load_artifact(source, a.burst_dir)
+    classifier = torch.load(source/'initial_cnn_model.pth', map_location='cpu', weights_only=False)
+    from amcal_light_cnn import ARCHITECTURE
+    is_light = classifier.get('architecture') == ARCHITECTURE
+    if is_light != (a.dataset == 'PS'):
+        raise ValueError('Expected original CNN for IAT and Light CNN for PS; source architecture differs.')
+    saved = torch.load(source/'final_enhancement.pth', map_location='cpu', weights_only=False)
+    if saved.get('training_context_count') != 1 or set(saved['training_levels']) != set(TRAIN_LEVELS):
+        raise ValueError('Source must be the one-Context PairOnly run trained on 0/1/3.')
+    for name, expected in saved['model_hashes'].items():
+        if digest(source/name) != expected: raise ValueError('Source provenance mismatch: ' + name)
+    for level, expected in saved['training_domain_sha256'].items():
+        if digest(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv') != expected:
+            raise ValueError('Source training-domain provenance mismatch.')
+    a.config = replace(EnhancementConfig(**saved['config']), memory_ce_weight=a.replay_weight).validated()
+    if a.config.architecture != 'legacy' or a.config.cascade or a.config.joint_router:
+        raise ValueError('This pilot requires the full-bank legacy Context architecture.')
+    a.classes = list(artifact['label_encoder'].classes_)
+    a.context_count, a.gamma = 1, .95
+    initial = torch.load(source/'enhanced_context.pth', map_location='cpu', weights_only=False)['initial_state_dict']
+    return artifact, saved, initial
+
+
+def train(a):
+    artifact, inherited, initial = initialize(a)
+    if (a.output/'Models'/'minimax_query.pth').exists():
+        if not (a.output/'training_complete.json').exists():
+            raise ValueError('Interrupted training preserved; use a fresh --output directory.')
+        completed = torch.load(a.output/'Models'/'minimax_query.pth', map_location='cpu', weights_only=False)
+        if (completed['settings'] != {key: getattr(a, key) for key in SETTING_KEYS}
+                or completed['source_checkpoint_sha256'] != digest(a.models/'final_enhancement.pth')
+                or completed.get('dataset') != a.dataset):
+            raise ValueError('Completed checkpoint settings differ; use a fresh --output directory.')
+        print('Using completed experimental checkpoint; train was not repeated.', flush=True)
+        return
+    if a.output.exists() and any(a.output.iterdir()):
+        raise ValueError('Partial run preserved. Use a fresh --output directory.')
+    models = a.output/'Models'
+    models.mkdir(parents=True)
+    for name in ['protocol_preprocessing.joblib', 'initial_cnn_model.pth', 'enhanced_context.pth']:
+        shutil.copy2(a.models/name, models/name)
+    source_checkpoint_hash = digest(a.models/'final_enhancement.pth')
+    source_domain = base.legacy.read_domain(a.burst_dir, artifact, 0, 'train_ids')
+    anchors, reference, reserved = reference_partition(source_domain, a.seed)
+    # A source reference cannot be a future probe or update at another intensity.
+    reference_keys = {feature_key(row[None]) for row in reference[0]}
+    train_domains = {}
+    for level in TRAIN_LEVELS:
+        domain = base.legacy.read_domain(a.burst_dir, artifact, level, 'train_ids')
+        mask = np.asarray([int(i) not in reserved and feature_key(domain[0][j:j+1]) not in reference_keys
+            for j, i in enumerate(domain[2])])
+        train_domains[level] = subset(domain, mask)
+        if len(train_domains[level][1]) <= a.horizon:
+            raise ValueError('TRAIN stream is too short for the requested future horizon.')
+    clean_val = base.legacy.read_domain(a.burst_dir, artifact, 0, 'val_ids')
+    validations = {level: base.legacy.read_domain(a.burst_dir, artifact, level, 'val_ids') for level in TRAIN_LEVELS}
+    runtime = new_runtime(a, artifact, inherited, initial)
+    best, stale, log = -math.inf, 0, []
+    for epoch in range(a.epochs):
+        for level in TRAIN_LEVELS:
+            runtime, result, _ = stream(a, runtime, train_domains[level], anchors, reference, clean_val,
+                a.seed + epoch*1009 + level*101, training=True)
+        cnn, context, agent, query = runtime
+        snapshot = dict(policy_state_dict=deepcopy(agent.policy.state_dict()),
+            prerouter_state_dict=deepcopy(agent.pre_router.state_dict()))
+        context_state, query_state = deepcopy(context.state_dict()), deepcopy(query.state_dict())
+        val_rows = []
+        for level in TRAIN_LEVELS:
+            temporary = new_runtime(a, artifact, snapshot, context_state, query_state)
+            _, val, _ = stream(a, temporary, validations[level], anchors, None, clean_val,
+                a.seed + 50003 + level)
+            val_rows.append(val)
+        accuracy = float(np.mean([r['online']['AC'] for r in val_rows]))
+        drop = float(np.mean([r['original_domain_forgetting']['AC'] for r in val_rows]))
+        score = accuracy - a.validation_retention_weight * max(0., drop)
+        entry = dict(epoch=epoch+1, validation_AC=accuracy, original_domain_forgetting=drop,
+            selection_score=score, validation=val_rows)
+        log.append(entry)
+        print(f'Epoch {epoch+1}/{a.epochs}: VAL AC {accuracy:.2f}% | source forgetting {drop:+.2f} pp', flush=True)
+        write_json(a.output/'training.json', dict(epochs=log))
+        if score > best:
+            best, stale = score, 0
+            saved = dict(version=VERSION, dataset=a.dataset, config=a.config.as_dict(), **snapshot,
+                context_state_dict=context_state, query_state_dict=query_state,
+                training_levels=TRAIN_LEVELS, selected_epoch=epoch+1, selection_score=score,
+                source_checkpoint_sha256=source_checkpoint_hash,
+                model_hashes={name: digest(models/name) for name in
+                    ['protocol_preprocessing.joblib', 'initial_cnn_model.pth', 'enhanced_context.pth']},
+                training_domain_sha256={str(level): digest(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv')
+                    for level in TRAIN_LEVELS},
+                settings={key: getattr(a, key) for key in SETTING_KEYS},
+                provenance=dict(reference_source_ids=sorted(reserved), reference_rows=len(reference[1]),
+                    pretrained_reference_exposure=True, reference_scope='independent of experimental updates, not of source pretraining',
+                    initialization='existing PairOnly routing; pretrained initial Context; new query actor/value',
+                    future_scope='next TRAIN block, no updates within block',
+                    test_used_for_selection=False, query_bonus=0, bootstrap=False,
+                    objective='adversarial current-row gap plus detached gain/harm/cost; selected-label replay regularizer',
+                    minmax_scope='shared current-row gap; replay is an auxiliary Context regularizer'))
+            torch.save(saved, models/'minimax_query.pth')
+        else:
+            stale += 1
+            if stale >= a.patience: break
+    write_json(a.output/'training_complete.json', dict(epochs=len(log), best_score=best,
+        checkpoint_sha256=digest(models/'minimax_query.pth')))
+
+
+def evaluate(a):
+    a.models = a.output/'Models'
+    saved = torch.load(a.models/'minimax_query.pth', map_location='cpu', weights_only=False)
+    if saved['version'] != VERSION: raise ValueError('Unsupported minimax pilot version.')
+    if saved['dataset'] != a.dataset: raise ValueError('Checkpoint dataset mismatch.')
+    for key, value in saved['settings'].items(): setattr(a, key, value)
+    a.config = EnhancementConfig(**saved['config']).validated()
+    a.context_count, a.gamma = 1, .95
+    artifact = base.load_artifact(a.models, a.burst_dir)
+    a.classes = list(artifact['label_encoder'].classes_)
+    for name, expected in saved['model_hashes'].items():
+        if digest(a.models/name) != expected: raise ValueError('Experimental model provenance mismatch.')
+    for level, expected in saved['training_domain_sha256'].items():
+        if digest(a.burst_dir/f'AdvBurstTrainedBurst_size_{level}_Step_2000.csv') != expected:
+            raise ValueError('Training data changed after experimental training.')
+    source = base.legacy.read_domain(a.burst_dir, artifact, 0, 'train_ids')
+    reserved = set(saved['provenance']['reference_source_ids'])
+    anchors = subset(source, np.asarray([int(i) not in reserved for i in source[2]]))
+    clean = base.legacy.read_domain(a.burst_dir, artifact, 0, 'test_ids')
+    execution = dict(version=VERSION, seed=a.seed, settings=saved['settings'], levels=TEST_LEVELS,
+        checkpoint_sha256=digest(a.models/'minimax_query.pth'), prediction='before feedback; best scored route',
+        reset='all model, optimizer, reliability and feedback memory state at each intensity',
+        query_head_online='fixed', future_head_online='fixed and unused',
+        route_head_online='paid labels only', context_online='current plus up to four previous paid labels and source replay',
+        metrics='macro PR/RC/F1; pre-feedback online; source forgetting in percentage points')
+    root = a.output/'Results'/('evaluation_' + hashlib.sha256(json.dumps(execution, sort_keys=True).encode()).hexdigest()[:12])
+    if (root/'completed.json').exists():
+        if json.loads((root/'execution.json').read_text()) != execution: raise ValueError('Execution mismatch.')
+        print(f'Using completed evaluation: {root}', flush=True)
+        return
+    root.mkdir(parents=True, exist_ok=True)
+    write_json(root/'execution.json', execution)
+    rows = []
+    for level in TEST_LEVELS:
+        metrics_path = root/f'level_{level}_metrics.json'
+        if metrics_path.exists() and (root/f'level_{level}_trace.csv').exists():
+            result = json.loads(metrics_path.read_text())
+            if result.get('trace_sha256') != digest(root/f'level_{level}_trace.csv'):
+                raise ValueError('Saved trace differs from its completed metrics: ' + str(level))
+        else:
+            base.legacy.core.set_seed(a.seed)
+            runtime = new_runtime(a, artifact, saved, saved['context_state_dict'], saved['query_state_dict'])
+            domain = base.legacy.read_domain(a.burst_dir, artifact, level, 'test_ids')
+            _, result, trace = stream(a, runtime, domain, anchors, None, clean, a.seed)
+            result['level'] = level
+            write_csv(root/f'level_{level}_trace.csv', trace)
+            result['trace_sha256'] = digest(root/f'level_{level}_trace.csv')
+            write_json(metrics_path, result)
+        rows.append(dict(level=level, **result['online'], labels=result['labels'],
+            cap=result['cap'], labels_percent=result['labels_percent'],
+            **{'forgetting_'+k: v for k, v in result['original_domain_forgetting'].items()},
+            **{'gain_'+k: v for k, v in result['target_gain'].items()}))
+        print(f'Level {level}: AC {result["online"]["AC"]:.2f}% | labels {result["labels"]}/{result["cap"]} | '
+              f'forgetting {result["original_domain_forgetting"]["AC"]:+.2f} pp', flush=True)
+    write_csv(root/'summary.csv', rows)
+    write_json(root/'completed.json', dict(levels=len(rows), checkpoint_sha256=execution['checkpoint_sha256']))
+    print(f'Results: {root}', flush=True)
+
+
+def parser():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--dataset', choices=['IAT', 'PS'], required=True)
+    p.add_argument('--action', choices=['All', 'Train', 'Evaluate'], default='All')
+    p.add_argument('--source-run', type=Path)
+    p.add_argument('--output', type=Path)
+    p.add_argument('--burst-dir', type=Path)
+    p.add_argument('--seed', type=int, default=42)
+    p.add_argument('--device', choices=['auto', 'cpu', 'cuda'], default='cuda')
+    p.add_argument('--epochs', type=int, default=6)
+    p.add_argument('--patience', type=int, default=3)
+    p.add_argument('--horizon', type=int, default=16)
+    p.add_argument('--cost', type=float, default=.05)
+    p.add_argument('--gain-weight', type=float, default=1.)
+    p.add_argument('--forgetting-weight', type=float, default=1.)
+    p.add_argument('--context-lr', type=float, default=.00025)
+    p.add_argument('--query-lr', type=float, default=.0001)
+    p.add_argument('--replay-weight', type=float, default=.1)
+    p.add_argument('--budget-fraction', type=float, default=.2)
+    p.add_argument('--validation-retention-weight', type=float, default=1.)
+    return p
+
+
+def main(argv=None):
+    p = parser(); a = p.parse_args(argv)
+    if a.horizon < 1 or a.epochs < 1 or a.patience < 1: p.error('Horizon/epochs/patience must be positive.')
+    if not 0 < a.budget_fraction <= 1: p.error('Budget must be in (0,1].')
+    for key in ['cost', 'gain_weight', 'forgetting_weight', 'context_lr', 'query_lr', 'replay_weight', 'validation_retention_weight']:
+        if not math.isfinite(getattr(a, key)) or getattr(a, key) < 0: p.error(key + ' must be finite and nonnegative.')
+    if a.context_lr == 0 or a.query_lr == 0: p.error('Learning rates must be positive.')
+    root = Path(__file__).resolve().parent/f'ANT_Burst_{a.dataset}_TEST'
+    stem = 'light_ps_paironly_batch5' if a.dataset == 'PS' else 'paironly_batch5'
+    a.source_run = a.source_run or root/'protocol_runs'/f'{stem}_trainseed{a.seed}'/'paironly_batch5'
+    a.burst_dir = a.burst_dir or root/'Dataset_official_v1'/f'AdvBurst_FTSC-{a.dataset}'
+    a.output = a.output or root/'protocol_runs'/f'minimax_query_batch5_seed{a.seed}_h{a.horizon}_c{a.cost:g}'
+    if a.device == 'cuda' and not torch.cuda.is_available(): p.error('CUDA is unavailable; use --device cpu.')
+    base.legacy.core.device = torch.device('cuda' if a.device == 'cuda' or (a.device == 'auto' and torch.cuda.is_available()) else 'cpu')
+    base.legacy.core.set_seed(a.seed)
+    if a.action in ('All', 'Train'): train(a)
+    if a.action in ('All', 'Evaluate'): evaluate(a)
+
+
+if __name__ == '__main__': main()
