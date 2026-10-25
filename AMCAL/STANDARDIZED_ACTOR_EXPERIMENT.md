@@ -1,5 +1,40 @@
 # Standardized Actor: TRAIN and independent VAL
 
+## Small Actor saturation control
+
+```powershell
+.\AMCAL\run_amcal_standardized_actor.ps1 -Dataset IAT -Control Natural -UniformTraining -PilotRows 300 -Epochs 2 -ActorLogitPenalty 0.1 -Action All
+.\AMCAL\run_amcal_standardized_actor.ps1 -Dataset PS -Control Natural -UniformTraining -PilotRows 300 -Epochs 2 -ActorLogitPenalty 0.1 -Action All
+.\AMCAL\push_amcal_standardized_actor.ps1 -Dataset Both
+```
+
+This adds only a TRAIN Actor regularizer: loss = -mean(sigmoid(z)*S.detach())
++ 0.1/2 * mean(z**2). The signed score S is unchanged. Its original term has
+gradient -S*p*(1-p); the added gradient 0.1*z remains restorative at extreme
+logits. It attracts logits toward zero, not toward always requesting labels.
+It does not guarantee positive-target discrimination, useful requests or full
+budget use. A negative expected score can still make the learned decision skip.
+
+This is an explicitly regularized max objective, not the original objective
+rewritten. On each frozen-state round, max_theta E[p_theta*S - kappa*z_theta^2/2]
+retains the competitive signed term but adds an Actor-only penalty. Uniform
+TRAIN collection remains a diagnostic behavior policy, so equivalence to the
+original joint on-policy min-max game is not claimed. No paper claim is changed.
+
+S, Context update, source replay, routing, value-head targets, threshold 0.5,
+normalizer, 20% cap and sample IDs stay as in the prior 300-row/two-epoch pilot.
+TRAIN feedback remains uniform; VAL and TEST use Actor requests. Existing
+pretrained CNN is frozen. Coefficient 0.1 is a prespecified diagnostic starting
+value, not a VAL-optimal setting. No test labels train the Actor or tune it.
+
+Separate `_logitreg0p1` run directories preserve earlier pilot outputs. The
+checkpoint records the coefficient and loss formula. TRAIN CSVs add the
+unregularized Actor score term, logit penalty term, and pre-update logit. Normal
+query probabilities and actual targets remain available in the existing logs.
+No test-time bonus or forced VAL/TEST queries are added. Use the same flags in
+a later Evaluate command to locate this checkpoint. Coefficient zero preserves
+the old code path; positive coefficients cannot be combined with Balanced.
+
 This opt-in variant standardizes only the query Actor input. Frozen CNN,
 Context updates, routing, value-head inputs, signed S, query threshold 0.5,
 batch5, replay 0.1, learning rates, and the 20% per-domain cap are unchanged.
@@ -154,4 +189,5 @@ Evaluation uses the checkpoint normalizer, resets all models at each of TEST lev
 5/7/10/12/15/17/20 and preserves the 20% cap. TEST must not guide subsequent
 threshold, reward or control selection. The original v2 entry point remains
 unchanged when the new Actor flags are absent. Nothing is installed by scripts.
+
 

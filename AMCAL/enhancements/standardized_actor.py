@@ -1,6 +1,7 @@
 """Opt-in TRAIN-fitted Actor preprocessing; routing and reward stay unchanged."""
 import hashlib
 import json
+import math
 from pathlib import Path
 
 import torch
@@ -72,6 +73,34 @@ class StandardizedQueryMaximizer(QueryMaximizer):
         return self.actor(normalized).squeeze(-1), self.value(states).squeeze(-1)
 
 
+def regularized_actor_step(head, optimizer, states, scores, coefficient):
+    """Original signed objective plus a coercive, TRAIN-only logit penalty.
+
+    Loss = -mean(sigmoid(z)*stopgrad(S)) + coefficient/2 * mean(z**2).
+    The penalty gradient coefficient*z restores finite logits even when the
+    sigmoid derivative is tiny. This is an explicitly regularized max problem,
+    not an algebraically equivalent implementation of the unregularized loss.
+    """
+    if not math.isfinite(coefficient) or coefficient < 0:
+        raise ValueError('Actor logit penalty must be finite and nonnegative.')
+    logits, predicted = head(states.detach())
+    target = scores.detach().reshape_as(predicted)
+    if not torch.isfinite(target).all(): raise ValueError('Nonfinite counterfactual score.')
+    score_loss = -(logits.sigmoid()*target).mean()
+    penalty = .5*coefficient*logits.square().mean()
+    actor_loss = score_loss+penalty
+    value_loss = F.smooth_l1_loss(predicted, target)
+    if not torch.isfinite(actor_loss+value_loss): raise ValueError('Nonfinite regularized Actor loss.')
+    optimizer.zero_grad(set_to_none=True)
+    (actor_loss+value_loss).backward()
+    nn.utils.clip_grad_norm_(head.actor.parameters(), 1., error_if_nonfinite=True)
+    nn.utils.clip_grad_norm_(head.value.parameters(), 1., error_if_nonfinite=True)
+    optimizer.step()
+    return dict(actor_loss=float(actor_loss.detach()), value_loss=float(value_loss.detach()),
+        actor_score_loss=float(score_loss.detach()), actor_logit_penalty_loss=float(penalty.detach()),
+        actor_logit=float(logits.detach().mean()))
+
+
 def balanced_actor_step(head, optimizer, states, scores, positive_fraction):
     """Auxiliary inverse-frequency Actor control; value regression remains raw."""
     if not 0 < positive_fraction < 1: raise ValueError('Invalid TRAIN sign prevalence.')
@@ -88,3 +117,4 @@ def balanced_actor_step(head, optimizer, states, scores, positive_fraction):
     nn.utils.clip_grad_norm_(head.value.parameters(), 1., error_if_nonfinite=True)
     optimizer.step()
     return dict(actor_loss=float(actor_loss.detach()), value_loss=float(value_loss.detach()))
+

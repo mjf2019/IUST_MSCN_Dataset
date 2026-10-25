@@ -5,6 +5,7 @@ param(
     [int]$Seed = 42,
     [int]$Epochs = 6,
     [ValidateRange(0,2147483647)][int]$PilotRows = 0,
+    [ValidateRange(0,10)][double]$ActorLogitPenalty = 0,
     [string]$CacheRun = '',
     [string]$SourceRun = '',
     [switch]$UniformQueries,
@@ -13,7 +14,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if ($UniformQueries -and $Action -ne 'Evaluate') { throw 'UniformQueries requires Action Evaluate. No training is performed by this control.' }
+if ($ActorLogitPenalty -gt 0 -and $Control -ne 'Natural') { throw 'ActorLogitPenalty is a separate Natural control; use Control Natural.' }
 $repo = Split-Path -Parent $PSScriptRoot
+$culture = [Globalization.CultureInfo]::InvariantCulture
 $python = Join-Path $repo 'venv/Scripts/python.exe'
 if (-not (Test-Path $python)) { $python = 'python' }
 Push-Location $repo
@@ -40,6 +43,11 @@ try {
             $output += "_pilot${PilotRows}_ep${Epochs}"
             Write-Host "Small-data diagnostic: at most $PilotRows rows per TRAIN/VAL/TEST domain; $Epochs epochs"
         }
+        if ($ActorLogitPenalty -gt 0) {
+            $penaltyText = $ActorLogitPenalty.ToString($culture)
+            $output += '_logitreg' + $penaltyText.Replace('.', 'p')
+            Write-Host "TRAIN Actor logit penalty: $penaltyText | signed target unchanged | policy threshold 0.5"
+        }
         $runArgs = @('AMCAL/amcal_minimax_paironly.py', '--dataset', $Dataset,
             '--action', $Action, '--seed', "$Seed", '--device', $Device,
             '--epochs', "$Epochs", '--horizon', '16', '--cost', '0.05',
@@ -51,8 +59,10 @@ try {
         if ($UniformQueries) { $runArgs += @('--eval-query-schedule', 'uniform') }
         if ($UniformTraining) { $runArgs += @('--train-query-schedule', 'uniform') }
         if ($PilotRows -gt 0) { $runArgs += @('--pilot-rows', "$PilotRows") }
+        if ($ActorLogitPenalty -gt 0) { $runArgs += @('--actor-logit-penalty', $penaltyText) }
         & $python @runArgs
         if ($LASTEXITCODE -ne 0) { throw "Standardized Actor failed: $Dataset / $item / $Action" }
     }
 } finally { Pop-Location }
+
 

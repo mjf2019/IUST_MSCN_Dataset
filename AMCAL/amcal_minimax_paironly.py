@@ -336,6 +336,8 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
                 actor_probability_after=None, actor_grad_norm=None,
                 target_status='budget_exhausted' if used >= cap else 'insufficient_future')
         target = None
+        if training and getattr(a, 'actor_logit_penalty', 0) > 0:
+            record.update(actor_score_loss=None, actor_logit_penalty_loss=None, actor_logit=None)
         label = torch.tensor([truth], device=x.device)
         # Only the offline TRAIN path can ever access future labels.
         if query_target_allowed(training, used, cap, pos, n, a.horizon):
@@ -363,7 +365,11 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             # Full-information TRAIN actor max step; no successor/bootstrap term.
             record.update(target)
             experiment = getattr(a, 'actor_experiment', None)
-            if experiment and experiment['control'] == 'balanced':
+            if getattr(a, 'actor_logit_penalty', 0) > 0:
+                from enhancements.standardized_actor import regularized_actor_step
+                record.update(regularized_actor_step(query, query_optimizer, state,
+                    state.new_tensor([target['score']]), a.actor_logit_penalty))
+            elif experiment and experiment['control'] == 'balanced':
                 from enhancements.standardized_actor import balanced_actor_step
                 record.update(balanced_actor_step(query, query_optimizer, state,
                     state.new_tensor([target['score']]), experiment['normalizer']['positive_fraction']))
@@ -467,6 +473,13 @@ def train(a):
     if getattr(a, 'actor_train_cache', None):
         from enhancements.standardized_actor import prepare_experiment
         a.actor_experiment = prepare_experiment(a)
+        if getattr(a, 'actor_logit_penalty', 0) > 0:
+            a.actor_experiment['actor_regularizer'] = dict(version=1,
+                type='quadratic_logit', coefficient=a.actor_logit_penalty,
+                loss='-mean(sigmoid(z)*stopgrad(S)) + coefficient/2 * mean(z**2)',
+                scope='TRAIN Actor only; S, Context update, value-head targets and routing unchanged',
+                inference='Actor threshold 0.5; no forced labels or test-time bonus',
+                objective='regularized max surrogate, not identical to the original unregularized objective')
         if getattr(a, 'train_query_schedule', 'policy') == 'uniform':
             a.actor_experiment['training_collection'] = dict(version=1, query_schedule='uniform',
                 budget_fraction=a.budget_fraction,
@@ -474,6 +487,8 @@ def train(a):
                 actor='same original signed full-information max loss; no importance ratio or bootstrap',
                 validation='Actor policy at threshold 0.5; fresh adaptive state per VAL intensity',
                 objective_scope='same per-state surrogate; behavior/state distribution differs from on-policy training')
+            if getattr(a, 'actor_logit_penalty', 0) > 0:
+                a.actor_experiment['training_collection']['actor'] = 'original signed max term plus recorded quadratic logit regularizer'
     if (a.output/'Models'/'minimax_query.pth').exists():
         if not (a.output/'training_complete.json').exists():
             raise ValueError('Interrupted training preserved; use a fresh --output directory.')
@@ -717,11 +732,19 @@ def parser():
     p.add_argument('--eval-query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--train-query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--pilot-rows', type=int, default=0)
+    p.add_argument('--actor-logit-penalty', type=float, default=0.)
     return p
 
 
 def main(argv=None):
     p = parser(); a = p.parse_args(argv)
+    if not math.isfinite(a.actor_logit_penalty) or a.actor_logit_penalty < 0:
+        p.error('Actor logit penalty must be finite and nonnegative.')
+    if a.actor_logit_penalty > 0:
+        if a.actor_control != 'natural': p.error('Logit regularization is a separate Natural control; do not combine it with Balanced.')
+        if a.action == 'Diagnose': p.error('Logit regularization requires Train/Evaluate, not Diagnose.')
+        if a.action in ('Train', 'All') and a.actor_train_cache is None:
+            p.error('Regularized Actor training requires --actor-train-cache.')
     if a.pilot_rows < 0: p.error('Pilot rows must be nonnegative; zero means the full domain.')
     if a.pilot_rows and a.pilot_rows <= a.horizon: p.error('Pilot rows must exceed the future horizon.')
     if a.pilot_rows and a.action == 'Diagnose': p.error('Pilot row limits apply to Train/Evaluate, not Diagnose.')
@@ -755,6 +778,8 @@ def main(argv=None):
         regular = regular.with_name(regular.name+'_trainuniform')
     if a.pilot_rows:
         regular = regular.with_name(regular.name+f'_pilot{a.pilot_rows}_ep{a.epochs}')
+    if a.actor_logit_penalty > 0:
+        regular = regular.with_name(regular.name+'_logitreg'+f'{a.actor_logit_penalty:g}'.replace('.', 'p'))
     a.v2_run = a.v2_run or regular
     if a.action == 'Diagnose':
         a.output = a.output or root/'protocol_runs'/f'minimax_diagnostics_seed{a.seed}_n{a.diagnostic_rows}'
@@ -772,4 +797,5 @@ def main(argv=None):
 
 
 if __name__ == '__main__': main()
+
 
