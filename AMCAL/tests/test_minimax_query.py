@@ -579,6 +579,38 @@ class StreamContractTests(unittest.TestCase):
         torch.testing.assert_close(one, chunks)
         with self.assertRaises(ValueError): route_scores(a, runtime[2], None, logits)
 
+    def test_context_only_bypasses_routing_and_keeps_identical_context_updates(self):
+        run, a, runtime, domain, reference, calls = self.fixture()
+        a.eval_query_schedule = 'frontloaded'
+        reference_runtime = deepcopy(runtime)
+        with contextlib.redirect_stdout(io.StringIO()):
+            baseline, baseline_result, baseline_trace = run(a, reference_runtime, domain, domain, None, domain, 42)
+        def forbidden(*args, **kwargs): raise AssertionError('Context-only control called RL.')
+        runtime[2].policy.route_logits = forbidden
+        runtime[2].observe_routes = forbidden
+        runtime[3].forward = forbidden
+        initial_policy = deepcopy(runtime[2].policy.state_dict())
+        initial_cnn = deepcopy(runtime[0].state_dict())
+        a.eval_routing = 'context_only'
+        twin = deepcopy(runtime)
+        flipped = domain[0], 1-domain[1], domain[2]
+        with contextlib.redirect_stdout(io.StringIO()):
+            updated, result, trace = run(a, runtime, domain, domain, None, domain, 42)
+            _, _, altered = run(a, twin, flipped, domain, None, domain, 42)
+        self.assertEqual(result['labels'], baseline_result['labels'])
+        self.assertEqual([r['queried'] for r in trace], [r['queried'] for r in baseline_trace])
+        self.assertEqual([r['step'] for r in trace if r['queried']], [1,2])
+        self.assertTrue(all(r['route'] == 1 and r['prediction'] == r['context_prediction'] for r in trace))
+        self.assertEqual(trace[0]['prediction'], altered[0]['prediction'])
+        self.assertEqual(trace[0]['queried'], altered[0]['queried'])
+        self.assertEqual(calls, [])
+        self.assertEqual(updated[2].feedback, [])
+        for k,v in initial_policy.items(): torch.testing.assert_close(v, updated[2].policy.state_dict()[k])
+        for k,v in initial_cnn.items(): torch.testing.assert_close(v, updated[0].state_dict()[k])
+        for k,v in baseline[1].state_dict().items(): torch.testing.assert_close(v, updated[1].state_dict()[k])
+        scores = self.namespace['prediction_route_scores'](a, updated[2], None, torch.randn(6,2,2))
+        self.assertEqual(scores.argmax(1).tolist(), [1]*6)
+
     def test_frontloaded_control_cannot_enter_training(self):
         run, a, runtime, domain, reference, _ = self.fixture(training=True)
         a.eval_query_schedule = 'frontloaded'

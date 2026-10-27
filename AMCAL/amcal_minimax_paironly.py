@@ -260,6 +260,10 @@ def normalized_entropy(logits):
 
 def prediction_route_scores(a, agent, state, logits, rng=None):
     """Larger is better; routing controls never call the learned router."""
+    if getattr(a, 'eval_routing', 'policy') == 'context_only':
+        scores = logits.new_zeros((len(logits), 2))
+        scores[:, 1] = 1.
+        return scores
     if getattr(a, 'eval_routing', 'policy') == 'random':
         if rng is None: raise ValueError('Random routing requires its own seeded generator.')
         chosen = rng.integers(0, 2, size=len(logits))
@@ -409,8 +413,8 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             frozen_route_score=route_scores[0], context_route_score=route_scores[1],
             query_probability=probability, estimated_score=estimated_score,
             gap=None, gain=None, harm=None, score=None, replay_loss=None, actor_loss=None, value_loss=None)
-        if getattr(a, 'eval_routing', 'policy') == 'random':
-            record.update(routing_rule='random')
+        if getattr(a, 'eval_routing', 'policy') in ('random', 'context_only'):
+            record.update(routing_rule=a.eval_routing)
         if getattr(a, 'eval_routing', 'policy') == 'uncertainty':
             route_entropies = normalized_entropy(outputs[0][0].cpu().numpy())
             record.update(routing_rule='uncertainty', frozen_entropy=float(route_entropies[0]),
@@ -772,6 +776,15 @@ def evaluate(a):
             trace='frozen/context_route_score are random route indicators')
         execution['route_head_online'] = 'fixed and unused'
         execution['query_head_online'] = 'fixed and unused'
+    if getattr(a, 'eval_routing', 'policy') == 'context_only':
+        execution['prediction'] = 'before feedback; always Context-transformed input through frozen CNN'
+        execution['routing'] = dict(mode='context_only', version=1,
+            rule='fixed Context route, no route selection or direct Frozen prediction',
+            heads='learned routing and query heads fixed and bypassed',
+            trace='route=1 throughout; route scores [0,1] are fixed path indicators',
+            computation='existing shared executor retained for matched controls; direct Frozen logits are observer/update quantities only')
+        execution['route_head_online'] = 'fixed and unused'
+        execution['query_head_online'] = 'fixed and unused'
     if a.actor_experiment: execution['actor_experiment'] = a.actor_experiment
     if pilot_spec(a): execution['pilot'] = pilot_spec(a)
     if getattr(a, 'eval_query_schedule', 'policy') == 'uniform':
@@ -879,7 +892,7 @@ def parser():
     p.add_argument('--actor-control', choices=['natural', 'balanced'], default='natural')
     p.add_argument('--eval-query-schedule', choices=['policy', 'uniform', 'uncertainty', 'frontloaded'], default='policy')
     p.add_argument('--uncertainty-percentile', type=float, default=75.)
-    p.add_argument('--eval-routing', choices=['policy', 'uncertainty', 'random'], default='policy')
+    p.add_argument('--eval-routing', choices=['policy', 'uncertainty', 'random', 'context_only'], default='policy')
     p.add_argument('--train-query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--pilot-rows', type=int, default=0)
     p.add_argument('--actor-logit-penalty', type=float, default=0.)
@@ -909,8 +922,8 @@ def main(argv=None):
         p.error('Routing controls require Evaluate; no retraining.')
     if a.eval_routing == 'uncertainty' and a.eval_query_schedule not in ('uncertainty', 'frontloaded'):
         p.error('Uncertainty routing requires uncertainty or frontloaded requests.')
-    if a.eval_routing == 'random' and a.eval_query_schedule != 'frontloaded':
-        p.error('Random routing control requires frontloaded requests.')
+    if a.eval_routing in ('random', 'context_only') and a.eval_query_schedule != 'frontloaded':
+        p.error('Random/Context-only controls require frontloaded requests.')
     if not math.isfinite(a.uncertainty_percentile) or not 0 < a.uncertainty_percentile < 100:
         p.error('Uncertainty percentile must be between zero and 100.')
     if a.eval_query_schedule != 'policy' and a.action != 'Evaluate':
