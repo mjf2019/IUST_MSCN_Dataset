@@ -362,7 +362,7 @@ class StreamContractTests(unittest.TestCase):
             return module.counterfactual_step(*args, **kwargs)
         path = Path(__file__).resolve().parents[1]/'amcal_minimax_paironly.py'
         functions = [node for node in ast.parse(path.read_text()).body
-            if isinstance(node, ast.FunctionDef) and node.name in ('stream', 'feature_keys', 'feature_key', 'balanced_draw', 'validate_trace', 'uniform_query_at', 'normalized_entropy', 'entropy_cutoff', 'calibrate_uncertainty')]
+            if isinstance(node, ast.FunctionDef) and node.name in ('stream', 'feature_keys', 'feature_key', 'balanced_draw', 'validate_trace', 'uniform_query_at', 'normalized_entropy', 'entropy_cutoff', 'calibrate_uncertainty', 'prediction_route_scores')]
         namespace = dict(torch=torch, np=np, deepcopy=deepcopy, math=math,
             base=types.SimpleNamespace(legacy=types.SimpleNamespace(core=object(), base_cache=cache)),
             DeviceReliability=TinyHistory, Replay=TinyMemory, BankExecutor=TinyExecutor,
@@ -440,6 +440,50 @@ class StreamContractTests(unittest.TestCase):
         self.assertEqual(trace[0]['query_entropy'], changed[0]['query_entropy'])
         self.assertTrue(all(0 <= r['query_entropy'] <= 1 for r in trace))
         for key, value in query_before.items(): torch.testing.assert_close(value, updated[3].state_dict()[key])
+
+    def test_full_uncertainty_bypasses_all_rl_predictions_and_learning(self):
+        run, a, runtime, domain, reference, calls = self.fixture()
+        a.eval_query_schedule = 'uncertainty'; a.eval_routing = 'uncertainty'
+        a.uncertainty_threshold = 0.
+        def forbidden(*args, **kwargs): raise AssertionError('Full uncertainty called an RL head.')
+        runtime[2].policy.route_logits = forbidden
+        runtime[2].observe_routes = forbidden
+        runtime[3].forward = forbidden
+        initial_policy = deepcopy(runtime[2].policy.state_dict())
+        initial_query = deepcopy(runtime[3].state_dict())
+        initial_context = deepcopy(runtime[1].state_dict())
+        twin = deepcopy(runtime)
+        flipped = domain[0], 1-domain[1], domain[2]
+        with contextlib.redirect_stdout(io.StringIO()):
+            updated, result, trace = run(a, runtime, domain, domain, None, domain, 42)
+            _, _, altered = run(a, twin, flipped, domain, None, domain, 42)
+        self.assertEqual(result['labels'], 2)
+        self.assertEqual(calls, [])
+        self.assertEqual(len(updated[2].feedback), 0)
+        self.assertEqual(trace[0]['route'], altered[0]['route'])
+        self.assertEqual(trace[0]['prediction'], altered[0]['prediction'])
+        self.assertEqual(trace[0]['queried'], altered[0]['queried'])
+        for row in trace:
+            self.assertEqual(row['route'], int(row['context_entropy'] < row['frozen_entropy']))
+            self.assertAlmostEqual(row['frozen_route_score'], -row['frozen_entropy'], places=6)
+            self.assertAlmostEqual(row['context_route_score'], -row['context_entropy'], places=6)
+            self.assertAlmostEqual(row['query_entropy'], min(row['context_entropy'], row['frozen_entropy']))
+        for k,v in initial_policy.items(): torch.testing.assert_close(v, updated[2].policy.state_dict()[k])
+        for k,v in initial_query.items(): torch.testing.assert_close(v, updated[3].state_dict()[k])
+        self.assertTrue(any(not torch.equal(v, updated[1].state_dict()[k]) for k,v in initial_context.items()))
+
+    def test_full_uncertainty_calibration_also_bypasses_router(self):
+        _, a, runtime, domain, _, _ = self.fixture()
+        a.eval_routing = 'uncertainty'; a.uncertainty_percentile = 75.
+        def forbidden(*args, **kwargs): raise AssertionError('Entropy calibration called RL.')
+        runtime[2].policy.route_logits = forbidden
+        runtime[3].forward = forbidden
+        result = self.namespace['calibrate_uncertainty'](a, runtime, {0:domain})
+        with torch.no_grad():
+            logits = torch.stack([runtime[0](domain[0]), runtime[0](runtime[1](domain[0]))], 1)
+        entropies = self.namespace['normalized_entropy'](logits.numpy()).min(axis=1)
+        self.assertAlmostEqual(result['threshold'], float(np.percentile(entropies, 75)), places=6)
+        self.assertEqual(runtime[2].feedback, [])
 
     def test_uncertainty_does_not_force_budget_consumption(self):
         run, a, runtime, domain, reference, calls = self.fixture()

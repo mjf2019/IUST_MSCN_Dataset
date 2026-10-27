@@ -10,12 +10,14 @@ param(
     [string]$SourceRun = '',
     [switch]$UniformQueries,
     [switch]$UncertaintyQueries,
+    [switch]$UncertaintyRouting,
     [ValidateRange(1,99)][double]$UncertaintyPercentile = 75,
     [switch]$UniformTraining,
     [switch]$QueryUtilityTarget,
     [ValidateSet('cuda','cpu','auto')][string]$Device = 'cuda'
 )
 $ErrorActionPreference = 'Stop'
+if ($UncertaintyRouting -and (-not $UncertaintyQueries -or $Action -ne 'Evaluate')) { throw 'UncertaintyRouting requires UncertaintyQueries and Action Evaluate.' }
 if ($UniformQueries -and $UncertaintyQueries) { throw 'Choose UniformQueries or UncertaintyQueries, not both.' }
 if ($UncertaintyQueries -and $Action -ne 'Evaluate') { throw 'UncertaintyQueries requires Action Evaluate; no retraining.' }
 if ($UniformQueries -and $Action -ne 'Evaluate') { throw 'UniformQueries requires Action Evaluate. No training is performed by this control.' }
@@ -70,6 +72,7 @@ try {
         if ($SourceRun) { $runArgs += @('--source-run', $SourceRun) }
         if ($UniformQueries) { $runArgs += @('--eval-query-schedule', 'uniform') }
         if ($UncertaintyQueries) { $runArgs += @('--eval-query-schedule', 'uncertainty', '--uncertainty-percentile', $UncertaintyPercentile.ToString($culture)) }
+        if ($UncertaintyRouting) { $runArgs += @('--eval-routing', 'uncertainty') }
         if ($UniformTraining) { $runArgs += @('--train-query-schedule', 'uniform') }
         if ($PilotRows -gt 0) { $runArgs += @('--pilot-rows', "$PilotRows") }
         if ($ActorLogitPenalty -gt 0) { $runArgs += @('--actor-logit-penalty', $penaltyText) }

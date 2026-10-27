@@ -232,7 +232,7 @@ def endpoint(a, cnn, context, agent, domain, history, used, cap, position):
     for start in range(0, len(x), 64):
         out = executor.outputs(x[start:start+64], z[start:start+64])
         state = build_state(out, h[start:start+64], history, used, cap, position, max(position, 1), -1)
-        route = agent.policy.route_logits(state).argmax(1)
+        route = prediction_route_scores(a, agent, state, out[0]).argmax(1)
         per_route = out[0].argmax(2)
         predicted.extend(per_route[torch.arange(len(route), device=x.device), route].cpu().tolist())
     return metrics(y, predicted, len(a.classes))
@@ -255,6 +255,14 @@ def normalized_entropy(logits):
     shifted = values - values.max(axis=-1, keepdims=True)
     logp = shifted - np.log(np.exp(shifted).sum(axis=-1, keepdims=True))
     return np.clip(-(np.exp(logp)*logp).sum(axis=-1)/math.log(values.shape[-1]), 0., 1.)
+
+
+def prediction_route_scores(a, agent, state, logits):
+    """Larger is better; uncertainty routing never calls the learned router."""
+    if getattr(a, 'eval_routing', 'policy') == 'uncertainty':
+        values = -normalized_entropy(logits.detach().cpu().numpy())
+        return torch.as_tensor(values, dtype=logits.dtype, device=logits.device)
+    return agent.policy.route_logits(state)
 
 
 def entropy_cutoff(scores, percentile):
@@ -280,7 +288,7 @@ def calibrate_uncertainty(a, runtime, domains):
         for start in range(0, n, 64):
             out = executor.outputs(x[start:start+64], z[start:start+64])
             state = build_state(out, h[start:start+64], history, 0, cap, 0, n, -1)
-            routing = agent.policy.route_logits(state)
+            routing = prediction_route_scores(a, agent, state, out[0])
             if not torch.isfinite(routing).all(): raise ValueError('Nonfinite calibration routing scores.')
             route = routing.argmax(1)
             logits = out[0][torch.arange(len(route), device=x.device), route]
@@ -292,8 +300,12 @@ def calibrate_uncertainty(a, runtime, domains):
         calibration_levels=list(domains), calibration_ids=domain_ids,
         calibration='VAL features only, saved initial checkpoint; empty feedback history, used=0, position=0; no updates',
         rule='request when current selected-route entropy >= fixed VAL threshold, subject to remaining cap',
-        scope='query decision only; existing route argmax and paid-feedback Context/router updates',
-        actor_probability='observer only; ignored for requests',
+        scope=('query and routing via entropy; paid-feedback Context updates; learned router fixed and unused'
+            if getattr(a, 'eval_routing', 'policy') == 'uncertainty' else
+            'query decision only; existing route argmax and paid-feedback Context/router updates'),
+        actor_probability=('not evaluated; trace query_probability=0 is an unused placeholder'
+            if getattr(a, 'eval_routing', 'policy') == 'uncertainty' else
+            'observer only; ignored for requests'),
         budget='20% maximum per intensity; no forced consumption; all adaptive state reset')
 
 
@@ -312,6 +324,8 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
         raise ValueError('Unknown query schedule.')
     if training and evaluation_schedule != 'policy':
         raise ValueError('Query overrides are evaluation-only; TRAIN must use its configured collection policy.')
+    if training and getattr(a, 'eval_routing', 'policy') != 'policy':
+        raise ValueError('Routing overrides are evaluation-only.')
     query_schedule = training_schedule if training else evaluation_schedule
     if query_schedule == 'uncertainty':
         threshold = getattr(a, 'uncertainty_threshold', None)
@@ -353,11 +367,13 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
         with torch.no_grad():
             outputs = BankExecutor(cnn, [context]).outputs(inputs, z[pos:pos+1])
             state = build_state(outputs, h[pos:pos+1], history, used, cap, pos, n, -1)
-            route_scores = agent.policy.route_logits(state)[0].cpu().tolist()
+            route_scores = prediction_route_scores(a, agent, state, outputs[0])[0].cpu().tolist()
             if not all(math.isfinite(value) for value in route_scores):
                 raise ValueError('Nonfinite routing scores.')
             route = int(route_scores[1] > route_scores[0])
-            if used < cap:
+            if used < cap and getattr(a, 'eval_routing', 'policy') == 'uncertainty':
+                probability, estimated_score = 0., None
+            elif used < cap:
                 logit, estimate = query(state)
                 probability, estimated_score = float(logit.sigmoid()[0]), float(estimate[0])
                 if not math.isfinite(probability) or not math.isfinite(estimated_score):
@@ -384,6 +400,10 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             frozen_route_score=route_scores[0], context_route_score=route_scores[1],
             query_probability=probability, estimated_score=estimated_score,
             gap=None, gain=None, harm=None, score=None, replay_loss=None, actor_loss=None, value_loss=None)
+        if getattr(a, 'eval_routing', 'policy') == 'uncertainty':
+            route_entropies = normalized_entropy(outputs[0][0].cpu().numpy())
+            record.update(routing_rule='uncertainty', frozen_entropy=float(route_entropies[0]),
+                context_entropy=float(route_entropies[1]))
         if query_schedule == 'uncertainty':
             record.update(query_entropy=entropy, uncertainty_threshold=threshold)
         if diagnostic_sink is not None:
@@ -466,7 +486,8 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             memory.add(ids[pos], inputs, truth)
             agent.versions[0] += 1
             # Correctness labels refer to predictions made before feedback/update.
-            agent.observe_routes(state, (correct_predictions[0] == truth).float(), versions=versions)
+            if getattr(a, 'eval_routing', 'policy') != 'uncertainty':
+                agent.observe_routes(state, (correct_predictions[0] == truth).float(), versions=versions)
         agent.clock += 1
         record['labels_used'] = used
         trace.append(record)
@@ -722,6 +743,14 @@ def evaluate(a):
         query_head_online='fixed', future_head_online='fixed and unused',
         route_head_online='paid labels only', context_online='current plus up to four previous paid labels and source replay',
         metrics='macro PR/RC/F1; pre-feedback online; source forgetting in percentage points')
+    if getattr(a, 'eval_routing', 'policy') == 'uncertainty':
+        execution['prediction'] = 'before feedback; minimum normalized entropy route; Frozen wins ties'
+        execution['routing'] = dict(mode='uncertainty', version=1,
+            score='negative normalized predictive entropy; larger is better',
+            heads='learned routing and query heads fixed and bypassed',
+            trace='frozen/context_route_score are negative entropy; individual entropies also recorded')
+        execution['route_head_online'] = 'fixed and unused'
+        execution['query_head_online'] = 'fixed and unused'
     if a.actor_experiment: execution['actor_experiment'] = a.actor_experiment
     if pilot_spec(a): execution['pilot'] = pilot_spec(a)
     if getattr(a, 'eval_query_schedule', 'policy') == 'uniform':
@@ -820,6 +849,7 @@ def parser():
     p.add_argument('--actor-control', choices=['natural', 'balanced'], default='natural')
     p.add_argument('--eval-query-schedule', choices=['policy', 'uniform', 'uncertainty'], default='policy')
     p.add_argument('--uncertainty-percentile', type=float, default=75.)
+    p.add_argument('--eval-routing', choices=['policy', 'uncertainty'], default='policy')
     p.add_argument('--train-query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--pilot-rows', type=int, default=0)
     p.add_argument('--actor-logit-penalty', type=float, default=0.)
@@ -845,6 +875,8 @@ def main(argv=None):
     if a.pilot_rows < 0: p.error('Pilot rows must be nonnegative; zero means the full domain.')
     if a.pilot_rows and a.pilot_rows <= a.horizon: p.error('Pilot rows must exceed the future horizon.')
     if a.pilot_rows and a.action == 'Diagnose': p.error('Pilot row limits apply to Train/Evaluate, not Diagnose.')
+    if a.eval_routing != 'policy' and (a.action != 'Evaluate' or a.eval_query_schedule != 'uncertainty'):
+        p.error('Uncertainty routing requires Evaluate with uncertainty requests.')
     if not math.isfinite(a.uncertainty_percentile) or not 0 < a.uncertainty_percentile < 100:
         p.error('Uncertainty percentile must be between zero and 100.')
     if a.eval_query_schedule != 'policy' and a.action != 'Evaluate':
