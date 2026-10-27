@@ -45,6 +45,34 @@ class UniformScheduleTests(unittest.TestCase):
             with self.assertRaises(ValueError): gate_namespace['uniform_query_at'](*args)
 
 
+@unittest.skipIf(np is None, 'Requires the existing NumPy dependency')
+class UncertaintyRuleTests(unittest.TestCase):
+    def functions(self):
+        nodes = [n for n in ast.parse(runner_source.read_text()).body
+            if isinstance(n, ast.FunctionDef) and n.name in ('normalized_entropy', 'entropy_cutoff')]
+        ns = dict(np=np, math=math)
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), str(runner_source), 'exec'), ns)
+        return ns
+
+    def test_entropy_is_normalized_stable_and_shift_invariant(self):
+        entropy = self.functions()['normalized_entropy']
+        self.assertAlmostEqual(float(entropy([0., 0.])), 1.)
+        self.assertLess(float(entropy([1000., -1000.])), 1e-10)
+        np.testing.assert_allclose(entropy([[1., 2., 3.], [4., 4., 4.]]),
+            entropy([[1001., 1002., 1003.], [1004., 1004., 1004.]]))
+
+    def test_percentile_uses_only_supplied_calibration_scores(self):
+        cutoff = self.functions()['entropy_cutoff']
+        self.assertAlmostEqual(cutoff([.1, .2, .3, .4], 75), .325)
+
+    def test_invalid_scores_logits_and_percentiles_are_rejected(self):
+        fn = self.functions()
+        for scores, percentile in [([],75), ([float('nan')],75), ([.1],0), ([.1],100), ([.1],float('inf'))]:
+            with self.assertRaises(ValueError): fn['entropy_cutoff'](scores, percentile)
+        for logits in ([1.], [float('nan'),0.]):
+            with self.assertRaises(ValueError): fn['normalized_entropy'](logits)
+
+
 class BudgetContractTests(unittest.TestCase):
     def test_exhausted_budget_never_creates_training_targets(self):
         gate = gate_namespace['query_target_allowed']
@@ -334,7 +362,7 @@ class StreamContractTests(unittest.TestCase):
             return module.counterfactual_step(*args, **kwargs)
         path = Path(__file__).resolve().parents[1]/'amcal_minimax_paironly.py'
         functions = [node for node in ast.parse(path.read_text()).body
-            if isinstance(node, ast.FunctionDef) and node.name in ('stream', 'feature_keys', 'feature_key', 'balanced_draw', 'validate_trace', 'uniform_query_at')]
+            if isinstance(node, ast.FunctionDef) and node.name in ('stream', 'feature_keys', 'feature_key', 'balanced_draw', 'validate_trace', 'uniform_query_at', 'normalized_entropy', 'entropy_cutoff', 'calibrate_uncertainty')]
         namespace = dict(torch=torch, np=np, deepcopy=deepcopy, math=math,
             base=types.SimpleNamespace(legacy=types.SimpleNamespace(core=object(), base_cache=cache)),
             DeviceReliability=TinyHistory, Replay=TinyMemory, BankExecutor=TinyExecutor,
@@ -354,6 +382,7 @@ class StreamContractTests(unittest.TestCase):
         a = types.SimpleNamespace(budget_fraction=.2, config=object(), classes=['a','b'],
             context_lr=.001, query_lr=.001, horizon=2, reference_size=2,
             replay_weight=.1, gain_weight=1., forgetting_weight=1., cost=.05, progress_every=100)
+        self.namespace = namespace
         return namespace['stream'], a, (cnn, context, agent, query), domain, reference, calls
 
     def test_test_never_probes_future_and_respects_hard_cap(self):
@@ -391,6 +420,58 @@ class StreamContractTests(unittest.TestCase):
         self.assertEqual(len(updated[2].feedback), 2)
         self.assertTrue(any(not torch.equal(v, updated[1].state_dict()[k]) for k,v in context_before.items()))
         for k,v in query_before.items(): torch.testing.assert_close(v, updated[3].state_dict()[k])
+
+    def test_uncertainty_queries_ignore_actor_and_keep_pre_feedback_predictions(self):
+        run, a, runtime, domain, reference, calls = self.fixture()
+        a.eval_query_schedule = 'uncertainty'; a.uncertainty_threshold = 0.
+        with torch.no_grad(): runtime[3].actor[-1].bias.fill_(-80.)
+        query_before = deepcopy(runtime[3].state_dict())
+        twin = deepcopy(runtime)
+        flipped = domain[0], 1-domain[1], domain[2]
+        with contextlib.redirect_stdout(io.StringIO()):
+            updated, result, trace = run(a, runtime, domain, domain, None, domain, 42)
+            _, _, changed = run(a, twin, flipped, domain, None, domain, 42)
+        self.assertEqual(calls, [])
+        self.assertEqual(result['labels'], 2)
+        self.assertEqual([r['step'] for r in trace if r['queried']], [1,2])
+        self.assertEqual(trace[0]['prediction'], changed[0]['prediction'])
+        self.assertEqual(trace[0]['route'], changed[0]['route'])
+        self.assertEqual(trace[0]['queried'], changed[0]['queried'])
+        self.assertEqual(trace[0]['query_entropy'], changed[0]['query_entropy'])
+        self.assertTrue(all(0 <= r['query_entropy'] <= 1 for r in trace))
+        for key, value in query_before.items(): torch.testing.assert_close(value, updated[3].state_dict()[key])
+
+    def test_uncertainty_does_not_force_budget_consumption(self):
+        run, a, runtime, domain, reference, calls = self.fixture()
+        a.eval_query_schedule = 'uncertainty'; a.uncertainty_threshold = 1.
+        with contextlib.redirect_stdout(io.StringIO()):
+            _, result, trace = run(a, runtime, domain, domain, None, domain, 42)
+        self.assertEqual(result['labels'], 0)
+        self.assertEqual(calls, [])
+        self.assertTrue(all(not r['queried'] for r in trace))
+
+    def test_uncertainty_cannot_enter_training_or_run_without_calibration(self):
+        run, a, runtime, domain, reference, _ = self.fixture(training=True)
+        a.eval_query_schedule = 'uncertainty'
+        with self.assertRaises(ValueError): run(a, runtime, domain, domain, reference, domain, 42, training=True)
+        with self.assertRaises(ValueError): run(a, runtime, domain, domain, None, domain, 42)
+
+    def test_uncertainty_calibration_never_reads_labels_or_updates_models(self):
+        _, a, runtime, domain, _, calls = self.fixture()
+        a.uncertainty_percentile = 75.
+        before = [deepcopy(model.state_dict()) for model in [runtime[0], runtime[1], runtime[2].policy, runtime[3]]]
+        class ForbiddenLabels:
+            def __getitem__(self, key): raise AssertionError('Calibration read labels.')
+            def __iter__(self): raise AssertionError('Calibration read labels.')
+        calibration_domain = domain[0], ForbiddenLabels(), domain[2]
+        result = self.namespace['calibrate_uncertainty'](a, runtime, {0:calibration_domain})
+        self.assertEqual(result['calibration_rows'], 10)
+        self.assertEqual(result['calibration_levels'], [0])
+        self.assertTrue(0 <= result['threshold'] <= 1)
+        self.assertEqual(runtime[2].feedback, [])
+        self.assertEqual(calls, [])
+        for model, old in zip([runtime[0], runtime[1], runtime[2].policy, runtime[3]], before):
+            for key,value in old.items(): torch.testing.assert_close(value, model.state_dict()[key])
 
     def test_uniform_control_cannot_enter_training(self):
         run, a, runtime, domain, reference, _ = self.fixture(training=True)
@@ -495,5 +576,6 @@ class StreamContractTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
 
 

@@ -9,11 +9,15 @@ param(
     [string]$CacheRun = '',
     [string]$SourceRun = '',
     [switch]$UniformQueries,
+    [switch]$UncertaintyQueries,
+    [ValidateRange(1,99)][double]$UncertaintyPercentile = 75,
     [switch]$UniformTraining,
     [switch]$QueryUtilityTarget,
     [ValidateSet('cuda','cpu','auto')][string]$Device = 'cuda'
 )
 $ErrorActionPreference = 'Stop'
+if ($UniformQueries -and $UncertaintyQueries) { throw 'Choose UniformQueries or UncertaintyQueries, not both.' }
+if ($UncertaintyQueries -and $Action -ne 'Evaluate') { throw 'UncertaintyQueries requires Action Evaluate; no retraining.' }
 if ($UniformQueries -and $Action -ne 'Evaluate') { throw 'UniformQueries requires Action Evaluate. No training is performed by this control.' }
 if ($ActorLogitPenalty -gt 0 -and $Control -ne 'Natural') { throw 'ActorLogitPenalty is a separate Natural control; use Control Natural.' }
 if ($QueryUtilityTarget -and ($Control -ne 'Natural' -or $ActorLogitPenalty -ne 0)) { throw 'QueryUtilityTarget requires Control Natural and zero ActorLogitPenalty.' }
@@ -36,6 +40,7 @@ try {
     $controls = if ($Control -eq 'Both') { @('natural','balanced') } else { @($Control.ToLowerInvariant()) }
     foreach ($item in $controls) {
         if ($UniformQueries) { Write-Host "Uniform-query TEST: $Dataset / $item | exact 20% cap | no retraining" }
+        if ($UncertaintyQueries) { Write-Host "Uncertainty-query TEST: $Dataset / $item | VAL q$UncertaintyPercentile | maximum 20% cap | no retraining" }
         $costText = if ($QueryUtilityTarget) { '0' } else { '0.05' }
         $output = "AMCAL/ANT_Burst_${Dataset}_TEST/protocol_runs/minimax_query_batch5_seed${Seed}_v2_h16_c${costText}_actorstd_${item}"
         if ($UniformTraining) {
@@ -64,6 +69,7 @@ try {
         if ($Action -ne 'Evaluate') { $runArgs += @('--actor-train-cache', $CacheRun, '--train-diagnostics') }
         if ($SourceRun) { $runArgs += @('--source-run', $SourceRun) }
         if ($UniformQueries) { $runArgs += @('--eval-query-schedule', 'uniform') }
+        if ($UncertaintyQueries) { $runArgs += @('--eval-query-schedule', 'uncertainty', '--uncertainty-percentile', $UncertaintyPercentile.ToString($culture)) }
         if ($UniformTraining) { $runArgs += @('--train-query-schedule', 'uniform') }
         if ($PilotRows -gt 0) { $runArgs += @('--pilot-rows', "$PilotRows") }
         if ($ActorLogitPenalty -gt 0) { $runArgs += @('--actor-logit-penalty', $penaltyText) }
@@ -72,5 +78,6 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Standardized Actor failed: $Dataset / $item / $Action" }
     }
 } finally { Pop-Location }
+
 
 

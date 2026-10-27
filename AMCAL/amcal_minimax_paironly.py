@@ -247,6 +247,56 @@ def uniform_query_at(position, count, cap):
     return after > before
 
 
+def normalized_entropy(logits):
+    """Predictive entropy in [0,1], with no labels or future rows."""
+    values = np.asarray(logits, dtype=np.float64)
+    if values.ndim < 1 or values.shape[-1] < 2 or not np.isfinite(values).all():
+        raise ValueError('Entropy requires finite logits for at least two classes.')
+    shifted = values - values.max(axis=-1, keepdims=True)
+    logp = shifted - np.log(np.exp(shifted).sum(axis=-1, keepdims=True))
+    return np.clip(-(np.exp(logp)*logp).sum(axis=-1)/math.log(values.shape[-1]), 0., 1.)
+
+
+def entropy_cutoff(scores, percentile):
+    values = np.asarray(scores, dtype=np.float64)
+    if values.ndim != 1 or not len(values) or not np.isfinite(values).all():
+        raise ValueError('Calibration requires a nonempty finite entropy vector.')
+    if not math.isfinite(percentile) or not 0 < percentile < 100:
+        raise ValueError('Uncertainty percentile must be between zero and 100.')
+    return float(np.percentile(values, percentile))
+
+
+@torch.no_grad()
+def calibrate_uncertainty(a, runtime, domains):
+    """Fixed initial-runtime VAL predictions; no labels or adaptive updates."""
+    cnn, context, agent, _ = runtime
+    scores, domain_ids = [], {}
+    executor = BankExecutor(cnn, [context])
+    for level, domain in domains.items():
+        x, _, ids = domain
+        n, cap = len(x), int(a.budget_fraction*len(x))
+        history = DeviceReliability(len(a.classes), x.device, routes=2)
+        z, h = base.legacy.base_cache(cnn, x)
+        for start in range(0, n, 64):
+            out = executor.outputs(x[start:start+64], z[start:start+64])
+            state = build_state(out, h[start:start+64], history, 0, cap, 0, n, -1)
+            routing = agent.policy.route_logits(state)
+            if not torch.isfinite(routing).all(): raise ValueError('Nonfinite calibration routing scores.')
+            route = routing.argmax(1)
+            logits = out[0][torch.arange(len(route), device=x.device), route]
+            scores.extend(normalized_entropy(logits.cpu().numpy()).tolist())
+        domain_ids[str(level)] = list(map(int, ids))
+    threshold = entropy_cutoff(scores, a.uncertainty_percentile)
+    return dict(mode='uncertainty', version=1, score='normalized entropy of selected prediction route',
+        percentile=a.uncertainty_percentile, threshold=threshold, calibration_rows=len(scores),
+        calibration_levels=list(domains), calibration_ids=domain_ids,
+        calibration='VAL features only, saved initial checkpoint; empty feedback history, used=0, position=0; no updates',
+        rule='request when current selected-route entropy >= fixed VAL threshold, subject to remaining cap',
+        scope='query decision only; existing route argmax and paid-feedback Context/router updates',
+        actor_probability='observer only; ignored for requests',
+        budget='20% maximum per intensity; no forced consumption; all adaptive state reset')
+
+
 def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
            training_state=None, target_endpoints=True, diagnostic_sink=None, max_steps=None):
     cnn, context, agent, query = runtime
@@ -258,11 +308,15 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
     if n == 0: raise ValueError('Empty stream.')
     evaluation_schedule = getattr(a, 'eval_query_schedule', 'policy')
     training_schedule = getattr(a, 'train_query_schedule', 'policy')
-    if evaluation_schedule not in ('policy', 'uniform') or training_schedule not in ('policy', 'uniform'):
+    if evaluation_schedule not in ('policy', 'uniform', 'uncertainty') or training_schedule not in ('policy', 'uniform'):
         raise ValueError('Unknown query schedule.')
     if training and evaluation_schedule != 'policy':
-        raise ValueError('Uniform requests are an evaluation-only control; TRAIN must use the original policy.')
+        raise ValueError('Query overrides are evaluation-only; TRAIN must use its configured collection policy.')
     query_schedule = training_schedule if training else evaluation_schedule
+    if query_schedule == 'uncertainty':
+        threshold = getattr(a, 'uncertainty_threshold', None)
+        if threshold is None or not math.isfinite(threshold) or not 0 <= threshold <= 1:
+            raise ValueError('A finite VAL-calibrated uncertainty threshold is required.')
     if diagnostic_sink is not None and not training:
         raise ValueError('The TRAIN diagnostic recorder must not collect TEST/VAL targets.')
     steps = n if max_steps is None else min(n, max_steps)
@@ -310,7 +364,11 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
                     raise ValueError('Nonfinite query scores.')
             else:
                 probability, estimated_score = 0., None
-            if query_schedule == 'uniform':
+            entropy = None
+            if query_schedule == 'uncertainty':
+                entropy = float(normalized_entropy(outputs[0][0, route].cpu().numpy()))
+                paid = used < cap and entropy >= threshold
+            elif query_schedule == 'uniform':
                 paid = used < cap and uniform_query_at(pos, n, cap)
             else:
                 paid = used < cap and (rng.random() < probability if training else probability >= .5)
@@ -326,6 +384,8 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             frozen_route_score=route_scores[0], context_route_score=route_scores[1],
             query_probability=probability, estimated_score=estimated_score,
             gap=None, gain=None, harm=None, score=None, replay_loss=None, actor_loss=None, value_loss=None)
+        if query_schedule == 'uncertainty':
+            record.update(query_entropy=entropy, uncertainty_threshold=threshold)
         if diagnostic_sink is not None:
             record.update(label_cap=cap, domain_samples=n, budget_used_before=used,
                 budget_remaining_before=cap-used, query_legal=used < cap,
@@ -671,6 +731,16 @@ def evaluate(a):
             actor_probability='logged for observation only; ignored for requests',
             information='positions and known stream length only; no current or future labels',
             budget='floor(budget_fraction*n) per intensity; all adaptive state reset')
+    if getattr(a, 'eval_query_schedule', 'policy') == 'uncertainty':
+        calibration_domains = {level: pilot_domain(a, base.legacy.read_domain(
+            a.burst_dir, artifact, level, 'val_ids'), 703) for level in TRAIN_LEVELS}
+        base.legacy.core.set_seed(a.seed)
+        calibration_runtime = new_runtime(a, artifact, saved, saved['context_state_dict'], saved['query_state_dict'])
+        calibration = calibrate_uncertainty(a, calibration_runtime, calibration_domains)
+        a.uncertainty_threshold = calibration['threshold']
+        execution['query_schedule'] = calibration
+        del calibration_runtime
+        print(f'Uncertainty VAL q{a.uncertainty_percentile:g}: threshold {a.uncertainty_threshold:.6f}', flush=True)
     root = a.output/'Results'/('evaluation_' + hashlib.sha256(json.dumps(execution, sort_keys=True).encode()).hexdigest()[:12])
     if (root/'completed.json').exists():
         if json.loads((root/'execution.json').read_text()) != execution: raise ValueError('Execution mismatch.')
@@ -748,7 +818,8 @@ def parser():
     p.add_argument('--v2-run', type=Path)
     p.add_argument('--actor-train-cache', type=Path)
     p.add_argument('--actor-control', choices=['natural', 'balanced'], default='natural')
-    p.add_argument('--eval-query-schedule', choices=['policy', 'uniform'], default='policy')
+    p.add_argument('--eval-query-schedule', choices=['policy', 'uniform', 'uncertainty'], default='policy')
+    p.add_argument('--uncertainty-percentile', type=float, default=75.)
     p.add_argument('--train-query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--pilot-rows', type=int, default=0)
     p.add_argument('--actor-logit-penalty', type=float, default=0.)
@@ -774,8 +845,10 @@ def main(argv=None):
     if a.pilot_rows < 0: p.error('Pilot rows must be nonnegative; zero means the full domain.')
     if a.pilot_rows and a.pilot_rows <= a.horizon: p.error('Pilot rows must exceed the future horizon.')
     if a.pilot_rows and a.action == 'Diagnose': p.error('Pilot row limits apply to Train/Evaluate, not Diagnose.')
+    if not math.isfinite(a.uncertainty_percentile) or not 0 < a.uncertainty_percentile < 100:
+        p.error('Uncertainty percentile must be between zero and 100.')
     if a.eval_query_schedule != 'policy' and a.action != 'Evaluate':
-        p.error('Uniform query control requires --action Evaluate; it must not retrain or change VAL selection.')
+        p.error('Query controls require --action Evaluate; they must not retrain or change VAL checkpoint selection.')
     if a.train_query_schedule == 'uniform' and a.action in ('Train', 'All') and a.actor_train_cache is None:
         p.error('Uniform TRAIN collection requires --actor-train-cache for the standardized Actor experiment.')
     if a.train_query_schedule == 'uniform' and a.action == 'Diagnose':
@@ -825,5 +898,6 @@ def main(argv=None):
 
 
 if __name__ == '__main__': main()
+
 
 
