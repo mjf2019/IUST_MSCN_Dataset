@@ -115,5 +115,21 @@ class BudgetQuotaTests(unittest.TestCase):
         self.assertEqual(result['labels'],2);self.assertGreater(len(calls),0)
         for k,v in initial.items():torch.testing.assert_close(v,updated[3].state_dict()[k])
 
+    def test_uniform_control_is_evenly_spaced_context_only_and_does_not_fit_actor(self):
+        from test_minimax_query import StreamContractTests
+        from amcal_minimax_paironly import uniform_query_at
+        fixture=StreamContractTests();run,a,runtime,domain,reference,calls=fixture.fixture()
+        a.budget_actor_mode=True;a.eval_query_schedule='uniform'
+        def forbidden(*args,**kwargs):raise AssertionError('Uniform control called routing RL.')
+        runtime[2].policy.route_logits=forbidden;runtime[2].observe_routes=forbidden
+        before=deepcopy(runtime[3].state_dict())
+        with contextlib.redirect_stdout(io.StringIO()):
+            updated,result,trace=run(a,runtime,domain,domain,None,domain,42)
+        self.assertEqual(result['labels'],result['cap'])
+        expected=[uniform_query_at(i,len(trace),result['cap']) for i in range(len(trace))]
+        self.assertEqual([r['queried'] for r in trace],expected)
+        self.assertTrue(all(r['route']==1 and r['prediction']==r['context_prediction'] for r in trace))
+        for k,v in before.items():torch.testing.assert_close(v,updated[3].state_dict()[k])
+
 
 if __name__=='__main__':unittest.main()

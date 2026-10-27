@@ -5,7 +5,8 @@ param(
     [int]$Seed = 42,
     [int]$PilotRows = 300,
     [int]$Epochs = 2,
-    [ValidateSet('auto','cpu','cuda')][string]$Device = 'cuda'
+    [ValidateSet('auto','cpu','cuda')][string]$Device = 'cuda',
+    [switch]$UniformControl
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -17,6 +18,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Required dependencies are missing. Nothing was installed.' }
     & $python -m unittest discover -s AMCAL/tests -p 'test_budget_actor.py' -v
     if ($LASTEXITCODE -ne 0) { throw 'Budget Actor preflight failed.' }
-    & $python AMCAL/amcal_budget_actor.py --dataset $Dataset --budget-percent $BudgetPercent --action $Action --seed $Seed --pilot-rows $PilotRows --epochs $Epochs --device $Device
+    $extra = @()
+    if ($UniformControl) {
+        if ($Action -eq 'Train') { throw 'Uniform control is evaluation only.' }
+        $Action = 'Evaluate'
+        $extra += '--uniform-control-only'
+    }
+    & $python AMCAL/amcal_budget_actor.py --dataset $Dataset --budget-percent $BudgetPercent --action $Action --seed $Seed --pilot-rows $PilotRows --epochs $Epochs --device $Device @extra
     if ($LASTEXITCODE -ne 0) { throw "Budget Actor failed: $Dataset / $BudgetPercent / $Action" }
 } finally { Pop-Location }

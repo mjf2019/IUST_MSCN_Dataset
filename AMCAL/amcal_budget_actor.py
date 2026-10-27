@@ -212,9 +212,13 @@ def evaluate(a,healthy,artifact,anchors,teacher_hash):
     saved=torch.load(a.output/'Models'/'budget_actor.pth',map_location='cpu',weights_only=False)
     if saved['protocol']!=protocol(a,teacher_hash): raise ValueError('Actor checkpoint and evaluation settings differ.')
     a.actor_experiment=dict(version=1,control='natural',normalizer=saved['normalizer'])
-    root=a.output/'Results';root.mkdir(exist_ok=True)
+    uniform_only=getattr(a,'uniform_control_only',False)
+    methods=[('Uniform','uniform',a.budget_fraction)] if uniform_only else [
+        ('Actor','policy',a.budget_fraction),('FrontLoaded','frontloaded',a.budget_fraction),
+        ('Uncertainty','uncertainty',a.budget_fraction),('FrontLoaded20','frontloaded',.2)]
+    root=a.output/('UniformResults' if uniform_only else 'Results');root.mkdir(exist_ok=True)
     execution=dict(protocol=saved['protocol'],checkpoint_sha256=pilot.digest(a.output/'Models'/'budget_actor.pth'),
-        matched_controls=['Actor','FrontLoaded','Uncertainty','FrontLoaded20'])
+        matched_controls=[item[0] for item in methods])
     if (root/'completed.json').exists():
         if json.loads((root/'execution.json').read_text(encoding='utf-8'))!=execution: raise ValueError('Evaluation differs from completed run.')
         completion=json.loads((root/'completed.json').read_text(encoding='utf-8'))
@@ -224,6 +228,8 @@ def evaluate(a,healthy,artifact,anchors,teacher_hash):
     if (root/'execution.json').exists() and json.loads((root/'execution.json').read_text(encoding='utf-8'))!=execution:
         raise ValueError('Partial evaluation settings differ; output preserved.')
     pilot.write_json(root/'execution.json',execution)
+    if uniform_only:
+        return evaluate_uniform(a,healthy,artifact,anchors,saved,root,execution)
     a.uncertainty_percentile = 75.
     calibration_domains={level:pilot_domain(a,pilot.base.legacy.read_domain(a.burst_dir,artifact,level,'val_ids'),703)
         for level in (0,1,3)}
@@ -233,8 +239,7 @@ def evaluate(a,healthy,artifact,anchors,teacher_hash):
     pilot.write_json(root/'uncertainty_calibration.json',calibration)
     summary=[]; files=['summary.csv','uncertainty_calibration.json']
     target_budget=a.budget_fraction
-    for method,schedule,method_budget in [('Actor','policy',target_budget),('FrontLoaded','frontloaded',target_budget),
-            ('Uncertainty','uncertainty',target_budget),('FrontLoaded20','frontloaded',.2)]:
+    for method,schedule,method_budget in methods:
         a.budget_fraction=method_budget
         directory=root/method;directory.mkdir(exist_ok=True)
         results=evaluate_levels(a,healthy,artifact,anchors,saved['query_state_dict'],LEVELS,'test_ids',
@@ -254,6 +259,26 @@ def evaluate(a,healthy,artifact,anchors,teacher_hash):
     print(f'Results: {root}',flush=True)
 
 
+def evaluate_uniform(a,healthy,artifact,anchors,saved,root,execution):
+    """Independent result files; same checkpoint, rows, reset and update as Actor."""
+    directory=root/'Uniform';directory.mkdir(exist_ok=True)
+    results=evaluate_levels(a,healthy,artifact,anchors,saved['query_state_dict'],LEVELS,'test_ids',
+        saved['score_reference'],directory,'uniform')
+    summary=[]
+    for result in results:
+        summary.append(dict(method='Uniform',budget_fraction=a.budget_fraction,level=result['level'],
+            **result['online'],labels=result['labels'],cap=result['cap'],labels_percent=result['labels_percent'],
+            forced_tail_labels=0,target_final_AC=result['target_after']['AC'],
+            source_initial_AC=result['source_before']['AC'],source_final_AC=result['source_after']['AC'],
+            **{'forgetting_'+k:v for k,v in result['original_domain_forgetting'].items()}))
+    pilot.write_csv(root/'summary.csv',summary)
+    files=['summary.csv']+[f'Uniform/level_{level}_{suffix}' for level in LEVELS
+        for suffix in ('metrics.json','trace.csv')]
+    pilot.write_json(root/'completed.json',dict(levels=len(LEVELS),methods=1,
+        sha256={name:pilot.digest(root/name) for name in files}))
+    print(f'Uniform control results: {root}',flush=True)
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--dataset',choices=['IAT','PS'],required=True)
@@ -268,7 +293,11 @@ def main():
     p.add_argument('--actor-lr',type=float,default=.0001)
     p.add_argument('--teacher',type=Path)
     p.add_argument('--output',type=Path)
+    p.add_argument('--uniform-control-only',action='store_true',
+        help='Evaluate evenly spaced feedback with an existing Actor checkpoint; no training.')
     a=p.parse_args()
+    if a.uniform_control_only and a.action!='Evaluate':
+        p.error('Uniform control requires --action Evaluate; existing checkpoints are reused.')
     if a.pilot_rows<0 or (a.pilot_rows and a.pilot_rows<=16) or min(a.epochs,a.steps_per_epoch,a.batch_size)<2:
         p.error('Pilot rows must be zero or greater than 16; epochs/steps/batch-size must be at least two.')
     if not math.isfinite(a.actor_lr) or a.actor_lr<=0:p.error('Actor LR must be finite and positive.')
