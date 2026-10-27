@@ -9,6 +9,7 @@ param(
     [string]$CacheRun = '',
     [string]$SourceRun = '',
     [switch]$UniformQueries,
+    [switch]$FrontLoadedQueries,
     [switch]$UncertaintyQueries,
     [switch]$UncertaintyRouting,
     [ValidateRange(1,99)][double]$UncertaintyPercentile = 75,
@@ -18,7 +19,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if ($UncertaintyRouting -and (-not $UncertaintyQueries -or $Action -ne 'Evaluate')) { throw 'UncertaintyRouting requires UncertaintyQueries and Action Evaluate.' }
-if ($UniformQueries -and $UncertaintyQueries) { throw 'Choose UniformQueries or UncertaintyQueries, not both.' }
+if (([int]$UniformQueries.IsPresent + [int]$UncertaintyQueries.IsPresent + [int]$FrontLoadedQueries.IsPresent) -gt 1) { throw 'Choose only one query override.' }
+if ($FrontLoadedQueries -and $Action -ne 'Evaluate') { throw 'FrontLoadedQueries requires Action Evaluate; no retraining.' }
 if ($UncertaintyQueries -and $Action -ne 'Evaluate') { throw 'UncertaintyQueries requires Action Evaluate; no retraining.' }
 if ($UniformQueries -and $Action -ne 'Evaluate') { throw 'UniformQueries requires Action Evaluate. No training is performed by this control.' }
 if ($ActorLogitPenalty -gt 0 -and $Control -ne 'Natural') { throw 'ActorLogitPenalty is a separate Natural control; use Control Natural.' }
@@ -41,6 +43,7 @@ try {
     }
     $controls = if ($Control -eq 'Both') { @('natural','balanced') } else { @($Control.ToLowerInvariant()) }
     foreach ($item in $controls) {
+        if ($FrontLoadedQueries) { Write-Host "Front-loaded TEST: $Dataset / $item | first 20% labels | RL routing | predict before feedback" }
         if ($UniformQueries) { Write-Host "Uniform-query TEST: $Dataset / $item | exact 20% cap | no retraining" }
         if ($UncertaintyQueries) { Write-Host "Uncertainty-query TEST: $Dataset / $item | VAL q$UncertaintyPercentile | maximum 20% cap | no retraining" }
         $costText = if ($QueryUtilityTarget) { '0' } else { '0.05' }
@@ -70,6 +73,7 @@ try {
             '--replay-weight', '0.1', '--output', $output, '--actor-control', $item)
         if ($Action -ne 'Evaluate') { $runArgs += @('--actor-train-cache', $CacheRun, '--train-diagnostics') }
         if ($SourceRun) { $runArgs += @('--source-run', $SourceRun) }
+        if ($FrontLoadedQueries) { $runArgs += @('--eval-query-schedule', 'frontloaded') }
         if ($UniformQueries) { $runArgs += @('--eval-query-schedule', 'uniform') }
         if ($UncertaintyQueries) { $runArgs += @('--eval-query-schedule', 'uncertainty', '--uncertainty-percentile', $UncertaintyPercentile.ToString($culture)) }
         if ($UncertaintyRouting) { $runArgs += @('--eval-routing', 'uncertainty') }

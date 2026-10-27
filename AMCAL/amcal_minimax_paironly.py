@@ -320,7 +320,7 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
     if n == 0: raise ValueError('Empty stream.')
     evaluation_schedule = getattr(a, 'eval_query_schedule', 'policy')
     training_schedule = getattr(a, 'train_query_schedule', 'policy')
-    if evaluation_schedule not in ('policy', 'uniform', 'uncertainty') or training_schedule not in ('policy', 'uniform'):
+    if evaluation_schedule not in ('policy', 'uniform', 'uncertainty', 'frontloaded') or training_schedule not in ('policy', 'uniform'):
         raise ValueError('Unknown query schedule.')
     if training and evaluation_schedule != 'policy':
         raise ValueError('Query overrides are evaluation-only; TRAIN must use its configured collection policy.')
@@ -384,6 +384,8 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             if query_schedule == 'uncertainty':
                 entropy = float(normalized_entropy(outputs[0][0, route].cpu().numpy()))
                 paid = used < cap and entropy >= threshold
+            elif query_schedule == 'frontloaded':
+                paid = used < cap and pos < cap
             elif query_schedule == 'uniform':
                 paid = used < cap and uniform_query_at(pos, n, cap)
             else:
@@ -496,7 +498,7 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             print(f'{"TRAIN" if training else "EVAL"}: {pos+1}/{steps} | labels {used}/{cap}', flush=True)
     runtime = cnn, context, agent, query
     validate_trace(trace, cap)
-    if query_schedule == 'uniform' and steps == n and used != cap:
+    if query_schedule in ('uniform', 'frontloaded') and steps == n and used != cap:
         raise RuntimeError('Uniform collection did not consume its exact per-level label cap.')
     if training:
         training_state.update(context_optimizer=optimizer, query_optimizer=query_optimizer, workspace=workspace)
@@ -518,7 +520,7 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
         classifier_unchanged=True, query_head_unchanged=not training,
         legacy_future_and_utility_unchanged=True)
     if steps != n: result.update(diagnostic_prefix=True, domain_samples=n, cap_scope='original full domain')
-    if query_schedule == 'uniform': result['query_schedule'] = 'uniform'
+    if query_schedule in ('uniform', 'frontloaded'): result['query_schedule'] = query_schedule
     return runtime, result, trace
 
 
@@ -760,6 +762,13 @@ def evaluate(a):
             actor_probability='logged for observation only; ignored for requests',
             information='positions and known stream length only; no current or future labels',
             budget='floor(budget_fraction*n) per intensity; all adaptive state reset')
+    if getattr(a, 'eval_query_schedule', 'policy') == 'frontloaded':
+        execution['query_schedule'] = dict(mode='frontloaded', version=1,
+            rule='request on the first floor(budget_fraction*n) stream rows; no later requests',
+            scope='query override only; learned routing and paid-feedback Context/router updates retained',
+            prediction='each row predicted before its own label; all rows including queried prefix are scored',
+            information='current stream position only; no future features or labels',
+            budget='exact cap per intensity; all adaptive state reset')
     if getattr(a, 'eval_query_schedule', 'policy') == 'uncertainty':
         calibration_domains = {level: pilot_domain(a, base.legacy.read_domain(
             a.burst_dir, artifact, level, 'val_ids'), 703) for level in TRAIN_LEVELS}
@@ -847,7 +856,7 @@ def parser():
     p.add_argument('--v2-run', type=Path)
     p.add_argument('--actor-train-cache', type=Path)
     p.add_argument('--actor-control', choices=['natural', 'balanced'], default='natural')
-    p.add_argument('--eval-query-schedule', choices=['policy', 'uniform', 'uncertainty'], default='policy')
+    p.add_argument('--eval-query-schedule', choices=['policy', 'uniform', 'uncertainty', 'frontloaded'], default='policy')
     p.add_argument('--uncertainty-percentile', type=float, default=75.)
     p.add_argument('--eval-routing', choices=['policy', 'uncertainty'], default='policy')
     p.add_argument('--train-query-schedule', choices=['policy', 'uniform'], default='policy')

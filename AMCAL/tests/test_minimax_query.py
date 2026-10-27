@@ -517,6 +517,33 @@ class StreamContractTests(unittest.TestCase):
         for model, old in zip([runtime[0], runtime[1], runtime[2].policy, runtime[3]], before):
             for key,value in old.items(): torch.testing.assert_close(value, model.state_dict()[key])
 
+    def test_frontloaded_queries_use_initial_prefix_and_preserve_rl_routing(self):
+        run, a, runtime, domain, reference, calls = self.fixture()
+        a.eval_query_schedule = 'frontloaded'
+        with torch.no_grad(): runtime[3].actor[-1].bias.fill_(-80.)
+        initial_query = deepcopy(runtime[3].state_dict())
+        twin = deepcopy(runtime)
+        flipped = domain[0], 1-domain[1], domain[2]
+        with contextlib.redirect_stdout(io.StringIO()):
+            updated, result, trace = run(a, runtime, domain, domain, None, domain, 42)
+            _, _, altered = run(a, twin, flipped, domain, None, domain, 42)
+        self.assertEqual(result['labels'], 2)
+        self.assertEqual([r['step'] for r in trace if r['queried']], [1,2])
+        self.assertEqual(len(trace), 10)
+        self.assertEqual(len(updated[2].feedback), 2)
+        self.assertEqual(calls, [])
+        self.assertTrue(all(r['route'] == 0 for r in trace))
+        self.assertEqual(trace[0]['prediction'], altered[0]['prediction'])
+        self.assertEqual(trace[0]['route'], altered[0]['route'])
+        self.assertEqual([r['queried'] for r in trace], [r['queried'] for r in altered])
+        for k,v in initial_query.items(): torch.testing.assert_close(v, updated[3].state_dict()[k])
+
+    def test_frontloaded_control_cannot_enter_training(self):
+        run, a, runtime, domain, reference, _ = self.fixture(training=True)
+        a.eval_query_schedule = 'frontloaded'
+        with self.assertRaises(ValueError):
+            run(a, runtime, domain, domain, reference, domain, 42, training=True)
+
     def test_uniform_control_cannot_enter_training(self):
         run, a, runtime, domain, reference, _ = self.fixture(training=True)
         a.eval_query_schedule = 'uniform'
