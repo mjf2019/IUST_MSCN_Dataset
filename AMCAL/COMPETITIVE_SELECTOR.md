@@ -81,3 +81,30 @@ only). Completed rounds resume from `Models/trainer_state.pth`; interrupted
 initialization is preserved and requires a fresh output. No dependencies are
 installed. This implementation has software checks only; no new data experiment
 has been run or requested as part of preparing it.
+
+## Original-paper reward control
+
+`-OriginalPaperReward` is a separate control that reuses the same healthy CNN and
+initial Context. Only a new compact query Actor is fitted, with the original
+paper's discrete pre-update reward: both predictions wrong +3, only Frozen wrong
++2, only Context wrong -2, both correct 0. The skip payoff is zero. This is not
+"choose the highest actual TEST loss": the true label is unavailable before a
+request. TRAIN full-information labels supervise the reward, and TEST query
+selection still uses only the learned pre-feedback probability. All scored
+predictions precede their own feedback.
+
+The control uses no continuous gap, future gain, forgetting harm, request cost,
+reward scaling, or future-label probes. It retains causal fixed-Context routing,
+batch5, replay, 20% maximum budget and independent source audits. Source retention
+is still evaluated and included in the existing VAL checkpoint selection rule.
+It uses the original reward **table**, not a reproduction of the original DDQN
+architecture/algorithm or a proof of the continuous shared-gap zero-sum game.
+The original table's +2 case rewards a correct Context prediction; consequently
+it should not be described as selecting only errors or the strict hardest sample.
+
+Output directories end in `_paper_reward`, preserving previous runs. For example:
+
+```powershell
+.\AMCAL\run_amcal_competitive_selector.ps1 -Dataset IAT -Action All -OriginalPaperReward
+.\AMCAL\push_amcal_competitive_selector.ps1 -Dataset Both
+```

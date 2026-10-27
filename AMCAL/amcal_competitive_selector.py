@@ -38,7 +38,7 @@ class Experiment:
         a.budget_actor_mode = True  # Fixed Context prediction; router never trained.
         a.eval_routing, a.eval_query_schedule = 'policy', 'policy'
         a.train_query_schedule = 'uniform'
-        a.cost = .05
+        a.cost = 0. if getattr(a, 'original_paper_reward', False) else .05
         if a.context_lr != .00025 or a.replay_weight != .1:
             raise ValueError('This intervention requires the healthy LR .00025 and replay weight .1.')
         expected = 'legacy' if a.dataset == 'IAT' else 'light_ps_cnn_v1'
@@ -152,7 +152,8 @@ def train(a, experiment, protocol):
         states, _, records = experiment.collect(None, 'uniform', a.output/'initialization', 0)
         a.competitive_spec = old.normalizer(states)
         measured = [r for r in records if r.get('score') is not None]
-        a.competitive_scales = fit_signal_scales(measured)
+        a.competitive_scales = (None if getattr(a, 'original_paper_reward', False)
+                                else fit_signal_scales(measured))
         # Only TRAIN pre-feedback Context entropy determines the matched control.
         a.uncertainty_threshold = float(np.percentile(states[:, 2*len(a.classes)+5].numpy(), 75))
         current = dict(protocol=protocol, spec=a.competitive_spec, scales=a.competitive_scales,
@@ -211,6 +212,8 @@ def main():
     parser.add_argument('--rounds', type=int, default=2)
     parser.add_argument('--steps', type=int, default=32)
     parser.add_argument('--actor-lr', type=float, default=.0001)
+    parser.add_argument('--original-paper-reward', action='store_true',
+        help='Refit only the compact query Actor using the original +3/+2/-2/0 reward; no future probes.')
     parser.add_argument('--teacher', type=Path)
     parser.add_argument('--output', type=Path)
     a = parser.parse_args()
@@ -218,7 +221,8 @@ def main():
         parser.error('Positive rounds/steps/LR and at least 32 pilot rows are required.')
     root = Path(__file__).resolve().parent/f'ANT_Burst_{a.dataset}_TEST'
     a.teacher = a.teacher or root/'protocol_runs'/f'minimax_query_batch5_seed{a.seed}_v2_h16_c0.05_actorstd_natural'
-    a.output = a.output or root/'protocol_runs'/f'competitive_selector_seed{a.seed}_p{a.pilot_rows}_r{a.rounds}_v1'
+    suffix = '_paper_reward' if a.original_paper_reward else ''
+    a.output = a.output or root/'protocol_runs'/f'competitive_selector_seed{a.seed}_p{a.pilot_rows}_r{a.rounds}_v1{suffix}'
     a.burst_dir = root/'Dataset_official_v1'/f'AdvBurst_FTSC-{a.dataset}'
     a.budget_fraction, a.progress_every = .2, 250
     experiment = Experiment(a)
@@ -237,6 +241,15 @@ def main():
         cost=.05, horizon=a.horizon, context_lr=a.context_lr, replay_weight=a.replay_weight,
         gain_weight=a.gain_weight, forgetting_weight=a.forgetting_weight,
         source_hashes=experiment.healthy['model_hashes'], train_hashes=experiment.healthy['training_domain_sha256'])
+    if a.original_paper_reward:
+        protocol.update(reward_mode='original paper Eq. reward',
+            reward_table={'both_wrong':3., 'only_Frozen_wrong':2., 'only_Context_wrong':-2., 'both_correct':0.},
+            objective='maximize mean(p*original_paper_reward); no gap/gain/harm/cost terms or target centering',
+            theory='original-paper reward control with compact contextual-bandit policy; not original DDQN or the continuous shared-gap zero-sum objective',
+            normalization='feature moments fitted on TRAIN; discrete reward remains unscaled',
+            replay_probe='disabled; no copied Context/Adam, future-label probes or source-loss probes',
+            initialization='same healthy CNN/Context checkpoint; new compact query head trained on original reward',
+            horizon=None, cost=0., gain_weight=None, forgetting_weight=None)
     if a.action in ('Train', 'All'): train(a, experiment, protocol)
     if a.action in ('Evaluate', 'All'):
         completion = json.loads((a.output/'training_complete.json').read_text())

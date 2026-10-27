@@ -76,3 +76,16 @@ def select_feedback(probability, used, cap, *, training=False, draw=0.):
     if training and not 0 <= draw < 1:
         raise ValueError('Invalid policy draw.')
     return used < cap and (draw < probability if training else probability >= .5)
+
+
+def original_paper_reward(frozen_prediction, context_prediction, truth):
+    """Original paper Eq. reward, scored only after predictions are fixed.
+
+    TRAIN may observe full labels. TEST must never call this to decide a query.
+    This table is not a continuous loss-gap zero-sum objective.
+    """
+    frozen_correct = frozen_prediction == truth
+    context_correct = context_prediction == truth
+    if not frozen_correct:
+        return 2. if context_correct else 3.
+    return 0. if context_correct else -2.

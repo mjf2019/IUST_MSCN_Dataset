@@ -471,7 +471,15 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             record.update(actor_score_loss=None, actor_logit_penalty_loss=None, actor_logit=None)
         label = torch.tensor([truth], device=x.device)
         # Only the offline TRAIN path can ever access future labels.
-        if query_target_allowed(training, used, cap, pos, n, a.horizon):
+        paper_reward = compact and getattr(a, 'original_paper_reward', False)
+        if training and paper_reward and used < cap:
+            from enhancements.competitive_selector import original_paper_reward
+            score = original_paper_reward(route_predictions[0], route_predictions[1], truth)
+            record.update(score=score, raw_score=score, target_status='paper_reward_measured',
+                target_definition='original_paper_discrete_reward',
+                frozen_correct=int(route_predictions[0] == truth),
+                context_correct=int(route_predictions[1] == truth))
+        if not paper_reward and query_target_allowed(training, used, cap, pos, n, a.horizon):
             future_x = x[pos+1:pos+1+a.horizon]
             future_ids = ids[pos+1:pos+1+a.horizon]
             blocked = {keys[pos], *reference_keys}

@@ -3,7 +3,7 @@ $ErrorActionPreference='Stop'
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
     $names=if ($Dataset -eq 'Both') { @('IAT','PS') } else { @($Dataset) }
-    $pattern='^AMCAL/ANT_Burst_(' + ($names -join '|') + ')_TEST/protocol_runs/competitive_selector_seed[0-9]+_p[0-9]+_r[0-9]+_v1/(?!Models/).+\.(json|csv)$'
+    $pattern='^AMCAL/ANT_Burst_(' + ($names -join '|') + ')_TEST/protocol_runs/competitive_selector_seed[0-9]+_p[0-9]+_r[0-9]+_v1(_paper_reward)?/(?!Models/).+\.(json|csv)$'
     $staged=@(git diff --cached --name-only)
     if ($LASTEXITCODE -ne 0) { throw 'Checking staged changes failed.' }
     if (@($staged | Where-Object { $_ -notmatch $pattern }).Count) { throw 'Unrelated changes are staged; commit them separately first.' }

@@ -53,6 +53,13 @@ class CompetitiveSelectorTests(unittest.TestCase):
         self.assertAlmostEqual(competitive_score(row, scales, .05), .75)
         self.assertLess(competitive_score(dict(gap=-1., weighted_gain=0., weighted_harm=0.), scales, .05), 0)
 
+    def test_original_paper_reward_matches_all_four_pre_feedback_cases(self):
+        from enhancements.competitive_selector import original_paper_reward
+        self.assertEqual(original_paper_reward(1, 1, 0), 3.)
+        self.assertEqual(original_paper_reward(1, 0, 0), 2.)
+        self.assertEqual(original_paper_reward(0, 1, 0), -2.)
+        self.assertEqual(original_paper_reward(0, 0, 0), 0.)
+
     def test_actor_max_gradient_is_separate_from_diagnostic_regression(self):
         from enhancements.competitive_selector import CompetitiveSelector
         from enhancements.minimax_query import maximize_step
@@ -163,6 +170,32 @@ class CompetitiveSelectorTests(unittest.TestCase):
         self.assertEqual([r['query_probability'] for r in trace], [r['query_probability'] for r in other])
         self.assertTrue(all(r['route'] == 1 for r in trace))
         for key, value in first[1].state_dict().items(): torch.testing.assert_close(value, second[1].state_dict()[key])
+
+    def test_paper_reward_training_uses_no_future_probe_and_keeps_same_paid_updates(self):
+        from enhancements.competitive_selector import original_paper_reward
+        stream, a, live, data, anchors, reference = self.stream_fixture()
+        a.original_paper_reward = True
+        def forbidden(*args, **kwargs): raise AssertionError('Future reward path was called')
+        stream.__globals__['counterfactual_step'] = forbidden
+        stream.__globals__['query_target_allowed'] = forbidden
+        a.eval_query_schedule = 'policy'
+        with contextlib.redirect_stdout(io.StringIO()):
+            trained, result, trace = stream(a, deepcopy(live), data, anchors, reference, reference,
+                42, training=True, target_endpoints=False)
+            a.eval_query_schedule = 'uniform'
+            tested, _, other = stream(a, deepcopy(live), data, anchors, None, reference,
+                42, training=False, target_endpoints=False)
+        self.assertEqual(result['labels'], 6)
+        measured = [row for row in trace if row['score'] is not None]
+        self.assertGreater(len(measured), 0)
+        for row in measured:
+            self.assertEqual(row['score'], original_paper_reward(row['frozen_prediction'],
+                row['context_prediction'], row['truth']))
+            self.assertIsNone(row['gain']); self.assertIsNone(row['harm'])
+        self.assertTrue(all(row['score'] is None for row in other))
+        self.assertEqual([r['prediction'] for r in trace], [r['prediction'] for r in other])
+        for key, value in trained[1].state_dict().items():
+            torch.testing.assert_close(value, tested[1].state_dict()[key], rtol=0, atol=0)
 
     def test_round_training_resume_and_selected_checkpoint_hash_with_tiny_network(self):
         from enhancements.competitive_selector import CompetitiveSelector
