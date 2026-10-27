@@ -1,0 +1,41 @@
+{
+  "protocol": {
+    "version": 1,
+    "dataset": "IAT",
+    "seed": 42,
+    "pilot_rows": 300,
+    "rounds": 2,
+    "steps": 32,
+    "actor_lr": 0.0001,
+    "budget_fraction": 0.2,
+    "teacher_sha256": "cb20edb4f6e6ef0b3074d0a94da041a14c6d19294f51ed6f5b392b8f4a0e0ac3",
+    "architecture": "original IAT CNN; Light PS CNN",
+    "context": "healthy initial checkpoint; unchanged batch5/replay/LR; copies per domain",
+    "objective": "max mean(p*(d/sd_d + weighted_G/sd_G - weighted_F/sd_F - .05))",
+    "theory": "frozen-round shared-gap contextual-bandit min-max; not sequential DDQN or global saddle-point convergence",
+    "features": "2*K+18; predictive uncertainty, paid-feedback coverage/novelty and causal budget/time",
+    "replay_probe": "copy sampler RNG; sample the real update batch first, exclude its features from future probe",
+    "normalization": "positive component SD and feature moments fitted once on TRAIN only; no score centering",
+    "policy": "bounded logits; stochastic TRAIN requests; deterministic p>=.5 deployment; no forced spending",
+    "split": "TRAIN/VAL 0/1/3; held source audit IDs/features excluded across levels; TEST only explicit Evaluate/All",
+    "selection": "VAL online AC minus positive forgetting; fewer labels breaks ties",
+    "cost": 0.05,
+    "horizon": 16,
+    "context_lr": 0.00025,
+    "replay_weight": 0.1,
+    "gain_weight": 1.0,
+    "forgetting_weight": 1.0,
+    "source_hashes": {
+      "protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+      "initial_cnn_model.pth": "16b2c531add95691a04aaef7f9bd041212cb212112eb1702efbb415786b98d54",
+      "enhanced_context.pth": "b0533e8c84679bd81dcbc02bdd507c069da5557f7c37cac7668e197b27d1634c"
+    },
+    "train_hashes": {
+      "0": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+      "1": "bf92f8d8088d7199d1a83187c2f04079c13aa0fb115878e3649c5bd85d8a6cc6",
+      "3": "391285a6f89750c0025eb225a7d2b4beca1314852c9d630e8105108a352eaa53"
+    }
+  },
+  "selected_round": 1,
+  "sha256": "5679735139e9e6bedc67d504d04f3333cba81047874409da1a6005ccaa23e7e5"
+}
