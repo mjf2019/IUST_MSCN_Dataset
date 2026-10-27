@@ -19,6 +19,7 @@ import amcal_minimax_paironly as pilot
 from enhancements.budget_actor import quota_max_step
 from enhancements.standardized_actor import StandardizedQueryMaximizer
 from enhancements.config import EnhancementConfig
+from enhancements.console_summary import print_level_result, print_saved_summaries
 
 VERSION = 1
 LEVELS = [5, 7, 10, 12, 15, 17, 20]
@@ -143,6 +144,7 @@ def evaluate_levels(a,healthy,artifact,anchors,query_state,levels,split,calibrat
                 forced_tail_labels=sum(int(row.get('budget_forced_tail',False) and row['queried']) for row in trace),
                 rule='TRAIN-calibrated rank with remaining budget fraction; no online Actor updates')
         rows.append(result)
+        print_level_result(save_root.name if save_root is not None else 'VAL',result)
         if save_root is not None:
             pilot.write_csv(save_root/f'level_{level}_trace.csv',trace)
             pilot.write_json(save_root/f'level_{level}_metrics.json',result)
@@ -309,6 +311,7 @@ def main():
     healthy,artifact,anchors,reference,teacher_hash=setup(a)
     if a.action in ('Train','All'):train(a,healthy,artifact,anchors,reference,teacher_hash)
     if a.action in ('Evaluate','All'):evaluate(a,healthy,artifact,anchors,teacher_hash)
+    if a.action in ('Evaluate','All'):print_saved_summaries(a.output)
     if pilot.digest(a.teacher/'Models'/'minimax_query.pth')!=teacher_hash:raise RuntimeError('Healthy checkpoint was modified.')
 
 
