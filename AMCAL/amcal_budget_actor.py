@@ -190,21 +190,28 @@ def train(a,healthy,artifact,anchors,reference,teacher_hash):
     states,targets=states.to(device),targets.to(device)
     optimizer=torch.optim.Adam(query.actor.parameters(),lr=a.actor_lr)
     quota=a.budget_fraction
+    level_quotas=None
     if getattr(a,'utility_early',False):
         # Collection domains can be shorter than PilotRows; use actual row/cap counts.
         collections=[json.loads((a.output/f'collection_level{level}.json').read_text(encoding='utf-8')) for level in (0,1,3)]
         quota=float(np.mean([row['cap']/query_window_count(row['samples'],row['cap'],.2) for row in collections]))
+        if getattr(a,'domain_quota',False):
+            level_quotas={level:row['cap']/query_window_count(row['samples'],row['cap'],.2)
+                for level,row in zip((0,1,3),collections)}
+            print(f'Total budget {100*a.budget_fraction:.1f}% per level; within-window TRAIN quotas: '+', '.join(f'level {level}: {value:.4f}'
+                for level,value in level_quotas.items()),flush=True)
+    audit_quota=level_quotas if level_quotas is not None else quota
     generator=torch.Generator(device='cpu').manual_seed(a.seed+901)
     rank_stages=[];rank_validation=None
     if getattr(a,'rank_warm_start',False):
         from enhancements.rank_warmstart import pairwise_rank_step
         rank_validation=collect_rank_validation(a,healthy,artifact,anchors)
-        record_rank_stage(a,query,states,targets,rank_validation,quota,'initial',rank_stages)
+        record_rank_stage(a,query,states,targets,rank_validation,audit_quota,'initial',rank_stages)
         warm_optimizer=torch.optim.Adam(query.actor.parameters(),lr=a.actor_lr,weight_decay=1e-4)
         for warm_epoch in range(1,3):
             losses=[pairwise_rank_step(query,warm_optimizer,states,targets,a.ranking_groups)
                 for _ in range(a.steps_per_epoch)]
-            record_rank_stage(a,query,states,targets,rank_validation,quota,
+            record_rank_stage(a,query,states,targets,rank_validation,audit_quota,
                 f'rank_warmup_{warm_epoch}',rank_stages,float(np.mean(losses)))
         # Warmup is initialization only. No pairwise loss is mixed into the max phase.
         optimizer=torch.optim.Adam(query.actor.parameters(),lr=a.actor_lr)
@@ -212,8 +219,15 @@ def train(a,healthy,artifact,anchors,reference,teacher_hash):
     for epoch in range(1,a.epochs+1):
         objectives=[]
         for _ in range(a.steps_per_epoch):
-            at=torch.randperm(len(states),generator=generator)[:min(a.batch_size,len(states))].to(device)
-            fit=quota_max_step(query,optimizer,states[at],targets[at],quota)
+            if level_quotas is not None:
+                from enhancements.budget_actor import balanced_level_indices,level_quota_max_step
+                indices=balanced_level_indices(a.ranking_groups,a.batch_size,generator)
+                at=indices.to(device)
+                groups=torch.as_tensor(a.ranking_groups)[indices]
+                fit=level_quota_max_step(query,optimizer,states[at],targets[at],groups,level_quotas)
+            else:
+                at=torch.randperm(len(states),generator=generator)[:min(a.batch_size,len(states))].to(device)
+                fit=quota_max_step(query,optimizer,states[at],targets[at],quota)
             objectives.append(fit['objective'])
         calibration=score_reference(query,states)
         validation=evaluate_levels(a,healthy,artifact,anchors,deepcopy(query.state_dict()),[0,1,3],'val_ids',calibration)
@@ -224,9 +238,10 @@ def train(a,healthy,artifact,anchors,reference,teacher_hash):
             source_drop=drop,selection=selection,validation=validation))
         print(f'Actor epoch {epoch}/{a.epochs}: VAL AC {ac:.2f}% | source drop {drop:+.2f} pp',flush=True)
         if rank_validation is not None:
-            record_rank_stage(a,query,states,targets,rank_validation,quota,f'quota_max_{epoch}',rank_stages)
+            record_rank_stage(a,query,states,targets,rank_validation,audit_quota,f'quota_max_{epoch}',rank_stages)
         pilot.write_json(a.output/'training.json',dict(protocol=protocol(a,teacher_hash),epochs=log,
             signal_scales=getattr(a,'signal_scales',None),within_window_quota=quota,
+            within_window_level_quotas=level_quotas,
             rank_stages=rank_stages,
             positive_targets=int((targets>0).sum()),targets=len(targets)))
         if selection>best:
@@ -314,6 +329,12 @@ def protocol(a,teacher_hash):
             loss='within-TRAIN-level pairwise softplus preference; initialization only',
             validation='fixed observer-only VAL targets; no fitting; TRAIN scales/normalizer frozen',
             continuation='reset Adam; original signed quota-max objective only; select within max phase on online VAL'))
+    if getattr(a,'domain_quota',False):
+        result.update(domain_quota=dict(levels=[0,1,3],
+            objective='equal mean of within-level mean(p*S), independent quota offset for each TRAIN level',
+            minibatch='every TRAIN level; up to batch_size//3 rows per level without replacement',
+            quota='each collection cap divided by its query-window row count',
+            deployment='unchanged; level identities used only in TRAIN constraints and offline ranking audit'))
     return result
 
 
@@ -412,7 +433,10 @@ def main():
         help='Experimental TRAIN-scaled reward components and first-20-percent query window.')
     p.add_argument('--rank-warm-start',action='store_true',
         help='TRAIN pairwise ranking initialization, followed by the unchanged UtilityEarly quota max.')
+    p.add_argument('--domain-quota',action='store_true',
+        help='Independent per-TRAIN-level budget constraints; implies rank-warm-start and utility-early.')
     a=p.parse_args()
+    if a.domain_quota:a.rank_warm_start=True
     if a.rank_warm_start:a.utility_early=True
     if a.uniform_control_only and a.action!='Evaluate':
         p.error('Uniform control requires --action Evaluate; existing checkpoints are reused.')
@@ -420,6 +444,7 @@ def main():
     if a.pilot_rows<0 or (a.pilot_rows and a.pilot_rows<=16) or min(a.epochs,a.steps_per_epoch,a.batch_size)<2:
         p.error('Pilot rows must be zero or greater than 16; epochs/steps/batch-size must be at least two.')
     if not math.isfinite(a.actor_lr) or a.actor_lr<=0:p.error('Actor LR must be finite and positive.')
+    if a.domain_quota and a.batch_size<6:p.error('Domain-quota batches require at least two rows per TRAIN level.')
     root=Path(__file__).resolve().parent/f'ANT_Burst_{a.dataset}_TEST'
     a.teacher=a.teacher or root/'protocol_runs'/f'minimax_query_batch5_seed{a.seed}_v2_h16_c0.05_actorstd_natural'
     explicit_output=a.output is not None
@@ -427,6 +452,7 @@ def main():
     if a.utility_early and not explicit_output:
         a.output=a.output.with_name(a.output.name+'_scaled_early20')
     if a.rank_warm_start and not explicit_output:a.output=a.output.with_name(a.output.name+'_rankwarm')
+    if a.domain_quota and not explicit_output:a.output=a.output.with_name(a.output.name+'_domainquota')
     a.burst_dir=root/'Dataset_official_v1'/f'AdvBurst_FTSC-{a.dataset}'
     a.budget_fraction=a.budget_percent/100; a.progress_every=250
     a.query_window_fraction=.2 if a.utility_early else 1.

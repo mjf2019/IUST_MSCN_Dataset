@@ -37,7 +37,8 @@ def rank_metrics(head,states,targets,groups,quota):
     rows=[]
     for level in np.unique(group):
         at=np.flatnonzero(group==level);z,s=logits[at],target[at]
-        k=max(1,min(len(at),int(round(len(at)*quota))))
+        level_quota=quota[int(level)] if isinstance(quota,dict) else quota
+        k=max(1,min(len(at),int(round(len(at)*level_quota))))
         top=np.argsort(-z,kind='stable')[:k];oracle=np.sort(s)[-k:]
         rows.append(dict(level=int(level),samples=len(at),top_k=k,
             spearman=correlation(z,s,True),target_regret=float(oracle.mean()-s[top].mean())))

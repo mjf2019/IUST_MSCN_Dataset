@@ -8,7 +8,8 @@ param(
     [ValidateSet('auto','cpu','cuda')][string]$Device = 'cuda',
     [switch]$UniformControl,
     [switch]$UtilityEarly,
-    [switch]$RankWarmStart
+    [switch]$RankWarmStart,
+    [switch]$DomainQuota
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -21,11 +22,16 @@ try {
     & $python -m unittest discover -s AMCAL/tests -p 'test_budget_actor.py' -v
     if ($LASTEXITCODE -ne 0) { throw 'Budget Actor preflight failed.' }
     $extra = @()
+    if ($DomainQuota) { $RankWarmStart=$true; $extra += '--domain-quota' }
     if ($UtilityEarly) { $extra += '--utility-early' }
     if ($RankWarmStart) {
         & $python -m unittest discover -s AMCAL/tests -p 'test_rank_warmstart.py' -v
         if ($LASTEXITCODE -ne 0) { throw 'Rank warmstart preflight failed.' }
         $extra += '--rank-warm-start'
+    }
+    if ($DomainQuota) {
+        & $python -m unittest discover -s AMCAL/tests -p 'test_domain_quota.py' -v
+        if ($LASTEXITCODE -ne 0) { throw 'Per-level quota preflight failed.' }
     }
     if (($UtilityEarly -or $RankWarmStart) -and $UniformControl) { throw 'UtilityEarly already includes uniform controls.' }
     if ($UniformControl) {

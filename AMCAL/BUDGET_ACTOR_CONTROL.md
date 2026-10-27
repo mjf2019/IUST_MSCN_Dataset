@@ -204,3 +204,36 @@ Epochs=2 here identifies two quota-max epochs, in addition to the two fixed
 ranking-initialization epochs. TEST controls, per-level resets and console
 summaries remain the same as UtilityEarly. Existing diagnostic script defaults
 still address the earlier run; the new run carries its stage-wise audit inline.
+
+## Independent per-TRAIN-level quotas
+
+`-DomainQuota` implies RankWarmStart/UtilityEarly and saves a separate
+`_rankwarm_domainquota` run. Warmup, reward, normalizer, Context, CNN and inference
+remain the previous design. Only max-phase batch construction and constraints
+change. Each max minibatch includes every TRAIN level without replacement, with
+up to `batch_size//3` candidates per level (at least two required). The objective
+is the equal-weight mean over levels of their mean `p*S`, each with its own
+differentiated quota offset. Each quota comes from that level's collection cap
+divided by its early-window size. A 10% total budget and 20% window therefore
+mean a 50% within-window quota, not a 50% total label budget.
+
+This prevents between-level target offsets from driving max gradients: adding
+an arbitrary constant to all targets in one level leaves its Actor gradient
+unchanged under the fixed per-level quota. Equal weighting also prevents a level
+from dominating merely because it has more batch rows. The signed target
+magnitudes and min-max direction remain; the constraints change from pooled to
+per-level ones to match the independent-stream evaluation. This remains a local
+surrogate, not a proof of solving the multistep game.
+
+Level identities are used for TRAIN sampling/constraints and observer audit only.
+No intensity-specific threshold or TEST labels are introduced at inference. The
+existing pooled TRAIN-logit calibration/deployment rule is deliberately retained
+to isolate this training change. Correcting the quota mismatch does not by itself
+establish or guarantee generalization. Console and JSON retain stage-wise TRAIN
+and VAL ranking, regret and online VAL metrics. Check these before full TEST.
+
+```powershell
+.\AMCAL\run_amcal_budget_actor.ps1 -Dataset IAT -BudgetPercent 10 -PilotRows 300 -Epochs 2 -DomainQuota -Action Train
+.\AMCAL\run_amcal_budget_actor.ps1 -Dataset PS -BudgetPercent 10 -PilotRows 300 -Epochs 2 -DomainQuota -Action Train
+.\AMCAL\push_amcal_budget_actor.ps1 -Dataset Both
+```
