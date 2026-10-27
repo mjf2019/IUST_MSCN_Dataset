@@ -1,0 +1,55 @@
+{
+  "online": {
+    "AC": 82.5722273998136,
+    "PR": 80.00601855544089,
+    "RC": 78.42190343000888,
+    "F1": 79.15605420920245
+  },
+  "samples": 1073,
+  "labels": 214,
+  "cap": 214,
+  "labels_percent": 19.94408201304753,
+  "source_before": {
+    "AC": 74.37092264678472,
+    "PR": 73.17954247922329,
+    "RC": 77.07931990017461,
+    "F1": 74.78041223364477
+  },
+  "source_after": {
+    "AC": 72.3205964585275,
+    "PR": 72.4129794293586,
+    "RC": 75.08993932285865,
+    "F1": 73.49522789765564
+  },
+  "original_domain_forgetting": {
+    "AC": 2.050326188257216,
+    "PR": 0.7665630498646863,
+    "RC": 1.9893805773159556,
+    "F1": 1.285184335989129
+  },
+  "target_before": {
+    "AC": 62.72134203168685,
+    "PR": 62.08713225830051,
+    "RC": 61.19221678441483,
+    "F1": 60.97147531668953
+  },
+  "target_after": {
+    "AC": 85.27493010251631,
+    "PR": 83.22351300383147,
+    "RC": 81.7881565818197,
+    "F1": 82.4422920659677
+  },
+  "target_gain": {
+    "AC": 22.553588070829456,
+    "PR": 21.136380745530964,
+    "RC": 20.595939797404874,
+    "F1": 21.47081674927818
+  },
+  "target_endpoint_protocol": "same scored stream, descriptive endpoint; not independent generalization",
+  "classifier_unchanged": true,
+  "query_head_unchanged": true,
+  "legacy_future_and_utility_unchanged": true,
+  "query_schedule": "frontloaded",
+  "level": 20,
+  "trace_sha256": "1d5e35e8b79979b26268ed7a599d77bfb2bc6795c0168c40cdd77cfb15cc4911"
+}
