@@ -88,6 +88,26 @@ def probe_before(a, cnn, bank, selected, batch, agent, history, used, cap, posit
     return loss.cpu().numpy(), weights.cpu().numpy()
 
 
+def context_feedback_schedule(n, cap, seed, enabled, frontloaded=False):
+    """Keep the legacy random schedule unchanged; optional causal prefix control."""
+    if n < 1 or not 0 <= cap <= n: raise ValueError('Invalid feedback schedule size or cap.')
+    if frontloaded: return set(range(cap))
+    return set(np.random.default_rng(seed+819003).choice(n, cap, replace=False).tolist()) if enabled else None
+
+
+def validate_context_only_prefix(traces, cap):
+    """Live contract: fixed Context predictions and exactly the paid initial prefix."""
+    used = 0
+    for pos, row in enumerate(traces):
+        if row['route'] != 1 or row['prediction'] != row['predictions'][1]:
+            raise RuntimeError('Context-only control used a different prediction path.')
+        if row['queried'] != (pos < cap):
+            raise RuntimeError('Front-loaded feedback was not the exact initial prefix.')
+        used += int(row['queried'])
+        if row['labels_used'] != used: raise RuntimeError('Noncausal feedback accounting.')
+    if used != cap: raise RuntimeError('Front-loaded control did not consume its cap.')
+
+
 def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', training=False,
             warmup=False, rollout_seed=None, reference=None, same_level=False, continuation=None,
             paid_supervision=False, next_domain_features=None, domain_level=None):
@@ -98,6 +118,9 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     ablation=getattr(a,'architecture_ablation','none')
     uncertainty_routing = getattr(a, 'uncertainty_routing', False)
     no_selector=ablation in ('no_rl','frozen') or uncertainty_routing or mode == 'random_al'
+    frontloaded = getattr(a, 'context_only_frontloaded', False)
+    if frontloaded and (training or warmup or ablation != 'no_rl' or len(bank) != 1 or continuation is not None):
+        raise ValueError('Context-only front-loaded control requires independent one-Context no-RL evaluation.')
     no_context=ablation in ('no_context','frozen')
     random_no_rl = no_selector or (mode == 'random' and not training and not warmup)
     random_queries = mode in ('random_query', 'random_query_online')
@@ -157,7 +180,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     if not hasattr(memory, 'paid_replay_rng'):
         memory.paid_replay_rng = np.random.default_rng(seed + 681923)
     executor = (FrozenRoutesExecutor if no_context else BankExecutor)(cnn, bank, config.bank_executor)
-    schedule = set(np.random.default_rng(seed + 819003).choice(n, cap, replace=False).tolist()) if a.query_schedule == 'uniform' or ablation=='no_rl' else None
+    schedule = context_feedback_schedule(n, cap, seed, a.query_schedule == 'uniform' or ablation=='no_rl', frontloaded)
     destinations = np.random.default_rng(seed + 440003).integers(0, slots, n)
     rng = np.random.default_rng(seed + 719003)
     audit_rng = np.random.default_rng(seed + 260917)
@@ -465,7 +488,8 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             traces[-1]['selection_scores'] = None if values is None else values.detach().cpu().tolist()
         row_times.append(1000 * (time.perf_counter() - row_start))
     timer.stop()
-    if schedule is not None and used != cap: raise RuntimeError('Uniform feedback failed to acquire its exact cap.')
+    if schedule is not None and used != cap: raise RuntimeError('Scheduled feedback failed to acquire its exact cap.')
+    if frontloaded: validate_context_only_prefix(traces, cap)
     chosen = np.asarray([row['prediction'] for row in traces])
     matrix = np.asarray(predictions_all)
     metrics = dict(accuracy=float(legacy.core.accuracy_score(y, chosen)),
@@ -486,6 +510,12 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
         oracle_protocol='observer on executed full-bank rows only; complete oracle is null for sparse streams',
         mode=mode, source_ids=source_ids.tolist(), queried_source_ids=source_ids[labels_mask].tolist(),
         latency_protocol='synchronized finite-stream runner with frozen cache and one-input lookahead TD; no annotation delay; not a live-service benchmark')
+    if frontloaded:
+        if metrics['route_updates'] or metrics['td_updates'] or metrics['fresh_route_updates']:
+            raise RuntimeError('Context-only control updated the selector.')
+        metrics['context_only_frontloaded'] = dict(version=1, prediction='Context then frozen CNN',
+            queries='first cap stream rows; each prediction precedes its own feedback',
+            reference='level-0 TEST observer only; never used for adaptation')
     if protected_routing:
         metrics['protected_routing_replay'] = dict(
             updates=agent.protected_route_updates-protected_updates0,
@@ -544,6 +574,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     if continuation is not None:
         continuation.update(optimizers=optimizers, history=history, memory=memory, previous_count=n)
     return metrics, traces
+
 
 
 
