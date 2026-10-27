@@ -1,0 +1,10 @@
+{
+  "scope": "measured TRAIN only",
+  "scales": {
+    "gap": 0.4751957260361592,
+    "weighted_gain": 0.03960688459746314,
+    "weighted_harm": 0.020825745506197788
+  },
+  "raw_target": "gap + weighted_gain - weighted_harm - request_cost",
+  "ranking_target": "gap/sd_gap + weighted_gain/sd_gain - weighted_harm/sd_harm - request_cost"
+}
