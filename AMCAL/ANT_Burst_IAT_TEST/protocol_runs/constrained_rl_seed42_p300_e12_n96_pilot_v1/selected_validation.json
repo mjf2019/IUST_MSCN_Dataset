@@ -1,0 +1,77 @@
+{
+  "selected_episode": 12,
+  "feasible": true,
+  "worst_violation": 0.0,
+  "violations_by_level": [
+    [
+      -0.030000000000000027,
+      -0.02751321310068533,
+      -0.052169811320754704
+    ],
+    [
+      -0.053333333333333344,
+      -0.07572752209634381,
+      -0.023867924528301884
+    ],
+    [
+      -0.05666666666666664,
+      -0.068318181072621,
+      -0.014433962264150942
+    ]
+  ],
+  "mean_label_fraction": 0.0,
+  "mean_AC": 0.7322222222222222,
+  "rows": [
+    {
+      "method": "RL",
+      "level": 0,
+      "AC": 71.33333333333334,
+      "PR": 75.50025238406235,
+      "RC": 70.64387670912686,
+      "F1": 72.27282163782287,
+      "samples": 300,
+      "labels": 0,
+      "cap": 60,
+      "labels_percent": 0.0,
+      "source_initial_AC": 64.15094339622641,
+      "source_final_AC": 64.15094339622641,
+      "source_system_final_AC": 64.15094339622641,
+      "forgetting_AC": 0.0,
+      "milliseconds_per_row": 3.3444056663817414
+    },
+    {
+      "method": "RL",
+      "level": 1,
+      "AC": 71.33333333333334,
+      "PR": 76.38811977861053,
+      "RC": 69.78540077985856,
+      "F1": 71.9337464376291,
+      "samples": 300,
+      "labels": 0,
+      "cap": 60,
+      "labels_percent": 0.0,
+      "source_initial_AC": 64.15094339622641,
+      "source_final_AC": 64.15094339622641,
+      "source_system_final_AC": 64.15094339622641,
+      "forgetting_AC": 0.0,
+      "milliseconds_per_row": 3.522993333560104
+    },
+    {
+      "method": "RL",
+      "level": 3,
+      "AC": 77.0,
+      "PR": 81.41111036038572,
+      "RC": 75.5841253590857,
+      "F1": 77.80070063012657,
+      "samples": 300,
+      "labels": 0,
+      "cap": 60,
+      "labels_percent": 0.0,
+      "source_initial_AC": 64.15094339622641,
+      "source_final_AC": 64.15094339622641,
+      "source_system_final_AC": 64.15094339622641,
+      "forgetting_AC": 0.0,
+      "milliseconds_per_row": 3.3438373333774507
+    }
+  ]
+}
