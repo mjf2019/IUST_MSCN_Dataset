@@ -1,0 +1,629 @@
+{
+  "protocol": {
+    "version": 1,
+    "dataset": "PS",
+    "seed": 42,
+    "budget_fraction": 0.1,
+    "pilot_rows": 300,
+    "epochs": 2,
+    "steps_per_epoch": 80,
+    "batch_size": 128,
+    "actor_lr": 0.0001,
+    "teacher_checkpoint_sha256": "a3450fe35aa9f26716a7b926789f6e5b50c5aaeab180682a0f5141b047dac2d2",
+    "context": "healthy selected Context; unchanged initial weights and update function",
+    "prediction": "Context -> frozen CNN; no prediction routing",
+    "objective": "maximize mean(p*(gap/sd_gap + weighted_gain/sd_gain - weighted_harm/sd_harm - cost)) under early-window quota",
+    "interpretation": "reweighted constrained local min-max surrogate; Context descent unchanged up to positive gap scaling; not the original multistep objective",
+    "deployment": "TRAIN-logit rank; exact label cap by first 20 percent of the stream; fixed Actor online",
+    "collection": "uniform TRAIN feedback; copied Context/Adam states; no query/router training",
+    "selection": "VAL online AC minus positive source drop; no TEST targets or selection",
+    "test_scope": "small-data pilot",
+    "experiment": "TRAIN-scaled competitive signals with an early query window",
+    "signal_scaling": "positive standard deviation scales from measured TRAIN only; no centering or TEST fitting",
+    "query_window_fraction": 0.2,
+    "rank_warm_start": {
+      "epochs": 2,
+      "steps_per_epoch": 80,
+      "loss": "within-TRAIN-level pairwise softplus preference; initialization only",
+      "validation": "fixed observer-only VAL targets; no fitting; TRAIN scales/normalizer frozen",
+      "continuation": "reset Adam; original signed quota-max objective only; select within max phase on online VAL"
+    },
+    "domain_quota": {
+      "levels": [
+        0,
+        1,
+        3
+      ],
+      "objective": "equal mean of within-level mean(p*S), independent quota offset for each TRAIN level",
+      "minibatch": "every TRAIN level; up to batch_size//3 rows per level without replacement",
+      "quota": "each collection cap divided by its query-window row count",
+      "deployment": "unchanged; level identities used only in TRAIN constraints and offline ranking audit"
+    }
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "TRAIN_objective": -0.9566480860114097,
+      "validation_AC": 69.22222222222223,
+      "source_drop": -1.0000000000000047,
+      "selection": 69.22222222222223,
+      "validation": [
+        {
+          "online": {
+            "AC": 61.33333333333333,
+            "PR": 68.42010430094926,
+            "RC": 64.14090501792114,
+            "F1": 65.41228320117679
+          },
+          "samples": 300,
+          "labels": 30,
+          "cap": 30,
+          "labels_percent": 10.0,
+          "source_before": {
+            "AC": 65.33333333333333,
+            "PR": 70.01494369142608,
+            "RC": 72.56446634806849,
+            "F1": 69.75035661047451
+          },
+          "source_after": {
+            "AC": 66.0,
+            "PR": 73.29913359975664,
+            "RC": 67.84336419753086,
+            "F1": 69.58302129516215
+          },
+          "original_domain_forgetting": {
+            "AC": -0.6666666666666714,
+            "PR": -3.2841899083305606,
+            "RC": 4.721102150537632,
+            "F1": 0.16733531531235712
+          },
+          "target_before": {},
+          "target_after": {},
+          "target_gain": {},
+          "target_endpoint_protocol": "same scored stream, descriptive endpoint; not independent generalization",
+          "classifier_unchanged": true,
+          "query_head_unchanged": true,
+          "legacy_future_and_utility_unchanged": true,
+          "level": 0,
+          "budget_actor_deployment": {
+            "forced_tail_labels": 0,
+            "rule": "TRAIN-calibrated rank with remaining budget fraction; no online Actor updates"
+          },
+          "query_window_fraction": 0.2,
+          "query_window_rows": 60
+        },
+        {
+          "online": {
+            "AC": 61.0,
+            "PR": 65.9492144339343,
+            "RC": 61.44526583034647,
+            "F1": 62.30272326133749
+          },
+          "samples": 300,
+          "labels": 30,
+          "cap": 30,
+          "labels_percent": 10.0,
+          "source_before": {
+            "AC": 65.33333333333333,
+            "PR": 70.01494369142608,
+            "RC": 72.56446634806849,
+            "F1": 69.75035661047451
+          },
+          "source_after": {
+            "AC": 65.0,
+            "PR": 73.7864310707448,
+            "RC": 68.49713759458383,
+            "F1": 69.03749478105424
+          },
+          "original_domain_forgetting": {
+            "AC": 0.3333333333333286,
+            "PR": -3.771487379318714,
+            "RC": 4.067328753484659,
+            "F1": 0.7128618294202766
+          },
+          "target_before": {},
+          "target_after": {},
+          "target_gain": {},
+          "target_endpoint_protocol": "same scored stream, descriptive endpoint; not independent generalization",
+          "classifier_unchanged": true,
+          "query_head_unchanged": true,
+          "legacy_future_and_utility_unchanged": true,
+          "level": 1,
+          "budget_actor_deployment": {
+            "forced_tail_labels": 0,
+            "rule": "TRAIN-calibrated rank with remaining budget fraction; no online Actor updates"
+          },
+          "query_window_fraction": 0.2,
+          "query_window_rows": 60
+        },
+        {
+          "online": {
+            "AC": 85.33333333333334,
+            "PR": 84.83804813233715,
+            "RC": 84.89125348466747,
+            "F1": 84.59097282318407
+          },
+          "samples": 300,
+          "labels": 30,
+          "cap": 30,
+          "labels_percent": 10.0,
+          "source_before": {
+            "AC": 65.33333333333333,
+            "PR": 70.01494369142608,
+            "RC": 72.56446634806849,
+            "F1": 69.75035661047451
+          },
+          "source_after": {
+            "AC": 68.0,
+            "PR": 75.1474313157185,
+            "RC": 73.06454101951414,
+            "F1": 73.75932430020478
+          },
+          "original_domain_forgetting": {
+            "AC": -2.6666666666666714,
+            "PR": -5.132487624292423,
+            "RC": -0.5000746714456454,
+            "F1": -4.0089676897302695
+          },
+          "target_before": {},
+          "target_after": {},
+          "target_gain": {},
+          "target_endpoint_protocol": "same scored stream, descriptive endpoint; not independent generalization",
+          "classifier_unchanged": true,
+          "query_head_unchanged": true,
+          "legacy_future_and_utility_unchanged": true,
+          "level": 3,
+          "budget_actor_deployment": {
+            "forced_tail_labels": 1,
+            "rule": "TRAIN-calibrated rank with remaining budget fraction; no online Actor updates"
+          },
+          "query_window_fraction": 0.2,
+          "query_window_rows": 60
+        }
+      ]
+    },
+    {
+      "epoch": 2,
+      "TRAIN_objective": -0.892073005437851,
+      "validation_AC": 69.0,
+      "source_drop": -0.7777777777777809,
+      "selection": 69.0,
+      "validation": [
+        {
+          "online": {
+            "AC": 60.333333333333336,
+            "PR": 69.0517015134284,
+            "RC": 61.67562724014337,
+            "F1": 64.40497590933305
+          },
+          "samples": 300,
+          "labels": 30,
+          "cap": 30,
+          "labels_percent": 10.0,
+          "source_before": {
+            "AC": 65.33333333333333,
+            "PR": 70.01494369142608,
+            "RC": 72.56446634806849,
+            "F1": 69.75035661047451
+          },
+          "source_after": {
+            "AC": 65.33333333333333,
+            "PR": 73.00447819802658,
+            "RC": 65.51436180804461,
+            "F1": 68.26871356672363
+          },
+          "original_domain_forgetting": {
+            "AC": 0.0,
+            "PR": -2.989534506600492,
+            "RC": 7.050104540023881,
+            "F1": 1.4816430437508785
+          },
+          "target_before": {},
+          "target_after": {},
+          "target_gain": {},
+          "target_endpoint_protocol": "same scored stream, descriptive endpoint; not independent generalization",
+          "classifier_unchanged": true,
+          "query_head_unchanged": true,
+          "legacy_future_and_utility_unchanged": true,
+          "level": 0,
+          "budget_actor_deployment": {
+            "forced_tail_labels": 0,
+            "rule": "TRAIN-calibrated rank with remaining budget fraction; no online Actor updates"
+          },
+          "query_window_fraction": 0.2,
+          "query_window_rows": 60
+        },
+        {
+          "online": {
+            "AC": 61.0,
+            "PR": 65.9492144339343,
+            "RC": 61.44526583034647,
+            "F1": 62.30272326133749
+          },
+          "samples": 300,
+          "labels": 30,
+          "cap": 30,
+          "labels_percent": 10.0,
+          "source_before": {
+            "AC": 65.33333333333333,
+            "PR": 70.01494369142608,
+            "RC": 72.56446634806849,
+            "F1": 69.75035661047451
+          },
+          "source_after": {
+            "AC": 65.0,
+            "PR": 73.7864310707448,
+            "RC": 68.49713759458383,
+            "F1": 69.03749478105424
+          },
+          "original_domain_forgetting": {
+            "AC": 0.3333333333333286,
+            "PR": -3.771487379318714,
+            "RC": 4.067328753484659,
+            "F1": 0.7128618294202766
+          },
+          "target_before": {},
+          "target_after": {},
+          "target_gain": {},
+          "target_endpoint_protocol": "same scored stream, descriptive endpoint; not independent generalization",
+          "classifier_unchanged": true,
+          "query_head_unchanged": true,
+          "legacy_future_and_utility_unchanged": true,
+          "level": 1,
+          "budget_actor_deployment": {
+            "forced_tail_labels": 0,
+            "rule": "TRAIN-calibrated rank with remaining budget fraction; no online Actor updates"
+          },
+          "query_window_fraction": 0.2,
+          "query_window_rows": 60
+        },
+        {
+          "online": {
+            "AC": 85.66666666666667,
+            "PR": 86.22202913123628,
+            "RC": 84.25467941059338,
+            "F1": 85.0681901422256
+          },
+          "samples": 300,
+          "labels": 30,
+          "cap": 30,
+          "labels_percent": 10.0,
+          "source_before": {
+            "AC": 65.33333333333333,
+            "PR": 70.01494369142608,
+            "RC": 72.56446634806849,
+            "F1": 69.75035661047451
+          },
+          "source_after": {
+            "AC": 68.0,
+            "PR": 76.53619528619528,
+            "RC": 71.16206192751892,
+            "F1": 73.29810082605354
+          },
+          "original_domain_forgetting": {
+            "AC": -2.6666666666666714,
+            "PR": -6.521251594769197,
+            "RC": 1.4024044205495727,
+            "F1": -3.54774421557903
+          },
+          "target_before": {},
+          "target_after": {},
+          "target_gain": {},
+          "target_endpoint_protocol": "same scored stream, descriptive endpoint; not independent generalization",
+          "classifier_unchanged": true,
+          "query_head_unchanged": true,
+          "legacy_future_and_utility_unchanged": true,
+          "level": 3,
+          "budget_actor_deployment": {
+            "forced_tail_labels": 1,
+            "rule": "TRAIN-calibrated rank with remaining budget fraction; no online Actor updates"
+          },
+          "query_window_fraction": 0.2,
+          "query_window_rows": 60
+        }
+      ]
+    }
+  ],
+  "signal_scales": {
+    "gap": 0.4751957260361592,
+    "weighted_gain": 0.03960688459746314,
+    "weighted_harm": 0.020825745506197788
+  },
+  "within_window_quota": 0.5,
+  "within_window_level_quotas": {
+    "0": 0.5,
+    "1": 0.5,
+    "3": 0.5
+  },
+  "rank_stages": [
+    {
+      "stage": "initial",
+      "TRAIN": {
+        "spearman": null,
+        "target_regret": 1.6393362681070964,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": null,
+            "target_regret": 2.605306625366211
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": null,
+            "target_regret": 1.0813710689544678
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": null,
+            "target_regret": 1.2313311100006104
+          }
+        ]
+      },
+      "VAL": {
+        "spearman": null,
+        "target_regret": 2.2203172047932944,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": null,
+            "target_regret": 2.0522778034210205
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": null,
+            "target_regret": 2.84226131439209
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": null,
+            "target_regret": 1.7664124965667725
+          }
+        ]
+      }
+    },
+    {
+      "stage": "rank_warmup_1",
+      "TRAIN": {
+        "spearman": 0.37835573738554457,
+        "target_regret": 0.591131587823232,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.41677381648158973,
+            "target_regret": 0.7185062170028687
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.22589129164231445,
+            "target_regret": 0.5412875413894653
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.4924021040327294,
+            "target_regret": 0.5136010050773621
+          }
+        ]
+      },
+      "VAL": {
+        "spearman": 0.03415156828365478,
+        "target_regret": 2.004388610521952,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.02618351841028638,
+            "target_regret": 1.7499758005142212
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": -0.017299824663939218,
+            "target_regret": 3.1408681869506836
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.09357101110461719,
+            "target_regret": 1.1223218441009521
+          }
+        ]
+      },
+      "TRAIN_pairwise_loss": 0.6832224696874618
+    },
+    {
+      "stage": "rank_warmup_2",
+      "TRAIN": {
+        "spearman": 0.5305669199298656,
+        "target_regret": 0.5110122561454773,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.6308007013442432,
+            "target_regret": 0.5450431108474731
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.3898889538281707,
+            "target_regret": 0.5124994516372681
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.571011104617183,
+            "target_regret": 0.4754942059516907
+          }
+        ]
+      },
+      "VAL": {
+        "spearman": -0.008065458796025715,
+        "target_regret": 1.9190946618715923,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": -0.07083576855639977,
+            "target_regret": 1.812943458557129
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": -0.024313267095265927,
+            "target_regret": 2.967013359069824
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.07095265926358854,
+            "target_regret": 0.9773271679878235
+          }
+        ]
+      },
+      "TRAIN_pairwise_loss": 0.6400980532169342
+    },
+    {
+      "stage": "quota_max_1",
+      "TRAIN": {
+        "spearman": 0.47775180206506923,
+        "target_regret": 0.5044775207837423,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.5901227352425482,
+            "target_regret": 0.5352499485015869
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.31455289304500295,
+            "target_regret": 0.435821533203125
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.5285797779076563,
+            "target_regret": 0.5423610806465149
+          }
+        ]
+      },
+      "VAL": {
+        "spearman": -0.008533021624780831,
+        "target_regret": 2.036022345225016,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": -0.0320864991233197,
+            "target_regret": 1.8429007530212402
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": -0.04097019286966686,
+            "target_regret": 3.021085739135742
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.04745762711864407,
+            "target_regret": 1.2440805435180664
+          }
+        ]
+      }
+    },
+    {
+      "stage": "quota_max_2",
+      "TRAIN": {
+        "spearman": 0.46584843171634516,
+        "target_regret": 0.5586725274721781,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.5971946230274693,
+            "target_regret": 0.5937052965164185
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.2946814728229106,
+            "target_regret": 0.5211670398712158
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.5056691992986557,
+            "target_regret": 0.5611452460289001
+          }
+        ]
+      },
+      "VAL": {
+        "spearman": -0.010773426845899083,
+        "target_regret": 1.9813607931137085,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": -0.04991233196960842,
+            "target_regret": 1.7194548845291138
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": -0.03950905902980713,
+            "target_regret": 2.980546712875366
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.05710111046171829,
+            "target_regret": 1.2440807819366455
+          }
+        ]
+      }
+    }
+  ],
+  "positive_targets": 15,
+  "targets": 177
+}
