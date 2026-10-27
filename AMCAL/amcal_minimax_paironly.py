@@ -4,7 +4,7 @@ TRAIN 0/1/3, VAL-only checkpoint selection, independent TEST 5/7/10/12/15/17/20.
 This is a new method variant, not a drop-in evaluation of an old checkpoint.
 """
 import argparse
-from copy import deepcopy
+from copy import deepcopy, copy
 from dataclasses import replace
 import hashlib
 import json
@@ -214,7 +214,10 @@ def new_runtime(a, artifact, saved, context_state, query_state=None):
     for parameter in agent.policy.routing_parameters(): parameter.requires_grad_(True)
     width = 2 * agent.policy.route_width + 3
     experiment = getattr(a, 'actor_experiment', None)
-    if experiment:
+    if getattr(a, 'competitive_selector', False):
+        from enhancements.competitive_selector import CompetitiveSelector
+        query = CompetitiveSelector(a.competitive_spec).to(base.legacy.core.device)
+    elif experiment:
         from enhancements.standardized_actor import StandardizedQueryMaximizer
         query = StandardizedQueryMaximizer(width, experiment['normalizer']).to(base.legacy.core.device)
     else:
@@ -362,6 +365,8 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
     route_rng = np.random.default_rng(seed + 181)
     z, h = base.legacy.base_cache(cnn, x)
     used, trace, predicted = 0, [], []
+    compact = getattr(a, 'competitive_selector', False)
+    paid_embeddings, paid_labels, last_update = [], [], 0
     reference_keys = set(feature_keys(reference[0])) if reference is not None else set()
     reference_probe = (reference[0], torch.as_tensor(reference[1], dtype=torch.long, device=x.device)) if reference is not None else None
     reference_labels = np.asarray(reference[1]) if reference is not None else None
@@ -378,6 +383,11 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
         with torch.no_grad():
             outputs = BankExecutor(cnn, [context]).outputs(inputs, z[pos:pos+1])
             state = build_state(outputs, h[pos:pos+1], history, used, cap, pos, n, -1)
+            query_state = state
+            if compact:
+                from enhancements.competitive_selector import query_features
+                query_state = query_features(outputs, h[pos:pos+1], paid_embeddings,
+                    paid_labels, used, cap, pos, n, last_update)
             route_scores = prediction_route_scores(a, agent, state, outputs[0], route_rng)[0].cpu().tolist()
             if not all(math.isfinite(value) for value in route_scores):
                 raise ValueError('Nonfinite routing scores.')
@@ -385,7 +395,7 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             if used < cap and getattr(a, 'eval_routing', 'policy') != 'policy':
                 probability, estimated_score = 0., None
             elif used < cap:
-                logit, estimate = query(state)
+                logit, estimate = query(query_state)
                 probability, estimated_score = float(logit.sigmoid()[0]), float(estimate[0])
                 if not math.isfinite(probability) or not math.isfinite(estimated_score):
                     raise ValueError('Nonfinite query scores.')
@@ -404,6 +414,12 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
                     from enhancements.budget_actor_math import query_window_count
                     window = query_window_count(n,cap,a.query_window_fraction)
                 paid = used < cap and pos < window and uniform_query_at(pos, window, cap)
+            elif compact and getattr(a, 'competitive_random_query', False):
+                probability = a.budget_fraction if used < cap else 0.
+                paid = used < cap and rng.random() < probability
+            elif compact:
+                from enhancements.competitive_selector import select_feedback
+                paid = select_feedback(probability, used, cap, training=training, draw=rng.random())
             elif not training and getattr(a, 'budget_actor_mode', False):
                 from enhancements.budget_actor_math import request_by_rank
                 paid, budget_decision = request_by_rank(float(logit[0]) if used < cap else 0.,
@@ -423,6 +439,10 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             frozen_route_score=route_scores[0], context_route_score=route_scores[1],
             query_probability=probability, estimated_score=estimated_score,
             gap=None, gain=None, harm=None, score=None, replay_loss=None, actor_loss=None, value_loss=None)
+        if compact:
+            record.update(query_rule=('random' if getattr(a, 'competitive_random_query', False) else query_schedule),
+                nearest_paid_distance=float(query_state[0, -8]),
+                paid_class_coverage=float(query_state[0, -6]))
         if budget_decision is not None:
             record.update(budget_rank=budget_decision['rank'],
                 budget_remaining_fraction=budget_decision['fraction'],
@@ -465,19 +485,47 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
         if diagnostic_sink is not None and future_x is not None and len(future_x) == 0:
             record['target_status'] = 'empty_future_probe'
         if future_x is not None and len(future_x):
-            paid_rows, replay = memory.draw(ids[pos], inputs, future_ids, reference_keys=reference_keys,
-                current_key=keys[pos], future_keys=[k for k, keep in zip(block_keys, future_mask) if keep])
+            if compact:
+                # Probe sampling must not advance the live paid-feedback sampler.
+                # Draw exactly the batch that a real request would receive, then
+                # remove its features from the independent future observer.
+                shadow_memory = copy(memory)
+                shadow_memory.rng = deepcopy(memory.rng)
+                paid_rows, replay = shadow_memory.draw(ids[pos], inputs,
+                    reference_keys=reference_keys, current_key=keys[pos])
+                update_keys = {keys[pos]}
+                for batch in [*paid_rows, *([replay] if replay is not None else [])]:
+                    update_keys.update(feature_keys(batch[0]))
+                keep = np.asarray([k not in update_keys for k in feature_keys(future_x)])
+                if not keep.any():
+                    future_x = None
+                else:
+                    future_x = future_x[torch.as_tensor(np.flatnonzero(keep), device=x.device)]
+                    future_y = y[pos+1:pos+1+a.horizon][future_mask][keep]
+            else:
+                paid_rows, replay = memory.draw(ids[pos], inputs, future_ids, reference_keys=reference_keys,
+                    current_key=keys[pos], future_keys=[k for k, keep in zip(block_keys, future_mask) if keep])
+                future_y = y[pos+1:pos+1+a.horizon][future_mask]
+        if future_x is not None and len(future_x):
             ref_at = torch.as_tensor(balanced_draw(reference_labels, a.reference_size, probe_rng), device=x.device)
             reference_batch = reference_probe[0][ref_at], reference_probe[1][ref_at]
             candidate, candidate_optimizer, target = counterfactual_step(context, optimizer, cnn,
                 (inputs, label), paid_rows, replay,
-                (future_x, torch.as_tensor(y[pos+1:pos+1+a.horizon][future_mask], device=x.device)),
+                (future_x, torch.as_tensor(future_y, device=x.device)),
                 reference_batch, a.replay_weight, a.gain_weight, a.forgetting_weight, a.cost, workspace)
             if getattr(a, 'query_target', 'competitive') == 'update_utility':
                 target = dict(target, competitive_score=target['score'],
                     score=a.gain_weight*target['gain']-a.forgetting_weight*target['harm']-a.cost)
             # Full-information TRAIN actor max step; no successor/bootstrap term.
             record.update(target)
+            if compact:
+                record.update(weighted_gain=a.gain_weight*target['gain'],
+                    weighted_harm=a.forgetting_weight*target['harm'], raw_score=target['score'])
+                scales = getattr(a, 'competitive_scales', None)
+                if scales is not None:
+                    from enhancements.competitive_selector import competitive_score
+                    record['score'] = competitive_score(record, scales, a.cost)
+                    target = dict(target, score=record['score'])
             experiment = getattr(a, 'actor_experiment', None)
             if getattr(a, 'collect_query_targets_only', False):
                 pass
@@ -496,13 +544,13 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
                 with torch.no_grad():
                     record.update(weighted_gain=a.gain_weight*target['gain'],
                         weighted_harm=a.forgetting_weight*target['harm'], target_status='measured',
-                        actor_probability_after=float(query(state)[0].sigmoid()[0]),
+                        actor_probability_after=float(query(query_state)[0].sigmoid()[0]),
                         actor_grad_norm=(None if getattr(a, 'collect_query_targets_only', False) else
                             float(sum(p.grad.detach().square().sum()
                                 for p in query.actor.parameters() if p.grad is not None).sqrt())))
         if paid:
             history.observe_paid(outputs[0].softmax(2), truth)
-            if target is not None:
+            if target is not None and not compact:
                 # Commit precisely the measured branch, including Adam moments.
                 old_context, old_optimizer = context, optimizer
                 context, optimizer = candidate, candidate_optimizer
@@ -516,6 +564,10 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             history.updated(1, pos+1, change)
             used += 1
             memory.add(ids[pos], inputs, truth)
+            if compact:
+                paid_embeddings.append(h[pos:pos+1].detach().clone())
+                paid_labels.append(truth)
+                last_update = pos+1
             agent.versions[0] += 1
             # Correctness labels refer to predictions made before feedback/update.
             if getattr(a, 'eval_routing', 'policy') == 'policy' and not getattr(a, 'budget_actor_mode', False):
@@ -523,7 +575,7 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
         agent.clock += 1
         record['labels_used'] = used
         trace.append(record)
-        if diagnostic_sink is not None: diagnostic_sink.observe(state, record)
+        if diagnostic_sink is not None: diagnostic_sink.observe(query_state, record)
         if pos == 0 or (pos+1) % a.progress_every == 0 or pos+1 == steps:
             print(f'{"TRAIN" if training else "EVAL"}: {pos+1}/{steps} | labels {used}/{cap}', flush=True)
     runtime = cnn, context, agent, query
