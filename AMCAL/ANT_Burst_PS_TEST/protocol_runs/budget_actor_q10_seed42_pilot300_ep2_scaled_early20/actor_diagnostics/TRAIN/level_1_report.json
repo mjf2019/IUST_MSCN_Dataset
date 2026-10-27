@@ -1,0 +1,83 @@
+{
+  "candidates": 59,
+  "top_k": 30,
+  "scope": "fixed common uniform-feedback trajectory; top-k ranking only, not a new online rollout",
+  "correlations": {
+    "actor_target": {
+      "pearson": 0.11129061391063577,
+      "spearman": 0.19327878433664525
+    },
+    "target_utility": {
+      "pearson": 0.7214534803748932,
+      "spearman": 0.6539450613676213
+    },
+    "actor_utility": {
+      "pearson": 0.05879561023347599,
+      "spearman": 0.10099357101110462
+    },
+    "target_gain": {
+      "pearson": 0.3911785510394107,
+      "spearman": 0.34880187025131504
+    },
+    "actor_gain": {
+      "pearson": -0.11354414776838084,
+      "spearman": -0.06218585622443016
+    }
+  },
+  "selectors": {
+    "Actor": {
+      "target": -2.1130417651891076,
+      "gain": -0.0005628882596890131,
+      "harm": 0.022466488586117824,
+      "net_utility": -0.07302937684580682
+    },
+    "OracleTarget": {
+      "target": -1.420073221409055,
+      "gain": 0.005892300590251883,
+      "harm": 0.01780137267584602,
+      "net_utility": -0.06190907208559415
+    },
+    "OracleUtility": {
+      "target": -1.7001318369894645,
+      "gain": 0.01186515820833544,
+      "harm": 0.01848040906091531,
+      "net_utility": -0.05661525085257989
+    },
+    "RandomExpectation": {
+      "target": -2.445453628315083,
+      "gain": -0.0008509895701150773,
+      "harm": 0.026599149282832267,
+      "net_utility": -0.07745013885294733
+    }
+  },
+  "components": {
+    "target": {
+      "mean": -2.445453628315083,
+      "std": 1.4853018321050901,
+      "positive_fraction": 0.01694915254237288
+    },
+    "gain": {
+      "mean": -0.0008509895701150773,
+      "std": 0.020646650355769593,
+      "positive_fraction": 0.5254237288135594
+    },
+    "harm": {
+      "mean": 0.026599149282832267,
+      "std": 0.018321520806618998,
+      "positive_fraction": 1.0
+    },
+    "net_utility": {
+      "mean": -0.07745013885294733,
+      "std": 0.026780214513881573,
+      "positive_fraction": 0.0
+    }
+  },
+  "actor_target_regret": 0.6929685437800526,
+  "actor_utility_regret": 0.016414125993226933,
+  "split": "TRAIN",
+  "level": 1,
+  "trajectory_samples": 300,
+  "trajectory_labels": 30,
+  "model_weights_unchanged": true,
+  "observer_labels_not_counted_as_deployment_budget": true
+}

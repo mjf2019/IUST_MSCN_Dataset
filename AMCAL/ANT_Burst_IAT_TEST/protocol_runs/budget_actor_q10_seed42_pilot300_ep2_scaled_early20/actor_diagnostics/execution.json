@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "actor_checkpoint_sha256": "c181bbd8c7bdba4794941a779d71c6b891a0352a433072839c4bdff4a776d161",
+  "teacher_checkpoint_sha256": "cb20edb4f6e6ef0b3074d0a94da041a14c6d19294f51ed6f5b392b8f4a0e0ac3",
+  "protocol": {
+    "version": 1,
+    "dataset": "IAT",
+    "seed": 42,
+    "budget_fraction": 0.1,
+    "pilot_rows": 300,
+    "epochs": 2,
+    "steps_per_epoch": 80,
+    "batch_size": 128,
+    "actor_lr": 0.0001,
+    "teacher_checkpoint_sha256": "cb20edb4f6e6ef0b3074d0a94da041a14c6d19294f51ed6f5b392b8f4a0e0ac3",
+    "context": "healthy selected Context; unchanged initial weights and update function",
+    "prediction": "Context -> frozen CNN; no prediction routing",
+    "objective": "maximize mean(p*(gap/sd_gap + weighted_gain/sd_gain - weighted_harm/sd_harm - cost)) under early-window quota",
+    "interpretation": "reweighted constrained local min-max surrogate; Context descent unchanged up to positive gap scaling; not the original multistep objective",
+    "deployment": "TRAIN-logit rank; exact label cap by first 20 percent of the stream; fixed Actor online",
+    "collection": "uniform TRAIN feedback; copied Context/Adam states; no query/router training",
+    "selection": "VAL online AC minus positive source drop; no TEST targets or selection",
+    "test_scope": "small-data pilot",
+    "experiment": "TRAIN-scaled competitive signals with an early query window",
+    "signal_scaling": "positive standard deviation scales from measured TRAIN only; no centering or TEST fitting",
+    "query_window_fraction": 0.2
+  },
+  "scales": {
+    "gap": 0.35788639872700095,
+    "weighted_gain": 0.022145856746230264,
+    "weighted_harm": 0.016461465990593976
+  },
+  "splits": [
+    "TRAIN",
+    "VAL"
+  ],
+  "levels": [
+    0,
+    1,
+    3
+  ],
+  "trajectory": "uniform early feedback, same temporary trajectory for every ranking selector",
+  "interpretation": "offline full-information ranking audit; oracles are not deployable; no policy fitting or TEST access",
+  "utility": "weighted_gain - weighted_harm - request_cost; one update, future block without further adaptation"
+}

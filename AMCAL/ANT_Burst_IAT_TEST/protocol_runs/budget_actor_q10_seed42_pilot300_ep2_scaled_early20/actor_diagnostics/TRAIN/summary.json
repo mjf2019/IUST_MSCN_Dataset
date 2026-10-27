@@ -1,0 +1,306 @@
+{
+  "levels": [
+    0,
+    1,
+    3
+  ],
+  "selectors": {
+    "Actor": {
+      "target": -2.1803420435579306,
+      "gain": -0.00014744290040956255,
+      "harm": 0.020534478948037657,
+      "net_utility": -0.07068192184844721
+    },
+    "OracleTarget": {
+      "target": -1.2041936666831168,
+      "gain": 0.0059462893036248314,
+      "harm": 0.014218238190126915,
+      "net_utility": -0.05827194888650209
+    },
+    "OracleUtility": {
+      "target": -1.3978371322671486,
+      "gain": 0.008261270863123274,
+      "harm": 0.013390666419743664,
+      "net_utility": -0.05512939555662041
+    },
+    "RandomExpectation": {
+      "target": -2.501858206276722,
+      "gain": -0.0032045074331159863,
+      "harm": 0.022727415424713727,
+      "net_utility": -0.07593192285782972
+    }
+  },
+  "mean_correlations": {
+    "actor_target": {
+      "pearson": 0.2915597582139484,
+      "spearman": 0.1992207286187415
+    },
+    "target_utility": {
+      "pearson": 0.8245771375123944,
+      "spearman": 0.7933177479057082
+    },
+    "actor_utility": {
+      "pearson": 0.29376597925259434,
+      "spearman": 0.21126047145918567
+    },
+    "target_gain": {
+      "pearson": 0.4099111238933795,
+      "spearman": 0.4408727839470095
+    },
+    "actor_gain": {
+      "pearson": 0.1463196478618949,
+      "spearman": 0.09027858951879993
+    }
+  },
+  "reports": [
+    {
+      "candidates": 59,
+      "top_k": 30,
+      "scope": "fixed common uniform-feedback trajectory; top-k ranking only, not a new online rollout",
+      "correlations": {
+        "actor_target": {
+          "pearson": 0.2394660532330038,
+          "spearman": 0.29818819403857394
+        },
+        "target_utility": {
+          "pearson": 0.7993681357878732,
+          "spearman": 0.7538281706604325
+        },
+        "actor_utility": {
+          "pearson": 0.23112652263766673,
+          "spearman": 0.2559322033898305
+        },
+        "target_gain": {
+          "pearson": 0.7122507721489525,
+          "spearman": 0.693687901811806
+        },
+        "actor_gain": {
+          "pearson": 0.18708559890225937,
+          "spearman": 0.22133255406195207
+        }
+      },
+      "selectors": {
+        "Actor": {
+          "target": -0.49984671995867735,
+          "gain": 0.009982030652463437,
+          "harm": 0.01190933696149538,
+          "net_utility": -0.05192730630903196
+        },
+        "OracleTarget": {
+          "target": 0.213044226256278,
+          "gain": 0.01690719856414944,
+          "harm": 0.009336325615489234,
+          "net_utility": -0.04242912705133981
+        },
+        "OracleUtility": {
+          "target": -0.005373636773580935,
+          "gain": 0.02009550581375758,
+          "harm": 0.007604950724635273,
+          "net_utility": -0.0375094449108777
+        },
+        "RandomExpectation": {
+          "target": -1.0165848855738766,
+          "gain": 0.003428201747553076,
+          "harm": 0.013413757107504722,
+          "net_utility": -0.059985555359951634
+        }
+      },
+      "components": {
+        "target": {
+          "mean": -1.0165848855738766,
+          "std": 1.6599100719348163,
+          "positive_fraction": 0.23728813559322035
+        },
+        "gain": {
+          "mean": 0.003428201747553076,
+          "std": 0.02328572085629921,
+          "positive_fraction": 0.6101694915254238
+        },
+        "harm": {
+          "mean": 0.013413757107504722,
+          "std": 0.010844284614037558,
+          "positive_fraction": 1.0
+        },
+        "net_utility": {
+          "mean": -0.059985555359951634,
+          "std": 0.028882778998834777,
+          "positive_fraction": 0.0
+        }
+      },
+      "actor_target_regret": 0.7128909462149553,
+      "actor_utility_regret": 0.014417861398154257,
+      "split": "TRAIN",
+      "level": 0,
+      "trajectory_samples": 300,
+      "trajectory_labels": 30,
+      "model_weights_unchanged": true,
+      "observer_labels_not_counted_as_deployment_budget": true
+    },
+    {
+      "candidates": 59,
+      "top_k": 30,
+      "scope": "fixed common uniform-feedback trajectory; top-k ranking only, not a new online rollout",
+      "correlations": {
+        "actor_target": {
+          "pearson": 0.21365170221774357,
+          "spearman": 0.09520748100526008
+        },
+        "target_utility": {
+          "pearson": 0.7446172580721944,
+          "spearman": 0.7398597311513735
+        },
+        "actor_utility": {
+          "pearson": 0.19588025025745331,
+          "spearman": 0.16762127410870836
+        },
+        "target_gain": {
+          "pearson": -0.361385160600624,
+          "spearman": -0.17738164815897137
+        },
+        "actor_gain": {
+          "pearson": -0.19268564083268108,
+          "spearman": -0.10940970192869667
+        }
+      },
+      "selectors": {
+        "Actor": {
+          "target": -3.100094930403697,
+          "gain": -0.003351881351166715,
+          "harm": 0.025506558176130057,
+          "net_utility": -0.07885843952729675
+        },
+        "OracleTarget": {
+          "target": -2.2048599248513345,
+          "gain": -0.0029339111648975327,
+          "harm": 0.01773675826067726,
+          "net_utility": -0.07067066942557479
+        },
+        "OracleUtility": {
+          "target": -2.4124309886970043,
+          "gain": -3.195051940565463e-05,
+          "harm": 0.01777214268222451,
+          "net_utility": -0.06780409320163018
+        },
+        "RandomExpectation": {
+          "target": -3.2739544366664544,
+          "gain": -0.0016102317000578465,
+          "harm": 0.029375854848047434,
+          "net_utility": -0.08098608654810528
+        }
+      },
+      "components": {
+        "target": {
+          "mean": -3.2739544366664544,
+          "std": 1.3984663994029598,
+          "positive_fraction": 0.0
+        },
+        "gain": {
+          "mean": -0.0016102317000578465,
+          "std": 0.009348439668815827,
+          "positive_fraction": 0.4067796610169492
+        },
+        "harm": {
+          "mean": 0.029375854848047434,
+          "std": 0.01745643300229072,
+          "positive_fraction": 1.0
+        },
+        "net_utility": {
+          "mean": -0.08098608654810528,
+          "std": 0.01632958728615977,
+          "positive_fraction": 0.0
+        }
+      },
+      "actor_target_regret": 0.8952350055523626,
+      "actor_utility_regret": 0.01105434632566657,
+      "split": "TRAIN",
+      "level": 1,
+      "trajectory_samples": 300,
+      "trajectory_labels": 30,
+      "model_weights_unchanged": true,
+      "observer_labels_not_counted_as_deployment_budget": true
+    },
+    {
+      "candidates": 59,
+      "top_k": 30,
+      "scope": "fixed common uniform-feedback trajectory; top-k ranking only, not a new online rollout",
+      "correlations": {
+        "actor_target": {
+          "pearson": 0.4215615191910978,
+          "spearman": 0.20426651081239042
+        },
+        "target_utility": {
+          "pearson": 0.9297460186771155,
+          "spearman": 0.8862653419053186
+        },
+        "actor_utility": {
+          "pearson": 0.454291164862663,
+          "spearman": 0.2102279368790181
+        },
+        "target_gain": {
+          "pearson": 0.87886776013181,
+          "spearman": 0.806312098188194
+        },
+        "actor_gain": {
+          "pearson": 0.44455898551610645,
+          "spearman": 0.15891291642314437
+        }
+      },
+      "selectors": {
+        "Actor": {
+          "target": -2.9410844803114182,
+          "gain": -0.00707247800252541,
+          "harm": 0.024187541706487535,
+          "net_utility": -0.08126001970901292
+        },
+        "OracleTarget": {
+          "target": -1.620765301454294,
+          "gain": 0.0038655805116225867,
+          "harm": 0.015581630694214255,
+          "net_utility": -0.06171605018259168
+        },
+        "OracleUtility": {
+          "target": -1.7757067713308607,
+          "gain": 0.004720257295017897,
+          "harm": 0.014794905852371205,
+          "net_utility": -0.060074648557353325
+        },
+        "RandomExpectation": {
+          "target": -3.2150352965898343,
+          "gain": -0.01143149234684319,
+          "harm": 0.025392634318589027,
+          "net_utility": -0.08682412666543222
+        }
+      },
+      "components": {
+        "target": {
+          "mean": -3.2150352965898343,
+          "std": 2.2123102643284045,
+          "positive_fraction": 0.03389830508474576
+        },
+        "gain": {
+          "mean": -0.01143149234684319,
+          "std": 0.02697185507293917,
+          "positive_fraction": 0.3559322033898305
+        },
+        "harm": {
+          "mean": 0.025392634318589027,
+          "std": 0.01589228290576926,
+          "positive_fraction": 1.0
+        },
+        "net_utility": {
+          "mean": -0.08682412666543222,
+          "std": 0.038208192341898914,
+          "positive_fraction": 0.0
+        }
+      },
+      "actor_target_regret": 1.3203191788571242,
+      "actor_utility_regret": 0.021185371151659596,
+      "split": "TRAIN",
+      "level": 3,
+      "trajectory_samples": 300,
+      "trajectory_labels": 30,
+      "model_weights_unchanged": true,
+      "observer_labels_not_counted_as_deployment_budget": true
+    }
+  ]
+}
