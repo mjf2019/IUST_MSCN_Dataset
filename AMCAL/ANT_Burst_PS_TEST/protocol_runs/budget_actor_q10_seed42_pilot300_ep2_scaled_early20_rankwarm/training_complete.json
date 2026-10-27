@@ -1,0 +1,33 @@
+{
+  "protocol": {
+    "version": 1,
+    "dataset": "PS",
+    "seed": 42,
+    "budget_fraction": 0.1,
+    "pilot_rows": 300,
+    "epochs": 2,
+    "steps_per_epoch": 80,
+    "batch_size": 128,
+    "actor_lr": 0.0001,
+    "teacher_checkpoint_sha256": "a3450fe35aa9f26716a7b926789f6e5b50c5aaeab180682a0f5141b047dac2d2",
+    "context": "healthy selected Context; unchanged initial weights and update function",
+    "prediction": "Context -> frozen CNN; no prediction routing",
+    "objective": "maximize mean(p*(gap/sd_gap + weighted_gain/sd_gain - weighted_harm/sd_harm - cost)) under early-window quota",
+    "interpretation": "reweighted constrained local min-max surrogate; Context descent unchanged up to positive gap scaling; not the original multistep objective",
+    "deployment": "TRAIN-logit rank; exact label cap by first 20 percent of the stream; fixed Actor online",
+    "collection": "uniform TRAIN feedback; copied Context/Adam states; no query/router training",
+    "selection": "VAL online AC minus positive source drop; no TEST targets or selection",
+    "test_scope": "small-data pilot",
+    "experiment": "TRAIN-scaled competitive signals with an early query window",
+    "signal_scaling": "positive standard deviation scales from measured TRAIN only; no centering or TEST fitting",
+    "query_window_fraction": 0.2,
+    "rank_warm_start": {
+      "epochs": 2,
+      "steps_per_epoch": 80,
+      "loss": "within-TRAIN-level pairwise softplus preference; initialization only",
+      "validation": "fixed observer-only VAL targets; no fitting; TRAIN scales/normalizer frozen",
+      "continuation": "reset Adam; original signed quota-max objective only; select within max phase on online VAL"
+    }
+  },
+  "checkpoint_sha256": "a123664397caaae2789990af3c02edc36cb798969592ad0a9e67edf35452cd0d"
+}

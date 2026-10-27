@@ -1,0 +1,292 @@
+{
+  "stages": [
+    {
+      "stage": "initial",
+      "TRAIN": {
+        "spearman": null,
+        "target_regret": 1.6326455275217693,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": null,
+            "target_regret": 1.2389309406280518
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": null,
+            "target_regret": 1.3001415729522705
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": null,
+            "target_regret": 2.3588640689849854
+          }
+        ]
+      },
+      "VAL": {
+        "spearman": null,
+        "target_regret": 2.1312954425811768,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": null,
+            "target_regret": 3.4885518550872803
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": null,
+            "target_regret": 2.0138330459594727
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": null,
+            "target_regret": 0.8915014266967773
+          }
+        ]
+      }
+    },
+    {
+      "stage": "rank_warmup_1",
+      "TRAIN": {
+        "spearman": 0.4375608805766608,
+        "target_regret": 0.7279017766316732,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.5229690239625949,
+            "target_regret": 0.7252497673034668
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.4004091174751607,
+            "target_regret": 0.5348217487335205
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.38930450029222674,
+            "target_regret": 0.9236338138580322
+          }
+        ]
+      },
+      "VAL": {
+        "spearman": 0.11601402688486266,
+        "target_regret": 1.339198152224223,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.2846288720046756,
+            "target_regret": 1.2423956394195557
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.19374634716540035,
+            "target_regret": 1.1050941944122314
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": -0.13033313851548803,
+            "target_regret": 1.6701046228408813
+          }
+        ]
+      },
+      "TRAIN_pairwise_loss": 0.6814423695206642
+    },
+    {
+      "stage": "rank_warmup_2",
+      "TRAIN": {
+        "spearman": 0.535593220338983,
+        "target_regret": 0.5459356705347697,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.47253068381063706,
+            "target_regret": 0.7428313493728638
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.5326709526592636,
+            "target_regret": 0.4851078987121582
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.6015780245470486,
+            "target_regret": 0.4098677635192871
+          }
+        ]
+      },
+      "VAL": {
+        "spearman": 0.19544126241963766,
+        "target_regret": 1.1073774695396423,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.47539450613676215,
+            "target_regret": 1.033074140548706
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.1880187025131502,
+            "target_regret": 0.9669970870018005
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": -0.07708942139099942,
+            "target_regret": 1.3220611810684204
+          }
+        ]
+      },
+      "TRAIN_pairwise_loss": 0.6245558984577656
+    },
+    {
+      "stage": "quota_max_1",
+      "TRAIN": {
+        "spearman": 0.48856419248003125,
+        "target_regret": 0.5516588489214579,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.5112215078901228,
+            "target_regret": 0.5115870833396912
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.39666861484511984,
+            "target_regret": 0.6185832023620605
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.557802454704851,
+            "target_regret": 0.5248062610626221
+          }
+        ]
+      },
+      "VAL": {
+        "spearman": 0.126378336255601,
+        "target_regret": 1.3489290873209636,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.35727644652250146,
+            "target_regret": 1.6122385263442993
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.15149035651665693,
+            "target_regret": 1.1166331768035889
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": -0.12963179427235536,
+            "target_regret": 1.3179155588150024
+          }
+        ]
+      }
+    },
+    {
+      "stage": "quota_max_2",
+      "TRAIN": {
+        "spearman": 0.4593415156828365,
+        "target_regret": 0.558243085940679,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.44202220923436586,
+            "target_regret": 0.42874279618263245
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.37457627118644066,
+            "target_regret": 0.576789140701294
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.5614260666277031,
+            "target_regret": 0.6691973209381104
+          }
+        ]
+      },
+      "VAL": {
+        "spearman": 0.09567504383401519,
+        "target_regret": 1.334653655687968,
+        "levels": [
+          {
+            "level": 0,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.33278784336645234,
+            "target_regret": 1.456263780593872
+          },
+          {
+            "level": 1,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": 0.09327878433664524,
+            "target_regret": 1.2463064193725586
+          },
+          {
+            "level": 3,
+            "samples": 59,
+            "top_k": 30,
+            "spearman": -0.13904149620105202,
+            "target_regret": 1.3013907670974731
+          }
+        ]
+      }
+    }
+  ],
+  "acceptance": "inspect independent VAL ranking, then online VAL performance; TRAIN fit alone is insufficient"
+}

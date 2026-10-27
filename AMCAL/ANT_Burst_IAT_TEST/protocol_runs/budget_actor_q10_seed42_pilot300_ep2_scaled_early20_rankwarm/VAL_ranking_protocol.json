@@ -1,0 +1,17 @@
+{
+  "scope": "offline full-information observer only",
+  "splits": [
+    "val_ids"
+  ],
+  "levels": [
+    0,
+    1,
+    3
+  ],
+  "TRAIN_scales_frozen": true,
+  "Actor_fitting": false,
+  "normalizer_fitting": false,
+  "temporary_Context_updates": "discarded",
+  "probe": "independent source VAL reference; IDs and feature duplicates excluded from candidates",
+  "note": "ranking oracles and probe labels are diagnostics, not budgeted deployment metrics"
+}
