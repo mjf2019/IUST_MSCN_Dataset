@@ -1,0 +1,67 @@
+{
+  "protocol": {
+    "version": 1,
+    "dataset": "IAT",
+    "seed": 42,
+    "pilot_rows": 300,
+    "rounds": 2,
+    "steps": 32,
+    "actor_lr": 0.0001,
+    "budget_fraction": 0.2,
+    "teacher_sha256": "cb20edb4f6e6ef0b3074d0a94da041a14c6d19294f51ed6f5b392b8f4a0e0ac3",
+    "architecture": "original IAT CNN; Light PS CNN",
+    "context": "healthy initial checkpoint; unchanged batch5/replay/LR; copies per domain",
+    "objective": "maximize mean(p*original_paper_reward); no gap/gain/harm/cost terms or target centering",
+    "theory": "original-paper reward control with compact contextual-bandit policy; not original DDQN or the continuous shared-gap zero-sum objective",
+    "features": "2*K+18; predictive uncertainty, paid-feedback coverage/novelty and causal budget/time",
+    "replay_probe": "disabled; no copied Context/Adam, future-label probes or source-loss probes",
+    "normalization": "feature moments fitted on TRAIN; discrete reward remains unscaled",
+    "policy": "bounded logits; stochastic TRAIN requests; deterministic p>=.5 deployment; no forced spending",
+    "split": "TRAIN/VAL 0/1/3; held source audit IDs/features excluded across levels; TEST only explicit Evaluate/All",
+    "selection": "VAL online AC minus positive forgetting; fewer labels breaks ties",
+    "cost": 0.0,
+    "horizon": null,
+    "context_lr": 0.00025,
+    "replay_weight": 0.1,
+    "gain_weight": null,
+    "forgetting_weight": null,
+    "source_hashes": {
+      "protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+      "initial_cnn_model.pth": "16b2c531add95691a04aaef7f9bd041212cb212112eb1702efbb415786b98d54",
+      "enhanced_context.pth": "b0533e8c84679bd81dcbc02bdd507c069da5557f7c37cac7668e197b27d1634c"
+    },
+    "train_hashes": {
+      "0": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+      "1": "bf92f8d8088d7199d1a83187c2f04079c13aa0fb115878e3649c5bd85d8a6cc6",
+      "3": "391285a6f89750c0025eb225a7d2b4beca1314852c9d630e8105108a352eaa53"
+    },
+    "reward_mode": "original paper Eq. reward",
+    "reward_table": {
+      "both_wrong": 3.0,
+      "only_Frozen_wrong": 2.0,
+      "only_Context_wrong": -2.0,
+      "both_correct": 0.0
+    },
+    "initialization": "same healthy CNN/Context checkpoint; new compact query head trained on original reward"
+  },
+  "history": [
+    {
+      "round": 1,
+      "targets": 345,
+      "positive_targets": 43,
+      "mean_target": 0.13333334028720856,
+      "TRAIN_objective": 0.06245942192617804,
+      "VAL_selection": 65.40880503144655,
+      "VAL_labels_percent": 20.0
+    },
+    {
+      "round": 2,
+      "targets": 333,
+      "positive_targets": 51,
+      "mean_target": 0.2732732892036438,
+      "TRAIN_objective": 0.13957557396497577,
+      "VAL_selection": 65.85324947589099,
+      "VAL_labels_percent": 20.0
+    }
+  ]
+}
