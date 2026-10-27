@@ -1,6 +1,8 @@
 """Actor-only budget-ranking control on a fixed healthy Context checkpoint.
 
-The signed competitive TRAIN score and Context update function are unchanged.
+The default signed TRAIN score and Context update function are unchanged.
+UtilityEarly explicitly reweights competitive components using TRAIN scales
+and confines feedback to the first 20 percent; it is a separate experiment.
 TRAIN collection uses temporary uniform-feedback Context trajectories. Only the
 query Actor is fitted/saved; selected Context/CNN weights are copied unchanged.
 This is a fixed-quota local min-max surrogate, not an exact multistep game.
@@ -20,6 +22,7 @@ from enhancements.budget_actor import quota_max_step
 from enhancements.standardized_actor import StandardizedQueryMaximizer
 from enhancements.config import EnhancementConfig
 from enhancements.console_summary import print_level_result, print_saved_summaries
+from enhancements.budget_actor_math import fit_signal_scales, scaled_competitive_score, query_window_count
 
 VERSION = 1
 LEVELS = [5, 7, 10, 12, 15, 17, 20]
@@ -106,6 +109,16 @@ def collect(a, healthy, artifact, anchors, reference):
     a.collect_query_targets_only = False
     if len(scores)<32 or not np.isfinite(scores).all() or np.std(scores)<1e-8:
         raise ValueError('Insufficient finite variation in TRAIN ranking targets.')
+    if getattr(a,'utility_early',False):
+        measured=[row for row in all_rows if row.get('score') is not None]
+        a.signal_scales=fit_signal_scales(measured)
+        scores=[scaled_competitive_score(row,a.signal_scales) for row in measured]
+        for row,score in zip(measured,scores):row['ranking_target']=score
+        pilot.write_json(a.output/'signal_scaling.json',dict(scope='measured TRAIN only',
+            scales=a.signal_scales,raw_target='gap + weighted_gain - weighted_harm - request_cost',
+            ranking_target='gap/sd_gap + weighted_gain/sd_gain - weighted_harm/sd_harm - request_cost'))
+        print('TRAIN signal SD: '+', '.join(f'{key}={value:.6f}' for key,value in a.signal_scales.items()),flush=True)
+        print(f'Ranking targets: {sum(score>0 for score in scores)}/{len(scores)} positive',flush=True)
     pilot.write_csv(a.output/'train_targets.csv',all_rows)
     return torch.stack(states), torch.tensor(scores,dtype=torch.float32)
 
@@ -143,6 +156,11 @@ def evaluate_levels(a,healthy,artifact,anchors,query_state,levels,split,calibrat
             result['budget_actor_deployment']=dict(
                 forced_tail_labels=sum(int(row.get('budget_forced_tail',False) and row['queried']) for row in trace),
                 rule='TRAIN-calibrated rank with remaining budget fraction; no online Actor updates')
+        if getattr(a,'query_window_fraction',1.)<1:
+            result['query_window_fraction']=a.query_window_fraction
+            result['query_window_rows']=query_window_count(len(domain[1]),result['cap'],a.query_window_fraction)
+            if any(row['queried'] and row['step']>result['query_window_rows'] for row in trace):
+                raise RuntimeError('Query occurred after the early-window deadline.')
         rows.append(result)
         print_level_result(save_root.name if save_root is not None else 'VAL',result)
         if save_root is not None:
@@ -170,13 +188,18 @@ def train(a,healthy,artifact,anchors,reference,teacher_hash):
     query=StandardizedQueryMaximizer(states.shape[1],spec).to(device)
     states,targets=states.to(device),targets.to(device)
     optimizer=torch.optim.Adam(query.actor.parameters(),lr=a.actor_lr)
+    quota=a.budget_fraction
+    if getattr(a,'utility_early',False):
+        # Collection domains can be shorter than PilotRows; use actual row/cap counts.
+        collections=[json.loads((a.output/f'collection_level{level}.json').read_text(encoding='utf-8')) for level in (0,1,3)]
+        quota=float(np.mean([row['cap']/query_window_count(row['samples'],row['cap'],.2) for row in collections]))
     generator=torch.Generator(device='cpu').manual_seed(a.seed+901)
     best=-math.inf; log=[]
     for epoch in range(1,a.epochs+1):
         objectives=[]
         for _ in range(a.steps_per_epoch):
             at=torch.randperm(len(states),generator=generator)[:min(a.batch_size,len(states))].to(device)
-            fit=quota_max_step(query,optimizer,states[at],targets[at],a.budget_fraction)
+            fit=quota_max_step(query,optimizer,states[at],targets[at],quota)
             objectives.append(fit['objective'])
         calibration=score_reference(query,states)
         validation=evaluate_levels(a,healthy,artifact,anchors,deepcopy(query.state_dict()),[0,1,3],'val_ids',calibration)
@@ -187,18 +210,19 @@ def train(a,healthy,artifact,anchors,reference,teacher_hash):
             source_drop=drop,selection=selection,validation=validation))
         print(f'Actor epoch {epoch}/{a.epochs}: VAL AC {ac:.2f}% | source drop {drop:+.2f} pp',flush=True)
         pilot.write_json(a.output/'training.json',dict(protocol=protocol(a,teacher_hash),epochs=log,
+            signal_scales=getattr(a,'signal_scales',None),within_window_quota=quota,
             positive_targets=int((targets>0).sum()),targets=len(targets)))
         if selection>best:
             best=selection
             path=a.output/'Models';path.mkdir(exist_ok=True)
             torch.save(dict(version=VERSION,protocol=protocol(a,teacher_hash),query_state_dict=deepcopy(query.state_dict()),
                 normalizer=spec,score_reference=calibration,selected_epoch=epoch,selected_validation=selection,
-                teacher_checkpoint_sha256=teacher_hash),path/'budget_actor.pth')
+                teacher_checkpoint_sha256=teacher_hash,signal_scales=getattr(a,'signal_scales',None)),path/'budget_actor.pth')
     pilot.write_json(completed,dict(protocol=protocol(a,teacher_hash),checkpoint_sha256=pilot.digest(a.output/'Models'/'budget_actor.pth')))
 
 
 def protocol(a,teacher_hash):
-    return dict(version=VERSION,dataset=a.dataset,seed=a.seed,budget_fraction=a.budget_fraction,
+    result=dict(version=VERSION,dataset=a.dataset,seed=a.seed,budget_fraction=a.budget_fraction,
         pilot_rows=a.pilot_rows,epochs=a.epochs,steps_per_epoch=a.steps_per_epoch,batch_size=a.batch_size,actor_lr=a.actor_lr,
         teacher_checkpoint_sha256=teacher_hash,context='healthy selected Context; unchanged initial weights and update function',
         prediction='Context -> frozen CNN; no prediction routing',
@@ -208,6 +232,14 @@ def protocol(a,teacher_hash):
         collection='uniform TRAIN feedback; copied Context/Adam states; no query/router training',
         selection='VAL online AC minus positive source drop; no TEST targets or selection',
         test_scope='small-data pilot' if a.pilot_rows else 'full TEST domains')
+    if getattr(a,'utility_early',False):
+        result.update(experiment='TRAIN-scaled competitive signals with an early query window',
+            signal_scaling='positive standard deviation scales from measured TRAIN only; no centering or TEST fitting',
+            query_window_fraction=.2,
+            objective='maximize mean(p*(gap/sd_gap + weighted_gain/sd_gain - weighted_harm/sd_harm - cost)) under early-window quota',
+            interpretation='reweighted constrained local min-max surrogate; Context descent unchanged up to positive gap scaling; not the original multistep objective',
+            deployment='TRAIN-logit rank; exact label cap by first 20 percent of the stream; fixed Actor online')
+    return result
 
 
 def evaluate(a,healthy,artifact,anchors,teacher_hash):
@@ -218,6 +250,8 @@ def evaluate(a,healthy,artifact,anchors,teacher_hash):
     methods=[('Uniform','uniform',a.budget_fraction)] if uniform_only else [
         ('Actor','policy',a.budget_fraction),('FrontLoaded','frontloaded',a.budget_fraction),
         ('Uncertainty','uncertainty',a.budget_fraction),('FrontLoaded20','frontloaded',.2)]
+    if getattr(a,'utility_early',False):
+        methods.extend([('UniformEarly','uniform',a.budget_fraction),('Uniform','uniform',a.budget_fraction)])
     root=a.output/('UniformResults' if uniform_only else 'Results');root.mkdir(exist_ok=True)
     execution=dict(protocol=saved['protocol'],checkpoint_sha256=pilot.digest(a.output/'Models'/'budget_actor.pth'),
         matched_controls=[item[0] for item in methods])
@@ -243,6 +277,7 @@ def evaluate(a,healthy,artifact,anchors,teacher_hash):
     target_budget=a.budget_fraction
     for method,schedule,method_budget in methods:
         a.budget_fraction=method_budget
+        a.query_window_fraction=.2 if getattr(a,'utility_early',False) and method in ('Actor','UniformEarly') else 1.
         directory=root/method;directory.mkdir(exist_ok=True)
         results=evaluate_levels(a,healthy,artifact,anchors,saved['query_state_dict'],LEVELS,'test_ids',
             saved['score_reference'],directory,schedule)
@@ -255,8 +290,9 @@ def evaluate(a,healthy,artifact,anchors,teacher_hash):
                 **{'forgetting_'+k:v for k,v in result['original_domain_forgetting'].items()}))
         files.extend(f'{method}/level_{level}_{suffix}' for level in LEVELS for suffix in ('metrics.json','trace.csv'))
     a.budget_fraction=target_budget
+    a.query_window_fraction=.2 if getattr(a,'utility_early',False) else 1.
     pilot.write_csv(root/'summary.csv',summary)
-    pilot.write_json(root/'completed.json',dict(levels=len(LEVELS),methods=4,
+    pilot.write_json(root/'completed.json',dict(levels=len(LEVELS),methods=len(methods),
         sha256={name:pilot.digest(root/name) for name in files}))
     print(f'Results: {root}',flush=True)
 
@@ -297,17 +333,27 @@ def main():
     p.add_argument('--output',type=Path)
     p.add_argument('--uniform-control-only',action='store_true',
         help='Evaluate evenly spaced feedback with an existing Actor checkpoint; no training.')
+    p.add_argument('--utility-early',action='store_true',
+        help='Experimental TRAIN-scaled reward components and first-20-percent query window.')
     a=p.parse_args()
     if a.uniform_control_only and a.action!='Evaluate':
         p.error('Uniform control requires --action Evaluate; existing checkpoints are reused.')
+    if a.uniform_control_only and a.utility_early:p.error('UtilityEarly already includes both uniform controls.')
     if a.pilot_rows<0 or (a.pilot_rows and a.pilot_rows<=16) or min(a.epochs,a.steps_per_epoch,a.batch_size)<2:
         p.error('Pilot rows must be zero or greater than 16; epochs/steps/batch-size must be at least two.')
     if not math.isfinite(a.actor_lr) or a.actor_lr<=0:p.error('Actor LR must be finite and positive.')
     root=Path(__file__).resolve().parent/f'ANT_Burst_{a.dataset}_TEST'
     a.teacher=a.teacher or root/'protocol_runs'/f'minimax_query_batch5_seed{a.seed}_v2_h16_c0.05_actorstd_natural'
+    explicit_output=a.output is not None
     a.output=a.output or root/'protocol_runs'/f'budget_actor_q{a.budget_percent:02d}_seed{a.seed}_pilot{a.pilot_rows}_ep{a.epochs}'
+    if a.utility_early and not explicit_output:
+        a.output=a.output.with_name(a.output.name+'_scaled_early20')
     a.burst_dir=root/'Dataset_official_v1'/f'AdvBurst_FTSC-{a.dataset}'
     a.budget_fraction=a.budget_percent/100; a.progress_every=250
+    a.query_window_fraction=.2 if a.utility_early else 1.
+    if a.utility_early:
+        print(f'UtilityEarly {a.dataset}: total label cap {a.budget_percent}% | query window first 20% | '
+            'TRAIN-scaled gap/gain/harm | Context -> frozen CNN | batch5 | no CNN/initial Context retraining',flush=True)
     healthy,artifact,anchors,reference,teacher_hash=setup(a)
     if a.action in ('Train','All'):train(a,healthy,artifact,anchors,reference,teacher_hash)
     if a.action in ('Evaluate','All'):evaluate(a,healthy,artifact,anchors,teacher_hash)

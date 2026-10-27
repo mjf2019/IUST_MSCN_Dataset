@@ -399,11 +399,16 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             elif query_schedule == 'frontloaded':
                 paid = used < cap and pos < cap
             elif query_schedule == 'uniform':
-                paid = used < cap and uniform_query_at(pos, n, cap)
+                window = n
+                if getattr(a,'query_window_fraction',1.) != 1.:
+                    from enhancements.budget_actor_math import query_window_count
+                    window = query_window_count(n,cap,a.query_window_fraction)
+                paid = used < cap and pos < window and uniform_query_at(pos, window, cap)
             elif not training and getattr(a, 'budget_actor_mode', False):
                 from enhancements.budget_actor_math import request_by_rank
                 paid, budget_decision = request_by_rank(float(logit[0]) if used < cap else 0.,
-                    a.budget_score_reference, used, cap, pos, n, rng.random())
+                    a.budget_score_reference, used, cap, pos, n, rng.random(),
+                    getattr(a,'query_window_fraction',1.))
             else:
                 paid = used < cap and (rng.random() < probability if training else probability >= .5)
             # Route choice is identical for query and skip, and precedes truth access.

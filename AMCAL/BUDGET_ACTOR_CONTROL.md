@@ -68,3 +68,53 @@ the pilot. Output directories begin `budget_actor_q05_` or `budget_actor_q10_`.
 
 No packages are installed. Preflight includes exact quota/gradient contracts and
 small real-stream contracts in the user's existing Torch environment.
+
+## UtilityEarly: separate experimental correction
+
+Enable `-UtilityEarly` to create a new `_scaled_early20` run; previous runs and
+the default method are preserved. The healthy Context/CNN and the batch5 update
+stay identical. Only the Actor is fitted. This experiment addresses two observed
+failures: raw target variance dominated by the competitive gap, and requests too
+late to improve many subsequent predictions.
+
+From measured TRAIN targets only, fit fixed positive standard deviations for
+`gap`, `weighted_gain`, and `weighted_harm`. Fit the Actor on
+`gap/sd_gap + weighted_gain/sd_gain - weighted_harm/sd_harm - cost`.
+Constant components use scale 1. No sign truncation, TEST fitting, extra heads,
+or inference bonus is added. Raw components and the actual ranking target are
+both saved. The scales are written to JSON and stored in the Actor checkpoint.
+Normalization balances units/variation; it does not prove that a component is
+predictive, remove noise, or guarantee better selection.
+
+Feedback is allowed only in the first `floor(0.2*N)` stream positions, for both
+temporary TRAIN collection and Actor VAL/TEST. The *total* budget remains 5% or
+10% of all N rows. TRAIN uniform collection uses this same window; the Actor's
+within-window probability quota is therefore approximately 25% or 50%. Causal
+remaining-budget ranking forces any remaining requests by the window deadline.
+All N rows are scored before their own feedback. After the window there are no
+requests or Context updates. The finite stream length is known, as in the
+existing evaluation. Window length is fixed in advance and not chosen on TEST.
+
+Positive scaling preserves the competitive gap and the Context descent
+direction, but reweights the max objective and adds a temporal constraint. This
+is a revised constrained *local* min-max surrogate, not a proof that the original
+multistep game is unchanged. The Context gradient continues to be CE plus its
+existing protected replay penalty. Query fitting uses fixed collected TRAIN
+trajectories, rather than claiming to solve the full on-policy game.
+
+Matched TEST controls are Actor, UniformEarly (same query window), Uniform
+(full-stream spacing), FrontLoaded (same budget), Uncertainty (same cap, VAL q75),
+and FrontLoaded20. UniformEarly is needed to check whether Actor ranking adds
+value beyond the imposed timing restriction. Comparing to the previous run alone
+cannot separate reward scaling from earlier budget consumption. Endpoint final
+target AC is descriptive rescoring of the same stream; it is not a holdout score.
+
+```powershell
+.\AMCAL\run_amcal_budget_actor.ps1 -Dataset IAT -BudgetPercent 10 -PilotRows 300 -Epochs 2 -UtilityEarly
+.\AMCAL\run_amcal_budget_actor.ps1 -Dataset PS -BudgetPercent 10 -PilotRows 300 -Epochs 2 -UtilityEarly
+.\AMCAL\push_amcal_budget_actor.ps1 -Dataset Both
+```
+
+Console output reports each level's AC/PR/RC/F1, label usage, source forgetting,
+and final target/source accuracy, followed by a cross-method mean table. Completed
+runs show their saved summaries without rerunning the evaluation.

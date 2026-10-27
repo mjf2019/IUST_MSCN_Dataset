@@ -10,7 +10,7 @@ import numpy as np
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from enhancements.budget_actor_math import request_by_rank
+from enhancements.budget_actor_math import request_by_rank, query_window_count, fit_signal_scales, scaled_competitive_score
 try:
     import torch
 except ImportError:
@@ -18,6 +18,38 @@ except ImportError:
 
 
 class BudgetDeploymentTests(unittest.TestCase):
+    def test_early_window_consumes_exact_cap_and_never_queries_after_deadline(self):
+        for n in (17,300,886,1073):
+            for fraction in (.05,.1):
+                for score in (-1e6,0.,1e6):
+                    rng=np.random.default_rng(42);used=0;cap=int(n*fraction)
+                    deadline=query_window_count(n,cap,.2)
+                    for pos in range(n):
+                        paid,_=request_by_rank(score,[-1.,0.,1.],used,cap,pos,n,float(rng.random()),.2)
+                        if paid:self.assertLess(pos,deadline)
+                        used+=int(paid)
+                        if pos==deadline-1:self.assertEqual(used,cap)
+                    self.assertEqual(used,cap)
+
+    def test_scaling_makes_component_units_comparable_without_dropping_gap(self):
+        rows=[dict(gap=v,weighted_gain=v/100,weighted_harm=v/1000,request_cost=.05) for v in (1.,2.,3.)]
+        scales=fit_signal_scales(rows)
+        self.assertAlmostEqual(scales['gap']/scales['weighted_gain'],100.)
+        baseline=scaled_competitive_score(rows[1],scales)
+        changed=dict(rows[1],gap=rows[1]['gap']+scales['gap'])
+        self.assertAlmostEqual(scaled_competitive_score(changed,scales)-baseline,1.)
+        changed=dict(rows[1],weighted_gain=rows[1]['weighted_gain']+scales['weighted_gain'])
+        self.assertAlmostEqual(scaled_competitive_score(changed,scales)-baseline,1.)
+        changed=dict(rows[1],weighted_harm=rows[1]['weighted_harm']+scales['weighted_harm'])
+        self.assertAlmostEqual(scaled_competitive_score(changed,scales)-baseline,-1.)
+
+    def test_constant_components_and_invalid_scales_are_handled(self):
+        row=dict(gap=1.,weighted_gain=0.,weighted_harm=0.,request_cost=.05)
+        self.assertEqual(fit_signal_scales([row,row]),dict(gap=1.,weighted_gain=1.,weighted_harm=1.))
+        with self.assertRaises(ValueError):query_window_count(100,30,.2)
+        with self.assertRaises(ValueError):fit_signal_scales([dict(row,gap=float('nan')),row])
+        with self.assertRaises(ValueError):scaled_competitive_score(row,dict(gap=0.,weighted_gain=1.,weighted_harm=1.))
+
     def test_causal_policy_never_exceeds_cap_and_finishes_exactly(self):
         for n in (1,17,300,886,1073):
             for fraction in (.05,.1):
@@ -58,7 +90,7 @@ class BudgetQuotaTests(unittest.TestCase):
         for quota in (.05,.1):
             z=torch.tensor([-1.,-.3,.4,1.2],dtype=torch.double,requires_grad=True)
             p=quota_probabilities(z,quota)
-            self.assertAlmostEqual(float(p.mean()),quota,places=10)
+            self.assertAlmostEqual(float(p.detach().mean()),quota,places=10)
             self.assertTrue(torch.autograd.gradcheck(lambda value:quota_probabilities(value,quota),(z,)))
 
     def test_shared_logit_offset_and_score_cost_do_not_change_ranking_gradient(self):
@@ -117,8 +149,8 @@ class BudgetQuotaTests(unittest.TestCase):
 
     def test_uniform_control_is_evenly_spaced_context_only_and_does_not_fit_actor(self):
         from test_minimax_query import StreamContractTests
-        from amcal_minimax_paironly import uniform_query_at
         fixture=StreamContractTests();run,a,runtime,domain,reference,calls=fixture.fixture()
+        uniform_query_at=fixture.namespace['uniform_query_at']
         a.budget_actor_mode=True;a.eval_query_schedule='uniform'
         def forbidden(*args,**kwargs):raise AssertionError('Uniform control called routing RL.')
         runtime[2].policy.route_logits=forbidden;runtime[2].observe_routes=forbidden
@@ -130,6 +162,20 @@ class BudgetQuotaTests(unittest.TestCase):
         self.assertEqual([r['queried'] for r in trace],expected)
         self.assertTrue(all(r['route']==1 and r['prediction']==r['context_prediction'] for r in trace))
         for k,v in before.items():torch.testing.assert_close(v,updated[3].state_dict()[k])
+
+    def test_windowed_uniform_and_actor_keep_predictions_causal_and_weights_fixed(self):
+        from test_minimax_query import StreamContractTests
+        for schedule in ('uniform','policy'):
+            fixture=StreamContractTests();run,a,runtime,domain,reference,calls=fixture.fixture()
+            a.budget_actor_mode=True;a.eval_query_schedule=schedule
+            a.query_window_fraction=.5;a.budget_score_reference=[1e9]
+            before=deepcopy(runtime[3].state_dict())
+            with contextlib.redirect_stdout(io.StringIO()):
+                _,result,trace=run(a,runtime,domain,domain,None,domain,42)
+            self.assertEqual(result['labels'],result['cap'])
+            self.assertTrue(all(row['step']<=int(len(trace)*.5) for row in trace if row['queried']))
+            self.assertTrue(all(row['route']==1 for row in trace))
+            for k,v in before.items():torch.testing.assert_close(v,runtime[3].state_dict()[k])
 
 
 if __name__=='__main__':unittest.main()

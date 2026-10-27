@@ -6,7 +6,8 @@ param(
     [int]$PilotRows = 300,
     [int]$Epochs = 2,
     [ValidateSet('auto','cpu','cuda')][string]$Device = 'cuda',
-    [switch]$UniformControl
+    [switch]$UniformControl,
+    [switch]$UtilityEarly
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -19,6 +20,8 @@ try {
     & $python -m unittest discover -s AMCAL/tests -p 'test_budget_actor.py' -v
     if ($LASTEXITCODE -ne 0) { throw 'Budget Actor preflight failed.' }
     $extra = @()
+    if ($UtilityEarly) { $extra += '--utility-early' }
+    if ($UtilityEarly -and $UniformControl) { throw 'UtilityEarly already includes uniform controls.' }
     if ($UniformControl) {
         if ($Action -eq 'Train') { throw 'Uniform control is evaluation only.' }
         $Action = 'Evaluate'
