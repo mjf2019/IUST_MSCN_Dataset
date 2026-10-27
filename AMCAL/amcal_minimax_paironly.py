@@ -229,10 +229,11 @@ def endpoint(a, cnn, context, agent, domain, history, used, cap, position):
     z, h = base.legacy.base_cache(cnn, x)
     executor = BankExecutor(cnn, [context])
     predicted = []
+    route_rng = np.random.default_rng(getattr(a, 'seed', 0)+811)
     for start in range(0, len(x), 64):
         out = executor.outputs(x[start:start+64], z[start:start+64])
         state = build_state(out, h[start:start+64], history, used, cap, position, max(position, 1), -1)
-        route = prediction_route_scores(a, agent, state, out[0]).argmax(1)
+        route = prediction_route_scores(a, agent, state, out[0], route_rng).argmax(1)
         per_route = out[0].argmax(2)
         predicted.extend(per_route[torch.arange(len(route), device=x.device), route].cpu().tolist())
     return metrics(y, predicted, len(a.classes))
@@ -257,8 +258,13 @@ def normalized_entropy(logits):
     return np.clip(-(np.exp(logp)*logp).sum(axis=-1)/math.log(values.shape[-1]), 0., 1.)
 
 
-def prediction_route_scores(a, agent, state, logits):
-    """Larger is better; uncertainty routing never calls the learned router."""
+def prediction_route_scores(a, agent, state, logits, rng=None):
+    """Larger is better; routing controls never call the learned router."""
+    if getattr(a, 'eval_routing', 'policy') == 'random':
+        if rng is None: raise ValueError('Random routing requires its own seeded generator.')
+        chosen = rng.integers(0, 2, size=len(logits))
+        values = np.column_stack((chosen == 0, chosen == 1))
+        return torch.as_tensor(values, dtype=logits.dtype, device=logits.device)
     if getattr(a, 'eval_routing', 'policy') == 'uncertainty':
         values = -normalized_entropy(logits.detach().cpu().numpy())
         return torch.as_tensor(values, dtype=logits.dtype, device=logits.device)
@@ -349,6 +355,7 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
     query.requires_grad_(training)
     query.eval()
     rng = np.random.default_rng(seed + 71)
+    route_rng = np.random.default_rng(seed + 181)
     z, h = base.legacy.base_cache(cnn, x)
     used, trace, predicted = 0, [], []
     reference_keys = set(feature_keys(reference[0])) if reference is not None else set()
@@ -367,11 +374,11 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
         with torch.no_grad():
             outputs = BankExecutor(cnn, [context]).outputs(inputs, z[pos:pos+1])
             state = build_state(outputs, h[pos:pos+1], history, used, cap, pos, n, -1)
-            route_scores = prediction_route_scores(a, agent, state, outputs[0])[0].cpu().tolist()
+            route_scores = prediction_route_scores(a, agent, state, outputs[0], route_rng)[0].cpu().tolist()
             if not all(math.isfinite(value) for value in route_scores):
                 raise ValueError('Nonfinite routing scores.')
             route = int(route_scores[1] > route_scores[0])
-            if used < cap and getattr(a, 'eval_routing', 'policy') == 'uncertainty':
+            if used < cap and getattr(a, 'eval_routing', 'policy') != 'policy':
                 probability, estimated_score = 0., None
             elif used < cap:
                 logit, estimate = query(state)
@@ -402,6 +409,8 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             frozen_route_score=route_scores[0], context_route_score=route_scores[1],
             query_probability=probability, estimated_score=estimated_score,
             gap=None, gain=None, harm=None, score=None, replay_loss=None, actor_loss=None, value_loss=None)
+        if getattr(a, 'eval_routing', 'policy') == 'random':
+            record.update(routing_rule='random')
         if getattr(a, 'eval_routing', 'policy') == 'uncertainty':
             route_entropies = normalized_entropy(outputs[0][0].cpu().numpy())
             record.update(routing_rule='uncertainty', frozen_entropy=float(route_entropies[0]),
@@ -488,7 +497,7 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             memory.add(ids[pos], inputs, truth)
             agent.versions[0] += 1
             # Correctness labels refer to predictions made before feedback/update.
-            if getattr(a, 'eval_routing', 'policy') != 'uncertainty':
+            if getattr(a, 'eval_routing', 'policy') == 'policy':
                 agent.observe_routes(state, (correct_predictions[0] == truth).float(), versions=versions)
         agent.clock += 1
         record['labels_used'] = used
@@ -753,6 +762,16 @@ def evaluate(a):
             trace='frozen/context_route_score are negative entropy; individual entropies also recorded')
         execution['route_head_online'] = 'fixed and unused'
         execution['query_head_online'] = 'fixed and unused'
+    if getattr(a, 'eval_routing', 'policy') == 'random':
+        execution['prediction'] = 'before feedback; independent uniform random Frozen/Context route'
+        execution['routing'] = dict(mode='random', version=1,
+            score='one-hot random route indicator; larger is better',
+            rng='dedicated NumPy generator: stream seed+181; endpoints seed+811, restarted per endpoint',
+            endpoint='same seeded route assignments before/after; separate from online query/order RNG',
+            heads='learned routing and query heads fixed and bypassed',
+            trace='frozen/context_route_score are random route indicators')
+        execution['route_head_online'] = 'fixed and unused'
+        execution['query_head_online'] = 'fixed and unused'
     if a.actor_experiment: execution['actor_experiment'] = a.actor_experiment
     if pilot_spec(a): execution['pilot'] = pilot_spec(a)
     if getattr(a, 'eval_query_schedule', 'policy') == 'uniform':
@@ -765,7 +784,9 @@ def evaluate(a):
     if getattr(a, 'eval_query_schedule', 'policy') == 'frontloaded':
         execution['query_schedule'] = dict(mode='frontloaded', version=1,
             rule='request on the first floor(budget_fraction*n) stream rows; no later requests',
-            scope='query override only; learned routing and paid-feedback Context/router updates retained',
+            scope=('query override only; learned routing and paid-feedback Context/router updates retained'
+                if getattr(a, 'eval_routing', 'policy') == 'policy' else
+                'front-loaded feedback with specified routing control; Context updates retained, RL heads bypassed'),
             prediction='each row predicted before its own label; all rows including queried prefix are scored',
             information='current stream position only; no future features or labels',
             budget='exact cap per intensity; all adaptive state reset')
@@ -858,7 +879,7 @@ def parser():
     p.add_argument('--actor-control', choices=['natural', 'balanced'], default='natural')
     p.add_argument('--eval-query-schedule', choices=['policy', 'uniform', 'uncertainty', 'frontloaded'], default='policy')
     p.add_argument('--uncertainty-percentile', type=float, default=75.)
-    p.add_argument('--eval-routing', choices=['policy', 'uncertainty'], default='policy')
+    p.add_argument('--eval-routing', choices=['policy', 'uncertainty', 'random'], default='policy')
     p.add_argument('--train-query-schedule', choices=['policy', 'uniform'], default='policy')
     p.add_argument('--pilot-rows', type=int, default=0)
     p.add_argument('--actor-logit-penalty', type=float, default=0.)
@@ -884,8 +905,12 @@ def main(argv=None):
     if a.pilot_rows < 0: p.error('Pilot rows must be nonnegative; zero means the full domain.')
     if a.pilot_rows and a.pilot_rows <= a.horizon: p.error('Pilot rows must exceed the future horizon.')
     if a.pilot_rows and a.action == 'Diagnose': p.error('Pilot row limits apply to Train/Evaluate, not Diagnose.')
-    if a.eval_routing != 'policy' and (a.action != 'Evaluate' or a.eval_query_schedule != 'uncertainty'):
-        p.error('Uncertainty routing requires Evaluate with uncertainty requests.')
+    if a.eval_routing != 'policy' and a.action != 'Evaluate':
+        p.error('Routing controls require Evaluate; no retraining.')
+    if a.eval_routing == 'uncertainty' and a.eval_query_schedule not in ('uncertainty', 'frontloaded'):
+        p.error('Uncertainty routing requires uncertainty or frontloaded requests.')
+    if a.eval_routing == 'random' and a.eval_query_schedule != 'frontloaded':
+        p.error('Random routing control requires frontloaded requests.')
     if not math.isfinite(a.uncertainty_percentile) or not 0 < a.uncertainty_percentile < 100:
         p.error('Uncertainty percentile must be between zero and 100.')
     if a.eval_query_schedule != 'policy' and a.action != 'Evaluate':

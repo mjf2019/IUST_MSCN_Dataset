@@ -12,13 +12,16 @@ param(
     [switch]$FrontLoadedQueries,
     [switch]$UncertaintyQueries,
     [switch]$UncertaintyRouting,
+    [switch]$RandomRouting,
     [ValidateRange(1,99)][double]$UncertaintyPercentile = 75,
     [switch]$UniformTraining,
     [switch]$QueryUtilityTarget,
     [ValidateSet('cuda','cpu','auto')][string]$Device = 'cuda'
 )
 $ErrorActionPreference = 'Stop'
-if ($UncertaintyRouting -and (-not $UncertaintyQueries -or $Action -ne 'Evaluate')) { throw 'UncertaintyRouting requires UncertaintyQueries and Action Evaluate.' }
+if ($UncertaintyRouting -and (-not ($UncertaintyQueries -or $FrontLoadedQueries) -or $Action -ne 'Evaluate')) { throw 'UncertaintyRouting requires uncertainty/front-loaded requests and Evaluate.' }
+if ($RandomRouting -and (-not $FrontLoadedQueries -or $Action -ne 'Evaluate')) { throw 'RandomRouting requires FrontLoadedQueries and Evaluate.' }
+if ($RandomRouting -and $UncertaintyRouting) { throw 'Choose one routing control.' }
 if (([int]$UniformQueries.IsPresent + [int]$UncertaintyQueries.IsPresent + [int]$FrontLoadedQueries.IsPresent) -gt 1) { throw 'Choose only one query override.' }
 if ($FrontLoadedQueries -and $Action -ne 'Evaluate') { throw 'FrontLoadedQueries requires Action Evaluate; no retraining.' }
 if ($UncertaintyQueries -and $Action -ne 'Evaluate') { throw 'UncertaintyQueries requires Action Evaluate; no retraining.' }
@@ -43,7 +46,8 @@ try {
     }
     $controls = if ($Control -eq 'Both') { @('natural','balanced') } else { @($Control.ToLowerInvariant()) }
     foreach ($item in $controls) {
-        if ($FrontLoadedQueries) { Write-Host "Front-loaded TEST: $Dataset / $item | first 20% labels | RL routing | predict before feedback" }
+        $routingText = if ($RandomRouting) { 'random' } elseif ($UncertaintyRouting) { 'uncertainty' } else { 'RL' }
+        if ($FrontLoadedQueries) { Write-Host "Front-loaded TEST: $Dataset / $item | first 20% labels | $routingText routing | predict before feedback" }
         if ($UniformQueries) { Write-Host "Uniform-query TEST: $Dataset / $item | exact 20% cap | no retraining" }
         if ($UncertaintyQueries) { Write-Host "Uncertainty-query TEST: $Dataset / $item | VAL q$UncertaintyPercentile | maximum 20% cap | no retraining" }
         $costText = if ($QueryUtilityTarget) { '0' } else { '0.05' }
@@ -76,6 +80,7 @@ try {
         if ($FrontLoadedQueries) { $runArgs += @('--eval-query-schedule', 'frontloaded') }
         if ($UniformQueries) { $runArgs += @('--eval-query-schedule', 'uniform') }
         if ($UncertaintyQueries) { $runArgs += @('--eval-query-schedule', 'uncertainty', '--uncertainty-percentile', $UncertaintyPercentile.ToString($culture)) }
+        if ($RandomRouting) { $runArgs += @('--eval-routing', 'random') }
         if ($UncertaintyRouting) { $runArgs += @('--eval-routing', 'uncertainty') }
         if ($UniformTraining) { $runArgs += @('--train-query-schedule', 'uniform') }
         if ($PilotRows -gt 0) { $runArgs += @('--pilot-rows', "$PilotRows") }

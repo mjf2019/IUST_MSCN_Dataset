@@ -538,6 +538,47 @@ class StreamContractTests(unittest.TestCase):
         self.assertEqual([r['queried'] for r in trace], [r['queried'] for r in altered])
         for k,v in initial_query.items(): torch.testing.assert_close(v, updated[3].state_dict()[k])
 
+    def test_frontloaded_routing_controls_preserve_budget_and_bypass_rl(self):
+        for routing in ('uncertainty', 'random'):
+            with self.subTest(routing=routing):
+                run, a, runtime, domain, reference, calls = self.fixture()
+                a.eval_query_schedule = 'frontloaded'; a.eval_routing = routing
+                def forbidden(*args, **kwargs): raise AssertionError('Routing control called RL.')
+                runtime[2].policy.route_logits = forbidden
+                runtime[2].observe_routes = forbidden
+                runtime[3].forward = forbidden
+                old_policy = deepcopy(runtime[2].policy.state_dict())
+                twin = deepcopy(runtime)
+                flipped = domain[0], 1-domain[1], domain[2]
+                with contextlib.redirect_stdout(io.StringIO()):
+                    updated, result, trace = run(a, runtime, domain, domain, None, domain, 42)
+                    _, _, changed = run(a, twin, flipped, domain, None, domain, 42)
+                self.assertEqual([r['step'] for r in trace if r['queried']], [1,2])
+                self.assertEqual(result['labels'], 2)
+                self.assertEqual(calls, [])
+                self.assertEqual(updated[2].feedback, [])
+                self.assertEqual(trace[0]['prediction'], changed[0]['prediction'])
+                self.assertEqual(trace[0]['route'], changed[0]['route'])
+                if routing == 'random':
+                    self.assertEqual([r['route'] for r in trace], [r['route'] for r in changed])
+                    expected = np.random.default_rng(42+181).integers(0,2,size=len(trace)).tolist()
+                    self.assertEqual([r['route'] for r in trace], expected)
+                else:
+                    for r in trace: self.assertEqual(r['route'], int(r['context_entropy'] < r['frozen_entropy']))
+                for key,value in old_policy.items(): torch.testing.assert_close(value, updated[2].policy.state_dict()[key])
+
+    def test_random_route_endpoint_assignments_are_batch_independent(self):
+        _, a, runtime, domain, _, _ = self.fixture()
+        a.eval_routing = 'random'
+        with torch.no_grad(): logits = torch.stack([runtime[0](domain[0])]*2, 1)
+        route_scores = self.namespace['prediction_route_scores']
+        one = route_scores(a, runtime[2], None, logits, np.random.default_rng(811))
+        generator = np.random.default_rng(811)
+        chunks = torch.cat([route_scores(a, runtime[2], None, logits[:4], generator),
+            route_scores(a, runtime[2], None, logits[4:], generator)])
+        torch.testing.assert_close(one, chunks)
+        with self.assertRaises(ValueError): route_scores(a, runtime[2], None, logits)
+
     def test_frontloaded_control_cannot_enter_training(self):
         run, a, runtime, domain, reference, _ = self.fixture(training=True)
         a.eval_query_schedule = 'frontloaded'
