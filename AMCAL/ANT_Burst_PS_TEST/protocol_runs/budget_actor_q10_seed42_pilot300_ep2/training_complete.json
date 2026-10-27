@@ -1,0 +1,23 @@
+{
+  "protocol": {
+    "version": 1,
+    "dataset": "PS",
+    "seed": 42,
+    "budget_fraction": 0.1,
+    "pilot_rows": 300,
+    "epochs": 2,
+    "steps_per_epoch": 80,
+    "batch_size": 128,
+    "actor_lr": 0.0001,
+    "teacher_checkpoint_sha256": "a3450fe35aa9f26716a7b926789f6e5b50c5aaeab180682a0f5141b047dac2d2",
+    "context": "healthy selected Context; unchanged initial weights and update function",
+    "prediction": "Context -> frozen CNN; no prediction routing",
+    "objective": "maximize mean(p*S), mean(p)=budget; unchanged signed S=gap+G-F-cost",
+    "interpretation": "constrained local min-max surrogate on fixed TRAIN trajectories; not exact on-policy multistep equivalence",
+    "deployment": "TRAIN-logit rank versus remaining budget fraction; randomized ties; forced tail if needed for exact cap",
+    "collection": "uniform TRAIN feedback; copied Context/Adam states; no query/router training",
+    "selection": "VAL online AC minus positive source drop; no TEST targets or selection",
+    "test_scope": "small-data pilot"
+  },
+  "checkpoint_sha256": "6b870c405692bf3640865bdfa77f2f3ad75ea5541030f1814b5064408b00ee37"
+}

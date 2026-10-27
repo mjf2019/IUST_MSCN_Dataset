@@ -1,0 +1,53 @@
+{
+  "online": {
+    "AC": 68.0,
+    "PR": 62.219510906065146,
+    "RC": 60.26706801227576,
+    "F1": 60.059358410213136
+  },
+  "samples": 300,
+  "labels": 15,
+  "cap": 15,
+  "labels_percent": 5.0,
+  "source_before": {
+    "AC": 56.666666666666664,
+    "PR": 63.40227427165509,
+    "RC": 61.69284744789506,
+    "F1": 60.91062829476478
+  },
+  "source_after": {
+    "AC": 58.666666666666664,
+    "PR": 60.65991306939987,
+    "RC": 61.37766708286847,
+    "F1": 59.56398181277459
+  },
+  "original_domain_forgetting": {
+    "AC": -2.0,
+    "PR": 2.7423612022552177,
+    "RC": 0.31518036502659186,
+    "F1": 1.3466464819901844
+  },
+  "target_before": {
+    "AC": 54.666666666666664,
+    "PR": 59.290869524740486,
+    "RC": 52.122076056181896,
+    "F1": 51.025513914856866
+  },
+  "target_after": {
+    "AC": 70.33333333333334,
+    "PR": 63.6423808024433,
+    "RC": 61.85873458436475,
+    "F1": 61.59290177868121
+  },
+  "target_gain": {
+    "AC": 15.666666666666679,
+    "PR": 4.351511277702812,
+    "RC": 9.73665852818285,
+    "F1": 10.567387863824344
+  },
+  "target_endpoint_protocol": "same scored stream, descriptive endpoint; not independent generalization",
+  "classifier_unchanged": true,
+  "query_head_unchanged": true,
+  "legacy_future_and_utility_unchanged": true,
+  "level": 5
+}

@@ -1,0 +1,57 @@
+{
+  "online": {
+    "AC": 67.0,
+    "PR": 67.01796725270904,
+    "RC": 59.355598393292595,
+    "F1": 60.36118871390064
+  },
+  "samples": 300,
+  "labels": 30,
+  "cap": 30,
+  "labels_percent": 10.0,
+  "source_before": {
+    "AC": 71.0,
+    "PR": 73.41884198145053,
+    "RC": 69.8107386101214,
+    "F1": 70.97237677332645
+  },
+  "source_after": {
+    "AC": 67.0,
+    "PR": 66.33295892705368,
+    "RC": 68.46538272938263,
+    "F1": 67.08086175161911
+  },
+  "original_domain_forgetting": {
+    "AC": 4.0,
+    "PR": 7.085883054396845,
+    "RC": 1.3453558807387793,
+    "F1": 3.8915150217073347
+  },
+  "target_before": {
+    "AC": 64.0,
+    "PR": 66.875,
+    "RC": 55.85447958047327,
+    "F1": 59.11266910320836
+  },
+  "target_after": {
+    "AC": 68.0,
+    "PR": 67.40135948842735,
+    "RC": 60.00553744280697,
+    "F1": 60.93684523251087
+  },
+  "target_gain": {
+    "AC": 4.0,
+    "PR": 0.5263594884273459,
+    "RC": 4.151057862333701,
+    "F1": 1.8241761293025078
+  },
+  "target_endpoint_protocol": "same scored stream, descriptive endpoint; not independent generalization",
+  "classifier_unchanged": true,
+  "query_head_unchanged": true,
+  "legacy_future_and_utility_unchanged": true,
+  "level": 5,
+  "budget_actor_deployment": {
+    "forced_tail_labels": 1,
+    "rule": "TRAIN-calibrated rank with remaining budget fraction; no online Actor updates"
+  }
+}
