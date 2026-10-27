@@ -111,6 +111,7 @@ def collect(a, healthy, artifact, anchors, reference):
         raise ValueError('Insufficient finite variation in TRAIN ranking targets.')
     if getattr(a,'utility_early',False):
         measured=[row for row in all_rows if row.get('score') is not None]
+        a.ranking_groups=[row['level'] for row in measured]
         a.signal_scales=fit_signal_scales(measured)
         scores=[scaled_competitive_score(row,a.signal_scales) for row in measured]
         for row,score in zip(measured,scores):row['ranking_target']=score
@@ -177,7 +178,7 @@ def train(a,healthy,artifact,anchors,reference,teacher_hash):
             raise ValueError('Completed Actor settings/checkpoint differ; use a new output.')
         print('Using completed budget Actor training.',flush=True);return
     if a.output.exists() and any(a.output.iterdir()): raise ValueError('Partial output preserved; use a fresh --output.')
-    a.output.mkdir(parents=True)
+    a.output.mkdir(parents=True,exist_ok=True)
     pilot.write_json(a.output/'protocol.json',protocol(a,teacher_hash))
     states,targets=collect(a,healthy,artifact,anchors,reference)
     spec=normalizer(states)
@@ -194,6 +195,19 @@ def train(a,healthy,artifact,anchors,reference,teacher_hash):
         collections=[json.loads((a.output/f'collection_level{level}.json').read_text(encoding='utf-8')) for level in (0,1,3)]
         quota=float(np.mean([row['cap']/query_window_count(row['samples'],row['cap'],.2) for row in collections]))
     generator=torch.Generator(device='cpu').manual_seed(a.seed+901)
+    rank_stages=[];rank_validation=None
+    if getattr(a,'rank_warm_start',False):
+        from enhancements.rank_warmstart import pairwise_rank_step
+        rank_validation=collect_rank_validation(a,healthy,artifact,anchors)
+        record_rank_stage(a,query,states,targets,rank_validation,quota,'initial',rank_stages)
+        warm_optimizer=torch.optim.Adam(query.actor.parameters(),lr=a.actor_lr,weight_decay=1e-4)
+        for warm_epoch in range(1,3):
+            losses=[pairwise_rank_step(query,warm_optimizer,states,targets,a.ranking_groups)
+                for _ in range(a.steps_per_epoch)]
+            record_rank_stage(a,query,states,targets,rank_validation,quota,
+                f'rank_warmup_{warm_epoch}',rank_stages,float(np.mean(losses)))
+        # Warmup is initialization only. No pairwise loss is mixed into the max phase.
+        optimizer=torch.optim.Adam(query.actor.parameters(),lr=a.actor_lr)
     best=-math.inf; log=[]
     for epoch in range(1,a.epochs+1):
         objectives=[]
@@ -209,8 +223,11 @@ def train(a,healthy,artifact,anchors,reference,teacher_hash):
         log.append(dict(epoch=epoch,TRAIN_objective=float(np.mean(objectives)),validation_AC=ac,
             source_drop=drop,selection=selection,validation=validation))
         print(f'Actor epoch {epoch}/{a.epochs}: VAL AC {ac:.2f}% | source drop {drop:+.2f} pp',flush=True)
+        if rank_validation is not None:
+            record_rank_stage(a,query,states,targets,rank_validation,quota,f'quota_max_{epoch}',rank_stages)
         pilot.write_json(a.output/'training.json',dict(protocol=protocol(a,teacher_hash),epochs=log,
             signal_scales=getattr(a,'signal_scales',None),within_window_quota=quota,
+            rank_stages=rank_stages,
             positive_targets=int((targets>0).sum()),targets=len(targets)))
         if selection>best:
             best=selection
@@ -219,6 +236,59 @@ def train(a,healthy,artifact,anchors,reference,teacher_hash):
                 normalizer=spec,score_reference=calibration,selected_epoch=epoch,selected_validation=selection,
                 teacher_checkpoint_sha256=teacher_hash,signal_scales=getattr(a,'signal_scales',None)),path/'budget_actor.pth')
     pilot.write_json(completed,dict(protocol=protocol(a,teacher_hash),checkpoint_sha256=pilot.digest(a.output/'Models'/'budget_actor.pth')))
+
+
+def collect_rank_validation(a,healthy,artifact,anchors):
+    """Fixed VAL ranking probes, never an Actor target or normalization fit."""
+    source=pilot.base.legacy.read_domain(a.burst_dir,artifact,0,'val_ids')
+    _,reference,reserved=pilot.reference_partition(source,a.seed)
+    ref_keys=set(pilot.feature_keys(reference[0]))
+    states,targets,groups,rows=[],[],[],[]
+    a.collect_query_targets_only=True
+    try:
+        for level in (0,1,3):
+            raw=pilot.base.legacy.read_domain(a.burst_dir,artifact,level,'val_ids')
+            mask=np.asarray([int(i) not in reserved and key not in ref_keys
+                for i,key in zip(raw[2],pilot.feature_keys(raw[0]))])
+            domain=pilot_domain(a,pilot.subset(raw,mask),703)
+            recorder=Recorder();pilot.base.legacy.core.set_seed(a.seed)
+            live=runtime(a,healthy,artifact)
+            before_query=deepcopy(live[3].state_dict());before_policy=deepcopy(live[2].policy.state_dict())
+            print(f'Collect fixed offline VAL ranking probes: level {level}; no Actor fitting',flush=True)
+            updated,_,_=pilot.stream(a,live,domain,anchors,reference,domain,a.seed+level*101,
+                training=True,diagnostic_sink=recorder)
+            for before,after in [(before_query,updated[3].state_dict()),(before_policy,updated[2].policy.state_dict())]:
+                if any(not torch.equal(value,after[key]) for key,value in before.items()):
+                    raise RuntimeError('VAL ranking observer changed a policy head.')
+            measured=[row for row in recorder.rows if row.get('score') is not None]
+            states.extend(recorder.states)
+            for row in measured:
+                row.update(level=level,ranking_target=scaled_competitive_score(row,a.signal_scales))
+                targets.append(row['ranking_target']);groups.append(level);rows.append(row)
+    finally:a.collect_query_targets_only=False
+    pilot.write_csv(a.output/'VAL_ranking_observer.csv',rows)
+    pilot.write_json(a.output/'VAL_ranking_protocol.json',dict(scope='offline full-information observer only',
+        splits=['val_ids'],levels=[0,1,3],TRAIN_scales_frozen=True,
+        Actor_fitting=False,normalizer_fitting=False,temporary_Context_updates='discarded',
+        probe='independent source VAL reference; IDs and feature duplicates excluded from candidates',
+        note='ranking oracles and probe labels are diagnostics, not budgeted deployment metrics'))
+    device=pilot.base.legacy.core.device
+    return torch.stack(states).to(device),torch.tensor(targets,dtype=torch.float32,device=device),groups
+
+
+def record_rank_stage(a,query,states,targets,validation,quota,name,history,pairwise_loss=None):
+    from enhancements.rank_warmstart import rank_metrics
+    train_report=rank_metrics(query,states,targets,a.ranking_groups,quota)
+    val_report=rank_metrics(query,*validation,quota)
+    record=dict(stage=name,TRAIN=train_report,VAL=val_report)
+    if pairwise_loss is not None:record['TRAIN_pairwise_loss']=pairwise_loss
+    history.append(record)
+    def show(report):return 'undefined' if report['spearman'] is None else f"{report['spearman']:+.3f}"
+    print(f"RANK {name}: TRAIN Spearman {show(train_report)} | VAL Spearman {show(val_report)} | "
+        f"TRAIN target regret {train_report['target_regret']:.4f} | VAL target regret {val_report['target_regret']:.4f}",flush=True)
+    pilot.write_json(a.output/'ranking_stages.json',dict(stages=history,
+        acceptance='inspect independent VAL ranking, then online VAL performance; TRAIN fit alone is insufficient'))
+    return record
 
 
 def protocol(a,teacher_hash):
@@ -239,6 +309,11 @@ def protocol(a,teacher_hash):
             objective='maximize mean(p*(gap/sd_gap + weighted_gain/sd_gain - weighted_harm/sd_harm - cost)) under early-window quota',
             interpretation='reweighted constrained local min-max surrogate; Context descent unchanged up to positive gap scaling; not the original multistep objective',
             deployment='TRAIN-logit rank; exact label cap by first 20 percent of the stream; fixed Actor online')
+    if getattr(a,'rank_warm_start',False):
+        result.update(rank_warm_start=dict(epochs=2,steps_per_epoch=a.steps_per_epoch,
+            loss='within-TRAIN-level pairwise softplus preference; initialization only',
+            validation='fixed observer-only VAL targets; no fitting; TRAIN scales/normalizer frozen',
+            continuation='reset Adam; original signed quota-max objective only; select within max phase on online VAL'))
     return result
 
 
@@ -335,7 +410,10 @@ def main():
         help='Evaluate evenly spaced feedback with an existing Actor checkpoint; no training.')
     p.add_argument('--utility-early',action='store_true',
         help='Experimental TRAIN-scaled reward components and first-20-percent query window.')
+    p.add_argument('--rank-warm-start',action='store_true',
+        help='TRAIN pairwise ranking initialization, followed by the unchanged UtilityEarly quota max.')
     a=p.parse_args()
+    if a.rank_warm_start:a.utility_early=True
     if a.uniform_control_only and a.action!='Evaluate':
         p.error('Uniform control requires --action Evaluate; existing checkpoints are reused.')
     if a.uniform_control_only and a.utility_early:p.error('UtilityEarly already includes both uniform controls.')
@@ -348,6 +426,7 @@ def main():
     a.output=a.output or root/'protocol_runs'/f'budget_actor_q{a.budget_percent:02d}_seed{a.seed}_pilot{a.pilot_rows}_ep{a.epochs}'
     if a.utility_early and not explicit_output:
         a.output=a.output.with_name(a.output.name+'_scaled_early20')
+    if a.rank_warm_start and not explicit_output:a.output=a.output.with_name(a.output.name+'_rankwarm')
     a.burst_dir=root/'Dataset_official_v1'/f'AdvBurst_FTSC-{a.dataset}'
     a.budget_fraction=a.budget_percent/100; a.progress_every=250
     a.query_window_fraction=.2 if a.utility_early else 1.

@@ -159,3 +159,48 @@ audit the target. None of these correlations alone establishes a causal failure
 or proves a policy will improve online accuracy. No new reward is chosen by
 this tool. Results are saved in each existing run's `actor_diagnostics/` folder
 and included by `push_amcal_budget_actor.ps1 -Dataset Both`.
+
+## Pairwise ranking initialization, followed by the original max phase
+
+`-RankWarmStart` implies UtilityEarly and creates a separate `_rankwarm` run.
+CNN, healthy initial Context, Context batch5 update, raw components, TRAIN-only
+signal scales and first-20%-window deployment remain the UtilityEarly design.
+No new head, sign-only reward, or test-time rule is introduced.
+
+Before the two normal quota-max epochs, the Actor receives two initialization
+epochs (80 small steps each by default) of TRAIN-only pairwise softplus ranking.
+Pairs are from the same intensity to prevent learning only a between-intensity
+offset. Each pair uses the sign of the difference of the existing scaled S
+targets. This auxiliary loss only initializes the Actor; it is not represented
+as an exact min-max step. The value head, Context checkpoint and input tensors
+receive no gradient from pairwise fitting. Large collections subsample at most
+256 TRAIN rows per step to bound pair-matrix memory.
+
+The subsequent max phase resets Adam and uses the existing signed quota-max
+objective alone, including target magnitudes; there is no pairwise term in that
+phase. Only checkpoints from the max phase are eligible for the deployed model,
+using the same online VAL accuracy minus positive source-drop rule. Warmup
+ranking results are diagnostics, not a silently selected alternative model.
+Thus the local max objective is unchanged after initialization; this does not
+prove a complete multistep min-max solution or guarantee improvement.
+
+Once, before fitting, collect fixed full-information observer probes on VAL
+0/1/3, with an independent source-VAL reference excluded from candidate streams.
+Temporary Context updates are discarded. No VAL labels or targets enter Actor
+gradients, TRAIN scaling or state normalization. Audit initial, both warmup, and
+each max stage on the same fixed TRAIN and VAL states/targets. The console and
+`ranking_stages.json` show within-level Spearman and top-k target regret. Undefined
+initial correlation means constant logits. TRAIN fit alone is not evidence of
+generalization; inspect VAL ranking as well as the ordinary online VAL metrics.
+VAL observer probes are not counted as deployable budgeted evaluation.
+
+```powershell
+.\AMCAL\run_amcal_budget_actor.ps1 -Dataset IAT -BudgetPercent 10 -PilotRows 300 -Epochs 2 -RankWarmStart
+.\AMCAL\run_amcal_budget_actor.ps1 -Dataset PS -BudgetPercent 10 -PilotRows 300 -Epochs 2 -RankWarmStart
+.\AMCAL\push_amcal_budget_actor.ps1 -Dataset Both
+```
+
+Epochs=2 here identifies two quota-max epochs, in addition to the two fixed
+ranking-initialization epochs. TEST controls, per-level resets and console
+summaries remain the same as UtilityEarly. Existing diagnostic script defaults
+still address the earlier run; the new run carries its stage-wise audit inline.

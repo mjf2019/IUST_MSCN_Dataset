@@ -7,7 +7,8 @@ param(
     [int]$Epochs = 2,
     [ValidateSet('auto','cpu','cuda')][string]$Device = 'cuda',
     [switch]$UniformControl,
-    [switch]$UtilityEarly
+    [switch]$UtilityEarly,
+    [switch]$RankWarmStart
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -21,7 +22,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Budget Actor preflight failed.' }
     $extra = @()
     if ($UtilityEarly) { $extra += '--utility-early' }
-    if ($UtilityEarly -and $UniformControl) { throw 'UtilityEarly already includes uniform controls.' }
+    if ($RankWarmStart) {
+        & $python -m unittest discover -s AMCAL/tests -p 'test_rank_warmstart.py' -v
+        if ($LASTEXITCODE -ne 0) { throw 'Rank warmstart preflight failed.' }
+        $extra += '--rank-warm-start'
+    }
+    if (($UtilityEarly -or $RankWarmStart) -and $UniformControl) { throw 'UtilityEarly already includes uniform controls.' }
     if ($UniformControl) {
         if ($Action -eq 'Train') { throw 'Uniform control is evaluation only.' }
         $Action = 'Evaluate'
