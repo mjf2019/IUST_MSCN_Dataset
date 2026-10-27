@@ -118,3 +118,44 @@ target AC is descriptive rescoring of the same stream; it is not a holdout score
 Console output reports each level's AC/PR/RC/F1, label usage, source forgetting,
 and final target/source accuracy, followed by a cross-method mean table. Completed
 runs show their saved summaries without rerunning the evaluation.
+
+## No-fit ranking diagnosis
+
+`run_amcal_actor_diagnostics.ps1 -Dataset IAT` (or PS) audits the existing
+10%-budget, 300-row, two-epoch UtilityEarly checkpoint. It does not run new Actor
+epochs, select a new checkpoint, refit scales/normalization, or evaluate TEST.
+The Epochs argument identifies the saved run only.
+
+On TRAIN and VAL levels 0/1/3, it constructs common, fixed uniform-early Context
+trajectories starting from copies of the same healthy checkpoint. Actor, router,
+future and utility heads are checked unchanged. Temporary Context/Adam updates
+are discarded. TRAIN uses its original held-out source probe. VAL reserves a
+separate source-VAL probe and excludes its IDs and feature duplicates from all
+VAL candidate streams. Current update, replay, future block and retention probe
+are separated using the existing stream contracts.
+
+This intentionally uses full-information observer labels, including future VAL
+labels, for offline two-branch diagnostics only. Therefore the observer audit is
+not a deployable VAL policy and its feedback counts are not a claim about VAL
+label efficiency. No observer label enters an Actor update or model selection.
+
+For each measured candidate, record Actor logit, the exact target using the
+checkpoint's frozen TRAIN scales, future CE-loss gain, old-domain CE-loss harm,
+and raw signed `utility = weighted_gain - weighted_harm - cost`. The future block
+undergoes no additional updates. Utility is a one-update loss probe; it is not
+final target accuracy or the cumulative value of a sequence of requests.
+
+Report within-level Pearson/Spearman correlations for Actor/target/utility and
+top-k means for Actor, OracleTarget, OracleUtility and the exact expected mean
+of a uniform random subset. Every selector is scored on the same candidate
+states and independent probes; selectors do not produce their own adaptive
+rollouts. Oracle selectors use observer targets, are never deployed, and only
+bound this measured fixed-trajectory ranking problem. Report macro-means over
+levels instead of pooling different intensities and selecting the easiest one.
+
+Read Actor-target agreement to diagnose target learning, TRAIN/VAL disagreement
+to inspect generalization, and target-utility agreement/OracleTarget utility to
+audit the target. None of these correlations alone establishes a causal failure
+or proves a policy will improve online accuracy. No new reward is chosen by
+this tool. Results are saved in each existing run's `actor_diagnostics/` folder
+and included by `push_amcal_budget_actor.ps1 -Dataset Both`.
