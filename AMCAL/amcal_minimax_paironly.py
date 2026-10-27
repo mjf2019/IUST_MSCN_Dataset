@@ -260,7 +260,7 @@ def normalized_entropy(logits):
 
 def prediction_route_scores(a, agent, state, logits, rng=None):
     """Larger is better; routing controls never call the learned router."""
-    if getattr(a, 'eval_routing', 'policy') == 'context_only':
+    if getattr(a, 'budget_actor_mode', False) or getattr(a, 'eval_routing', 'policy') == 'context_only':
         scores = logits.new_zeros((len(logits), 2))
         scores[:, 1] = 1.
         return scores
@@ -392,6 +392,7 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             else:
                 probability, estimated_score = 0., None
             entropy = None
+            budget_decision = None
             if query_schedule == 'uncertainty':
                 entropy = float(normalized_entropy(outputs[0][0, route].cpu().numpy()))
                 paid = used < cap and entropy >= threshold
@@ -399,6 +400,10 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
                 paid = used < cap and pos < cap
             elif query_schedule == 'uniform':
                 paid = used < cap and uniform_query_at(pos, n, cap)
+            elif not training and getattr(a, 'budget_actor_mode', False):
+                from enhancements.budget_actor_math import request_by_rank
+                paid, budget_decision = request_by_rank(float(logit[0]) if used < cap else 0.,
+                    a.budget_score_reference, used, cap, pos, n, rng.random())
             else:
                 paid = used < cap and (rng.random() < probability if training else probability >= .5)
             # Route choice is identical for query and skip, and precedes truth access.
@@ -413,6 +418,10 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             frozen_route_score=route_scores[0], context_route_score=route_scores[1],
             query_probability=probability, estimated_score=estimated_score,
             gap=None, gain=None, harm=None, score=None, replay_loss=None, actor_loss=None, value_loss=None)
+        if budget_decision is not None:
+            record.update(budget_rank=budget_decision['rank'],
+                budget_remaining_fraction=budget_decision['fraction'],
+                budget_forced_tail=budget_decision['forced_tail'])
         if getattr(a, 'eval_routing', 'policy') in ('random', 'context_only'):
             record.update(routing_rule=a.eval_routing)
         if getattr(a, 'eval_routing', 'policy') == 'uncertainty':
@@ -465,7 +474,9 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             # Full-information TRAIN actor max step; no successor/bootstrap term.
             record.update(target)
             experiment = getattr(a, 'actor_experiment', None)
-            if getattr(a, 'actor_logit_penalty', 0) > 0:
+            if getattr(a, 'collect_query_targets_only', False):
+                pass
+            elif getattr(a, 'actor_logit_penalty', 0) > 0:
                 from enhancements.standardized_actor import regularized_actor_step
                 record.update(regularized_actor_step(query, query_optimizer, state,
                     state.new_tensor([target['score']]), a.actor_logit_penalty))
@@ -481,8 +492,9 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
                     record.update(weighted_gain=a.gain_weight*target['gain'],
                         weighted_harm=a.forgetting_weight*target['harm'], target_status='measured',
                         actor_probability_after=float(query(state)[0].sigmoid()[0]),
-                        actor_grad_norm=float(sum(p.grad.detach().square().sum()
-                            for p in query.actor.parameters() if p.grad is not None).sqrt()))
+                        actor_grad_norm=(None if getattr(a, 'collect_query_targets_only', False) else
+                            float(sum(p.grad.detach().square().sum()
+                                for p in query.actor.parameters() if p.grad is not None).sqrt())))
         if paid:
             history.observe_paid(outputs[0].softmax(2), truth)
             if target is not None:
@@ -501,7 +513,7 @@ def stream(a, runtime, domain, anchors, reference, clean, seed, training=False,
             memory.add(ids[pos], inputs, truth)
             agent.versions[0] += 1
             # Correctness labels refer to predictions made before feedback/update.
-            if getattr(a, 'eval_routing', 'policy') == 'policy':
+            if getattr(a, 'eval_routing', 'policy') == 'policy' and not getattr(a, 'budget_actor_mode', False):
                 agent.observe_routes(state, (correct_predictions[0] == truth).float(), versions=versions)
         agent.clock += 1
         record['labels_used'] = used
@@ -977,6 +989,7 @@ def main(argv=None):
 
 
 if __name__ == '__main__': main()
+
 
 
 
