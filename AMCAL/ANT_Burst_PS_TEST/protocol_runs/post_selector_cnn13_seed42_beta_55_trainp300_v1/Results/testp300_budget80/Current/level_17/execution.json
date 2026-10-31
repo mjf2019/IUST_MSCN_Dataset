@@ -1,0 +1,298 @@
+{
+  "protocol": {
+    "version": 1,
+    "dataset": "PS",
+    "seed": 42,
+    "beta": 55.0,
+    "source_query_sha256": "e00c89f70e62ef59bc5849bdfb4ba49f54c0a6cd70b6a4a099b88b38aeb96d1a",
+    "source_query_protocol": {
+      "protocol": {
+        "version": 1,
+        "dataset": "PS",
+        "seed": 42,
+        "pilot_rows": 300,
+        "epochs": 3,
+        "betas": [
+          45.0,
+          50.0,
+          55.0,
+          60.0
+        ],
+        "actor_checkpoint_sha256": "6ccde34fbf84c2674a1367202609880301126eeb45dbfabfc30409d2f1b5d975",
+        "healthy_teacher_sha256": "a3450fe35aa9f26716a7b926789f6e5b50c5aaeab180682a0f5141b047dac2d2",
+        "source_models": {
+          "protocol_preprocessing.joblib": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663",
+          "initial_cnn_model.pth": "bd00a78d2eb5ac14325a2f33f03f9cf38f1877e18af89348f86b1e79dc815575",
+          "enhanced_context.pth": "215b20344c52775eaf2d80c28490f7b1df93f886bb04c28ec0d6acccb8a8ddca"
+        },
+        "train_files": {
+          "0": "0232a51c02cc7b91e073df3ec9c01f59db0b4824a5c9094b9c6ee126161f6c9b",
+          "1": "ea6002429f709aa139baf0766715f7616a3635c31d5a32ecba5e5d96f2b4e891",
+          "3": "4f9171df87f13230b5d8cc5efb3b2c7bd9b1a6015ee3fc4356d5fcf0f50f9fb7"
+        },
+        "implementation_sha256": {
+          "amcal_two_action_paper_gain.py": "da3e71304107a6d76b4994bfa45c949ca6717a72874f53bb28712a0c7bc4c0c2",
+          "enhancements/paper_gain_reward.py": "c3eb2bb55142faeb6b5e5ea5a4af3169c403c7dd941616a9897f51d678c14087",
+          "enhancements/query_utility_reward.py": "b58c377f4ba002638397769a6a6f5db87c2cab6023f4ee1f105a7b874747ad56",
+          "enhancements/two_action_ddqn.py": "57e8c6bfa982b2f0977d05391d0bc44cf2f4b4480cfc9cb56bc4a07685a3b634",
+          "enhancements/competitive_selector.py": "4090227a3de03c30c7bd94f3335e9f42e3b8f6e70295d199e3103692721ac67d",
+          "amcal_competitive_selector.py": "0846639ecdb811889fc93e3033579abc698d43945ba7d14670fea7ca85626042",
+          "amcal_budget_actor.py": "b7f5b399d2dc9dc7fc00eb712eef8641ae90a7ec3bdd19d5b293204368a36709",
+          "amcal_minimax_paironly.py": "471820f2797ffcc92de99ad60f42fed3c8d137512605036f83a316010d4edc4a",
+          "enhancements/minimax_query.py": "a73b3c4ebe60ba1ed2d200233277e23c360b5a8feec454f55b19e05afb223691",
+          "amcal_two_action_beta_refinement.py": "9da0b3c0351bd6ef7b92603756a45baa35b43feeac1a525193413e92c911d8bd"
+        },
+        "train_data": {
+          "streams": {
+            "0": "de5534b52461eb2b45acf7a2287cf2d188570abdd8614e1a1c720d15882ed5ef",
+            "1": "4049e5fa7b0c4ed1b136dc3e5ec1f8663af71c8814c38196f17b973933a09486",
+            "3": "d42c1ad6731b5393f70aae4e9b7f0dacf9ef4271bbb865197546806e111fed02"
+          },
+          "source_audit": "dbf345aeecee60b3846999c8a1500ffeb908ed7fca0095d5c8abf5afccd28e20"
+        },
+        "validation_data": {
+          "streams": {
+            "0": "4e1eee2bbc859730d96a219ee57ffdc8791d93ba77cf458d9834033d093afadc",
+            "1": "a95cab76e24473b167924418b467653b2fe21de747a53afd21140c17a16ccfd3",
+            "3": "c6114aea72febfa917ef41a2afd920e8f345c4d37bf91e19aec2eec1f02bbc6e"
+          },
+          "source_audit": "09f48fb504899bce1fe8b53bbb8c93025eca6b80b799966249700185d7a03247"
+        },
+        "probes": {
+          "generalization": {
+            "0": {
+              "ids": [
+                73,
+                104,
+                133,
+                142,
+                317,
+                340,
+                353,
+                389,
+                471,
+                621,
+                764,
+                1254,
+                1302,
+                1428,
+                1523,
+                1638,
+                1695,
+                2095,
+                2142,
+                2207,
+                2312,
+                2684,
+                2882,
+                2918
+              ],
+              "rows": 24
+            },
+            "1": {
+              "ids": [
+                52,
+                131,
+                181,
+                326,
+                377,
+                420,
+                760,
+                1318,
+                1345,
+                1700,
+                1729,
+                1909,
+                1956,
+                2122,
+                2154,
+                2245,
+                2274,
+                2386,
+                2463,
+                2538,
+                2608,
+                2794,
+                2931,
+                3210
+              ],
+              "rows": 24
+            },
+            "3": {
+              "ids": [
+                21,
+                165,
+                168,
+                358,
+                362,
+                395,
+                416,
+                433,
+                677,
+                977,
+                1131,
+                1522,
+                1708,
+                1756,
+                1800,
+                2007,
+                2081,
+                2094,
+                2171,
+                2230,
+                2301,
+                2474,
+                2839,
+                3019
+              ],
+              "rows": 24
+            }
+          },
+          "retention": {
+            "ids": [
+              30,
+              234,
+              258,
+              265,
+              283,
+              338,
+              366,
+              392,
+              468,
+              509,
+              589,
+              693,
+              765,
+              924,
+              1037,
+              1406,
+              1438,
+              1478,
+              1658,
+              1814,
+              2045,
+              2103,
+              2132,
+              2212,
+              2372,
+              2429,
+              2457,
+              2467,
+              2623,
+              2696,
+              2822,
+              3213
+            ],
+            "rows": 32
+          },
+          "excluded_anchor_rows": 74,
+          "sampling": "fixed TRAIN-only; IDs/features disjoint across probes and streams; macro CE within each level",
+          "independence": "held out from this experiment adaptive updates; not necessarily from historical pretraining",
+          "generalization_sha256": [
+            "06a5435cad8303eeb5cc34d8290d02bfcddc7cb45bb2cf37afc503c03b63a429",
+            "eac9dc1495ebeaabfa7574182377219bbfbe1169a286fc79950f646d0db469e2",
+            "f5d05baaa03986a78944f4ed468cffea599feebab8d186675d9619abbcb94afc"
+          ],
+          "TRAIN_anchors_sha256": "e4e5573297702ddb78c9ee49f9b2856ea9e55e25856ff25dce25ba16f39393d4",
+          "excluded_reference_use": "reserved/excluded from adaptive updates; no reference loss is measured for query reward",
+          "loss": "ordinary mean cross entropy on the single matching TRAIN level, not a mixed-domain or macro-class loss"
+        },
+        "budget_fraction": 0.2,
+        "context_lr": 0.00025,
+        "replay_weight": 0.1,
+        "architecture": "unchanged strong original IAT CNN / Light PS CNN / initial Context; fixed Context -> Frozen",
+        "reward": "query: original paper reward + beta * (same-domain independent TRAIN CE before minus after one actual update); skip: 0",
+        "paper_reward": {
+          "both_wrong": 3.0,
+          "only_Frozen_wrong": 2.0,
+          "only_Context_wrong": -2.0,
+          "both_correct": 0.0
+        },
+        "measurement": "TRAIN only; signed unscaled mean CE on a fixed same-level probe; no cost, new forgetting penalty, sign target, clipping, synthetic drift, future rollout or copied update branch",
+        "DDQN": {
+          "gamma": 0.95,
+          "lr": 0.0001,
+          "batch_size": 32,
+          "learn_every": 4,
+          "target_every": 15,
+          "capacity": 4096,
+          "epsilon": "0.30 to 0.05; same parent hidden encoder/normalizer; new return layer starts at zero"
+        },
+        "matched_control": "beta=0 retrained on the same streams, initial Q and probe-excluded TRAIN anchors",
+        "evaluation": "VAL/TEST query policies frozen; only Context adapts; reset Context/Adam/memory/cap per intensity; gain probes are not accessed at evaluation; TEST does not select models",
+        "scope": "single-seed small-data reward ablation, not full benchmark or independently retrained no-RL ablation",
+        "theory": "closed-loop DDQN; Context competitive-gap descent preserved; no formal shared min-max equivalence asserted",
+        "extension": "new beta candidates; same training/VAL recipe; all candidates TEST, no TEST selection",
+        "parent_protocol_sha256": "92d73972685061b9d86389b82065520c5b8e321b150a4e9076516ac6fbd6d98b"
+      },
+      "beta": 55.0
+    },
+    "healthy_teacher_sha256": "a3450fe35aa9f26716a7b926789f6e5b50c5aaeab180682a0f5141b047dac2d2",
+    "actor_checkpoint_sha256": "6ccde34fbf84c2674a1367202609880301126eeb45dbfabfc30409d2f1b5d975",
+    "architecture": "light_ps_cnn_v1",
+    "development_data": {
+      "train_ids": {
+        "1": {
+          "rows": 300,
+          "sha256": "4049e5fa7b0c4ed1b136dc3e5ec1f8663af71c8814c38196f17b973933a09486"
+        },
+        "3": {
+          "rows": 300,
+          "sha256": "d42c1ad6731b5393f70aae4e9b7f0dacf9ef4271bbb865197546806e111fed02"
+        }
+      },
+      "val_ids": {
+        "1": {
+          "rows": 300,
+          "sha256": "a7a761327b47771a4e3134a74d3b2031fe213ec98d711116baae02cd69190318"
+        },
+        "3": {
+          "rows": 300,
+          "sha256": "a823f3f95662160e41f79ad0665865eb206447557e12d2b319eca467bf286d1a"
+        }
+      },
+      "feature_duplicate_count_between_official_partitions": 0
+    },
+    "cnn_epochs": 5,
+    "cnn_lr": 0.0001,
+    "patience": 2,
+    "CNN_training": "additional raw preprocessed TRAIN 1/3 only; ordinary CE; AdamW weight_decay .0001; batch32; clip1",
+    "CNN_selection": "minimum raw CNN CE on VAL 1/3 among fine-tuned epochs; TEST unused; baseline metrics retained separately",
+    "training_rng_seed": 1355,
+    "levels": [
+      1,
+      3
+    ],
+    "initial_CNN_sha256": "c7b4c8d36a102184b405f7c122f50906d19defc75f183d04ab7ed184108715a7",
+    "unchanged_context_sha256": "3762013bf23a373d772e889aebeefc7b1d057d5968ff4b04850e530ed60aa306",
+    "unchanged_query_sha256": "024cdf3a0ddb3b07af54857ffa293f0aad138a969258c9ef94cc1acce81f04f0",
+    "preprocessing_sha256": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663",
+    "implementation_sha256": "5d2efdc591f1b4490938dd4b4841f6856c61dc704c4e9cc871212b4e3040c4f6",
+    "budget_fraction": 0.2,
+    "update": "fixed pretrained DDQN; original Context initial weights; batch5; LR .00025; replay .1",
+    "interpretation": "CNN-only post-selector fine-tuning comparison; changing CNN also changes DDQN input signals"
+  },
+  "budget_fraction": 0.8,
+  "evaluator_sha256": "342d1b12b38521e9e8af8ea85b994a0b1ee985777af3e440a9c86cf59d61016d",
+  "bundle_sha256": "75d147a5dba95c47c2e149b50db083cd01b2390186f6eaed29ba6b445852ad05",
+  "variant": "Current",
+  "level": 17,
+  "TEST_data": {
+    "streams": {
+      "5": "2e2d0e0981accb34c68eb8aefc3cb4ede01b5be255b647630b6413ff4635c1d3",
+      "7": "bca439cda95e6d6fa4bee9832093751ba267c4b41a29c1f024c144bc0119259f",
+      "10": "c4532ca4ab8041c3a8ff8877c91024e281e173a40d639f0c0f37aae90aba4c92",
+      "12": "e4d1b2cc4b19f4e85b299904218840aaa8e001433d5218b61c653beb8dc3f71d",
+      "15": "271c6b983752270c457222361cc842705fdf5ed6785ea80cda5e767bc785859e",
+      "17": "4546953e99133c4f72bec9c1b529748d2ec82ea4c84be70703eaf4b2254b5433",
+      "20": "6ae35ee4e151d6d1527720e896ee7def14a9b86552a5e52d6b7f15393f7d0713"
+    },
+    "source_audit": "985b47e1b6f0d39a1f3f4465c33c286cecea4184425081a794da27526cf79ec0"
+  },
+  "common_source_reference": {
+    "AC": 63.52941176470588,
+    "PR": 67.40216376405634,
+    "RC": 68.62348178137653,
+    "F1": 67.4560059342668
+  }
+}
