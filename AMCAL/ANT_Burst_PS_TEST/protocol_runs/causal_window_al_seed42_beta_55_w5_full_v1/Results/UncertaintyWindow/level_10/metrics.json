@@ -1,0 +1,52 @@
+{
+  "online": {
+    "AC": 76.90387016229712,
+    "PR": 82.48337522502031,
+    "RC": 67.61399574492553,
+    "F1": 68.96789298977626
+  },
+  "samples": 801,
+  "labels": 160,
+  "cap": 160,
+  "labels_percent": 19.975031210986266,
+  "source_before": {
+    "AC": 63.52941176470588,
+    "PR": 67.40216376405634,
+    "RC": 68.62348178137653,
+    "F1": 67.4560059342668
+  },
+  "source_after": {
+    "AC": 60.0,
+    "PR": 63.381410256410255,
+    "RC": 61.75251162093268,
+    "F1": 61.788396788396796
+  },
+  "original_domain_forgetting": {
+    "AC": 3.529411764705877,
+    "PR": 4.020753507646084,
+    "RC": 6.8709701604438465,
+    "F1": 5.667609145870003
+  },
+  "target_before": {
+    "AC": 39.325842696629216,
+    "PR": 33.69705168340598,
+    "RC": 34.03520499108734,
+    "F1": 32.00910276642503
+  },
+  "target_after": {
+    "AC": 92.0099875156055,
+    "PR": 94.28922156331386,
+    "RC": 90.23043528261745,
+    "F1": 91.93909546544297
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "milliseconds_per_row": 8.0194660424942,
+  "window_size": 5,
+  "mean_feedback_delay_rows": 1.96875,
+  "max_feedback_delay_rows": 4,
+  "label_protocol": "predict all arrived window rows, then rank/query; no window label used in its predictions",
+  "Q_learning": "none; fixed DDQN; no TEST reward or threshold calibration",
+  "quota": "floor(fraction*window_end)-floor(fraction*window_start); exact global floor cap",
+  "ranking": "original arrival-time scores, no rescoring after window feedback"
+}
