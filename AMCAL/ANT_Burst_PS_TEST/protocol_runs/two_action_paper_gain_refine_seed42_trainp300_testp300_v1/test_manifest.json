@@ -1,0 +1,41 @@
+{
+  "test_data": {
+    "streams": {
+      "5": "2e2d0e0981accb34c68eb8aefc3cb4ede01b5be255b647630b6413ff4635c1d3",
+      "7": "bca439cda95e6d6fa4bee9832093751ba267c4b41a29c1f024c144bc0119259f",
+      "10": "c4532ca4ab8041c3a8ff8877c91024e281e173a40d639f0c0f37aae90aba4c92",
+      "12": "e4d1b2cc4b19f4e85b299904218840aaa8e001433d5218b61c653beb8dc3f71d",
+      "15": "271c6b983752270c457222361cc842705fdf5ed6785ea80cda5e767bc785859e",
+      "17": "4546953e99133c4f72bec9c1b529748d2ec82ea4c84be70703eaf4b2254b5433",
+      "20": "6ae35ee4e151d6d1527720e896ee7def14a9b86552a5e52d6b7f15393f7d0713"
+    },
+    "source_audit": "985b47e1b6f0d39a1f3f4465c33c286cecea4184425081a794da27526cf79ec0"
+  },
+  "model_checkpoints": {
+    "beta_45": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\two_action_paper_gain_extra_seed42_p300_e3_v1\\Candidates\\beta_45\\Models\\two_action_ddqn.pth",
+      "sha256": "20bcc64406368828a6aadb072e4aefb53f6cb2a3d53e0650448856712aa96a37",
+      "reused_parent": false,
+      "selected_epoch": 2
+    },
+    "beta_50": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\two_action_paper_gain_extra_seed42_p300_e3_v1\\Candidates\\beta_50\\Models\\two_action_ddqn.pth",
+      "sha256": "e9a2967b27e7172cb905545f326d94a3abdc985630b7f48713d0b4d0c1c38511",
+      "reused_parent": false,
+      "selected_epoch": 1
+    },
+    "beta_55": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\two_action_paper_gain_extra_seed42_p300_e3_v1\\Candidates\\beta_55\\Models\\two_action_ddqn.pth",
+      "sha256": "e00c89f70e62ef59bc5849bdfb4ba49f54c0a6cd70b6a4a099b88b38aeb96d1a",
+      "reused_parent": false,
+      "selected_epoch": 3
+    },
+    "beta_60": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_PS_TEST\\protocol_runs\\two_action_paper_gain_extra_seed42_p300_e3_v1\\Candidates\\beta_60\\Models\\two_action_ddqn.pth",
+      "sha256": "bfdf3abe316eeb22bddffce637104b7dd1e21a5a8eaa77a68c1b03cfbe0988e2",
+      "reused_parent": false,
+      "selected_epoch": 3
+    }
+  },
+  "purpose": "descriptive all-beta comparison; existing VAL-selected configurations remain unchanged"
+}

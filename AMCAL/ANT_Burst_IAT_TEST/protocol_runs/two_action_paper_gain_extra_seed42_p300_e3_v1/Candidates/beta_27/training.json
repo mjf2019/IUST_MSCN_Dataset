@@ -1,0 +1,712 @@
+{
+  "protocol": {
+    "protocol": {
+      "version": 1,
+      "dataset": "IAT",
+      "seed": 42,
+      "pilot_rows": 300,
+      "epochs": 3,
+      "betas": [
+        26.0,
+        27.0,
+        28.0,
+        29.0
+      ],
+      "actor_checkpoint_sha256": "dc00084db21a4339847e7815ab88162515e8c11acc041aba5865c02ee9286a37",
+      "healthy_teacher_sha256": "cb20edb4f6e6ef0b3074d0a94da041a14c6d19294f51ed6f5b392b8f4a0e0ac3",
+      "source_models": {
+        "protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+        "initial_cnn_model.pth": "16b2c531add95691a04aaef7f9bd041212cb212112eb1702efbb415786b98d54",
+        "enhanced_context.pth": "b0533e8c84679bd81dcbc02bdd507c069da5557f7c37cac7668e197b27d1634c"
+      },
+      "train_files": {
+        "0": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+        "1": "bf92f8d8088d7199d1a83187c2f04079c13aa0fb115878e3649c5bd85d8a6cc6",
+        "3": "391285a6f89750c0025eb225a7d2b4beca1314852c9d630e8105108a352eaa53"
+      },
+      "implementation_sha256": {
+        "amcal_two_action_paper_gain.py": "da3e71304107a6d76b4994bfa45c949ca6717a72874f53bb28712a0c7bc4c0c2",
+        "enhancements/paper_gain_reward.py": "c3eb2bb55142faeb6b5e5ea5a4af3169c403c7dd941616a9897f51d678c14087",
+        "enhancements/query_utility_reward.py": "b58c377f4ba002638397769a6a6f5db87c2cab6023f4ee1f105a7b874747ad56",
+        "enhancements/two_action_ddqn.py": "57e8c6bfa982b2f0977d05391d0bc44cf2f4b4480cfc9cb56bc4a07685a3b634",
+        "enhancements/competitive_selector.py": "4090227a3de03c30c7bd94f3335e9f42e3b8f6e70295d199e3103692721ac67d",
+        "amcal_competitive_selector.py": "0846639ecdb811889fc93e3033579abc698d43945ba7d14670fea7ca85626042",
+        "amcal_budget_actor.py": "b7f5b399d2dc9dc7fc00eb712eef8641ae90a7ec3bdd19d5b293204368a36709",
+        "amcal_minimax_paironly.py": "471820f2797ffcc92de99ad60f42fed3c8d137512605036f83a316010d4edc4a",
+        "enhancements/minimax_query.py": "a73b3c4ebe60ba1ed2d200233277e23c360b5a8feec454f55b19e05afb223691",
+        "amcal_two_action_beta_refinement.py": "9da0b3c0351bd6ef7b92603756a45baa35b43feeac1a525193413e92c911d8bd"
+      },
+      "train_data": {
+        "streams": {
+          "0": "654d129a8f0b10d4c15b206475bec0173350209e27e9893e3babb806c9b3025d",
+          "1": "6d2dcf24c9eee55e58a33f1554e4ef23ce6229a4bd090abc3ad9c01984e8e198",
+          "3": "8bc092c1d95b010897bdc94c548458dcde880fb776c6b39bef5a7d540cef0454"
+        },
+        "source_audit": "b8d21440b03040eeb203159a7778b3406d0978e97e0892c0dc5fef74f7c638ae"
+      },
+      "validation_data": {
+        "streams": {
+          "0": "cd43d92fecf9d1d92f73cf98bd1c648478e09ab2e5a13f602800ee7ff13fc5a9",
+          "1": "4c62939ee0a677787797c1d9e8a1f233e0effdb9eaf0d4150fb23f3d40394099",
+          "3": "892b9ff5e783a42d26612a7f5c55132eb1949daf7509b5359acccc0fd553401c"
+        },
+        "source_audit": "1ee09c7c173454645945af58e1a8136c39a5c175b23535ffe950c706cea310ae"
+      },
+      "probes": {
+        "generalization": {
+          "0": {
+            "ids": [
+              125,
+              223,
+              284,
+              292,
+              491,
+              511,
+              528,
+              796,
+              1050,
+              1303,
+              1431,
+              1598,
+              1816,
+              1885,
+              2191,
+              2193,
+              2250,
+              2275,
+              2498,
+              2598,
+              2634,
+              2671,
+              2783,
+              3087
+            ],
+            "rows": 24
+          },
+          "1": {
+            "ids": [
+              15,
+              21,
+              220,
+              336,
+              363,
+              531,
+              886,
+              1131,
+              1311,
+              1327,
+              1344,
+              1364,
+              1392,
+              1422,
+              1753,
+              1798,
+              1835,
+              2125,
+              2180,
+              2225,
+              2333,
+              2545,
+              2897,
+              3032
+            ],
+            "rows": 24
+          },
+          "3": {
+            "ids": [
+              39,
+              177,
+              203,
+              337,
+              355,
+              426,
+              674,
+              1187,
+              1332,
+              1537,
+              1556,
+              1579,
+              1694,
+              1732,
+              1925,
+              2126,
+              2136,
+              2187,
+              2201,
+              2323,
+              2391,
+              2592,
+              3040,
+              3073
+            ],
+            "rows": 24
+          }
+        },
+        "retention": {
+          "ids": [
+            30,
+            234,
+            258,
+            265,
+            283,
+            338,
+            366,
+            392,
+            468,
+            509,
+            589,
+            765,
+            826,
+            1037,
+            1331,
+            1406,
+            1436,
+            1480,
+            1702,
+            2021,
+            2044,
+            2101,
+            2130,
+            2247,
+            2369,
+            2392,
+            2464,
+            2584,
+            2777,
+            2902,
+            2924,
+            2993
+          ],
+          "rows": 32
+        },
+        "excluded_anchor_rows": 72,
+        "sampling": "fixed TRAIN-only; IDs/features disjoint across probes and streams; macro CE within each level",
+        "independence": "held out from this experiment adaptive updates; not necessarily from historical pretraining",
+        "generalization_sha256": [
+          "9e42f2a2e8e150b5461ad6001f38d2353fffa89c47a36245c39a6cde60c2754d",
+          "a70e65de571f19a7adcecdec2fcaf21e45da9818f7f5b08d1582abfbdaae83bb",
+          "6ac37f1e21f414642081b2febe1c850898d62b6831a983970fa8dc44fb2007c8"
+        ],
+        "TRAIN_anchors_sha256": "b0ae05ba1431cab48cf646130a3be976f9d85db0cac7f3a3ff10b887277220c8",
+        "excluded_reference_use": "reserved/excluded from adaptive updates; no reference loss is measured for query reward",
+        "loss": "ordinary mean cross entropy on the single matching TRAIN level, not a mixed-domain or macro-class loss"
+      },
+      "budget_fraction": 0.2,
+      "context_lr": 0.00025,
+      "replay_weight": 0.1,
+      "architecture": "unchanged strong original IAT CNN / Light PS CNN / initial Context; fixed Context -> Frozen",
+      "reward": "query: original paper reward + beta * (same-domain independent TRAIN CE before minus after one actual update); skip: 0",
+      "paper_reward": {
+        "both_wrong": 3.0,
+        "only_Frozen_wrong": 2.0,
+        "only_Context_wrong": -2.0,
+        "both_correct": 0.0
+      },
+      "measurement": "TRAIN only; signed unscaled mean CE on a fixed same-level probe; no cost, new forgetting penalty, sign target, clipping, synthetic drift, future rollout or copied update branch",
+      "DDQN": {
+        "gamma": 0.95,
+        "lr": 0.0001,
+        "batch_size": 32,
+        "learn_every": 4,
+        "target_every": 15,
+        "capacity": 4096,
+        "epsilon": "0.30 to 0.05; same parent hidden encoder/normalizer; new return layer starts at zero"
+      },
+      "matched_control": "beta=0 retrained on the same streams, initial Q and probe-excluded TRAIN anchors",
+      "evaluation": "VAL/TEST query policies frozen; only Context adapts; reset Context/Adam/memory/cap per intensity; gain probes are not accessed at evaluation; TEST does not select models",
+      "scope": "single-seed small-data reward ablation, not full benchmark or independently retrained no-RL ablation",
+      "theory": "closed-loop DDQN; Context competitive-gap descent preserved; no formal shared min-max equivalence asserted",
+      "extension": "new beta candidates; same training/VAL recipe; all candidates TEST, no TEST selection",
+      "parent_protocol_sha256": "ca6d987abf624034b632ff2e71cd09ed8d2273e9b98c65f03f2f8df0f88cbd01"
+    },
+    "beta": 27.0
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "training": [
+        {
+          "level": 0,
+          "epsilon": 0.3,
+          "online": {
+            "AC": 85.66666666666667,
+            "PR": 88.67400176923987,
+            "RC": 86.17933163048104,
+            "F1": 87.29069344258833
+          },
+          "samples": 300,
+          "labels": 51,
+          "cap": 60,
+          "labels_percent": 17.0,
+          "source_before": {},
+          "source_after": {},
+          "original_domain_forgetting": {},
+          "target_before": {},
+          "target_after": {},
+          "td_updates": 68,
+          "mean_TD_loss": 0.06183472843429841,
+          "positive_paid_rewards": 23,
+          "milliseconds_per_row": 12.509500333302034,
+          "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+          "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+          "reward_diagnostics": {
+            "mode": "paper reward + beta * independent same-domain TRAIN gain",
+            "positive_fraction": 0.45098039215686275,
+            "mean_reward": 0.2166901289247999,
+            "components": {
+              "paper_reward_component": 0.45098039215686275,
+              "probe_gain": -0.008677417156743068,
+              "weighted_probe_gain": -0.23429026323206284
+            }
+          }
+        },
+        {
+          "level": 1,
+          "epsilon": 0.3,
+          "online": {
+            "AC": 91.0,
+            "PR": 91.15126536963372,
+            "RC": 91.49521072796935,
+            "F1": 91.26845561653553
+          },
+          "samples": 300,
+          "labels": 60,
+          "cap": 60,
+          "labels_percent": 20.0,
+          "source_before": {},
+          "source_after": {},
+          "original_domain_forgetting": {},
+          "target_before": {},
+          "target_after": {},
+          "td_updates": 75,
+          "mean_TD_loss": 0.13760546130438644,
+          "positive_paid_rewards": 25,
+          "milliseconds_per_row": 13.297331333354427,
+          "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+          "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+          "reward_diagnostics": {
+            "mode": "paper reward + beta * independent same-domain TRAIN gain",
+            "positive_fraction": 0.4166666666666667,
+            "mean_reward": 0.17041022811705867,
+            "components": {
+              "paper_reward_component": 0.4166666666666667,
+              "probe_gain": -0.009120608835170666,
+              "weighted_probe_gain": -0.246256438549608
+            }
+          }
+        },
+        {
+          "level": 3,
+          "epsilon": 0.3,
+          "online": {
+            "AC": 88.66666666666667,
+            "PR": 89.76902726902728,
+            "RC": 87.97381864623244,
+            "F1": 88.73287793729588
+          },
+          "samples": 300,
+          "labels": 60,
+          "cap": 60,
+          "labels_percent": 20.0,
+          "source_before": {},
+          "source_after": {},
+          "original_domain_forgetting": {},
+          "target_before": {},
+          "target_after": {},
+          "td_updates": 75,
+          "mean_TD_loss": 0.102786430142199,
+          "positive_paid_rewards": 31,
+          "milliseconds_per_row": 13.89538700003565,
+          "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+          "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+          "reward_diagnostics": {
+            "mode": "paper reward + beta * independent same-domain TRAIN gain",
+            "positive_fraction": 0.5166666666666667,
+            "mean_reward": 0.006894254187742869,
+            "components": {
+              "paper_reward_component": 0.26666666666666666,
+              "probe_gain": -0.009621200462182363,
+              "weighted_probe_gain": -0.2597724124789238
+            }
+          }
+        }
+      ],
+      "validation": [
+        {
+          "method": "DDQN",
+          "level": 0,
+          "AC": 67.33333333333333,
+          "PR": 66.5649075104025,
+          "RC": 66.40901925218729,
+          "F1": 66.21389164689252,
+          "samples": 300,
+          "labels": 60,
+          "labels_percent": 20.0,
+          "forgetting": -4.716981132075475,
+          "source_initial_AC": 68.86792452830188,
+          "source_final_AC": 73.58490566037736,
+          "target_final_AC": 74.33333333333333,
+          "td_updates": 0
+        },
+        {
+          "method": "DDQN",
+          "level": 1,
+          "AC": 67.66666666666666,
+          "PR": 70.24709585529094,
+          "RC": 68.03539164453723,
+          "F1": 68.54114004260946,
+          "samples": 300,
+          "labels": 60,
+          "labels_percent": 20.0,
+          "forgetting": -5.660377358490564,
+          "source_initial_AC": 68.86792452830188,
+          "source_final_AC": 74.52830188679245,
+          "target_final_AC": 78.66666666666666,
+          "td_updates": 0
+        },
+        {
+          "method": "DDQN",
+          "level": 3,
+          "AC": 72.33333333333334,
+          "PR": 72.48594156376672,
+          "RC": 70.19748881354131,
+          "F1": 70.7129596832114,
+          "samples": 300,
+          "labels": 60,
+          "labels_percent": 20.0,
+          "forgetting": -1.8867924528301927,
+          "source_initial_AC": 68.86792452830188,
+          "source_final_AC": 70.75471698113208,
+          "target_final_AC": 80.33333333333333,
+          "td_updates": 0
+        }
+      ],
+      "selection_score": 69.11111111111111,
+      "validation_labels_percent": 20.0
+    },
+    {
+      "epoch": 2,
+      "training": [
+        {
+          "level": 0,
+          "epsilon": 0.175,
+          "online": {
+            "AC": 89.0,
+            "PR": 91.64464509207939,
+            "RC": 91.24148573861218,
+            "F1": 91.35003446960826
+          },
+          "samples": 300,
+          "labels": 60,
+          "cap": 60,
+          "labels_percent": 20.0,
+          "source_before": {},
+          "source_after": {},
+          "original_domain_forgetting": {},
+          "target_before": {},
+          "target_after": {},
+          "td_updates": 75,
+          "mean_TD_loss": 0.1358204365876615,
+          "positive_paid_rewards": 36,
+          "milliseconds_per_row": 13.203683666652068,
+          "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+          "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+          "reward_diagnostics": {
+            "mode": "paper reward + beta * independent same-domain TRAIN gain",
+            "positive_fraction": 0.6,
+            "mean_reward": 0.4727734824021657,
+            "components": {
+              "paper_reward_component": 0.5833333333333334,
+              "probe_gain": -0.004094809293746948,
+              "weighted_probe_gain": -0.1105598509311676
+            }
+          }
+        },
+        {
+          "level": 1,
+          "epsilon": 0.175,
+          "online": {
+            "AC": 89.66666666666666,
+            "PR": 92.28613856444045,
+            "RC": 89.91868880374626,
+            "F1": 90.89338342304916
+          },
+          "samples": 300,
+          "labels": 60,
+          "cap": 60,
+          "labels_percent": 20.0,
+          "source_before": {},
+          "source_after": {},
+          "original_domain_forgetting": {},
+          "target_before": {},
+          "target_after": {},
+          "td_updates": 75,
+          "mean_TD_loss": 0.15110700935746232,
+          "positive_paid_rewards": 31,
+          "milliseconds_per_row": 13.555604000090776,
+          "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+          "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+          "reward_diagnostics": {
+            "mode": "paper reward + beta * independent same-domain TRAIN gain",
+            "positive_fraction": 0.5166666666666667,
+            "mean_reward": 0.5102812924422324,
+            "components": {
+              "paper_reward_component": 0.65,
+              "probe_gain": -0.0051747669465839865,
+              "weighted_probe_gain": -0.13971870755776764
+            }
+          }
+        },
+        {
+          "level": 3,
+          "epsilon": 0.175,
+          "online": {
+            "AC": 90.66666666666666,
+            "PR": 92.48276414943084,
+            "RC": 91.06662409535974,
+            "F1": 91.62267942532308
+          },
+          "samples": 300,
+          "labels": 60,
+          "cap": 60,
+          "labels_percent": 20.0,
+          "source_before": {},
+          "source_after": {},
+          "original_domain_forgetting": {},
+          "target_before": {},
+          "target_after": {},
+          "td_updates": 75,
+          "mean_TD_loss": 0.13415796361863613,
+          "positive_paid_rewards": 27,
+          "milliseconds_per_row": 13.452321333364429,
+          "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+          "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+          "reward_diagnostics": {
+            "mode": "paper reward + beta * independent same-domain TRAIN gain",
+            "positive_fraction": 0.45,
+            "mean_reward": 0.0929274116953214,
+            "components": {
+              "paper_reward_component": 0.38333333333333336,
+              "probe_gain": -0.010755774875481924,
+              "weighted_probe_gain": -0.29040592163801193
+            }
+          }
+        }
+      ],
+      "validation": [
+        {
+          "method": "DDQN",
+          "level": 0,
+          "AC": 67.33333333333333,
+          "PR": 67.22090371818138,
+          "RC": 66.526472858013,
+          "F1": 66.44609737117554,
+          "samples": 300,
+          "labels": 60,
+          "labels_percent": 20.0,
+          "forgetting": 0.0,
+          "source_initial_AC": 68.86792452830188,
+          "source_final_AC": 68.86792452830188,
+          "target_final_AC": 73.66666666666667,
+          "td_updates": 0
+        },
+        {
+          "method": "DDQN",
+          "level": 1,
+          "AC": 67.0,
+          "PR": 70.147475169405,
+          "RC": 67.76209989010053,
+          "F1": 68.40175438596492,
+          "samples": 300,
+          "labels": 60,
+          "labels_percent": 20.0,
+          "forgetting": -0.9433962264150892,
+          "source_initial_AC": 68.86792452830188,
+          "source_final_AC": 69.81132075471697,
+          "target_final_AC": 77.33333333333333,
+          "td_updates": 0
+        },
+        {
+          "method": "DDQN",
+          "level": 3,
+          "AC": 71.0,
+          "PR": 70.41469864881549,
+          "RC": 69.61551054425078,
+          "F1": 69.77362082891604,
+          "samples": 300,
+          "labels": 60,
+          "labels_percent": 20.0,
+          "forgetting": 0.0,
+          "source_initial_AC": 68.86792452830188,
+          "source_final_AC": 68.86792452830188,
+          "target_final_AC": 78.66666666666666,
+          "td_updates": 0
+        }
+      ],
+      "selection_score": 68.44444444444444,
+      "validation_labels_percent": 20.0
+    },
+    {
+      "epoch": 3,
+      "training": [
+        {
+          "level": 0,
+          "epsilon": 0.04999999999999999,
+          "online": {
+            "AC": 88.66666666666667,
+            "PR": 91.08843494029402,
+            "RC": 91.36451681566624,
+            "F1": 91.20704240411587
+          },
+          "samples": 300,
+          "labels": 60,
+          "cap": 60,
+          "labels_percent": 20.0,
+          "source_before": {},
+          "source_after": {},
+          "original_domain_forgetting": {},
+          "target_before": {},
+          "target_after": {},
+          "td_updates": 75,
+          "mean_TD_loss": 0.1437842287759607,
+          "positive_paid_rewards": 32,
+          "milliseconds_per_row": 13.393613666703459,
+          "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+          "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+          "reward_diagnostics": {
+            "mode": "paper reward + beta * independent same-domain TRAIN gain",
+            "positive_fraction": 0.5333333333333333,
+            "mean_reward": 0.38034289379914604,
+            "components": {
+              "paper_reward_component": 0.5333333333333333,
+              "probe_gain": -0.005666312575340271,
+              "weighted_probe_gain": -0.1529904395341873
+            }
+          }
+        },
+        {
+          "level": 1,
+          "epsilon": 0.04999999999999999,
+          "online": {
+            "AC": 89.66666666666666,
+            "PR": 91.9269098903802,
+            "RC": 89.3474882928906,
+            "F1": 90.44895720966828
+          },
+          "samples": 300,
+          "labels": 60,
+          "cap": 60,
+          "labels_percent": 20.0,
+          "source_before": {},
+          "source_after": {},
+          "original_domain_forgetting": {},
+          "target_before": {},
+          "target_after": {},
+          "td_updates": 75,
+          "mean_TD_loss": 0.17250615176434317,
+          "positive_paid_rewards": 34,
+          "milliseconds_per_row": 13.775257333375825,
+          "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+          "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+          "reward_diagnostics": {
+            "mode": "paper reward + beta * independent same-domain TRAIN gain",
+            "positive_fraction": 0.5666666666666667,
+            "mean_reward": 0.19034484634175897,
+            "components": {
+              "paper_reward_component": 0.2,
+              "probe_gain": -0.0003575982836385568,
+              "weighted_probe_gain": -0.009655153658241034
+            }
+          }
+        },
+        {
+          "level": 3,
+          "epsilon": 0.04999999999999999,
+          "online": {
+            "AC": 89.66666666666666,
+            "PR": 92.40138990351153,
+            "RC": 89.68369518944232,
+            "F1": 90.71384582802526
+          },
+          "samples": 300,
+          "labels": 60,
+          "cap": 60,
+          "labels_percent": 20.0,
+          "source_before": {},
+          "source_after": {},
+          "original_domain_forgetting": {},
+          "target_before": {},
+          "target_after": {},
+          "td_updates": 75,
+          "mean_TD_loss": 0.15198267804769178,
+          "positive_paid_rewards": 40,
+          "milliseconds_per_row": 13.283015000051819,
+          "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+          "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+          "reward_diagnostics": {
+            "mode": "paper reward + beta * independent same-domain TRAIN gain",
+            "positive_fraction": 0.6666666666666666,
+            "mean_reward": 0.7599114860097568,
+            "components": {
+              "paper_reward_component": 0.8166666666666667,
+              "probe_gain": -0.0021020437280337015,
+              "weighted_probe_gain": -0.056755180656909945
+            }
+          }
+        }
+      ],
+      "validation": [
+        {
+          "method": "DDQN",
+          "level": 0,
+          "AC": 66.66666666666666,
+          "PR": 67.81021635300061,
+          "RC": 65.64201945699736,
+          "F1": 66.07390950242173,
+          "samples": 300,
+          "labels": 60,
+          "labels_percent": 20.0,
+          "forgetting": -1.8867924528301927,
+          "source_initial_AC": 68.86792452830188,
+          "source_final_AC": 70.75471698113208,
+          "target_final_AC": 73.33333333333333,
+          "td_updates": 0
+        },
+        {
+          "method": "DDQN",
+          "level": 1,
+          "AC": 67.33333333333333,
+          "PR": 69.4615761755579,
+          "RC": 67.5587119752601,
+          "F1": 67.95571017094977,
+          "samples": 300,
+          "labels": 60,
+          "labels_percent": 20.0,
+          "forgetting": -3.773584905660371,
+          "source_initial_AC": 68.86792452830188,
+          "source_final_AC": 72.64150943396226,
+          "target_final_AC": 76.66666666666667,
+          "td_updates": 0
+        },
+        {
+          "method": "DDQN",
+          "level": 3,
+          "AC": 71.33333333333334,
+          "PR": 72.86384155335769,
+          "RC": 70.24429023170357,
+          "F1": 70.95698020624552,
+          "samples": 300,
+          "labels": 60,
+          "labels_percent": 20.0,
+          "forgetting": -0.9433962264150892,
+          "source_initial_AC": 68.86792452830188,
+          "source_final_AC": 69.81132075471697,
+          "target_final_AC": 81.33333333333333,
+          "td_updates": 0
+        }
+      ],
+      "selection_score": 68.44444444444444,
+      "validation_labels_percent": 20.0
+    }
+  ]
+}
