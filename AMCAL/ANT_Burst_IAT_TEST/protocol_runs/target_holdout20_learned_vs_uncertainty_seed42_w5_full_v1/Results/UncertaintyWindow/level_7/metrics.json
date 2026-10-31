@@ -1,0 +1,74 @@
+{
+  "online": {
+    "AC": 67.05426356589147,
+    "PR": 65.57646078192167,
+    "RC": 65.2330200023261,
+    "F1": 65.18774753315569
+  },
+  "samples": 774,
+  "labels": 154,
+  "cap": 154,
+  "labels_percent": 19.896640826873384,
+  "source_before": {
+    "AC": 64.76190476190476,
+    "PR": 68.50362067753372,
+    "RC": 63.07411674347158,
+    "F1": 64.92248590652846
+  },
+  "source_after": {
+    "AC": 67.61904761904762,
+    "PR": 71.9886673204751,
+    "RC": 66.53033794162826,
+    "F1": 68.0428693216417
+  },
+  "original_domain_forgetting": {
+    "AC": -2.857142857142861,
+    "PR": -3.485046642941384,
+    "RC": -3.4562211981566833,
+    "F1": -3.1203834151132384
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "milliseconds_per_row": 8.746247803575772,
+  "window_size": 5,
+  "mean_feedback_delay_rows": 1.8896103896103895,
+  "max_feedback_delay_rows": 4,
+  "label_protocol": "predict all arrived window rows, then rank/query; no window label used in its predictions",
+  "Q_learning": "none; fixed DDQN; no TEST reward or threshold calibration",
+  "quota": "floor(fraction*window_end)-floor(fraction*window_start); exact global floor cap",
+  "ranking": "original arrival-time scores, no rescoring after window feedback",
+  "adaptation_stream_seen_before": {
+    "AC": 63.43669250645995,
+    "PR": 69.66093380281612,
+    "RC": 58.219981619181006,
+    "F1": 61.56532961193939
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 77.13178294573643,
+    "PR": 79.34399452406552,
+    "RC": 75.06829496261109,
+    "F1": 76.7661984745177
+  },
+  "target_before": {
+    "AC": 63.91752577319587,
+    "PR": 67.80068226120855,
+    "RC": 59.10918415949376,
+    "F1": 61.989859325457154
+  },
+  "target_after": {
+    "AC": 71.1340206185567,
+    "PR": 73.63055600168057,
+    "RC": 69.76721592820664,
+    "F1": 70.72747211818783
+  },
+  "target_holdout_rows": 194,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 7.216494845360835,
+    "PR": 5.829873740472024,
+    "RC": 10.658031768712881,
+    "F1": 8.73761279273068
+  },
+  "labels_percent_of_all_target_rows": 15.909090909090908,
+  "target_total_rows": 968
+}
