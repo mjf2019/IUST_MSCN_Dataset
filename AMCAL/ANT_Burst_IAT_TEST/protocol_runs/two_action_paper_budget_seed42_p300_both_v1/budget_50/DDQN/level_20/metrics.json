@@ -1,0 +1,48 @@
+{
+  "online": {
+    "AC": 83.66666666666667,
+    "PR": 82.83412855737907,
+    "RC": 79.73866300251264,
+    "F1": 80.79312370109334
+  },
+  "samples": 300,
+  "labels": 150,
+  "cap": 150,
+  "labels_percent": 50.0,
+  "source_before": {
+    "AC": 64.76190476190476,
+    "PR": 68.50362067753372,
+    "RC": 63.07411674347158,
+    "F1": 64.92248590652846
+  },
+  "source_after": {
+    "AC": 64.76190476190476,
+    "PR": 63.736263736263744,
+    "RC": 67.59024577572964,
+    "F1": 63.9846999405823
+  },
+  "original_domain_forgetting": {
+    "AC": 0.0,
+    "PR": 4.7673569412699734,
+    "RC": -4.516129032258064,
+    "F1": 0.937785965946162
+  },
+  "target_before": {
+    "AC": 48.333333333333336,
+    "PR": 56.446399668991035,
+    "RC": 40.856250688783206,
+    "F1": 40.92235483279135
+  },
+  "target_after": {
+    "AC": 93.0,
+    "PR": 91.84647846140197,
+    "RC": 91.25573918889351,
+    "F1": 91.37436746649095
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 79,
+  "milliseconds_per_row": 17.594369333334424,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST"
+}
