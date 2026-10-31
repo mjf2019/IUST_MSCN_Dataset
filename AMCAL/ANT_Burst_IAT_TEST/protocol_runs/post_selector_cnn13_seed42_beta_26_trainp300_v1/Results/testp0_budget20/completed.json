@@ -1,0 +1,28 @@
+{
+  "cases": 7,
+  "budget_fraction": 0.2,
+  "TEST_data": {
+    "streams": {
+      "5": "1721d0aafd429136a465ceaa3073c13a782374233bfea9316639aa9e7eeba7c5",
+      "7": "5b8c61e1c1871197100fc83adf9f21d7d62363fc32815c8a350b3f3bea0051ab",
+      "10": "202cfc904c17fb3a5a901e639da6caa4169d3274440adbe18c4290d53bfbdd89",
+      "12": "bd26d2289af8b1a23143bf859bc2c9cd9421899286394ad13a9279432849ae86",
+      "15": "b891085d711c27cb67015ddf63a37b6f56e4fdc0d3def94d5c41b8bacc84aacd",
+      "17": "a9405f7a8a5d5988ccf11976dbbfc9b8251d14cf5dbace06fcfe22f87c0c8745",
+      "20": "ceec78265dc04efac84bb5121e144913e24df2cac01027bd55568b847d37c1b6"
+    },
+    "source_audit": "17bdd068d2ae0d65345df206291b2e65d1f7af6ae951a16a837eaa31fc55ab99"
+  },
+  "common_source_reference": {
+    "AC": 64.76190476190476,
+    "PR": 68.50362067753372,
+    "RC": 63.07411674347158,
+    "F1": 64.92248590652846
+  },
+  "protocol_sha256": "7916069f7297f1364dbbc4a93959375e3a602fdbff11e8796671a6477941acf4",
+  "evaluator_sha256": "342d1b12b38521e9e8af8ea85b994a0b1ee985777af3e440a9c86cf59d61016d",
+  "summary_sha256": {
+    "summary_by_level.csv": "33aa71ab6927cd910fd081630db0fbb0c441ebc00573ec4fd267625b2a51eb76",
+    "summary_mean.csv": "d3e5808ae3a4e02ae14246d9b2fed77bc7fdde839552fc529207779b1a63af5c"
+  }
+}
