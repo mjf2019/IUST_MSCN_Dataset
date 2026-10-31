@@ -1,0 +1,89 @@
+{
+  "protocol": {
+    "version": 1,
+    "dataset": "PS",
+    "seed": 42,
+    "pilot_rows": 300,
+    "epochs": 3,
+    "actor_checkpoint_sha256": "6ccde34fbf84c2674a1367202609880301126eeb45dbfabfc30409d2f1b5d975",
+    "healthy_teacher_sha256": "a3450fe35aa9f26716a7b926789f6e5b50c5aaeab180682a0f5141b047dac2d2",
+    "source_models": {
+      "protocol_preprocessing.joblib": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663",
+      "initial_cnn_model.pth": "bd00a78d2eb5ac14325a2f33f03f9cf38f1877e18af89348f86b1e79dc815575",
+      "enhanced_context.pth": "215b20344c52775eaf2d80c28490f7b1df93f886bb04c28ec0d6acccb8a8ddca"
+    },
+    "train_files": {
+      "0": "0232a51c02cc7b91e073df3ec9c01f59db0b4824a5c9094b9c6ee126161f6c9b",
+      "1": "ea6002429f709aa139baf0766715f7616a3635c31d5a32ecba5e5d96f2b4e891",
+      "3": "4f9171df87f13230b5d8cc5efb3b2c7bd9b1a6015ee3fc4356d5fcf0f50f9fb7"
+    },
+    "implementation_sha256": {
+      "amcal_two_action_ddqn.py": "563f365555e080f750e9d2d503b7e173f88e19340b068996f5254184f60a9843",
+      "enhancements/two_action_ddqn.py": "57e8c6bfa982b2f0977d05391d0bc44cf2f4b4480cfc9cb56bc4a07685a3b634",
+      "enhancements/competitive_selector.py": "4090227a3de03c30c7bd94f3335e9f42e3b8f6e70295d199e3103692721ac67d",
+      "amcal_competitive_selector.py": "0846639ecdb811889fc93e3033579abc698d43945ba7d14670fea7ca85626042",
+      "amcal_budget_actor.py": "b7f5b399d2dc9dc7fc00eb712eef8641ae90a7ec3bdd19d5b293204368a36709",
+      "amcal_minimax_paironly.py": "471820f2797ffcc92de99ad60f42fed3c8d137512605036f83a316010d4edc4a",
+      "enhancements/minimax_query.py": "a73b3c4ebe60ba1ed2d200233277e23c360b5a8feec454f55b19e05afb223691"
+    },
+    "train_data": {
+      "streams": {
+        "0": "de5534b52461eb2b45acf7a2287cf2d188570abdd8614e1a1c720d15882ed5ef",
+        "1": "4049e5fa7b0c4ed1b136dc3e5ec1f8663af71c8814c38196f17b973933a09486",
+        "3": "d42c1ad6731b5393f70aae4e9b7f0dacf9ef4271bbb865197546806e111fed02"
+      },
+      "source_audit": "dbf345aeecee60b3846999c8a1500ffeb908ed7fca0095d5c8abf5afccd28e20"
+    },
+    "validation_data": {
+      "streams": {
+        "0": "4e1eee2bbc859730d96a219ee57ffdc8791d93ba77cf458d9834033d093afadc",
+        "1": "a95cab76e24473b167924418b467653b2fe21de747a53afd21140c17a16ccfd3",
+        "3": "c6114aea72febfa917ef41a2afd920e8f345c4d37bf91e19aec2eec1f02bbc6e"
+      },
+      "source_audit": "09f48fb504899bce1fe8b53bbb8c93025eca6b80b799966249700185d7a03247"
+    },
+    "architecture": "same healthy CNN/Context as two-action Actor; original IAT CNN and Light PS CNN",
+    "actions": {
+      "0": "Context prediction; no feedback",
+      "1": "Context prediction; acquire feedback and batch5 update"
+    },
+    "reward": {
+      "both_wrong": 3.0,
+      "only_Frozen_wrong": 2.0,
+      "only_Context_wrong": -2.0,
+      "both_correct": 0.0,
+      "skip": 0.0
+    },
+    "gamma": 0.95,
+    "lr": 0.0001,
+    "batch_size": 32,
+    "learn_every": 4,
+    "target_every": 15,
+    "replay_capacity": 4096,
+    "feature_width": 30,
+    "normalization": "unchanged frozen TRAIN normalizer from parent Actor",
+    "encoder": "parent Actor 16-unit hidden layer; new two-output return layer initialized to zero",
+    "TRAIN_epsilon": "0.30 to 0.05 across epochs",
+    "eval_epsilon": 0.0,
+    "context_lr": 0.00025,
+    "replay_weight": 0.1,
+    "budget_fraction": 0.2,
+    "online": "Context adapts; DDQN and Actor weights frozen; every level resets Context/Adam/memory/budget",
+    "selection": "VAL mean online AC minus positive original-domain forgetting; fewer labels only breaks ties",
+    "theory": "closed-loop DDQN with competitive original-paper reward; no shared-objective min-max claim",
+    "scope": "matched small-data pilot; no method superiority assumed; deployment controls, not retrained no-RL ablations"
+  },
+  "selected_epoch": 3,
+  "test_data": {
+    "streams": {
+      "5": "2e2d0e0981accb34c68eb8aefc3cb4ede01b5be255b647630b6413ff4635c1d3",
+      "7": "bca439cda95e6d6fa4bee9832093751ba267c4b41a29c1f024c144bc0119259f",
+      "10": "c4532ca4ab8041c3a8ff8877c91024e281e173a40d639f0c0f37aae90aba4c92",
+      "12": "e4d1b2cc4b19f4e85b299904218840aaa8e001433d5218b61c653beb8dc3f71d",
+      "15": "271c6b983752270c457222361cc842705fdf5ed6785ea80cda5e767bc785859e",
+      "17": "4546953e99133c4f72bec9c1b529748d2ec82ea4c84be70703eaf4b2254b5433",
+      "20": "6ae35ee4e151d6d1527720e896ee7def14a9b86552a5e52d6b7f15393f7d0713"
+    },
+    "source_audit": "985b47e1b6f0d39a1f3f4465c33c286cecea4184425081a794da27526cf79ec0"
+  }
+}
