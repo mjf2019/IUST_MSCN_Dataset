@@ -1,0 +1,101 @@
+{
+  "transform": "label-blind feature-wise affine drift and row-ID seeded Gaussian noise",
+  "train_scale_sha256": "ebfb205ce2e8b58ebaed13b982f70495a5ff0f6defee0fcc0283a5e9f934bd37",
+  "scale_fitted_on": "adaptive TRAIN feature values only; no labels, VAL or TEST",
+  "TRAIN": {
+    "1": {
+      "0": {
+        "seed": 112545,
+        "severity": 0.75,
+        "scale": 0.3,
+        "shift": 1.0,
+        "noise": 0.03
+      },
+      "1": {
+        "seed": 112562,
+        "severity": 0.75,
+        "scale": 0.3,
+        "shift": 1.0,
+        "noise": 0.03
+      },
+      "3": {
+        "seed": 112596,
+        "severity": 0.75,
+        "scale": 0.3,
+        "shift": 1.0,
+        "noise": 0.03
+      }
+    },
+    "2": {
+      "0": {
+        "seed": 113048,
+        "severity": 1.0,
+        "scale": 0.3,
+        "shift": 1.0,
+        "noise": 0.03
+      },
+      "1": {
+        "seed": 113065,
+        "severity": 1.0,
+        "scale": 0.3,
+        "shift": 1.0,
+        "noise": 0.03
+      },
+      "3": {
+        "seed": 113099,
+        "severity": 1.0,
+        "scale": 0.3,
+        "shift": 1.0,
+        "noise": 0.03
+      }
+    },
+    "3": {
+      "0": {
+        "seed": 113551,
+        "severity": 1.25,
+        "scale": 0.3,
+        "shift": 1.0,
+        "noise": 0.03
+      },
+      "1": {
+        "seed": 113568,
+        "severity": 1.25,
+        "scale": 0.3,
+        "shift": 1.0,
+        "noise": 0.03
+      },
+      "3": {
+        "seed": 113602,
+        "severity": 1.25,
+        "scale": 0.3,
+        "shift": 1.0,
+        "noise": 0.03
+      }
+    }
+  },
+  "VAL": {
+    "0": {
+      "seed": 952042,
+      "severity": 1.0,
+      "scale": 0.3,
+      "shift": 1.0,
+      "noise": 0.03
+    },
+    "1": {
+      "seed": 952071,
+      "severity": 1.25,
+      "scale": 0.3,
+      "shift": 1.0,
+      "noise": 0.03
+    },
+    "3": {
+      "seed": 952129,
+      "severity": 1.5,
+      "scale": 0.3,
+      "shift": 1.0,
+      "noise": 0.03
+    }
+  },
+  "TEST": "official unmodified inputs; no synthetic transforms; no selection",
+  "reward": "per-episode matched shifted TRAIN probe; original-domain retention probe remains unshifted"
+}

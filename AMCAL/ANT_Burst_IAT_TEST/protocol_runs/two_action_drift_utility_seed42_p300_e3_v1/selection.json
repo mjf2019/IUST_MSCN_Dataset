@@ -1,0 +1,394 @@
+{
+  "selected": "utility_f1_c0p001",
+  "development_scenario_valid": true,
+  "validation_goal_met": false,
+  "accuracy_retention_constraints_met": false,
+  "label_saving_pp": 0.0,
+  "adaptation_gain_vs_no_query_pp": 8.555555555555557,
+  "eligible": [],
+  "reference": {
+    "candidate": "FrontLoaded",
+    "AC": 42.11111111111111,
+    "F1": 35.74913241844064,
+    "labels_percent": 20.0,
+    "forgetting": -2.201257861635218,
+    "positive_forgetting": 0.0
+  },
+  "no_query_reference": {
+    "candidate": "NoQuery",
+    "AC": 33.0,
+    "F1": 30.751039810631426,
+    "labels_percent": 0.0,
+    "forgetting": 0.0,
+    "positive_forgetting": 0.0
+  },
+  "min_adaptation_gain_pp": 0.5,
+  "accuracy_tolerance_pp": 0.5,
+  "forgetting_tolerance_pp": 0.5,
+  "criterion": "lowest VAL label use with positive adaptation gain over NoQuery and accuracy/retention near FrontLoaded; otherwise explicit failure and fallback; no forced feedback",
+  "protocol": {
+    "version": 1,
+    "dataset": "IAT",
+    "seed": 42,
+    "pilot_rows": 300,
+    "epochs": 3,
+    "actor_checkpoint_sha256": "dc00084db21a4339847e7815ab88162515e8c11acc041aba5865c02ee9286a37",
+    "healthy_teacher_sha256": "cb20edb4f6e6ef0b3074d0a94da041a14c6d19294f51ed6f5b392b8f4a0e0ac3",
+    "source_models": {
+      "protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+      "initial_cnn_model.pth": "16b2c531add95691a04aaef7f9bd041212cb212112eb1702efbb415786b98d54",
+      "enhanced_context.pth": "b0533e8c84679bd81dcbc02bdd507c069da5557f7c37cac7668e197b27d1634c"
+    },
+    "train_files": {
+      "0": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+      "1": "bf92f8d8088d7199d1a83187c2f04079c13aa0fb115878e3649c5bd85d8a6cc6",
+      "3": "391285a6f89750c0025eb225a7d2b4beca1314852c9d630e8105108a352eaa53"
+    },
+    "implementation_sha256": {
+      "amcal_two_action_drift_utility.py": "79453f77945b5a48c0552ea0a8bcb70ebc22963283442e78727f8f01ff8ff8eb",
+      "enhancements/query_drift.py": "bc853c086bc96a68f042696030191c5b1f426009184cf66f91001a9f68f736c0",
+      "enhancements/query_utility_reward.py": "b58c377f4ba002638397769a6a6f5db87c2cab6023f4ee1f105a7b874747ad56",
+      "enhancements/two_action_ddqn.py": "57e8c6bfa982b2f0977d05391d0bc44cf2f4b4480cfc9cb56bc4a07685a3b634",
+      "enhancements/competitive_selector.py": "4090227a3de03c30c7bd94f3335e9f42e3b8f6e70295d199e3103692721ac67d",
+      "amcal_competitive_selector.py": "0846639ecdb811889fc93e3033579abc698d43945ba7d14670fea7ca85626042",
+      "amcal_budget_actor.py": "b7f5b399d2dc9dc7fc00eb712eef8641ae90a7ec3bdd19d5b293204368a36709",
+      "amcal_minimax_paironly.py": "471820f2797ffcc92de99ad60f42fed3c8d137512605036f83a316010d4edc4a",
+      "enhancements/minimax_query.py": "a73b3c4ebe60ba1ed2d200233277e23c360b5a8feec454f55b19e05afb223691"
+    },
+    "train_data": {
+      "streams": {
+        "0": "182e17dc486efbfaf22256b5713c2178d06fa6354901727a5d738a5733d8bb50",
+        "1": "c498563413f67d2ac1bb0a3807a5e033dbc833ac99e01012c90e5fd9c691d1ad",
+        "3": "7b991981a2ed57f79b6a09e0c13dc79268afda8717f3bb1e5ff07d4fc9e887c4"
+      },
+      "source_audit": "b8d21440b03040eeb203159a7778b3406d0978e97e0892c0dc5fef74f7c638ae"
+    },
+    "validation_data": {
+      "streams": {
+        "0": "39d94ecae8b24b99b0e0bf2a7b3af3167481640f9baddd32fe8e6d066e4f1423",
+        "1": "cf336a430a29997be6084952f5cfe6a8acd891689bb859944854819fa3e8acea",
+        "3": "d0f0c50a6f8d76b0a71df9ea5c3dbf500916ba0647e887dc91daa5c69f16262b"
+      },
+      "source_audit": "1ee09c7c173454645945af58e1a8136c39a5c175b23535ffe950c706cea310ae"
+    },
+    "probes": {
+      "generalization": {
+        "0": {
+          "ids": [
+            125,
+            223,
+            284,
+            292,
+            491,
+            511,
+            528,
+            796,
+            1050,
+            1303,
+            1431,
+            1598,
+            1816,
+            1885,
+            2191,
+            2193,
+            2250,
+            2275,
+            2498,
+            2598,
+            2634,
+            2671,
+            2783,
+            3087
+          ],
+          "rows": 24
+        },
+        "1": {
+          "ids": [
+            15,
+            21,
+            220,
+            336,
+            363,
+            531,
+            886,
+            1131,
+            1311,
+            1327,
+            1344,
+            1364,
+            1392,
+            1422,
+            1753,
+            1798,
+            1835,
+            2125,
+            2180,
+            2225,
+            2333,
+            2545,
+            2897,
+            3032
+          ],
+          "rows": 24
+        },
+        "3": {
+          "ids": [
+            39,
+            177,
+            203,
+            337,
+            355,
+            426,
+            674,
+            1187,
+            1332,
+            1537,
+            1556,
+            1579,
+            1694,
+            1732,
+            1925,
+            2126,
+            2136,
+            2187,
+            2201,
+            2323,
+            2391,
+            2592,
+            3040,
+            3073
+          ],
+          "rows": 24
+        }
+      },
+      "retention": {
+        "ids": [
+          30,
+          234,
+          258,
+          265,
+          283,
+          338,
+          366,
+          392,
+          468,
+          509,
+          589,
+          765,
+          826,
+          1037,
+          1331,
+          1406,
+          1436,
+          1480,
+          1702,
+          2021,
+          2044,
+          2101,
+          2130,
+          2247,
+          2369,
+          2392,
+          2464,
+          2584,
+          2777,
+          2902,
+          2924,
+          2993
+        ],
+        "rows": 32
+      },
+      "excluded_anchor_rows": 72,
+      "sampling": "fixed TRAIN-only; IDs/features disjoint across probes and streams; macro CE within each level",
+      "independence": "held out from this experiment adaptive updates; not necessarily from historical pretraining",
+      "generalization_sha256": [
+        "9e42f2a2e8e150b5461ad6001f38d2353fffa89c47a36245c39a6cde60c2754d",
+        "a70e65de571f19a7adcecdec2fcaf21e45da9818f7f5b08d1582abfbdaae83bb",
+        "6ac37f1e21f414642081b2febe1c850898d62b6831a983970fa8dc44fb2007c8"
+      ],
+      "retention_sha256": "d97124e40467e3532656db6039b6a93c817c544c7f4923a70e369a0d75857953",
+      "TRAIN_anchors_sha256": "b0ae05ba1431cab48cf646130a3be976f9d85db0cac7f3a3ff10b887277220c8"
+    },
+    "synthetic": {
+      "transform": "label-blind feature-wise affine drift and row-ID seeded Gaussian noise",
+      "train_scale_sha256": "ba00c0bbcafdeab5763b5b4e1bf9bda5577c6ee3ad9a62314ae8a8233c92f19c",
+      "scale_fitted_on": "adaptive TRAIN feature values only; no labels, VAL or TEST",
+      "TRAIN": {
+        "1": {
+          "0": {
+            "seed": 112545,
+            "severity": 0.75,
+            "scale": 0.3,
+            "shift": 1.0,
+            "noise": 0.03
+          },
+          "1": {
+            "seed": 112562,
+            "severity": 0.75,
+            "scale": 0.3,
+            "shift": 1.0,
+            "noise": 0.03
+          },
+          "3": {
+            "seed": 112596,
+            "severity": 0.75,
+            "scale": 0.3,
+            "shift": 1.0,
+            "noise": 0.03
+          }
+        },
+        "2": {
+          "0": {
+            "seed": 113048,
+            "severity": 1.0,
+            "scale": 0.3,
+            "shift": 1.0,
+            "noise": 0.03
+          },
+          "1": {
+            "seed": 113065,
+            "severity": 1.0,
+            "scale": 0.3,
+            "shift": 1.0,
+            "noise": 0.03
+          },
+          "3": {
+            "seed": 113099,
+            "severity": 1.0,
+            "scale": 0.3,
+            "shift": 1.0,
+            "noise": 0.03
+          }
+        },
+        "3": {
+          "0": {
+            "seed": 113551,
+            "severity": 1.25,
+            "scale": 0.3,
+            "shift": 1.0,
+            "noise": 0.03
+          },
+          "1": {
+            "seed": 113568,
+            "severity": 1.25,
+            "scale": 0.3,
+            "shift": 1.0,
+            "noise": 0.03
+          },
+          "3": {
+            "seed": 113602,
+            "severity": 1.25,
+            "scale": 0.3,
+            "shift": 1.0,
+            "noise": 0.03
+          }
+        }
+      },
+      "VAL": {
+        "0": {
+          "seed": 952042,
+          "severity": 1.0,
+          "scale": 0.3,
+          "shift": 1.0,
+          "noise": 0.03
+        },
+        "1": {
+          "seed": 952071,
+          "severity": 1.25,
+          "scale": 0.3,
+          "shift": 1.0,
+          "noise": 0.03
+        },
+        "3": {
+          "seed": 952129,
+          "severity": 1.5,
+          "scale": 0.3,
+          "shift": 1.0,
+          "noise": 0.03
+        }
+      },
+      "TEST": "official unmodified inputs; no synthetic transforms; no selection",
+      "reward": "per-episode matched shifted TRAIN probe; original-domain retention probe remains unshifted"
+    },
+    "costs": [
+      0.0,
+      0.001
+    ],
+    "forgetting_weights": [
+      0.5,
+      1.0
+    ],
+    "min_adaptation_gain_pp": 0.5,
+    "accuracy_tolerance_pp": 0.5,
+    "forgetting_tolerance_pp": 0.5,
+    "architecture": "unchanged healthy Context; original IAT CNN; Light PS CNN; fixed Context -> Frozen path",
+    "reward": "query: TRAIN macro-CE decrease minus weighted positive TRAIN retention-CE increase minus cost; skip zero",
+    "measurement": "before/after one actual batch5 update on an independent TRAIN probe with the same episode drift; no rollout",
+    "loss_units": "raw macro cross entropy; no clipping, sign-only targets or TEST-based normalization",
+    "DDQN": {
+      "gamma": 0.95,
+      "lr": 0.0001,
+      "batch_size": 32,
+      "learn_every": 4,
+      "target_every": 15,
+      "capacity": 4096,
+      "epsilon": "0.30 to 0.05; greedy VAL/TEST; same compact state and parent encoder"
+    },
+    "context_lr": 0.00025,
+    "replay_weight": 0.1,
+    "budget_fraction": 0.2,
+    "evaluation": "original anchors and same sampled IDs for all controls; synthetic VAL features, unchanged official TEST; reset adaptive state per level",
+    "query_learning": "TRAIN only; DDQN/Actor frozen on VAL/TEST; observer TEST labels never form reward targets",
+    "comparison": "paper-reward DDQN retrained on identical synthetic TRAIN episodes and probe-excluded anchors",
+    "theory": "closed-loop sequential DDQN; Context competitive-gap descent unchanged; no formal shared min-max objective claimed"
+  },
+  "candidates": [
+    {
+      "candidate": "paper",
+      "AC": 33.0,
+      "F1": 30.751039810631426,
+      "labels_percent": 0.0,
+      "forgetting": 0.0,
+      "positive_forgetting": 0.0
+    },
+    {
+      "candidate": "utility_f0p5_c0",
+      "AC": 33.0,
+      "F1": 30.751039810631426,
+      "labels_percent": 0.0,
+      "forgetting": 0.0,
+      "positive_forgetting": 0.0
+    },
+    {
+      "candidate": "utility_f0p5_c0p001",
+      "AC": 33.0,
+      "F1": 30.751039810631426,
+      "labels_percent": 0.0,
+      "forgetting": 0.0,
+      "positive_forgetting": 0.0
+    },
+    {
+      "candidate": "utility_f1_c0",
+      "AC": 33.0,
+      "F1": 30.751039810631426,
+      "labels_percent": 0.0,
+      "forgetting": 0.0,
+      "positive_forgetting": 0.0
+    },
+    {
+      "candidate": "utility_f1_c0p001",
+      "AC": 41.55555555555556,
+      "F1": 39.36286256612991,
+      "labels_percent": 20.0,
+      "forgetting": 0.31446540880502977,
+      "positive_forgetting": 0.6289308176100595
+    }
+  ],
+  "model_sha256": {
+    "paper": "f14bd4b126ed86aab8303d3e6ff53a48d2a20e079cfdea9b9ede8124a6fa2bf8",
+    "utility_f0p5_c0": "44ba379d97efc9edc6b606af145f4adb4fa24fe0336d2255aa7decc9c0d3364e",
+    "utility_f0p5_c0p001": "27c13bba054233a0d8ec4317af93ae084cc076227baa6052d6115262081dd5fa",
+    "utility_f1_c0": "98a325c6882613056428148dcbed38d01408e9ccd81bd07b91ac67f0b60faa4f",
+    "utility_f1_c0p001": "f6a9502b63bdea65fb7b1a611282f101853e6f5710f545715557dc831b948de3"
+  }
+}
