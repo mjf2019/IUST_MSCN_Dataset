@@ -1,0 +1,47 @@
+{
+  "test_data": {
+    "streams": {
+      "5": "61406c547dcfc24d2c5c28d5da4e724282a726c4d033456bf56822803f70c05a",
+      "7": "54a8e5a0c0757d26eafe45233e338354d5085483c9b3dac2c9595c1a6ff1a0ba",
+      "10": "9b9c6681087db9dd074bbd1bff34c2963c92338044993634cc6bdf52bd96b872",
+      "12": "1d7015fd3a1496b2aadfbfe77ceedc89b010fcdf2c003963b4e950738c2477f7",
+      "15": "45040ebb74f294488e075f475d6b7931cb1b52297bb8347bdc00133c6267b856",
+      "17": "8a914d52298755eddcd7fcf70c76b39a1c993b160bd5f84381f306cd990ddc71",
+      "20": "c57037c6ecf0da9f1f3476f0b15ebba4647b56705d8f43d72ff05b120952eccb"
+    },
+    "source_audit": "17bdd068d2ae0d65345df206291b2e65d1f7af6ae951a16a837eaa31fc55ab99"
+  },
+  "model_checkpoints": {
+    "beta_0": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\two_action_paper_gain_seed42_p300_e3_v1\\Candidates\\beta_0\\Models\\two_action_ddqn.pth",
+      "sha256": "0d96d831d08938283640ee974cfa48c416dbdafeca981f227993ac7318bbbbe7",
+      "reused_parent": true,
+      "selected_epoch": 1
+    },
+    "beta_10": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\two_action_paper_gain_seed42_p300_e3_v1\\Candidates\\beta_10\\Models\\two_action_ddqn.pth",
+      "sha256": "b5e4ec4054d068427e662abddf148adce1b45bc5fc8db9c9eb7c2d03e822d21a",
+      "reused_parent": true,
+      "selected_epoch": 3
+    },
+    "beta_15": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\two_action_paper_gain_extra_seed42_p300_e3_v1\\Candidates\\beta_15\\Models\\two_action_ddqn.pth",
+      "sha256": "b5f27477c4cd9fe2a317ea99488a4109f5220102b59d1e36288e43ff716c9763",
+      "reused_parent": false,
+      "selected_epoch": 2
+    },
+    "beta_20": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\two_action_paper_gain_extra_seed42_p300_e3_v1\\Candidates\\beta_20\\Models\\two_action_ddqn.pth",
+      "sha256": "ccdb7d4ef29e73d8ccd5aacdc17b064ea80289d6af7460a9bad664a7aa2f06ab",
+      "reused_parent": false,
+      "selected_epoch": 2
+    },
+    "beta_100": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\two_action_paper_gain_seed42_p300_e3_v1\\Candidates\\beta_100\\Models\\two_action_ddqn.pth",
+      "sha256": "594f209d943960c450388d5fe9a36c29310d6e605064dfc74f1b99f9bb70c781",
+      "reused_parent": true,
+      "selected_epoch": 1
+    }
+  },
+  "purpose": "descriptive all-beta comparison; existing VAL-selected configurations remain unchanged"
+}
