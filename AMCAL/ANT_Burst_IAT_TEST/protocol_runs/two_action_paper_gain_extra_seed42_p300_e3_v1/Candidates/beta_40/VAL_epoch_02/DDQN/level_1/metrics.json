@@ -1,0 +1,48 @@
+{
+  "online": {
+    "AC": 64.0,
+    "PR": 65.29487430856418,
+    "RC": 64.86357596334419,
+    "F1": 64.17162545815803
+  },
+  "samples": 300,
+  "labels": 45,
+  "cap": 60,
+  "labels_percent": 15.0,
+  "source_before": {
+    "AC": 68.86792452830188,
+    "PR": 76.47109226056594,
+    "RC": 65.12917190336545,
+    "F1": 68.70228852493882
+  },
+  "source_after": {
+    "AC": 67.9245283018868,
+    "PR": 68.16435185185186,
+    "RC": 66.98994553833263,
+    "F1": 66.32458576473024
+  },
+  "original_domain_forgetting": {
+    "AC": 0.9433962264150892,
+    "PR": 8.306740408714077,
+    "RC": -1.8607736349671882,
+    "F1": 2.377702760208578
+  },
+  "target_before": {
+    "AC": 65.66666666666666,
+    "PR": 73.7221143518136,
+    "RC": 66.33481822384825,
+    "F1": 68.62216536642899
+  },
+  "target_after": {
+    "AC": 72.33333333333334,
+    "PR": 72.52494090729384,
+    "RC": 73.60433334433708,
+    "F1": 72.08291943235645
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 26,
+  "milliseconds_per_row": 9.091658666729927,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST"
+}

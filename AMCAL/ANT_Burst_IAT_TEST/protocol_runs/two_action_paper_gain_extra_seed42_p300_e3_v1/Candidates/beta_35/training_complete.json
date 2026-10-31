@@ -1,0 +1,226 @@
+{
+  "protocol": {
+    "protocol": {
+      "version": 1,
+      "dataset": "IAT",
+      "seed": 42,
+      "pilot_rows": 300,
+      "epochs": 3,
+      "betas": [
+        25.0,
+        30.0,
+        35.0,
+        40.0
+      ],
+      "actor_checkpoint_sha256": "dc00084db21a4339847e7815ab88162515e8c11acc041aba5865c02ee9286a37",
+      "healthy_teacher_sha256": "cb20edb4f6e6ef0b3074d0a94da041a14c6d19294f51ed6f5b392b8f4a0e0ac3",
+      "source_models": {
+        "protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+        "initial_cnn_model.pth": "16b2c531add95691a04aaef7f9bd041212cb212112eb1702efbb415786b98d54",
+        "enhanced_context.pth": "b0533e8c84679bd81dcbc02bdd507c069da5557f7c37cac7668e197b27d1634c"
+      },
+      "train_files": {
+        "0": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+        "1": "bf92f8d8088d7199d1a83187c2f04079c13aa0fb115878e3649c5bd85d8a6cc6",
+        "3": "391285a6f89750c0025eb225a7d2b4beca1314852c9d630e8105108a352eaa53"
+      },
+      "implementation_sha256": {
+        "amcal_two_action_paper_gain.py": "da3e71304107a6d76b4994bfa45c949ca6717a72874f53bb28712a0c7bc4c0c2",
+        "enhancements/paper_gain_reward.py": "c3eb2bb55142faeb6b5e5ea5a4af3169c403c7dd941616a9897f51d678c14087",
+        "enhancements/query_utility_reward.py": "b58c377f4ba002638397769a6a6f5db87c2cab6023f4ee1f105a7b874747ad56",
+        "enhancements/two_action_ddqn.py": "57e8c6bfa982b2f0977d05391d0bc44cf2f4b4480cfc9cb56bc4a07685a3b634",
+        "enhancements/competitive_selector.py": "4090227a3de03c30c7bd94f3335e9f42e3b8f6e70295d199e3103692721ac67d",
+        "amcal_competitive_selector.py": "0846639ecdb811889fc93e3033579abc698d43945ba7d14670fea7ca85626042",
+        "amcal_budget_actor.py": "b7f5b399d2dc9dc7fc00eb712eef8641ae90a7ec3bdd19d5b293204368a36709",
+        "amcal_minimax_paironly.py": "471820f2797ffcc92de99ad60f42fed3c8d137512605036f83a316010d4edc4a",
+        "enhancements/minimax_query.py": "a73b3c4ebe60ba1ed2d200233277e23c360b5a8feec454f55b19e05afb223691",
+        "amcal_two_action_more_betas.py": "b22ab1a8264455433eb1a6b57e49b61032b011085613a41313d60fc053d2ea78"
+      },
+      "train_data": {
+        "streams": {
+          "0": "654d129a8f0b10d4c15b206475bec0173350209e27e9893e3babb806c9b3025d",
+          "1": "6d2dcf24c9eee55e58a33f1554e4ef23ce6229a4bd090abc3ad9c01984e8e198",
+          "3": "8bc092c1d95b010897bdc94c548458dcde880fb776c6b39bef5a7d540cef0454"
+        },
+        "source_audit": "b8d21440b03040eeb203159a7778b3406d0978e97e0892c0dc5fef74f7c638ae"
+      },
+      "validation_data": {
+        "streams": {
+          "0": "cd43d92fecf9d1d92f73cf98bd1c648478e09ab2e5a13f602800ee7ff13fc5a9",
+          "1": "4c62939ee0a677787797c1d9e8a1f233e0effdb9eaf0d4150fb23f3d40394099",
+          "3": "892b9ff5e783a42d26612a7f5c55132eb1949daf7509b5359acccc0fd553401c"
+        },
+        "source_audit": "1ee09c7c173454645945af58e1a8136c39a5c175b23535ffe950c706cea310ae"
+      },
+      "probes": {
+        "generalization": {
+          "0": {
+            "ids": [
+              125,
+              223,
+              284,
+              292,
+              491,
+              511,
+              528,
+              796,
+              1050,
+              1303,
+              1431,
+              1598,
+              1816,
+              1885,
+              2191,
+              2193,
+              2250,
+              2275,
+              2498,
+              2598,
+              2634,
+              2671,
+              2783,
+              3087
+            ],
+            "rows": 24
+          },
+          "1": {
+            "ids": [
+              15,
+              21,
+              220,
+              336,
+              363,
+              531,
+              886,
+              1131,
+              1311,
+              1327,
+              1344,
+              1364,
+              1392,
+              1422,
+              1753,
+              1798,
+              1835,
+              2125,
+              2180,
+              2225,
+              2333,
+              2545,
+              2897,
+              3032
+            ],
+            "rows": 24
+          },
+          "3": {
+            "ids": [
+              39,
+              177,
+              203,
+              337,
+              355,
+              426,
+              674,
+              1187,
+              1332,
+              1537,
+              1556,
+              1579,
+              1694,
+              1732,
+              1925,
+              2126,
+              2136,
+              2187,
+              2201,
+              2323,
+              2391,
+              2592,
+              3040,
+              3073
+            ],
+            "rows": 24
+          }
+        },
+        "retention": {
+          "ids": [
+            30,
+            234,
+            258,
+            265,
+            283,
+            338,
+            366,
+            392,
+            468,
+            509,
+            589,
+            765,
+            826,
+            1037,
+            1331,
+            1406,
+            1436,
+            1480,
+            1702,
+            2021,
+            2044,
+            2101,
+            2130,
+            2247,
+            2369,
+            2392,
+            2464,
+            2584,
+            2777,
+            2902,
+            2924,
+            2993
+          ],
+          "rows": 32
+        },
+        "excluded_anchor_rows": 72,
+        "sampling": "fixed TRAIN-only; IDs/features disjoint across probes and streams; macro CE within each level",
+        "independence": "held out from this experiment adaptive updates; not necessarily from historical pretraining",
+        "generalization_sha256": [
+          "9e42f2a2e8e150b5461ad6001f38d2353fffa89c47a36245c39a6cde60c2754d",
+          "a70e65de571f19a7adcecdec2fcaf21e45da9818f7f5b08d1582abfbdaae83bb",
+          "6ac37f1e21f414642081b2febe1c850898d62b6831a983970fa8dc44fb2007c8"
+        ],
+        "TRAIN_anchors_sha256": "b0ae05ba1431cab48cf646130a3be976f9d85db0cac7f3a3ff10b887277220c8",
+        "excluded_reference_use": "reserved/excluded from adaptive updates; no reference loss is measured for query reward",
+        "loss": "ordinary mean cross entropy on the single matching TRAIN level, not a mixed-domain or macro-class loss"
+      },
+      "budget_fraction": 0.2,
+      "context_lr": 0.00025,
+      "replay_weight": 0.1,
+      "architecture": "unchanged strong original IAT CNN / Light PS CNN / initial Context; fixed Context -> Frozen",
+      "reward": "query: original paper reward + beta * (same-domain independent TRAIN CE before minus after one actual update); skip: 0",
+      "paper_reward": {
+        "both_wrong": 3.0,
+        "only_Frozen_wrong": 2.0,
+        "only_Context_wrong": -2.0,
+        "both_correct": 0.0
+      },
+      "measurement": "TRAIN only; signed unscaled mean CE on a fixed same-level probe; no cost, new forgetting penalty, sign target, clipping, synthetic drift, future rollout or copied update branch",
+      "DDQN": {
+        "gamma": 0.95,
+        "lr": 0.0001,
+        "batch_size": 32,
+        "learn_every": 4,
+        "target_every": 15,
+        "capacity": 4096,
+        "epsilon": "0.30 to 0.05; same parent hidden encoder/normalizer; new return layer starts at zero"
+      },
+      "matched_control": "beta=0 retrained on the same streams, initial Q and probe-excluded TRAIN anchors",
+      "evaluation": "VAL/TEST query policies frozen; only Context adapts; reset Context/Adam/memory/cap per intensity; gain probes are not accessed at evaluation; TEST does not select models",
+      "scope": "single-seed small-data reward ablation, not full benchmark or independently retrained no-RL ablation",
+      "theory": "closed-loop DDQN; Context competitive-gap descent preserved; no formal shared min-max equivalence asserted",
+      "extension": "new beta candidates; same training/VAL recipe; all candidates TEST, no TEST selection",
+      "parent_protocol_sha256": "ca6d987abf624034b632ff2e71cd09ed8d2273e9b98c65f03f2f8df0f88cbd01"
+    },
+    "beta": 35.0
+  },
+  "selected_epoch": 1,
+  "checkpoint_sha256": "6644a9a2dc5d13a36077d735eab10f5ae2463502b5d2974cedda1f95012f327d"
+}

@@ -1,0 +1,41 @@
+{
+  "test_data": {
+    "streams": {
+      "5": "61406c547dcfc24d2c5c28d5da4e724282a726c4d033456bf56822803f70c05a",
+      "7": "54a8e5a0c0757d26eafe45233e338354d5085483c9b3dac2c9595c1a6ff1a0ba",
+      "10": "9b9c6681087db9dd074bbd1bff34c2963c92338044993634cc6bdf52bd96b872",
+      "12": "1d7015fd3a1496b2aadfbfe77ceedc89b010fcdf2c003963b4e950738c2477f7",
+      "15": "45040ebb74f294488e075f475d6b7931cb1b52297bb8347bdc00133c6267b856",
+      "17": "8a914d52298755eddcd7fcf70c76b39a1c993b160bd5f84381f306cd990ddc71",
+      "20": "c57037c6ecf0da9f1f3476f0b15ebba4647b56705d8f43d72ff05b120952eccb"
+    },
+    "source_audit": "17bdd068d2ae0d65345df206291b2e65d1f7af6ae951a16a837eaa31fc55ab99"
+  },
+  "model_checkpoints": {
+    "beta_25": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\two_action_paper_gain_extra_seed42_p300_e3_v1\\Candidates\\beta_25\\Models\\two_action_ddqn.pth",
+      "sha256": "248d6a1f6bae94f89a8dc2695499e83426e05aa6f838cc7ffd5e2ab12a31e681",
+      "reused_parent": false,
+      "selected_epoch": 3
+    },
+    "beta_30": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\two_action_paper_gain_extra_seed42_p300_e3_v1\\Candidates\\beta_30\\Models\\two_action_ddqn.pth",
+      "sha256": "6ed53fc1278b0fdca3a1d4a725d9522f36c257c7c08669d809fa7f4f7393ff3c",
+      "reused_parent": false,
+      "selected_epoch": 1
+    },
+    "beta_35": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\two_action_paper_gain_extra_seed42_p300_e3_v1\\Candidates\\beta_35\\Models\\two_action_ddqn.pth",
+      "sha256": "6644a9a2dc5d13a36077d735eab10f5ae2463502b5d2974cedda1f95012f327d",
+      "reused_parent": false,
+      "selected_epoch": 1
+    },
+    "beta_40": {
+      "path": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\two_action_paper_gain_extra_seed42_p300_e3_v1\\Candidates\\beta_40\\Models\\two_action_ddqn.pth",
+      "sha256": "a1f5d0473cb1b797c59bd2ecfc1fc911d8f39987344e9342f19f0feefefdd856",
+      "reused_parent": false,
+      "selected_epoch": 1
+    }
+  },
+  "purpose": "descriptive all-beta comparison; existing VAL-selected configurations remain unchanged"
+}
