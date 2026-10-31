@@ -1,0 +1,80 @@
+{
+  "protocol": {
+    "version": 1,
+    "dataset": "IAT",
+    "seed": 42,
+    "pilot_rows": 300,
+    "epochs": 3,
+    "actor_checkpoint_sha256": "92bdef0cd710983dd2d21895861676de1b2e733510bb9d49346ab746f5c168ee",
+    "healthy_teacher_sha256": "13f1788791bcc89e81c0008f42f6349a02a58fa166121c75523e409f980359e9",
+    "source_models": {
+      "protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+      "initial_cnn_model.pth": "87d0f977f76767b6666f5a1dbc50a52e1740b1125270ad6435b221b7b9e270b4",
+      "enhanced_context.pth": "cfbb271c42262b5bccf43548d3c575bb05517d8aad60ddfa785efba4ce06cc4e"
+    },
+    "train_files": {
+      "0": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+      "1": "bf92f8d8088d7199d1a83187c2f04079c13aa0fb115878e3649c5bd85d8a6cc6",
+      "3": "391285a6f89750c0025eb225a7d2b4beca1314852c9d630e8105108a352eaa53"
+    },
+    "implementation_sha256": {
+      "amcal_two_action_ddqn_light_iat.py": "4dd444d13772003bd9eb5d3414cc7275270aaf9a9d4d2c9f94e7121526280399",
+      "enhancements/two_action_ddqn.py": "57e8c6bfa982b2f0977d05391d0bc44cf2f4b4480cfc9cb56bc4a07685a3b634",
+      "enhancements/competitive_selector.py": "4090227a3de03c30c7bd94f3335e9f42e3b8f6e70295d199e3103692721ac67d",
+      "amcal_competitive_selector_light_iat.py": "883f21d13b27c053f47bf0092ff3e60a5022c3e09aa3d34e2f22576e3823005a",
+      "amcal_minimax_paironly_light_iat.py": "dbdd046ebdc5bef8417878757189a6d110309361702bbb3771d916ea2f989894",
+      "enhancements/cnn_variant.py": "3ca1193fdc0b2a6fc79c3f4e880f391c150a82bcc2425ae9f8f596f745280386",
+      "amcal_budget_actor.py": "b7f5b399d2dc9dc7fc00eb712eef8641ae90a7ec3bdd19d5b293204368a36709",
+      "amcal_minimax_paironly.py": "471820f2797ffcc92de99ad60f42fed3c8d137512605036f83a316010d4edc4a",
+      "enhancements/minimax_query.py": "a73b3c4ebe60ba1ed2d200233277e23c360b5a8feec454f55b19e05afb223691"
+    },
+    "train_data": {
+      "streams": {
+        "0": "654d129a8f0b10d4c15b206475bec0173350209e27e9893e3babb806c9b3025d",
+        "1": "6d2dcf24c9eee55e58a33f1554e4ef23ce6229a4bd090abc3ad9c01984e8e198",
+        "3": "8bc092c1d95b010897bdc94c548458dcde880fb776c6b39bef5a7d540cef0454"
+      },
+      "source_audit": "b8d21440b03040eeb203159a7778b3406d0978e97e0892c0dc5fef74f7c638ae"
+    },
+    "validation_data": {
+      "streams": {
+        "0": "cd43d92fecf9d1d92f73cf98bd1c648478e09ab2e5a13f602800ee7ff13fc5a9",
+        "1": "4c62939ee0a677787797c1d9e8a1f233e0effdb9eaf0d4150fb23f3d40394099",
+        "3": "892b9ff5e783a42d26612a7f5c55132eb1949daf7509b5359acccc0fd553401c"
+      },
+      "source_audit": "1ee09c7c173454645945af58e1a8136c39a5c175b23535ffe950c706cea310ae"
+    },
+    "architecture": "same healthy CNN/Context as two-action Actor; Light IAT CNN and Light PS CNN",
+    "actions": {
+      "0": "Context prediction; no feedback",
+      "1": "Context prediction; acquire feedback and batch5 update"
+    },
+    "reward": {
+      "both_wrong": 3.0,
+      "only_Frozen_wrong": 2.0,
+      "only_Context_wrong": -2.0,
+      "both_correct": 0.0,
+      "skip": 0.0
+    },
+    "gamma": 0.95,
+    "lr": 0.0001,
+    "batch_size": 32,
+    "learn_every": 4,
+    "target_every": 15,
+    "replay_capacity": 4096,
+    "feature_width": 30,
+    "normalization": "unchanged frozen TRAIN normalizer from parent Actor",
+    "encoder": "parent Actor 16-unit hidden layer; new two-output return layer initialized to zero",
+    "TRAIN_epsilon": "0.30 to 0.05 across epochs",
+    "eval_epsilon": 0.0,
+    "context_lr": 0.00025,
+    "replay_weight": 0.1,
+    "budget_fraction": 0.2,
+    "online": "Context adapts; DDQN and Actor weights frozen; every level resets Context/Adam/memory/budget",
+    "selection": "VAL mean online AC minus positive original-domain forgetting; fewer labels only breaks ties",
+    "theory": "closed-loop DDQN with competitive original-paper reward; no shared-objective min-max claim",
+    "scope": "matched small-data pilot; no method superiority assumed; deployment controls, not retrained no-RL ablations"
+  },
+  "selected_epoch": 3,
+  "checkpoint_sha256": "a16c55697c6b6536e06244c8aa12eed007fa6dcea3474c03efd9d4139e0f9c92"
+}
