@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "dataset": "PS",
+  "seed": 42,
+  "betas": [
+    10.0,
+    15.0,
+    20.0,
+    25.0,
+    30.0
+  ],
+  "test_rows_per_level": 0,
+  "TEST_levels": [
+    5,
+    7,
+    10,
+    12,
+    15,
+    17,
+    20
+  ],
+  "budget_fraction": 0.2,
+  "parent_protocol_sha256": "92d73972685061b9d86389b82065520c5b8e321b150a4e9076516ac6fbd6d98b",
+  "implementation_sha256": {
+    "amcal_fixed_beta_fulltest.py": "5391bec3325c1c4c85478ca856e935a241753917d7f64099a4ee56738c65affc",
+    "amcal_selected_beta_budgets.py": "342d1b12b38521e9e8af8ea85b994a0b1ee985777af3e440a9c86cf59d61016d"
+  },
+  "training": "none; reuse existing validated candidates only",
+  "evaluation": "all eligible official TEST rows; same audit exclusions, order and seed; reset Context/Adam/memory per beta and level",
+  "selection": "TEST is descriptive for every beta; no automatic TEST-based model selection",
+  "original_models": "source CNN and initial Context unchanged; no CNN fine-tuning"
+}

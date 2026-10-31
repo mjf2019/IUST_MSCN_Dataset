@@ -1,0 +1,51 @@
+{
+  "protocol": {
+    "version": 1,
+    "dataset": "PS",
+    "seed": 42,
+    "betas": [
+      10.0,
+      15.0,
+      20.0,
+      25.0,
+      30.0
+    ],
+    "test_rows_per_level": 0,
+    "TEST_levels": [
+      5,
+      7,
+      10,
+      12,
+      15,
+      17,
+      20
+    ],
+    "budget_fraction": 0.2,
+    "parent_protocol_sha256": "92d73972685061b9d86389b82065520c5b8e321b150a4e9076516ac6fbd6d98b",
+    "implementation_sha256": {
+      "amcal_fixed_beta_fulltest.py": "5391bec3325c1c4c85478ca856e935a241753917d7f64099a4ee56738c65affc",
+      "amcal_selected_beta_budgets.py": "342d1b12b38521e9e8af8ea85b994a0b1ee985777af3e440a9c86cf59d61016d"
+    },
+    "training": "none; reuse existing validated candidates only",
+    "evaluation": "all eligible official TEST rows; same audit exclusions, order and seed; reset Context/Adam/memory per beta and level",
+    "selection": "TEST is descriptive for every beta; no automatic TEST-based model selection",
+    "original_models": "source CNN and initial Context unchanged; no CNN fine-tuning"
+  },
+  "TEST_data": {
+    "streams": {
+      "5": "f53d10e7dc3844a09f4223f461443f566257b5d04122ca18916d197f026b9e16",
+      "7": "70ea30e1d8536fab1e16a399797b9cc45bfccd5d09dc0e7200c6f5f064f30846",
+      "10": "1c8969ccc1f07b8bcf6cf95a66b9f645d60894671401808b8d3bee39e8a2633b",
+      "12": "b19aac62720680cb96330505ecd3f98ccddb67cca1ba43b74b76f38a602c08c9",
+      "15": "a4ea582569097e385766624ee78bab381403c74742077ca23a733fa6b5e8df4c",
+      "17": "8b58c34436ffd1d23da3af2abf41c67f76e20831d59b59fd5719895ec44d37d6",
+      "20": "6706b786aab54413fe296abbd0e7087d60ad6aee10697c75e017cc6651b9d4e8"
+    },
+    "source_audit": "985b47e1b6f0d39a1f3f4465c33c286cecea4184425081a794da27526cf79ec0"
+  },
+  "cases": 35,
+  "summary_sha256": {
+    "summary_mean.csv": "504ef45d0c3bd12b1730932f576097a4e42f29fe157da9cd2c29d0adb244879f",
+    "summary_by_level.csv": "3601c4d04f77d4f829291b286eacc341849c64c5d5a324fa41145c0936882a1f"
+  }
+}
