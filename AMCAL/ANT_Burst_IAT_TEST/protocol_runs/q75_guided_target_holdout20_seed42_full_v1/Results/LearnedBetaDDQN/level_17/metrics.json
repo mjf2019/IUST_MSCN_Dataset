@@ -1,0 +1,71 @@
+{
+  "online": {
+    "AC": 81.78294573643412,
+    "PR": 80.89377847903727,
+    "RC": 78.80345403591402,
+    "F1": 79.55067566601461
+  },
+  "samples": 774,
+  "labels": 154,
+  "cap": 154,
+  "labels_percent": 19.896640826873384,
+  "source_before": {
+    "AC": 64.76190476190476,
+    "PR": 68.50362067753372,
+    "RC": 63.07411674347158,
+    "F1": 64.92248590652846
+  },
+  "source_after": {
+    "AC": 65.71428571428571,
+    "PR": 67.22222222222221,
+    "RC": 70.12992831541217,
+    "F1": 67.37997030193038
+  },
+  "original_domain_forgetting": {
+    "AC": -0.952380952380949,
+    "PR": 1.2813984553115034,
+    "RC": -7.055811571940595,
+    "F1": -2.45748439540192
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 132,
+  "milliseconds_per_row": 10.857549354010466,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 52.4547803617571,
+    "PR": 56.64008766831346,
+    "RC": 45.71976935616693,
+    "F1": 47.06477727136577
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 89.53488372093024,
+    "PR": 88.75211366695414,
+    "RC": 88.19336903907679,
+    "F1": 88.23951176305268
+  },
+  "target_before": {
+    "AC": 53.608247422680414,
+    "PR": 57.83162784420151,
+    "RC": 49.92158469325651,
+    "F1": 47.977866461199895
+  },
+  "target_after": {
+    "AC": 88.65979381443299,
+    "PR": 89.1508581752484,
+    "RC": 89.52424424560648,
+    "F1": 88.73117526580523
+  },
+  "target_holdout_rows": 194,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 35.051546391752574,
+    "PR": 31.31923033104689,
+    "RC": 39.60265955234997,
+    "F1": 40.75330880460534
+  },
+  "labels_percent_of_all_target_rows": 15.909090909090908,
+  "target_total_rows": 968,
+  "mean_feedback_delay_rows": 0.0
+}

@@ -1,0 +1,78 @@
+{
+  "online": {
+    "AC": 74.21875,
+    "PR": 77.78094657339139,
+    "RC": 61.91936154711522,
+    "F1": 63.28312175036652
+  },
+  "samples": 640,
+  "labels": 128,
+  "cap": 128,
+  "labels_percent": 20.0,
+  "source_before": {
+    "AC": 63.52941176470588,
+    "PR": 67.40216376405634,
+    "RC": 68.62348178137653,
+    "F1": 67.4560059342668
+  },
+  "source_after": {
+    "AC": 65.88235294117646,
+    "PR": 67.25318964449399,
+    "RC": 68.00007497375917,
+    "F1": 67.16598216598216
+  },
+  "original_domain_forgetting": {
+    "AC": -2.352941176470587,
+    "PR": 0.14897411956235374,
+    "RC": 0.6234068076173571,
+    "F1": 0.29002376828464094
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 98,
+  "milliseconds_per_row": 9.044923906185431,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "none during TEST; q75-only does not consult Q; guided mode consults frozen Q only",
+  "adaptation_stream_seen_before": {
+    "AC": 37.5,
+    "PR": 32.613081975296176,
+    "RC": 32.66761025053962,
+    "F1": 30.315415862113575
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 87.1875,
+    "PR": 89.34848077321611,
+    "RC": 81.25091782490648,
+    "F1": 82.8960697043609
+  },
+  "target_before": {
+    "AC": 40.993788819875775,
+    "PR": 35.73236567354214,
+    "RC": 32.646690255049386,
+    "F1": 32.22123104371097
+  },
+  "target_after": {
+    "AC": 81.98757763975155,
+    "PR": 85.44987922705315,
+    "RC": 75.79696554735253,
+    "F1": 77.83560458323339
+  },
+  "target_holdout_rows": 161,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 40.993788819875775,
+    "PR": 49.717513553511004,
+    "RC": 43.15027529230314,
+    "F1": 45.61437353952242
+  },
+  "labels_percent_of_all_target_rows": 15.980024968789014,
+  "target_total_rows": 801,
+  "query_rule": "Q75Only",
+  "q75_threshold": 0.4355369508266449,
+  "q75_source": "saved source Actor TRAIN 75th percentile; fixed across all TEST levels",
+  "guide_scope": "hard query-eligibility mask; no Q/reward update; no budget-forcing fallback",
+  "guide_entropy": "Context entropy coordinate of the existing DDQN state; TRAIN checkpoint threshold",
+  "mean_feedback_delay_rows": 0.0,
+  "guide_veto_count": 0,
+  "guide_high_entropy_skipped_by_ddqn": 0
+}
