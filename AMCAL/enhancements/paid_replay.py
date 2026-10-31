@@ -6,7 +6,9 @@ import amcal_burst_structured_bank_protocol as legacy
 from .counterfactual import context_step
 
 
-def paid_context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, replay, paid_rows):
+def paid_context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, replay, paid_rows, return_loss=False):
+    if return_loss and a.paid_replay_mode != 'batch5':
+        raise ValueError('The shared-loss payoff requires one batch5 optimization step.')
     rows = [(inputs, label), *paid_rows]
     if a.paid_replay_mode == 'sequential':
         for i, (x, y) in enumerate(rows):
@@ -17,6 +19,8 @@ def paid_context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, 
     if a.paid_replay_mode not in ('batch', 'batch_all', 'batch3', 'batch5', 'batch7', 'batch8'): raise ValueError('Unknown paid replay mode.')
     # With no old feedback, preserve the original single-row update exactly.
     if len(rows) == 1:
+        if return_loss:
+            return context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, replay, True)
         context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, replay)
         return
     x = torch.cat([r[0] for r in rows]); y = torch.cat([r[1] for r in rows])
@@ -31,3 +35,4 @@ def paid_context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, 
     loss.backward()
     nn.utils.clip_grad_norm_([p for p in context.parameters() if p.requires_grad], 1)
     optimizer.step()
+    if return_loss: return float(loss.detach())

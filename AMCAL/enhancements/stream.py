@@ -112,6 +112,12 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             warmup=False, rollout_seed=None, reference=None, same_level=False, continuation=None,
             paid_supervision=False, next_domain_features=None, domain_level=None):
     config = a.config
+    shared_loss = getattr(config, 'shared_loss_rl', False)
+    if shared_loss and (len(bank) != 1 or getattr(a, 'paid_replay_mode', 'off') != 'batch5'
+            or a.update_policy != 'learned' or config.paired_weight or warmup
+            or getattr(a, 'query_budget_bonus', 0.) or getattr(a, 'context_damage_guard', False)
+            or getattr(a, 'counterfactual_utility', False)):
+        raise ValueError('Shared-loss RL requires one Context, batch5, ordinary TD and no reward/bonus overrides.')
     uncertainty_threshold = getattr(a, 'uncertainty_threshold', None)
     if uncertainty_threshold is not None and (training or warmup or mode != 'learned' or len(bank) != 1 or a.query_schedule != 'policy'):
         raise ValueError('Uncertainty querying is an evaluation-only one-Context policy control.')
@@ -293,6 +299,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 briers.append(float(np.mean((route_logits.sigmoid().detach().cpu().numpy() - correct) ** 2)))
         action_counts[action] += 1; agent.clock += 1
         reward = gain = harm = None
+        shared_loss_before = None
         reference_counts = None; alternative_utilities = None; alternative_successors = None
         guard_decision = None
         with timer.stage('update'):
@@ -305,7 +312,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             else:
                 next_x, next_z, next_h = x[pos+1:pos+2], frozen[pos+1:pos+2], embeddings[pos+1:pos+2]
                 next_count, next_pos, next_cap = n, pos+1, cap
-            if not no_selector and not terminal and not warmup and (paid or (training and not paid_supervision)):
+            if not no_selector and not terminal and not warmup and (paid or shared_loss or (training and not paid_supervision)):
                 successor_output = executor.outputs(next_x, next_z)
             zero = torch.zeros_like(state) if state is not None else None
             skip_next = zero
@@ -334,7 +341,10 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 fresh_history = (deepcopy(history) if (getattr(a, 'router_refresh', False) or protected_active)
                                  and mode == 'learned' and batch is not None else None)
                 if config.protected_reference:
-                    before, route_weight = probe_before(a, cnn, bank, selected, batch, agent, history, used, cap, pos, n)
+                    if shared_loss:
+                        before, route_weight = None, None
+                    else:
+                        before, route_weight = probe_before(a, cnn, bank, selected, batch, agent, history, used, cap, pos, n)
                     replay = batch.protected(config.memory_replay_size, memory.replay_rng) if batch is not None else None
                     reference_counts = memory.counts()
                 else:
@@ -355,14 +365,19 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                     guard_records.append(guard_decision)
                     committed = guard_decision['accepted']
                 elif getattr(a, 'paid_replay_mode', 'off') != 'off':
-                    paid_context_step(a, cnn, bank[selected], optimizers[selected],
+                    shared_loss_before = paid_context_step(a, cnn, bank[selected], optimizers[selected],
                         inputs, label, outputs[0][:,0], replay, memory.paid_replay(inputs,
-                            count=None if a.paid_replay_mode == 'batch_all' else {'batch3': 2, 'batch5': 4, 'batch7': 6, 'batch8': 7}.get(a.paid_replay_mode, 2)))
+                            count=None if a.paid_replay_mode == 'batch_all' else {'batch3': 2, 'batch5': 4, 'batch7': 6, 'batch8': 7}.get(a.paid_replay_mode, 2)),
+                        **({'return_loss': True} if shared_loss else {}))
                 else:
                     context_step(a, cnn, bank[selected], optimizers[selected], inputs, label, outputs[0][:,0], replay)
                 if committed:
                     agent.versions[selected] += 1; executor.refresh(selected)
-                if config.protected_reference:
+                if shared_loss:
+                    if shared_loss_before is None or not np.isfinite(shared_loss_before):
+                        raise RuntimeError('Missing finite pre-update shared loss.')
+                    utility = shared_loss_before - a.selection_cost
+                elif config.protected_reference:
                     if not damage_guard:
                         after = legacy.core.probe_losses(cnn, bank[selected], (batch.x, batch.y)) if batch is not None else None
                     if route_weight is not None:
@@ -376,7 +391,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                 if counterfactual:
                     counterfactual_errors.append(abs(alternative_utilities[selected]-utility))
                 if warmup: utility = 0.
-                reward = (1. if prediction == truth else -1.) + utility
+                reward = utility if shared_loss else (1. if prediction == truth else -1.) + utility
                 used += 1; slot_queries[selected] += 1; labels_mask[pos] = True
                 if committed:
                     changed = executor.refresh_output(inputs, outputs, selected)
@@ -445,7 +460,7 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                         fresh_correct = fresh_outputs[0].argmax(2) == batch.y[:, None]
                     agent.refresh_routes(fresh_states, fresh_correct)
                 if config.cascade: agent.observe_pre_router(embeddings[pos:pos+1], frozen[pos:pos+1], target, route_logits)
-                if not warmup:
+                if not warmup and not shared_loss:
                     skip_state = state.clone()
                     if schedule is not None: skip_state[:, -3] = 0
                     for r in range(routes):
@@ -455,6 +470,11 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
                         agent.push(state, action, reward, successor, terminal, versions)
                         agent.push_pair(state, action, utility, successor, skip_next, terminal, versions)
                     if paid or pos % 16 == 15 or pos+1 == n: agent.learn_td()
+            if shared_loss and mode == 'learned' and not no_selector:
+                # Exactly one real transition per row. Skip reward needs no label.
+                successor = zero if terminal else successor_state(successor_output)
+                agent.push(state, action, reward if paid else 0., successor, terminal, versions)
+                if paid or pos % 16 == 15 or pos+1 == n: agent.learn_td()
         next_cached = None if bridge else successor_output
         predictions_all.append(route_predictions); known_all.append(observed)
         # One batched observer transfer replaces individual scalar .item() calls.
@@ -464,6 +484,10 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
             reward=reward, gain=gain, harm=harm, reference_counts=reference_counts,
             predictions=[int(v) if known else None for v, known in zip(route_predictions, observed)],
             scores=scores))
+        if shared_loss:
+            traces[-1].update(shared_loss_before=shared_loss_before,
+                request_cost=a.selection_cost if paid else 0.,
+                td_reward=float(reward) if paid else 0., td_terminal=bool(terminal))
         if uncertainty_routing:
             traces[-1]['uncertainty_score'] = current_uncertainty
             traces[-1]['uncertainty_threshold'] = uncertainty_threshold
@@ -574,7 +598,3 @@ def episode(a, cnn, bank, initial, agent, domain, anchors, mode='learned', train
     if continuation is not None:
         continuation.update(optimizers=optimizers, history=history, memory=memory, previous_count=n)
     return metrics, traces
-
-
-
-

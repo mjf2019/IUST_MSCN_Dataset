@@ -68,6 +68,7 @@ class EfficientQ(legacy.StructuredQ):
         self.routes = slots+1
         self.comparison = JointRouteComparison(route_width) if joint_router else None
         self.utility_normalization = None
+        self.shared_loss_rl = False
 
     def route_logits(self, states):
         route_x = states[:, :self.routes*self.route_width].reshape(-1, self.routes, self.route_width)
@@ -90,6 +91,10 @@ class EfficientQ(legacy.StructuredQ):
         future = self.future(pooled)
         features = torch.cat([route_x[:, 1:], pooled[:, None].expand(-1, self.slots, -1)], 2)
         update = self.update_value(features).squeeze(-1)
+        if self.shared_loss_rl:
+            # Prediction routing has its own supervised correctness objective.
+            # The query critic models skip/query returns in one common unit.
+            return torch.cat([future.expand(-1, self.routes), future + update], 1), logits, update
         return torch.cat([future + reward, future + reward[:, 1:] + update], 1), logits, update
 
     def forward_with_logits(self, states, detach_routes=False):
@@ -98,6 +103,12 @@ class EfficientQ(legacy.StructuredQ):
 
     def forward_for_action(self, states):
         raw, logits, update = self.forward_components(states)
+        if self.shared_loss_rl:
+            selected = raw.clone()
+            best_route = logits.argmax(1)
+            for route in range(self.routes):
+                selected[best_route != route, route] = -torch.inf
+            return selected, logits, raw, update
         if self.utility_normalization is None: return raw, logits, raw, update
         normalized = relative_utility(update, **self.utility_normalization)
         selected = raw.clone()
@@ -139,6 +150,9 @@ class EnhancementAgent(legacy.Agent):
         policy = EfficientQ(route_width, config.joint_router, slots).to(device)
         load_policy_state(policy, self.policy.state_dict() if policy_state is None else policy_state)
         self.policy = policy.eval()
+        self.policy.shared_loss_rl = getattr(config, 'shared_loss_rl', False)
+        if self.policy.shared_loss_rl and (slots != 1 or query_value_only or paired_query_only):
+            raise ValueError('Shared-loss RL trains both existing TD heads in one Context.')
         self.target = deepcopy(policy).eval()
         self.query_value_only = query_value_only
         self.paired_query_only = paired_query_only
@@ -207,7 +221,7 @@ class EnhancementAgent(legacy.Agent):
         return samples, weights
 
     def observe_routes(self, state, correct, step_now=True, importance=1., versions=None, protected=None, protected_weight=.5):
-        if self.query_value_only: return
+        if self.query_value_only or getattr(self, 'freeze_routing', False): return
         version = tuple(self.versions if versions is None else versions)
         self.route_memory.append((state.detach().cpu().reshape(-1).clone(),
             correct.detach().cpu().float().reshape(self.slots+1).clone(), float(importance), version, self.clock))
@@ -260,6 +274,7 @@ class EnhancementAgent(legacy.Agent):
             current = self.policy(states, detach_routes=True).gather(1, actions[:, None]).squeeze(1)
         with torch.no_grad(): target = rewards + self.gamma * (1 - terminal) * self._next_values(next_states)
         loss = (F.smooth_l1_loss(current, target, reduction='none') * weight).sum() / weight.sum()
+        self.last_losses['td'] = float(loss.detach())
         if self.config.paired_weight and self.pair_memory:
             pairs, pw = self._sample(self.pair_memory, 1024 if self.offline else 128)
             px = torch.stack([row[0] for row in pairs]).to(self.device)

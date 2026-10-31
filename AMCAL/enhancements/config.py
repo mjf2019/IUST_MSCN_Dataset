@@ -38,6 +38,7 @@ class EnhancementConfig:
     cascade_max_gap: int = 32
     compute_cost: float = .02
     prerouter_weight: float = .2
+    shared_loss_rl: bool = False
 
     @classmethod
     def preset(cls, name):
@@ -47,6 +48,9 @@ class EnhancementConfig:
         return cls(profile=name, architecture=architecture, cascade=name == 'cascade')
 
     def validated(self):
+        if self.shared_loss_rl and (self.architecture != 'legacy' or self.cascade or self.routed_utility
+                or self.joint_router or self.paired_weight != 0 or not self.protected_reference):
+            raise ValueError('Shared-loss RL requires legacy Context, protected replay and ordinary TD only.')
         for name, value in asdict(self).items():
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 if not math.isfinite(value) or value < 0:
@@ -85,8 +89,11 @@ class EnhancementConfig:
             else: raise ValueError('Unknown ablation: ' + name)
         return replace(self, **values).validated()
 
-    def as_dict(self): return asdict(self)
+    def as_dict(self):
+        values = asdict(self)
+        if not self.shared_loss_rl: values.pop('shared_loss_rl')
+        return values
 
     @property
     def fingerprint(self):
-        return hashlib.sha256(json.dumps(asdict(self), sort_keys=True).encode()).hexdigest()[:12]
+        return hashlib.sha256(json.dumps(self.as_dict(), sort_keys=True).encode()).hexdigest()[:12]

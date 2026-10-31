@@ -8,7 +8,7 @@ from .memory import transfer
 from .models import BankExecutor
 
 
-def context_gradients(a, cnn, context, optimizer, inputs, label, frozen_logits, replay):
+def context_gradients(a, cnn, context, optimizer, inputs, label, frozen_logits, replay, return_loss=False):
     rx, ry = (inputs, label) if replay is None else (torch.cat([inputs, replay[0]]), torch.cat([label, replay[1]]))
     optimizer.zero_grad(set_to_none=True)
     transformed = context(rx)
@@ -18,11 +18,13 @@ def context_gradients(a, cnn, context, optimizer, inputs, label, frozen_logits, 
     loss = loss + a.config.residual_weight * (transformed-rx).square().mean()
     loss.backward()
     nn.utils.clip_grad_norm_([p for p in context.parameters() if p.requires_grad], 1)
+    if return_loss: return float(loss.detach())
 
 
-def context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, replay):
-    context_gradients(a, cnn, context, optimizer, inputs, label, frozen_logits, replay)
+def context_step(a, cnn, context, optimizer, inputs, label, frozen_logits, replay, return_loss=False):
+    loss = context_gradients(a, cnn, context, optimizer, inputs, label, frozen_logits, replay, return_loss)
     optimizer.step()
+    if return_loss: return loss
 
 
 def alternatives(a, cnn, bank, optimizers, inputs, label, outputs, batch, replay,
