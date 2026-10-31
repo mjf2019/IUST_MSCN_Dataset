@@ -1,0 +1,61 @@
+{
+  "protocol": {
+    "version": 1,
+    "dataset": "PS",
+    "seed": 42,
+    "TEST_rows_per_level": 300,
+    "skip_counts": [
+      1,
+      2
+    ],
+    "budget_fraction": 0.2,
+    "test_data": {
+      "streams": {
+        "5": "2e2d0e0981accb34c68eb8aefc3cb4ede01b5be255b647630b6413ff4635c1d3",
+        "7": "bca439cda95e6d6fa4bee9832093751ba267c4b41a29c1f024c144bc0119259f",
+        "10": "c4532ca4ab8041c3a8ff8877c91024e281e173a40d639f0c0f37aae90aba4c92",
+        "12": "e4d1b2cc4b19f4e85b299904218840aaa8e001433d5218b61c653beb8dc3f71d",
+        "15": "271c6b983752270c457222361cc842705fdf5ed6785ea80cda5e767bc785859e",
+        "17": "4546953e99133c4f72bec9c1b529748d2ec82ea4c84be70703eaf4b2254b5433",
+        "20": "6ae35ee4e151d6d1527720e896ee7def14a9b86552a5e52d6b7f15393f7d0713"
+      },
+      "source_audit": "985b47e1b6f0d39a1f3f4465c33c286cecea4184425081a794da27526cf79ec0"
+    },
+    "healthy_checkpoint_sha256": "a3450fe35aa9f26716a7b926789f6e5b50c5aaeab180682a0f5141b047dac2d2",
+    "parent_actor_sha256": "6ccde34fbf84c2674a1367202609880301126eeb45dbfabfc30409d2f1b5d975",
+    "source_models": {
+      "protocol_preprocessing.joblib": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663",
+      "initial_cnn_model.pth": "bd00a78d2eb5ac14325a2f33f03f9cf38f1877e18af89348f86b1e79dc815575",
+      "enhanced_context.pth": "215b20344c52775eaf2d80c28490f7b1df93f886bb04c28ec0d6acccb8a8ddca"
+    },
+    "initial_state_hashes": {
+      "cnn": "c7b4c8d36a102184b405f7c122f50906d19defc75f183d04ab7ed184108715a7",
+      "context": "3762013bf23a373d772e889aebeefc7b1d057d5968ff4b04850e530ed60aa306"
+    },
+    "implementation_sha256": {
+      "amcal_two_action_periodic.py": "8a99eb4e424df9a000dbb44fd2e5c61914bedccfc0fe0c6a6e149c206ed138c2",
+      "amcal_two_action_utility.py": "ac1820e533220b5a2506e9a4bc57e5b63acf0d314345d088f8d565c726a62688",
+      "amcal_competitive_selector.py": "0846639ecdb811889fc93e3033579abc698d43945ba7d14670fea7ca85626042",
+      "amcal_budget_actor.py": "b7f5b399d2dc9dc7fc00eb712eef8641ae90a7ec3bdd19d5b293204368a36709",
+      "amcal_minimax_paironly.py": "471820f2797ffcc92de99ad60f42fed3c8d137512605036f83a316010d4edc4a",
+      "enhancements/minimax_query.py": "a73b3c4ebe60ba1ed2d200233277e23c360b5a8feec454f55b19e05afb223691",
+      "enhancements/competitive_selector.py": "4090227a3de03c30c7bd94f3335e9f42e3b8f6e70295d199e3103692721ac67d"
+    },
+    "schedule": "query positions 1,3,5,... or 1,4,7,... until floor(0.2*N) paid labels; no later requests",
+    "query_inference": "none: no Actor or DDQN forward; no uncertainty threshold; no reward optimization",
+    "model": "same healthy original IAT CNN / Light PS CNN and Context as the paper DDQN comparison",
+    "context_lr": 0.00025,
+    "replay_weight": 0.1,
+    "update": "unchanged batch5; current label after prediction",
+    "reset": "Context/Adam/source-and-paid memory reset for every control and intensity",
+    "scope": "inference-only replacement of query selection; initial pretrained Context retained; not a retrained no-RL ablation"
+  },
+  "method": "PeriodicSkip1",
+  "level": 7,
+  "skip_count": 1,
+  "stream_sha256": "bca439cda95e6d6fa4bee9832093751ba267c4b41a29c1f024c144bc0119259f",
+  "reference_sha256": "985b47e1b6f0d39a1f3f4465c33c286cecea4184425081a794da27526cf79ec0",
+  "samples": 300,
+  "cap": 60,
+  "seed": 42
+}
