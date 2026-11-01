@@ -1,0 +1,72 @@
+{
+  "online": {
+    "AC": 70.46875,
+    "PR": 61.1875027561295,
+    "RC": 58.48753707894696,
+    "F1": 58.673232811341855
+  },
+  "samples": 640,
+  "labels": 118,
+  "cap": 128,
+  "labels_percent": 18.4375,
+  "source_before": {
+    "AC": 63.52941176470588,
+    "PR": 67.40216376405634,
+    "RC": 68.62348178137653,
+    "F1": 67.4560059342668
+  },
+  "source_after": {
+    "AC": 65.88235294117646,
+    "PR": 73.91541408782788,
+    "RC": 66.29442195231668,
+    "F1": 67.08337181026258
+  },
+  "original_domain_forgetting": {
+    "AC": -2.352941176470587,
+    "PR": -6.513250323771544,
+    "RC": 2.329059829059844,
+    "F1": 0.3726341240042217
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 92,
+  "milliseconds_per_row": 11.962176562519744,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 37.5,
+    "PR": 32.613081975296176,
+    "RC": 32.66761025053962,
+    "F1": 30.315415862113575
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 83.28125,
+    "PR": 73.44590449672872,
+    "RC": 71.52215397916032,
+    "F1": 71.65052260873071
+  },
+  "target_before": {
+    "AC": 40.993788819875775,
+    "PR": 35.73236567354214,
+    "RC": 32.646690255049386,
+    "F1": 32.22123104371097
+  },
+  "target_after": {
+    "AC": 78.88198757763976,
+    "PR": 66.7008547008547,
+    "RC": 67.87056253000526,
+    "F1": 66.81080594124073
+  },
+  "target_holdout_rows": 161,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 37.88819875776399,
+    "PR": 30.968489027312565,
+    "RC": 35.22387227495587,
+    "F1": 34.58957489752976
+  },
+  "labels_percent_of_all_target_rows": 14.731585518102372,
+  "target_total_rows": 801,
+  "mean_feedback_delay_rows": 0.0,
+  "query_rule": "AlignedQ75DDQN"
+}

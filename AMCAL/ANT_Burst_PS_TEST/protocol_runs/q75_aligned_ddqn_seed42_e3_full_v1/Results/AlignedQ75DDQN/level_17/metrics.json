@@ -1,0 +1,72 @@
+{
+  "online": {
+    "AC": 59.53125,
+    "PR": 65.8480573673436,
+    "RC": 53.198658990401746,
+    "F1": 54.85281861622886
+  },
+  "samples": 640,
+  "labels": 128,
+  "cap": 128,
+  "labels_percent": 20.0,
+  "source_before": {
+    "AC": 63.52941176470588,
+    "PR": 67.40216376405634,
+    "RC": 68.62348178137653,
+    "F1": 67.4560059342668
+  },
+  "source_after": {
+    "AC": 64.70588235294117,
+    "PR": 67.88690476190476,
+    "RC": 64.90290898185634,
+    "F1": 65.45311268715524
+  },
+  "original_domain_forgetting": {
+    "AC": -1.176470588235297,
+    "PR": -0.4847409978484194,
+    "RC": 3.720572799520184,
+    "F1": 2.002893247111558
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 92,
+  "milliseconds_per_row": 32.27935531249386,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 16.5625,
+    "PR": 25.97674697036793,
+    "RC": 21.639969848128672,
+    "F1": 21.49368084481526
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 93.4375,
+    "PR": 94.83513923169097,
+    "RC": 91.78042532725347,
+    "F1": 93.15596149120253
+  },
+  "target_before": {
+    "AC": 19.875776397515526,
+    "PR": 30.90991367307157,
+    "RC": 21.290880387242616,
+    "F1": 23.04297068126343
+  },
+  "target_after": {
+    "AC": 90.6832298136646,
+    "PR": 93.51984126984128,
+    "RC": 90.10582404351753,
+    "F1": 91.6702080292306
+  },
+  "target_holdout_rows": 161,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 70.80745341614907,
+    "PR": 62.60992759676971,
+    "RC": 68.81494365627492,
+    "F1": 68.62723734796717
+  },
+  "labels_percent_of_all_target_rows": 15.980024968789014,
+  "target_total_rows": 801,
+  "mean_feedback_delay_rows": 0.0,
+  "query_rule": "AlignedQ75DDQN"
+}

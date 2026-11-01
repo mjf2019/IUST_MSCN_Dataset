@@ -1,0 +1,72 @@
+{
+  "online": {
+    "AC": 77.8125,
+    "PR": 79.83077231520049,
+    "RC": 75.69050063114386,
+    "F1": 77.37057681245022
+  },
+  "samples": 640,
+  "labels": 127,
+  "cap": 128,
+  "labels_percent": 19.84375,
+  "source_before": {
+    "AC": 63.52941176470588,
+    "PR": 67.40216376405634,
+    "RC": 68.62348178137653,
+    "F1": 67.4560059342668
+  },
+  "source_after": {
+    "AC": 64.70588235294117,
+    "PR": 64.34054834054834,
+    "RC": 65.47046033888138,
+    "F1": 64.31257647183043
+  },
+  "original_domain_forgetting": {
+    "AC": -1.176470588235297,
+    "PR": 3.0616154235080018,
+    "RC": 3.1530214424951453,
+    "F1": 3.143429462436373
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 71,
+  "milliseconds_per_row": 12.587588281257922,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 56.56250000000001,
+    "PR": 57.36609119734643,
+    "RC": 53.605871583157025,
+    "F1": 51.6676154155801
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 92.03125,
+    "PR": 93.72275984342764,
+    "RC": 91.70889865180209,
+    "F1": 92.56133124000226
+  },
+  "target_before": {
+    "AC": 52.79503105590062,
+    "PR": 57.1295337522518,
+    "RC": 48.29634181607865,
+    "F1": 47.64617662803146
+  },
+  "target_after": {
+    "AC": 86.33540372670807,
+    "PR": 90.42923929740199,
+    "RC": 85.27516472175915,
+    "F1": 87.15223735841255
+  },
+  "target_holdout_rows": 161,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 33.54037267080744,
+    "PR": 33.29970554515019,
+    "RC": 36.9788229056805,
+    "F1": 39.50606073038109
+  },
+  "labels_percent_of_all_target_rows": 15.85518102372035,
+  "target_total_rows": 801,
+  "mean_feedback_delay_rows": 0.0,
+  "query_rule": "AlignedQ75DDQN"
+}
