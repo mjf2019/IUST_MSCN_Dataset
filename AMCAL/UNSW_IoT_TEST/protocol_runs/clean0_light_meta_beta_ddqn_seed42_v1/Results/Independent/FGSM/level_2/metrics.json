@@ -1,0 +1,75 @@
+{
+  "online": {
+    "AC": 84.84848484848484,
+    "PR": 81.74582453013586,
+    "RC": 84.51141686749321,
+    "F1": 82.72375984217355
+  },
+  "samples": 495,
+  "labels": 99,
+  "cap": 99,
+  "labels_percent": 20.0,
+  "source_before": {
+    "AC": 94.91525423728814,
+    "PR": 93.95675815305134,
+    "RC": 91.7015116552722,
+    "F1": 92.44914673702817
+  },
+  "source_after": {
+    "AC": 92.91217257318952,
+    "PR": 92.04259000008074,
+    "RC": 93.41566282760724,
+    "F1": 92.5978148432385
+  },
+  "original_domain_forgetting": {
+    "AC": 2.003081664098616,
+    "PR": 1.9141681529706034,
+    "RC": -1.7141511723350362,
+    "F1": -0.148668106210323
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 29,
+  "milliseconds_per_row": 13.954439797941971,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 70.9090909090909,
+    "PR": 65.34172326625158,
+    "RC": 67.37254773864484,
+    "F1": 65.54189218840493
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 88.48484848484848,
+    "PR": 86.16907720000505,
+    "RC": 88.72419500014517,
+    "F1": 87.11320075605832
+  },
+  "target_before": {
+    "AC": 70.96774193548387,
+    "PR": 67.14411027568923,
+    "RC": 69.62189662189661,
+    "F1": 65.3796910443047
+  },
+  "target_after": {
+    "AC": 87.90322580645162,
+    "PR": 84.1117216117216,
+    "RC": 86.94627594627595,
+    "F1": 84.16119878845848
+  },
+  "target_holdout_rows": 124,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 16.935483870967744,
+    "PR": 16.967611336032377,
+    "RC": 17.324379324379336,
+    "F1": 18.78150774415377
+  },
+  "labels_percent_of_all_target_rows": 15.993537964458804,
+  "target_total_rows": 619,
+  "case": {
+    "attack": "FGSM",
+    "strength": 0.1,
+    "level": 2
+  }
+}

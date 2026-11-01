@@ -1,0 +1,75 @@
+{
+  "online": {
+    "AC": 91.31313131313131,
+    "PR": 89.17240724097051,
+    "RC": 90.74770864183192,
+    "F1": 89.88459816305385
+  },
+  "samples": 495,
+  "labels": 99,
+  "cap": 99,
+  "labels_percent": 20.0,
+  "source_before": {
+    "AC": 94.91525423728814,
+    "PR": 93.95675815305134,
+    "RC": 91.7015116552722,
+    "F1": 92.44914673702817
+  },
+  "source_after": {
+    "AC": 93.0662557781202,
+    "PR": 92.93443680206985,
+    "RC": 92.23980850809792,
+    "F1": 92.3474541550515
+  },
+  "original_domain_forgetting": {
+    "AC": 1.8489984591679445,
+    "PR": 1.0223213509814855,
+    "RC": -0.5382968528257237,
+    "F1": 0.1016925819766783
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 33,
+  "milliseconds_per_row": 13.210598181820277,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 76.36363636363637,
+    "PR": 74.61705750813303,
+    "RC": 79.69723585261752,
+    "F1": 75.53874309341401
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 93.73737373737374,
+    "PR": 91.16323135122407,
+    "RC": 92.80112849994678,
+    "F1": 91.89985390341529
+  },
+  "target_before": {
+    "AC": 77.41935483870968,
+    "PR": 74.64528429247511,
+    "RC": 80.37647537647538,
+    "F1": 76.30375539733325
+  },
+  "target_after": {
+    "AC": 92.74193548387096,
+    "PR": 90.66740556376554,
+    "RC": 91.33658933658934,
+    "F1": 90.79261662032746
+  },
+  "target_holdout_rows": 124,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 15.322580645161281,
+    "PR": 16.02212127129043,
+    "RC": 10.960113960113958,
+    "F1": 14.488861222994217
+  },
+  "labels_percent_of_all_target_rows": 15.993537964458804,
+  "target_total_rows": 619,
+  "case": {
+    "attack": "PGD",
+    "strength": 0.1,
+    "level": 2
+  }
+}

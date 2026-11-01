@@ -1,0 +1,75 @@
+{
+  "online": {
+    "AC": 89.33823529411765,
+    "PR": 93.71175770534677,
+    "RC": 92.70879676677175,
+    "F1": 93.20147205140194
+  },
+  "samples": 1088,
+  "labels": 217,
+  "cap": 217,
+  "labels_percent": 19.94485294117647,
+  "source_before": {
+    "AC": 90.35792549306063,
+    "PR": 94.60592060017484,
+    "RC": 95.08335636582686,
+    "F1": 94.6709506416848
+  },
+  "source_after": {
+    "AC": 89.554419284149,
+    "PR": 94.14256090517429,
+    "RC": 93.59778888062081,
+    "F1": 93.84989734535803
+  },
+  "original_domain_forgetting": {
+    "AC": 0.803506208911628,
+    "PR": 0.4633596950005483,
+    "RC": 1.4855674852060474,
+    "F1": 0.8210532963267667
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 45,
+  "milliseconds_per_row": 10.914156433821464,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 90.34926470588235,
+    "PR": 94.57433196434357,
+    "RC": 94.28502753258653,
+    "F1": 94.2539414401143
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 91.26838235294117,
+    "PR": 95.24720160529941,
+    "RC": 94.31134594989338,
+    "F1": 94.76104440566786
+  },
+  "target_before": {
+    "AC": 90.80882352941177,
+    "PR": 95.01436538786547,
+    "RC": 95.97841726618705,
+    "F1": 95.25943243067732
+  },
+  "target_after": {
+    "AC": 90.44117647058823,
+    "PR": 95.18707482993196,
+    "RC": 94.45503597122303,
+    "F1": 94.76076555023923
+  },
+  "target_holdout_rows": 272,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": -0.3676470588235361,
+    "PR": 0.1727094420664912,
+    "RC": -1.5233812949640253,
+    "F1": -0.49866688043809404
+  },
+  "labels_percent_of_all_target_rows": 15.955882352941176,
+  "target_total_rows": 1360,
+  "case": {
+    "attack": "CW",
+    "strength": 0.1,
+    "level": 1
+  }
+}

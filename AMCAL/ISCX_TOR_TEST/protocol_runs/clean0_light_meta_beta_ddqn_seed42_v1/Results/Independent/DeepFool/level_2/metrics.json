@@ -1,0 +1,75 @@
+{
+  "online": {
+    "AC": 87.85335689045937,
+    "PR": 80.05181821085787,
+    "RC": 81.98886382418483,
+    "F1": 80.5580397452901
+  },
+  "samples": 2264,
+  "labels": 452,
+  "cap": 452,
+  "labels_percent": 19.964664310954063,
+  "source_before": {
+    "AC": 93.5847726471625,
+    "PR": 89.06947127550202,
+    "RC": 90.71550615181687,
+    "F1": 89.3827590041607
+  },
+  "source_after": {
+    "AC": 91.71660204441311,
+    "PR": 85.913268332495,
+    "RC": 87.8658792517989,
+    "F1": 86.28593758867844
+  },
+  "original_domain_forgetting": {
+    "AC": 1.8681706027493874,
+    "PR": 3.156202943007031,
+    "RC": 2.8496269000179666,
+    "F1": 3.0968214154822675
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 275,
+  "milliseconds_per_row": 6.575931139565328,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 48.18904593639576,
+    "PR": 56.23817613667287,
+    "RC": 56.589185256863914,
+    "F1": 48.4655244698106
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 89.75265017667844,
+    "PR": 83.1420966281462,
+    "RC": 83.67902723757021,
+    "F1": 83.06706646885658
+  },
+  "target_before": {
+    "AC": 46.19469026548673,
+    "PR": 48.79219603800774,
+    "RC": 50.80522060689072,
+    "F1": 44.6435129837241
+  },
+  "target_after": {
+    "AC": 88.14159292035399,
+    "PR": 79.75279056780815,
+    "RC": 79.91731332400288,
+    "F1": 79.56997885704266
+  },
+  "target_holdout_rows": 565,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 41.94690265486726,
+    "PR": 30.96059452980041,
+    "RC": 29.112092717112155,
+    "F1": 34.926465873318556
+  },
+  "labels_percent_of_all_target_rows": 15.977377165075998,
+  "target_total_rows": 2829,
+  "case": {
+    "attack": "DeepFool",
+    "strength": 1.0,
+    "level": 2
+  }
+}

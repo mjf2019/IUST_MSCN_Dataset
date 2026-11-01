@@ -1,0 +1,75 @@
+{
+  "online": {
+    "AC": 80.85774058577407,
+    "PR": 81.77479018421243,
+    "RC": 80.84092959690047,
+    "F1": 81.0510774790055
+  },
+  "samples": 956,
+  "labels": 191,
+  "cap": 191,
+  "labels_percent": 19.97907949790795,
+  "source_before": {
+    "AC": 88.30409356725146,
+    "PR": 88.47171254796531,
+    "RC": 88.29773869346734,
+    "F1": 88.35441783095263
+  },
+  "source_after": {
+    "AC": 82.37259816207184,
+    "PR": 82.71108156731687,
+    "RC": 82.36683417085428,
+    "F1": 82.5119117742576
+  },
+  "original_domain_forgetting": {
+    "AC": 5.931495405179618,
+    "PR": 5.760630980648443,
+    "RC": 5.930904522613062,
+    "F1": 5.842506056695029
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 52,
+  "milliseconds_per_row": 10.366558054377808,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 85.0418410041841,
+    "PR": 85.35925625502664,
+    "RC": 85.02205901865561,
+    "F1": 85.09661616964577
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 84.8326359832636,
+    "PR": 85.7082470625325,
+    "RC": 84.82356931507576,
+    "F1": 85.03864201823174
+  },
+  "target_before": {
+    "AC": 86.19246861924687,
+    "PR": 87.20095448818853,
+    "RC": 86.1965811965812,
+    "F1": 86.29977418364099
+  },
+  "target_after": {
+    "AC": 82.00836820083683,
+    "PR": 83.60917819245134,
+    "RC": 82.0619658119658,
+    "F1": 82.08484785884816
+  },
+  "target_holdout_rows": 239,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": -4.18410041841004,
+    "PR": -3.5917762957371906,
+    "RC": -4.134615384615401,
+    "F1": -4.2149263247928275
+  },
+  "labels_percent_of_all_target_rows": 15.98326359832636,
+  "target_total_rows": 1195,
+  "case": {
+    "attack": "DeepFool",
+    "strength": 1.0,
+    "level": 2
+  }
+}

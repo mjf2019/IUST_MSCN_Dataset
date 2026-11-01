@@ -1,0 +1,75 @@
+{
+  "online": {
+    "AC": 94.94949494949495,
+    "PR": 93.0427414743909,
+    "RC": 93.78411752465568,
+    "F1": 93.39626263213209
+  },
+  "samples": 495,
+  "labels": 99,
+  "cap": 99,
+  "labels_percent": 20.0,
+  "source_before": {
+    "AC": 94.91525423728814,
+    "PR": 93.95675815305134,
+    "RC": 91.7015116552722,
+    "F1": 92.44914673702817
+  },
+  "source_after": {
+    "AC": 96.61016949152543,
+    "PR": 96.38689447939987,
+    "RC": 95.48255450887275,
+    "F1": 95.79460559837032
+  },
+  "original_domain_forgetting": {
+    "AC": -1.6949152542372872,
+    "PR": -2.4301363263485314,
+    "RC": -3.781042853600553,
+    "F1": -3.345458861342152
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 18,
+  "milliseconds_per_row": 14.404020404015112,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 94.34343434343434,
+    "PR": 91.1120825366698,
+    "RC": 90.45288803073855,
+    "F1": 90.6992177263247
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 97.17171717171718,
+    "PR": 96.86026832912582,
+    "RC": 95.6329689420555,
+    "F1": 96.190176986061
+  },
+  "target_before": {
+    "AC": 94.35483870967742,
+    "PR": 89.5879526977088,
+    "RC": 92.46336996336997,
+    "F1": 90.12542684528499
+  },
+  "target_after": {
+    "AC": 92.74193548387096,
+    "PR": 88.98351648351648,
+    "RC": 93.0982905982906,
+    "F1": 89.3747316259145
+  },
+  "target_holdout_rows": 124,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": -1.6129032258064626,
+    "PR": -0.6044362141923187,
+    "RC": 0.6349206349206327,
+    "F1": -0.7506952193704848
+  },
+  "labels_percent_of_all_target_rows": 15.993537964458804,
+  "target_total_rows": 619,
+  "case": {
+    "attack": "PGD",
+    "strength": 0.01,
+    "level": 1
+  }
+}

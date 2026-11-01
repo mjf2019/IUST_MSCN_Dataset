@@ -1,0 +1,75 @@
+{
+  "online": {
+    "AC": 86.50627615062761,
+    "PR": 86.53917561921679,
+    "RC": 86.50340505002255,
+    "F1": 86.48279291447454
+  },
+  "samples": 956,
+  "labels": 191,
+  "cap": 191,
+  "labels_percent": 19.97907949790795,
+  "source_before": {
+    "AC": 88.30409356725146,
+    "PR": 88.47171254796531,
+    "RC": 88.29773869346734,
+    "F1": 88.35441783095263
+  },
+  "source_after": {
+    "AC": 82.70676691729322,
+    "PR": 83.38785786297974,
+    "RC": 82.70686767169181,
+    "F1": 82.71565812143513
+  },
+  "original_domain_forgetting": {
+    "AC": 5.597326649958234,
+    "PR": 5.0838546849855675,
+    "RC": 5.590871021775527,
+    "F1": 5.638759709517501
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 132,
+  "milliseconds_per_row": 11.557063598294887,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 46.33891213389121,
+    "PR": 49.03295700758453,
+    "RC": 46.35430764535732,
+    "F1": 45.70966919991212
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 90.89958158995816,
+    "PR": 90.93548787322169,
+    "RC": 90.89942746065866,
+    "F1": 90.89596110190965
+  },
+  "target_before": {
+    "AC": 47.28033472803347,
+    "PR": 50.04494675010979,
+    "RC": 47.307692307692314,
+    "F1": 46.456577766833654
+  },
+  "target_after": {
+    "AC": 91.63179916317992,
+    "PR": 91.79820825169664,
+    "RC": 91.61324786324786,
+    "F1": 91.62501715478936
+  },
+  "target_holdout_rows": 239,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 44.35146443514645,
+    "PR": 41.75326150158685,
+    "RC": 44.30555555555555,
+    "F1": 45.16843938795571
+  },
+  "labels_percent_of_all_target_rows": 15.98326359832636,
+  "target_total_rows": 1195,
+  "case": {
+    "attack": "PGD",
+    "strength": 0.5,
+    "level": 3
+  }
+}
