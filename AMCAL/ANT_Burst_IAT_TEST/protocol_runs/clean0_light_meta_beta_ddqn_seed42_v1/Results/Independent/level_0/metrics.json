@@ -1,0 +1,70 @@
+{
+  "online": {
+    "AC": 64.1025641025641,
+    "PR": 68.3486779952585,
+    "RC": 62.73164908054834,
+    "F1": 64.81565333779957
+  },
+  "samples": 858,
+  "labels": 171,
+  "cap": 171,
+  "labels_percent": 19.93006993006993,
+  "source_before": {
+    "AC": 64.86486486486487,
+    "PR": 70.49634759502635,
+    "RC": 67.3556403943253,
+    "F1": 67.91355911126045
+  },
+  "source_after": {
+    "AC": 58.90027958993477,
+    "PR": 65.52076453922096,
+    "RC": 58.58452482740605,
+    "F1": 61.05802823670858
+  },
+  "original_domain_forgetting": {
+    "AC": 5.964585274930101,
+    "PR": 4.975583055805387,
+    "RC": 8.771115566919256,
+    "F1": 6.855530874551874
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 99,
+  "milliseconds_per_row": 10.179866433533295,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 69.58041958041959,
+    "PR": 73.22710291136907,
+    "RC": 71.03272473784801,
+    "F1": 71.50696059532912
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 70.74592074592074,
+    "PR": 73.99819450544088,
+    "RC": 68.85808739274516,
+    "F1": 70.81947173529814
+  },
+  "target_before": {
+    "AC": 64.65116279069767,
+    "PR": 70.21878504637125,
+    "RC": 67.67917267917268,
+    "F1": 68.55853562254164
+  },
+  "target_after": {
+    "AC": 57.20930232558139,
+    "PR": 64.70068614158347,
+    "RC": 57.10107022607021,
+    "F1": 59.85222985417123
+  },
+  "target_holdout_rows": 215,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": -7.441860465116278,
+    "PR": -5.518098904787777,
+    "RC": -10.578102453102467,
+    "F1": -8.706305768370413
+  },
+  "labels_percent_of_all_target_rows": 15.936626281453867,
+  "target_total_rows": 1073
+}

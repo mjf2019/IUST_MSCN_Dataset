@@ -1,0 +1,31 @@
+{
+  "recipe": {
+    "version": 1,
+    "dataset": "IAT",
+    "seed": 42,
+    "architecture": "light_ps_cnn_v1",
+    "training_levels": [
+      0
+    ],
+    "validation_levels": [
+      0
+    ],
+    "context_lr": 0.00025,
+    "cnn_epochs": 60,
+    "context_epochs": 20,
+    "patience": 5,
+    "input_preprocessing_sha256": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+    "clean_file_sha256": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+    "initialization": "partition metadata only; new clean TRAIN scaler and fresh CNN/Context weights",
+    "implementation_sha256": {
+      "amcal_burst_clean_meta_beta.py": "2edf83c19bd6eb5808a1a1a2898e444c2413b0ccd18a634c652bdbc70a256c11",
+      "amcal_light_cnn.py": "6bd993ce454ac507212844fd6295b07298d09b47f185b3780d6deff2256156fe",
+      "amcal_batch5_pipeline.py": "56a22e3fd866201362309bb76e8817b92093a48d177fe29a02b710dad115e413"
+    }
+  },
+  "sha256": {
+    "protocol_preprocessing.joblib": "ef3d6cb7e47006e56fad1f2b398fc7695f6b89f67ee56006604fb14ac7cc8458",
+    "initial_cnn_model.pth": "1e05f1fc4686adca75b728488dbaeb76efac1e5f546acd3e1f6329b2bbabba95",
+    "adversarial_best_context.pth": "3db89b2f760e14fcadee20b65034ea9c85845a40703acafce4c5bc52d5cc609e"
+  }
+}
