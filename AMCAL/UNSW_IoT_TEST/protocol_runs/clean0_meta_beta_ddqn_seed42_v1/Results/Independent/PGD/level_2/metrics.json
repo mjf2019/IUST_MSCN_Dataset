@@ -1,0 +1,75 @@
+{
+  "online": {
+    "AC": 88.88888888888889,
+    "PR": 88.52666480340504,
+    "RC": 89.51640728588987,
+    "F1": 88.89862838950984
+  },
+  "samples": 495,
+  "labels": 99,
+  "cap": 99,
+  "labels_percent": 20.0,
+  "source_before": {
+    "AC": 96.61016949152543,
+    "PR": 95.75786466650419,
+    "RC": 97.15620689596408,
+    "F1": 96.40892675821905
+  },
+  "source_after": {
+    "AC": 88.59784283513096,
+    "PR": 87.07322355370778,
+    "RC": 87.47232295145947,
+    "F1": 86.58369236355178
+  },
+  "original_domain_forgetting": {
+    "AC": 8.012326656394464,
+    "PR": 8.684641112796413,
+    "RC": 9.6838839445046,
+    "F1": 9.825234394667277
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 35,
+  "milliseconds_per_row": 14.770145050480473,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 80.2020202020202,
+    "PR": 80.41418866019114,
+    "RC": 81.1992175023954,
+    "F1": 80.66339858111864
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 91.71717171717172,
+    "PR": 92.0609203873816,
+    "RC": 91.65675357858368,
+    "F1": 91.7561848471637
+  },
+  "target_before": {
+    "AC": 84.67741935483872,
+    "PR": 87.05318160410383,
+    "RC": 83.82091982091981,
+    "F1": 84.65129233121958
+  },
+  "target_after": {
+    "AC": 90.32258064516128,
+    "PR": 92.44303941672364,
+    "RC": 88.91493691493692,
+    "F1": 89.98592870544091
+  },
+  "target_holdout_rows": 124,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 5.645161290322562,
+    "PR": 5.389857812619809,
+    "RC": 5.094017094017104,
+    "F1": 5.334636374221333
+  },
+  "labels_percent_of_all_target_rows": 15.993537964458804,
+  "target_total_rows": 619,
+  "case": {
+    "attack": "PGD",
+    "strength": 0.1,
+    "level": 2
+  }
+}

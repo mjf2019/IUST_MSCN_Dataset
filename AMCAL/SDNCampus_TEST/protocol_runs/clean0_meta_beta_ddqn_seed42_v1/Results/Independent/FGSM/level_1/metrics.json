@@ -1,0 +1,75 @@
+{
+  "online": {
+    "AC": 81.69456066945607,
+    "PR": 81.97576758191735,
+    "RC": 81.66631007350796,
+    "F1": 81.72447271520751
+  },
+  "samples": 956,
+  "labels": 191,
+  "cap": 191,
+  "labels_percent": 19.97907949790795,
+  "source_before": {
+    "AC": 87.21804511278195,
+    "PR": 88.2501090098855,
+    "RC": 87.20938023450587,
+    "F1": 87.33605041235157
+  },
+  "source_after": {
+    "AC": 82.70676691729322,
+    "PR": 82.6901257838033,
+    "RC": 82.69179229480737,
+    "F1": 82.57975257800464
+  },
+  "original_domain_forgetting": {
+    "AC": 4.511278195488728,
+    "PR": 5.55998322608221,
+    "RC": 4.517587939698501,
+    "F1": 4.756297834346924
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 56,
+  "milliseconds_per_row": 12.331317782413729,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 86.19246861924687,
+    "PR": 87.1645480642382,
+    "RC": 86.17051289706234,
+    "F1": 86.24601113389537
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 86.50627615062761,
+    "PR": 86.94701042963815,
+    "RC": 86.48428170527825,
+    "F1": 86.51215936735791
+  },
+  "target_before": {
+    "AC": 87.86610878661088,
+    "PR": 89.11566323301315,
+    "RC": 87.87393162393164,
+    "F1": 88.09349705144949
+  },
+  "target_after": {
+    "AC": 82.84518828451883,
+    "PR": 83.60519353940407,
+    "RC": 82.88461538461539,
+    "F1": 82.97477126697834
+  },
+  "target_holdout_rows": 239,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": -5.0209205020920535,
+    "PR": -5.510469693609082,
+    "RC": -4.989316239316253,
+    "F1": -5.1187257844711525
+  },
+  "labels_percent_of_all_target_rows": 15.98326359832636,
+  "target_total_rows": 1195,
+  "case": {
+    "attack": "FGSM",
+    "strength": 0.01,
+    "level": 1
+  }
+}

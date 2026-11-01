@@ -1,0 +1,75 @@
+{
+  "online": {
+    "AC": 71.31313131313132,
+    "PR": 68.80696529152968,
+    "RC": 71.84576159228826,
+    "F1": 69.37529165056301
+  },
+  "samples": 495,
+  "labels": 99,
+  "cap": 99,
+  "labels_percent": 20.0,
+  "source_before": {
+    "AC": 96.61016949152543,
+    "PR": 95.75786466650419,
+    "RC": 97.15620689596408,
+    "F1": 96.40892675821905
+  },
+  "source_after": {
+    "AC": 86.74884437596302,
+    "PR": 87.67684978061587,
+    "RC": 82.2085276580902,
+    "F1": 83.11951920607319
+  },
+  "original_domain_forgetting": {
+    "AC": 9.861325115562408,
+    "PR": 8.081014885888322,
+    "RC": 14.94767923787387,
+    "F1": 13.28940755214586
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 78,
+  "milliseconds_per_row": 15.574089090946611,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "adaptation_stream_seen_before": {
+    "AC": 32.323232323232325,
+    "PR": 25.44499093478676,
+    "RC": 27.72452406530975,
+    "F1": 25.631956692142698
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 78.98989898989899,
+    "PR": 77.14834062137203,
+    "RC": 79.90144982240159,
+    "F1": 78.02265364596366
+  },
+  "target_before": {
+    "AC": 33.87096774193548,
+    "PR": 28.694464654072977,
+    "RC": 31.882376882376885,
+    "F1": 26.4529350335802
+  },
+  "target_after": {
+    "AC": 88.70967741935483,
+    "PR": 88.1115461805117,
+    "RC": 89.22547822547824,
+    "F1": 88.53459119496856
+  },
+  "target_holdout_rows": 124,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 54.83870967741935,
+    "PR": 59.41708152643872,
+    "RC": 57.34310134310135,
+    "F1": 62.08165616138835
+  },
+  "labels_percent_of_all_target_rows": 15.993537964458804,
+  "target_total_rows": 619,
+  "case": {
+    "attack": "FGSM",
+    "strength": 0.5,
+    "level": 3
+  }
+}
