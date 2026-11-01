@@ -1,0 +1,85 @@
+{
+  "method": "RAL-author-core-matched-source",
+  "accuracy": 0.8828451882845189,
+  "macro_f1": 0.8834156461558097,
+  "weighted_f1": 0.8836258451245677,
+  "samples": 1195,
+  "labels": 170,
+  "label_cap": 239,
+  "actual_label_fraction": 0.14225941422594143,
+  "budget_utilization_pct": 71.1297071129707,
+  "labels_remaining": 69,
+  "online_gradient_steps": 0,
+  "query_protocol": "RAL paper prefix-ratio gate plus strict global cap",
+  "protocol": "predict-score-query-update; fresh model per level; reference/same-level observers never feed learning",
+  "online_seconds": 84.18050640000729,
+  "prediction_seconds": 21.08332119975239,
+  "selection_seconds": 20.588900799455587,
+  "update_seconds": 42.47929580009077,
+  "cache_seconds": 0.0,
+  "other_seconds": 0.028988600708544254,
+  "online_ms_per_sample": 70.44393841004793,
+  "samples_per_second": 14.195685570262814,
+  "update_ms_per_label": 249.8782105887692,
+  "timing_device": "cpu",
+  "timing_protocol": "synchronized wall time; prediction includes frozen-cache construction; update includes Context/classifier, reward probes and selector learning; excludes model loading, initialization, endpoint retention observers, file I/O and human label latency; other includes stream bookkeeping, oracle scoring and progress output",
+  "ral_budget_mode": "prefix",
+  "source_labels": 3600,
+  "source_initialization": "all clean TRAIN rows; each online refit retains them and all paid feedback",
+  "author_code_commit": "2a34a4b1b1e11054a718233e19de0c2134fd68e8",
+  "ral_protocol_version": 2,
+  "ral_trees": 10,
+  "ral_seen": 1195,
+  "ral_final_threshold": 0.5653928039372832,
+  "ral_final_decision_powers": [
+    0.3185902119761027,
+    0.3185902119761027,
+    0.3628195760477945
+  ],
+  "same_level": {
+    "all_rows": {
+      "n": 1195,
+      "initial": 0.8845188284518829,
+      "final": 0.9439330543933054,
+      "drop_pp": -5.941422594142254,
+      "broken": 23,
+      "fixed": 94
+    },
+    "unqueried": {
+      "n": 1025,
+      "initial": 0.926829268292683,
+      "final": 0.9346341463414635,
+      "drop_pp": -0.7804878048780495,
+      "broken": 23,
+      "fixed": 31
+    }
+  },
+  "reference": {
+    "n": 1197,
+    "initial": 0.9097744360902256,
+    "final": 0.9097744360902256,
+    "drop_pp": 0.0,
+    "broken": 23,
+    "fixed": 23
+  },
+  "AC": 88.28451882845188,
+  "PR": 88.57926698159893,
+  "RC": 88.26523611322607,
+  "F1": 88.34156461558096,
+  "weighted_PR": 88.6014383559021,
+  "weighted_RC": 88.28451882845188,
+  "weighted_F1": 88.36258451245676,
+  "description": {
+    "attack": "FGSM",
+    "strength": 0.01,
+    "level": 1
+  },
+  "train_levels": [
+    0
+  ],
+  "full_refit_events": 170,
+  "full_source_rows": 3600,
+  "maximum_rows_per_refit": 3770,
+  "online_window": 0,
+  "evaluation": "pre-feedback online; source + accumulated paid feedback only"
+}
