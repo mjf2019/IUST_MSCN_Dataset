@@ -26,7 +26,7 @@ try {
         if ($SourceRoot) { $arguments += @('--source-root',$SourceRoot) }
         if ($BurstDir) { $arguments += @('--burst-dir',$BurstDir) }
         if ($Output) { $arguments += @('--output',$Output) }
-        Write-Host "AF CHECKPOINT: $name | clean source25/class + TRAIN20% | reset clean model for every target | calibration20%"
+        Write-Host "AF ONLINE: $name | reset clean checkpoint | predict first20% before batch calibration | score entire stream"
         & $python @arguments
         if ($LASTEXITCODE -ne 0) { throw "AF clean reference failed: $name" }
     }

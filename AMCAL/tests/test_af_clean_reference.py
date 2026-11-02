@@ -10,6 +10,38 @@ import amcal_af_clean_reference as audit
 
 
 class CleanReferenceContracts(unittest.TestCase):
+    def test_prefix_is_label_blind_and_exact_budget(self):
+        np.testing.assert_array_equal(audit.prefix_indices(103), np.arange(20))
+        with self.assertRaises(ValueError):
+            audit.prefix_indices(5)
+
+    def test_calibration_rows_are_scored_before_update(self):
+        events = []
+        x = np.arange(10).reshape(10, 1)
+        def initial(batch):
+            events.append(('initial', batch[:, 0].tolist()))
+            return np.zeros(len(batch), dtype=int)
+        def adapt(prefix):
+            events.append(('adapt', prefix.tolist()))
+            def final(batch):
+                events.append(('final', batch[:, 0].tolist()))
+                return np.ones(len(batch), dtype=int)
+            return final, {'updates': 1}
+        prediction, metadata = audit.prequential_batch_calibration(x, 2, initial, adapt)
+        self.assertEqual(events, [('initial', [0, 1]), ('adapt', [0, 1]),
+                                  ('final', list(range(2, 10)))])
+        np.testing.assert_array_equal(prediction, [0, 0, 1, 1, 1, 1, 1, 1, 1, 1])
+        self.assertEqual(float(np.mean(prediction == 1)), .8)
+        self.assertEqual(metadata, {'updates': 1})
+
+    def test_online_denominator_cannot_exclude_feedback_prefix(self):
+        x = np.arange(11).reshape(11, 1)
+        prediction, _ = audit.prequential_batch_calibration(x, 2,
+            lambda batch:np.zeros(len(batch), dtype=int),
+            lambda prefix:(lambda batch:np.ones(len(batch), dtype=int), None))
+        self.assertEqual(len(prediction), len(x))
+        self.assertEqual(int(np.sum(prediction == 1)), 9)
+
     def test_source_calibration_counts_and_separation(self):
         x = np.arange(800, dtype=np.float32).reshape(400, 2)
         y = np.repeat([0, 1], 200)

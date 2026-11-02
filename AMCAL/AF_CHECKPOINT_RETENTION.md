@@ -1,39 +1,71 @@
-# AF checkpoint-based retention
+# AF checkpoint calibration: online scores and retention
 
-Train one clean AF checkpoint per dataset/seed: 25 clean TRAIN rows per class,
-then corrected author AF adaptation/tuning with exactly floor(20% of clean TRAIN)
-calibration rows. Source25 and calibration IDs/features are disjoint. Record the
-denominator and every selected ID. Clean VAL is observer-only.
+The clean initialization remains unchanged: 25 clean TRAIN rows per class and
+exactly floor(20% of clean TRAIN) disjoint calibration rows. Its corrected author
+AF fit creates a reusable level0 checkpoint. Clean VAL is observer-only.
 
-For EVERY target intensity, reload this same clean checkpoint, perform the author
-two-optimizer adaptation and supervised tuning with 20% target calibration labels,
-then discard the resulting model before the next intensity. Optimizers are fresh
-per intensity. The optional fit(initial_state=...) path initializes all AF network
-weights/buffers from clean; historical calls remain fresh fits. Author feature-layer
-reset before supervised tuning is retained. This is a new checkpoint-initialized
-AF experiment, not numerically identical to the author's fresh-joint-fit protocol.
+## Causal target evaluation
 
-The complete AF predictor includes the extractor and target-only cosine kNN:
-before adaptation use clean calibration supports/k; after adaptation use acquired
-target supports/k. Both are scored on identical held-out target rows and on a
-common original-domain VAL reference. Target calibration rows and exact fitting
-feature duplicates are excluded from evaluation. No target/VAL evaluation labels
-enter fitting, support selection hyperparameter tuning, or model selection.
+Every target intensity reloads the same clean checkpoint. A seed-only permutation
+matches the baseline evaluator's ordering rule; there is no future-label class
+balancing. Rows identical to clean fitting features are excluded and their count
+is recorded. The budget is floor(20% of this eligible stream), reset per intensity.
 
-Original forgetting = original-domain score before minus after adaptation.
-Same-domain forgetting = held-out target score before minus after adaptation.
-Gain is the negative of the corresponding forgetting. All AC/macro PR/RC/F1
-differences are signed percentage points; improvement is not clipped to zero.
+1. Predict the first budget-sized prefix using the clean checkpoint and its clean
+   kNN support. Freeze these predictions BEFORE exposing its labels to adaptation.
+2. Once this prefix's feedback has arrived, perform ONE author AF batch calibration
+   from the clean checkpoint, with fresh optimizers, followed by author feature
+   reset/supervised tuning. Only prefix labels enter the fit. Keep the full source25
+   support and the acquired target support. Do not use later stream labels.
+3. Predict the remaining suffix with the adapted extractor and target-only kNN.
+4. Compute online AC and macro PR/RC/F1 over ALL eligible stream rows, INCLUDING
+   the calibration prefix. Never replace prefix predictions with adapted ones.
 
-This code trains one clean AF and one continuation per target case. Existing
-independently fitted AF target results cannot provide these paired measurements
-and remain unchanged. It trains no AMCAL/CNN/Context/DDQN models. Offline target
-calibration results are not pre-feedback online metrics under a stream budget.
-Initial clean calibration is additional offline supervision, recorded separately.
+Batched prediction is causally equivalent to individual prediction within each
+phase because parameters/support do not change within either phase. This retains
+AF batch calibration: it is NOT a gradient update after every individual feedback.
+The acquisition schedule is a prefix, not uncertainty, random sampling of future
+positions, or an oracle class-balanced selection.
+
+online_trace.csv records row ID, position, immutable pre-feedback prediction,
+label request, labels acquired before prediction, model phase and the update
+boundary. Console output identifies online scores and prefix calibration accuracy.
+Actual class counts of acquired support are recorded even if a class is absent;
+there is no resampling to improve results or access future labels.
+
+## Paired observers
+
+Original-domain forgetting compares the initial/final predictor on the same clean
+VAL reference, excluding fitting IDs and exact fitting feature duplicates across
+all cases. Same-domain forgetting uses the same unqueried target observer rows
+before/after, excluding prefix supports and exact fitting feature duplicates.
+Observers do not feed training, query decisions, or checkpoint selection.
+
+For AC/macro PR/RC/F1, forgetting = initial minus final and gain = final minus
+initial, in signed percentage points. Negative forgetting means improvement.
+same_domain_final_AC is a final observer score; online_AC is the full pre-feedback
+stream score. They are different metrics and remain separate.
+
+## Preservation and resume
+
+Defaults write to AF_checkpoint20_online_seed42_v2. Existing offline-v1 results
+stay unchanged. If the previous AF_checkpoint20_seed42_v1 clean checkpoint exists,
+its hash, fitting inputs, seed, preprocessing, support IDs and training settings
+must match before reuse. No clean retraining is needed in that case. Otherwise
+train just the clean AF initialization, then the per-target continuations.
+AMCAL/CNN/Context/DDQN are never trained or modified.
+
+Online traces cannot be reconstructed from the old offline target predictions:
+the causal prefix and target continuations need a new evaluation. A completed v2
+clean checkpoint and completed target cases are hash-verified and skipped on rerun;
+partial target fits restart from clean, never from another target case.
+
+This is a checkpoint-initialized batch-calibration variant of the corrected author
+AF port, not a claim of bit-identical reproduction of the original offline paper.
 
 ## Run and push
 
-All means SDNCampus, ISCX-TOR, IUST and IoT (12 cases each).
+All means SDNCampus, ISCX-TOR, IUST and IoT, with all 12 attack/intensity cases.
 
 ```powershell
 git pull origin experiment/paironly-paid-replay
@@ -41,25 +73,18 @@ git pull origin experiment/paironly-paid-replay
 .\AMCAL\push_af_clean_reference_results.ps1 -Dataset All
 ```
 
-Run/push separately by replacing All with the dataset name. Defaults use existing
-clean0_AMCAL_attacks_seed42 data/preprocessing. Checkpoints and support IDs stay
-local; push only JSON/CSV provenance, predictions and metrics from this experiment.
+For Burst use -Dataset IAT or PS, -SourceRoot pointing to the existing structured
+run and -BurstDir pointing to official AdvBurst_FTSC-IAT/PS. All seven target
+intensities 5/7/10/12/15/17/20 are evaluated. The same existing commands apply.
+The push script includes only this v2 audit's JSON/CSV files, not model binaries.
 
-For Burst, use -Dataset IAT or PS, explicit -SourceRoot pointing to a structured run
-with Models/protocol_preprocessing.joblib and -BurstDir pointing to official
-AdvBurst_FTSC-IAT/PS. All seven unseen intensities 5/7/10/12/15/17/20 are evaluated.
-No prior target AF run is required. Its calibration is exactly 20% of eligible
-target TEST rows, with the remaining rows held out; it does not reuse historical
-five-shot target support. Training of the initial AF reference uses level0 only.
-
-Optional user-run tests:
+Optional tests, executed by the user:
 
 ```powershell
 .\venv\Scripts\python.exe -m unittest discover -s AMCAL/tests -p test_af_clean_reference.py -v
 ```
 
-The assistant did not execute Python, imports, training, tests or installations.
-Console output identifies the dataset/intensity, clean/target baseline, adapted
-scores, labels and both signed forgetting values. Completed clean and per-case
-checkpoints are hash-verified and skipped on reruns; partial fits restart only that
-case from the clean checkpoint. Any recipe change requires a fresh output directory.
+Tests cover prefix-before-update event order, inclusion of calibration predictions
+in the online denominator, exact budget, initial checkpoint loading, clean data
+separation and signed forgetting. The assistant did not run Python, tests,
+training, imports, inference, or package installation.

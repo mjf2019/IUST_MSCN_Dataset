@@ -22,7 +22,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Other changes are already staged; commit or unstage them first.' }
     $files = @()
     foreach ($name in $datasets) {
-        $root = "AMCAL/$($folders[$name])/protocol_runs/AF_checkpoint20_seed${Seed}_v1"
+        $root = "AMCAL/$($folders[$name])/protocol_runs/AF_checkpoint20_online_seed${Seed}_v2"
         if (-not (Test-Path "$root/evaluation_complete.json")) {
             throw "Completed reference audit not found: $name"
         }
@@ -39,7 +39,7 @@ try {
     git diff --cached --quiet
     $difference = $LASTEXITCODE
     if ($difference -eq 1) {
-        git commit -m "Add AF checkpoint-based retention results: $Dataset seed$Seed"
+        git commit -m "Add AF pre-feedback online and checkpoint retention results: $Dataset seed$Seed"
         if ($LASTEXITCODE -ne 0) { throw 'Commit failed; results remain staged.' }
     } elseif ($difference -ne 0) { throw 'Checking staged results failed.' }
     git pull --rebase --autostash origin experiment/paironly-paid-replay
