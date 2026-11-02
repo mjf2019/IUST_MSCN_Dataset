@@ -1,0 +1,202 @@
+{
+  "checkpoint_sha256": "cd3b3c7dd1f55694053b533cc1cd7c22d532eb11e3c378686ae77658a0c55387",
+  "training": {
+    "parameters": {
+      "source_per_class": 25,
+      "target_pool_per_class": 108,
+      "iterations": 1000,
+      "batch_size": 64,
+      "embedding_dim": 512,
+      "learning_rate": 1e-05,
+      "class_weight": 4.0,
+      "domain_weight": 4.0,
+      "tuning_epochs": 30,
+      "tuning_patience": 10,
+      "tuning_lr": 0.001
+    },
+    "adaptation": [
+      {
+        "iteration": 1,
+        "combined": 7.407593727111816,
+        "discriminator": 0.7343503832817078
+      },
+      {
+        "iteration": 100,
+        "combined": 6.451535224914551,
+        "discriminator": 0.8832240104675293
+      },
+      {
+        "iteration": 200,
+        "combined": 6.399028778076172,
+        "discriminator": 0.8710468411445618
+      },
+      {
+        "iteration": 300,
+        "combined": 6.124578475952148,
+        "discriminator": 0.7986897230148315
+      },
+      {
+        "iteration": 400,
+        "combined": 5.5301995277404785,
+        "discriminator": 0.8242594599723816
+      },
+      {
+        "iteration": 500,
+        "combined": 5.948554992675781,
+        "discriminator": 0.8555821180343628
+      },
+      {
+        "iteration": 600,
+        "combined": 5.589798927307129,
+        "discriminator": 0.7415069341659546
+      },
+      {
+        "iteration": 700,
+        "combined": 5.296459197998047,
+        "discriminator": 0.716985821723938
+      },
+      {
+        "iteration": 800,
+        "combined": 5.135666370391846,
+        "discriminator": 0.8836923837661743
+      },
+      {
+        "iteration": 900,
+        "combined": 5.265697002410889,
+        "discriminator": 0.7854050397872925
+      },
+      {
+        "iteration": 1000,
+        "combined": 5.332496643066406,
+        "discriminator": 0.8080761432647705
+      }
+    ],
+    "tuning": [
+      {
+        "epoch": 1,
+        "training_accuracy": 0.358695652173913
+      },
+      {
+        "epoch": 2,
+        "training_accuracy": 0.37267080745341613
+      },
+      {
+        "epoch": 3,
+        "training_accuracy": 0.41459627329192544
+      },
+      {
+        "epoch": 4,
+        "training_accuracy": 0.4114906832298137
+      },
+      {
+        "epoch": 5,
+        "training_accuracy": 0.44875776397515527
+      },
+      {
+        "epoch": 6,
+        "training_accuracy": 0.4440993788819876
+      },
+      {
+        "epoch": 7,
+        "training_accuracy": 0.4673913043478261
+      },
+      {
+        "epoch": 8,
+        "training_accuracy": 0.4782608695652174
+      },
+      {
+        "epoch": 9,
+        "training_accuracy": 0.5031055900621118
+      },
+      {
+        "epoch": 10,
+        "training_accuracy": 0.5372670807453416
+      },
+      {
+        "epoch": 11,
+        "training_accuracy": 0.5388198757763976
+      },
+      {
+        "epoch": 12,
+        "training_accuracy": 0.5652173913043478
+      },
+      {
+        "epoch": 13,
+        "training_accuracy": 0.5201863354037267
+      },
+      {
+        "epoch": 14,
+        "training_accuracy": 0.484472049689441
+      },
+      {
+        "epoch": 15,
+        "training_accuracy": 0.4782608695652174
+      },
+      {
+        "epoch": 16,
+        "training_accuracy": 0.5279503105590062
+      },
+      {
+        "epoch": 17,
+        "training_accuracy": 0.5590062111801242
+      },
+      {
+        "epoch": 18,
+        "training_accuracy": 0.5838509316770186
+      },
+      {
+        "epoch": 19,
+        "training_accuracy": 0.562111801242236
+      },
+      {
+        "epoch": 20,
+        "training_accuracy": 0.5683229813664596
+      },
+      {
+        "epoch": 21,
+        "training_accuracy": 0.5434782608695652
+      },
+      {
+        "epoch": 22,
+        "training_accuracy": 0.5496894409937888
+      },
+      {
+        "epoch": 23,
+        "training_accuracy": 0.5605590062111802
+      },
+      {
+        "epoch": 24,
+        "training_accuracy": 0.5745341614906833
+      },
+      {
+        "epoch": 25,
+        "training_accuracy": 0.5760869565217391
+      },
+      {
+        "epoch": 26,
+        "training_accuracy": 0.5574534161490683
+      },
+      {
+        "epoch": 27,
+        "training_accuracy": 0.5916149068322981
+      },
+      {
+        "epoch": 28,
+        "training_accuracy": 0.6164596273291926
+      },
+      {
+        "epoch": 29,
+        "training_accuracy": 0.672360248447205
+      },
+      {
+        "epoch": 30,
+        "training_accuracy": 0.6444099378881988
+      }
+    ],
+    "actual_adversarial_batch_size": 64,
+    "author_commit": "f9d33289f24447fe5edd738c0394d269d4648fb1",
+    "protocol_version": 1
+  },
+  "training_seconds": 336.9568420999567,
+  "reused_from": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\AF_checkpoint20_seed42_v1\\Models\\af_clean_reference.pth"
+}

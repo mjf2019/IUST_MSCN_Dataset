@@ -1,0 +1,197 @@
+{
+  "parameters": {
+    "source_per_class": 25,
+    "target_pool_per_class": 60,
+    "iterations": 1000,
+    "batch_size": 64,
+    "embedding_dim": 512,
+    "learning_rate": 1e-05,
+    "class_weight": 4.0,
+    "domain_weight": 4.0,
+    "tuning_epochs": 30,
+    "tuning_patience": 10,
+    "tuning_lr": 0.001
+  },
+  "adaptation": [
+    {
+      "iteration": 1,
+      "combined": 7.9044270515441895,
+      "discriminator": 0.7318968176841736
+    },
+    {
+      "iteration": 100,
+      "combined": 5.549025058746338,
+      "discriminator": 0.8418999314308167
+    },
+    {
+      "iteration": 200,
+      "combined": 6.3233466148376465,
+      "discriminator": 0.8035144805908203
+    },
+    {
+      "iteration": 300,
+      "combined": 5.7164306640625,
+      "discriminator": 0.7817306518554688
+    },
+    {
+      "iteration": 400,
+      "combined": 5.021587371826172,
+      "discriminator": 0.8838731050491333
+    },
+    {
+      "iteration": 500,
+      "combined": 5.012572288513184,
+      "discriminator": 0.9087033867835999
+    },
+    {
+      "iteration": 600,
+      "combined": 5.195400238037109,
+      "discriminator": 0.9535839557647705
+    },
+    {
+      "iteration": 700,
+      "combined": 4.706172943115234,
+      "discriminator": 0.9082120656967163
+    },
+    {
+      "iteration": 800,
+      "combined": 4.889133453369141,
+      "discriminator": 0.9462540745735168
+    },
+    {
+      "iteration": 900,
+      "combined": 5.9998979568481445,
+      "discriminator": 0.6106321811676025
+    },
+    {
+      "iteration": 1000,
+      "combined": 4.329694747924805,
+      "discriminator": 1.0779434442520142
+    }
+  ],
+  "tuning": [
+    {
+      "epoch": 1,
+      "training_accuracy": 0.308411214953271
+    },
+    {
+      "epoch": 2,
+      "training_accuracy": 0.38317757009345793
+    },
+    {
+      "epoch": 3,
+      "training_accuracy": 0.40654205607476634
+    },
+    {
+      "epoch": 4,
+      "training_accuracy": 0.4719626168224299
+    },
+    {
+      "epoch": 5,
+      "training_accuracy": 0.5373831775700935
+    },
+    {
+      "epoch": 6,
+      "training_accuracy": 0.5887850467289719
+    },
+    {
+      "epoch": 7,
+      "training_accuracy": 0.6822429906542056
+    },
+    {
+      "epoch": 8,
+      "training_accuracy": 0.6261682242990654
+    },
+    {
+      "epoch": 9,
+      "training_accuracy": 0.6822429906542056
+    },
+    {
+      "epoch": 10,
+      "training_accuracy": 0.7990654205607477
+    },
+    {
+      "epoch": 11,
+      "training_accuracy": 0.7523364485981309
+    },
+    {
+      "epoch": 12,
+      "training_accuracy": 0.780373831775701
+    },
+    {
+      "epoch": 13,
+      "training_accuracy": 0.7710280373831776
+    },
+    {
+      "epoch": 14,
+      "training_accuracy": 0.7850467289719626
+    },
+    {
+      "epoch": 15,
+      "training_accuracy": 0.8037383177570093
+    },
+    {
+      "epoch": 16,
+      "training_accuracy": 0.780373831775701
+    },
+    {
+      "epoch": 17,
+      "training_accuracy": 0.794392523364486
+    },
+    {
+      "epoch": 18,
+      "training_accuracy": 0.8504672897196262
+    },
+    {
+      "epoch": 19,
+      "training_accuracy": 0.8691588785046729
+    },
+    {
+      "epoch": 20,
+      "training_accuracy": 0.8317757009345794
+    },
+    {
+      "epoch": 21,
+      "training_accuracy": 0.8317757009345794
+    },
+    {
+      "epoch": 22,
+      "training_accuracy": 0.8644859813084113
+    },
+    {
+      "epoch": 23,
+      "training_accuracy": 0.8364485981308412
+    },
+    {
+      "epoch": 24,
+      "training_accuracy": 0.883177570093458
+    },
+    {
+      "epoch": 25,
+      "training_accuracy": 0.8925233644859814
+    },
+    {
+      "epoch": 26,
+      "training_accuracy": 0.8878504672897196
+    },
+    {
+      "epoch": 27,
+      "training_accuracy": 0.8785046728971962
+    },
+    {
+      "epoch": 28,
+      "training_accuracy": 0.9018691588785047
+    },
+    {
+      "epoch": 29,
+      "training_accuracy": 0.8504672897196262
+    },
+    {
+      "epoch": 30,
+      "training_accuracy": 0.883177570093458
+    }
+  ],
+  "actual_adversarial_batch_size": 64,
+  "author_commit": "f9d33289f24447fe5edd738c0394d269d4648fb1",
+  "protocol_version": 1
+}
