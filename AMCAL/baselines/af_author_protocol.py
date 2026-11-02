@@ -197,7 +197,8 @@ def target_knn(support_z, support_y, shots):
     return model.fit(support_z, support_y)
 
 
-def fit(source_x, source_y, target_x, target_y, classes, seed, p=AFParameters(), device='cpu', before_tuning=None):
+def fit(source_x, source_y, target_x, target_y, classes, seed, p=AFParameters(), device='cpu', before_tuning=None,
+        initial_state=None):
     """Fit without a test/validation argument; target labels are used in tuning only."""
     if min(len(source_x), len(target_x)) < 2:
         raise ValueError('AF requires at least two examples in each domain.')
@@ -208,6 +209,10 @@ def fit(source_x, source_y, target_x, target_y, classes, seed, p=AFParameters(),
     torch.backends.cudnn.benchmark = False
     rng = np.random.default_rng(seed)
     model = AFNetwork(len(classes), p).to(device)
+    # Optional domain adaptation warm start. Default preserves historical fits.
+    # Fresh per-domain optimizers and the author feature reset/tuning remain.
+    if initial_state is not None:
+        model.load_state_dict(initial_state, strict=True)
     combined = torch.optim.Adam(list(model.extractor.parameters())+list(model.classifier.parameters()),
                                 lr=p.learning_rate, eps=1e-7)
     domain = torch.optim.Adam(model.discriminator.parameters(), lr=p.learning_rate, eps=1e-7)
@@ -271,4 +276,3 @@ def fit(source_x, source_y, target_x, target_y, classes, seed, p=AFParameters(),
     return model, dict(parameters=asdict(p), adaptation=logs, tuning=tuning,
                        actual_adversarial_batch_size=min(p.batch_size, len(source_x), len(target_x)),
                        author_commit=AUTHOR_COMMIT, protocol_version=PROTOCOL_VERSION)
-
