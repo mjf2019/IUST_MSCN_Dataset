@@ -1,0 +1,202 @@
+{
+  "checkpoint_sha256": "7d4b23dd2fd3aa0445c583e657cf22718fbc4079155d0b2bd1877f2b695ebe9a",
+  "training": {
+    "parameters": {
+      "source_per_class": 25,
+      "target_pool_per_class": 120,
+      "iterations": 1000,
+      "batch_size": 64,
+      "embedding_dim": 512,
+      "learning_rate": 1e-05,
+      "class_weight": 4.0,
+      "domain_weight": 4.0,
+      "tuning_epochs": 30,
+      "tuning_patience": 10,
+      "tuning_lr": 0.001
+    },
+    "adaptation": [
+      {
+        "iteration": 1,
+        "combined": 7.4014410972595215,
+        "discriminator": 0.8036817312240601
+      },
+      {
+        "iteration": 100,
+        "combined": 6.707460403442383,
+        "discriminator": 0.8514957427978516
+      },
+      {
+        "iteration": 200,
+        "combined": 6.139880657196045,
+        "discriminator": 0.8290801048278809
+      },
+      {
+        "iteration": 300,
+        "combined": 6.156804084777832,
+        "discriminator": 0.8149471282958984
+      },
+      {
+        "iteration": 400,
+        "combined": 5.506598472595215,
+        "discriminator": 0.7970834374427795
+      },
+      {
+        "iteration": 500,
+        "combined": 5.403326034545898,
+        "discriminator": 0.835669755935669
+      },
+      {
+        "iteration": 600,
+        "combined": 5.312954902648926,
+        "discriminator": 0.7506455183029175
+      },
+      {
+        "iteration": 700,
+        "combined": 5.431311130523682,
+        "discriminator": 0.8751093149185181
+      },
+      {
+        "iteration": 800,
+        "combined": 5.046564102172852,
+        "discriminator": 0.7803866863250732
+      },
+      {
+        "iteration": 900,
+        "combined": 5.247798442840576,
+        "discriminator": 0.7944105863571167
+      },
+      {
+        "iteration": 1000,
+        "combined": 4.880441188812256,
+        "discriminator": 0.8147287368774414
+      }
+    ],
+    "tuning": [
+      {
+        "epoch": 1,
+        "training_accuracy": 0.46805555555555556
+      },
+      {
+        "epoch": 2,
+        "training_accuracy": 0.6458333333333334
+      },
+      {
+        "epoch": 3,
+        "training_accuracy": 0.675
+      },
+      {
+        "epoch": 4,
+        "training_accuracy": 0.725
+      },
+      {
+        "epoch": 5,
+        "training_accuracy": 0.7666666666666667
+      },
+      {
+        "epoch": 6,
+        "training_accuracy": 0.7305555555555555
+      },
+      {
+        "epoch": 7,
+        "training_accuracy": 0.7597222222222222
+      },
+      {
+        "epoch": 8,
+        "training_accuracy": 0.7611111111111111
+      },
+      {
+        "epoch": 9,
+        "training_accuracy": 0.7763888888888889
+      },
+      {
+        "epoch": 10,
+        "training_accuracy": 0.8125
+      },
+      {
+        "epoch": 11,
+        "training_accuracy": 0.8069444444444445
+      },
+      {
+        "epoch": 12,
+        "training_accuracy": 0.8138888888888889
+      },
+      {
+        "epoch": 13,
+        "training_accuracy": 0.7986111111111112
+      },
+      {
+        "epoch": 14,
+        "training_accuracy": 0.8027777777777778
+      },
+      {
+        "epoch": 15,
+        "training_accuracy": 0.8236111111111111
+      },
+      {
+        "epoch": 16,
+        "training_accuracy": 0.8402777777777778
+      },
+      {
+        "epoch": 17,
+        "training_accuracy": 0.8513888888888889
+      },
+      {
+        "epoch": 18,
+        "training_accuracy": 0.8458333333333333
+      },
+      {
+        "epoch": 19,
+        "training_accuracy": 0.8319444444444445
+      },
+      {
+        "epoch": 20,
+        "training_accuracy": 0.825
+      },
+      {
+        "epoch": 21,
+        "training_accuracy": 0.825
+      },
+      {
+        "epoch": 22,
+        "training_accuracy": 0.8319444444444445
+      },
+      {
+        "epoch": 23,
+        "training_accuracy": 0.8527777777777777
+      },
+      {
+        "epoch": 24,
+        "training_accuracy": 0.8375
+      },
+      {
+        "epoch": 25,
+        "training_accuracy": 0.8625
+      },
+      {
+        "epoch": 26,
+        "training_accuracy": 0.8819444444444444
+      },
+      {
+        "epoch": 27,
+        "training_accuracy": 0.8805555555555555
+      },
+      {
+        "epoch": 28,
+        "training_accuracy": 0.8694444444444445
+      },
+      {
+        "epoch": 29,
+        "training_accuracy": 0.8708333333333333
+      },
+      {
+        "epoch": 30,
+        "training_accuracy": 0.85
+      }
+    ],
+    "actual_adversarial_batch_size": 64,
+    "author_commit": "f9d33289f24447fe5edd738c0394d269d4648fb1",
+    "protocol_version": 1
+  },
+  "training_seconds": 314.87864090001676,
+  "reused_from": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\SDNCampus_TEST\\protocol_runs\\AF_checkpoint20_seed42_v1\\Models\\af_clean_reference.pth"
+}

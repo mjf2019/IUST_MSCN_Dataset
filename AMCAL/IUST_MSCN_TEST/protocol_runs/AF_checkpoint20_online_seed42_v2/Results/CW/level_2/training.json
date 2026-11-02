@@ -1,0 +1,189 @@
+{
+  "parameters": {
+    "source_per_class": 25,
+    "target_pool_per_class": 125,
+    "iterations": 1000,
+    "batch_size": 64,
+    "embedding_dim": 512,
+    "learning_rate": 1e-05,
+    "class_weight": 4.0,
+    "domain_weight": 4.0,
+    "tuning_epochs": 30,
+    "tuning_patience": 10,
+    "tuning_lr": 0.001
+  },
+  "adaptation": [
+    {
+      "iteration": 1,
+      "combined": 7.360411643981934,
+      "discriminator": 0.7336159348487854
+    },
+    {
+      "iteration": 100,
+      "combined": 5.325116157531738,
+      "discriminator": 0.6796743869781494
+    },
+    {
+      "iteration": 200,
+      "combined": 5.026342868804932,
+      "discriminator": 0.6694970726966858
+    },
+    {
+      "iteration": 300,
+      "combined": 4.425078392028809,
+      "discriminator": 0.7927019596099854
+    },
+    {
+      "iteration": 400,
+      "combined": 4.941868782043457,
+      "discriminator": 0.7518699169158936
+    },
+    {
+      "iteration": 500,
+      "combined": 4.551042556762695,
+      "discriminator": 0.8261667490005493
+    },
+    {
+      "iteration": 600,
+      "combined": 3.723905324935913,
+      "discriminator": 0.8876618146896362
+    },
+    {
+      "iteration": 700,
+      "combined": 4.369255065917969,
+      "discriminator": 0.7726625204086304
+    },
+    {
+      "iteration": 800,
+      "combined": 4.007894515991211,
+      "discriminator": 0.8093864917755127
+    },
+    {
+      "iteration": 900,
+      "combined": 4.17274808883667,
+      "discriminator": 0.7418404817581177
+    },
+    {
+      "iteration": 1000,
+      "combined": 3.9442315101623535,
+      "discriminator": 0.7610085010528564
+    }
+  ],
+  "tuning": [
+    {
+      "epoch": 1,
+      "training_accuracy": 0.6691176470588235
+    },
+    {
+      "epoch": 2,
+      "training_accuracy": 0.7757352941176471
+    },
+    {
+      "epoch": 3,
+      "training_accuracy": 0.8419117647058824
+    },
+    {
+      "epoch": 4,
+      "training_accuracy": 0.8566176470588235
+    },
+    {
+      "epoch": 5,
+      "training_accuracy": 0.8713235294117647
+    },
+    {
+      "epoch": 6,
+      "training_accuracy": 0.8639705882352942
+    },
+    {
+      "epoch": 7,
+      "training_accuracy": 0.875
+    },
+    {
+      "epoch": 8,
+      "training_accuracy": 0.8823529411764706
+    },
+    {
+      "epoch": 9,
+      "training_accuracy": 0.8566176470588235
+    },
+    {
+      "epoch": 10,
+      "training_accuracy": 0.8897058823529411
+    },
+    {
+      "epoch": 11,
+      "training_accuracy": 0.8713235294117647
+    },
+    {
+      "epoch": 12,
+      "training_accuracy": 0.8492647058823529
+    },
+    {
+      "epoch": 13,
+      "training_accuracy": 0.9227941176470589
+    },
+    {
+      "epoch": 14,
+      "training_accuracy": 0.8676470588235294
+    },
+    {
+      "epoch": 15,
+      "training_accuracy": 0.8897058823529411
+    },
+    {
+      "epoch": 16,
+      "training_accuracy": 0.9044117647058824
+    },
+    {
+      "epoch": 17,
+      "training_accuracy": 0.9007352941176471
+    },
+    {
+      "epoch": 18,
+      "training_accuracy": 0.9375
+    },
+    {
+      "epoch": 19,
+      "training_accuracy": 0.9227941176470589
+    },
+    {
+      "epoch": 20,
+      "training_accuracy": 0.9044117647058824
+    },
+    {
+      "epoch": 21,
+      "training_accuracy": 0.9301470588235294
+    },
+    {
+      "epoch": 22,
+      "training_accuracy": 0.9191176470588235
+    },
+    {
+      "epoch": 23,
+      "training_accuracy": 0.9375
+    },
+    {
+      "epoch": 24,
+      "training_accuracy": 0.9227941176470589
+    },
+    {
+      "epoch": 25,
+      "training_accuracy": 0.9154411764705882
+    },
+    {
+      "epoch": 26,
+      "training_accuracy": 0.9007352941176471
+    },
+    {
+      "epoch": 27,
+      "training_accuracy": 0.8970588235294118
+    },
+    {
+      "epoch": 28,
+      "training_accuracy": 0.9264705882352942
+    }
+  ],
+  "actual_adversarial_batch_size": 64,
+  "author_commit": "f9d33289f24447fe5edd738c0394d269d4648fb1",
+  "protocol_version": 1
+}

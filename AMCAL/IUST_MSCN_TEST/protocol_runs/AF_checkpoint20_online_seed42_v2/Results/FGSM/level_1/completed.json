@@ -1,0 +1,16 @@
+{
+  "fingerprint": {
+    "recipe_sha256": "f59c6acbc25c4563f5a451611abd34c6cff7d55a17b4a0bfb7b8f112b55d1748",
+    "clean_checkpoint_sha256": "4c89e3935173b610ac95f2e2c7d7f67c09b0adc3ae22c2f7c6c00e49195924b1",
+    "attack": "FGSM",
+    "strength": 0.01,
+    "level": 1,
+    "target_hash": "1a9afa74799a89d3cbee08c6fe0dc764ad452bffce561704d488668fe2f964cc"
+  },
+  "hashes": {
+    "Results\\FGSM\\level_1\\metrics.json": "bfc3c74d83aecc07829ddbffb860c626eabd0e9580fc717471c84285c8845ea0",
+    "Results\\FGSM\\level_1\\paired_predictions.csv": "f61012e6ad842618b55bc23b8a70128590ad6f0f3a205b3ec754f848cc1f5800",
+    "Results\\FGSM\\level_1\\online_trace.csv": "c8f5190bbab3c7d8eb89c107b667568f24c28327ac6375f98d935a5eec6681b8",
+    "Models\\FGSM\\level_1.pth": "3cf3345caf10539c6a6c108139c4abc09754aff7256f657429096724e6bbfc88"
+  }
+}

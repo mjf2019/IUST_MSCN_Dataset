@@ -1,0 +1,16 @@
+{
+  "fingerprint": {
+    "recipe_sha256": "1ce97eff474c042b7f605364bda5438b37ca3f49ce1aa80743d5a92aad865e78",
+    "clean_checkpoint_sha256": "7d4b23dd2fd3aa0445c583e657cf22718fbc4079155d0b2bd1877f2b695ebe9a",
+    "attack": "DeepFool",
+    "strength": 1.0,
+    "level": 2,
+    "target_hash": "4ffc3a37bfb37853ef39d14266162e94a440644e35ee1e502183cd66f5d98a51"
+  },
+  "hashes": {
+    "Results\\DeepFool\\level_2\\metrics.json": "d9aae41d538f3acc4274d168622d49a3e1015e39cfd8502536323f8f4ad9cfc0",
+    "Results\\DeepFool\\level_2\\paired_predictions.csv": "ef1d2fbb28ee76adfe845fc715ee951d4413909f978daff6de9ebb396f8451c5",
+    "Results\\DeepFool\\level_2\\online_trace.csv": "c43f2cf1daec1a9be8bd33cf645251bb8c529074e67d7b73d49ee90cf54dff93",
+    "Models\\DeepFool\\level_2.pth": "9c164181a56301a28a13070662f8b7cf2c47c1bacb52d7edf64c1fa0b4e8bfe1"
+  }
+}

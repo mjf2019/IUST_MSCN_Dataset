@@ -1,0 +1,16 @@
+{
+  "fingerprint": {
+    "recipe_sha256": "1ce97eff474c042b7f605364bda5438b37ca3f49ce1aa80743d5a92aad865e78",
+    "clean_checkpoint_sha256": "7d4b23dd2fd3aa0445c583e657cf22718fbc4079155d0b2bd1877f2b695ebe9a",
+    "attack": "PGD",
+    "strength": 0.1,
+    "level": 2,
+    "target_hash": "197fe94eb467049fc5f7fa24baa8056c50c3c4143502c46f808d034415cb25bf"
+  },
+  "hashes": {
+    "Results\\PGD\\level_2\\metrics.json": "f2b6d919105596494f3bdd75ad7c52b9692a0b813ed6e27225444955f287b0ba",
+    "Results\\PGD\\level_2\\paired_predictions.csv": "408d5e74ffd80df392ee9207ab27fc1e7a942d0b1564030affbe7162865dafed",
+    "Results\\PGD\\level_2\\online_trace.csv": "d56d9e57774b3754db6207f6ecb0a28993fdb9061224154e1c0d4825b7d994d4",
+    "Models\\PGD\\level_2.pth": "679b6b652efac4899ac8274fb80d1b07cc396223953387c63efa971f8761b16f"
+  }
+}

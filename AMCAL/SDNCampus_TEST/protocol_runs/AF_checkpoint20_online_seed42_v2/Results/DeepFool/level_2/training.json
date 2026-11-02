@@ -1,0 +1,193 @@
+{
+  "parameters": {
+    "source_per_class": 25,
+    "target_pool_per_class": 47,
+    "iterations": 1000,
+    "batch_size": 64,
+    "embedding_dim": 512,
+    "learning_rate": 1e-05,
+    "class_weight": 4.0,
+    "domain_weight": 4.0,
+    "tuning_epochs": 30,
+    "tuning_patience": 10,
+    "tuning_lr": 0.001
+  },
+  "adaptation": [
+    {
+      "iteration": 1,
+      "combined": 6.741982460021973,
+      "discriminator": 0.809371829032898
+    },
+    {
+      "iteration": 100,
+      "combined": 5.8464860916137695,
+      "discriminator": 0.8766055107116699
+    },
+    {
+      "iteration": 200,
+      "combined": 5.315338134765625,
+      "discriminator": 0.8461961150169373
+    },
+    {
+      "iteration": 300,
+      "combined": 5.118061542510986,
+      "discriminator": 0.769469678401947
+    },
+    {
+      "iteration": 400,
+      "combined": 4.556912422180176,
+      "discriminator": 0.8499024510383606
+    },
+    {
+      "iteration": 500,
+      "combined": 4.339168071746826,
+      "discriminator": 0.8679251670837402
+    },
+    {
+      "iteration": 600,
+      "combined": 4.214326858520508,
+      "discriminator": 0.8236387968063354
+    },
+    {
+      "iteration": 700,
+      "combined": 4.273613929748535,
+      "discriminator": 0.8132389783859253
+    },
+    {
+      "iteration": 800,
+      "combined": 4.382638931274414,
+      "discriminator": 0.8031431436538696
+    },
+    {
+      "iteration": 900,
+      "combined": 4.495224952697754,
+      "discriminator": 0.749785304069519
+    },
+    {
+      "iteration": 1000,
+      "combined": 4.23347282409668,
+      "discriminator": 0.7787481546401978
+    }
+  ],
+  "tuning": [
+    {
+      "epoch": 1,
+      "training_accuracy": 0.6610878661087866
+    },
+    {
+      "epoch": 2,
+      "training_accuracy": 0.7238493723849372
+    },
+    {
+      "epoch": 3,
+      "training_accuracy": 0.8117154811715481
+    },
+    {
+      "epoch": 4,
+      "training_accuracy": 0.8619246861924686
+    },
+    {
+      "epoch": 5,
+      "training_accuracy": 0.8828451882845189
+    },
+    {
+      "epoch": 6,
+      "training_accuracy": 0.895397489539749
+    },
+    {
+      "epoch": 7,
+      "training_accuracy": 0.8870292887029289
+    },
+    {
+      "epoch": 8,
+      "training_accuracy": 0.9037656903765691
+    },
+    {
+      "epoch": 9,
+      "training_accuracy": 0.9079497907949791
+    },
+    {
+      "epoch": 10,
+      "training_accuracy": 0.9288702928870293
+    },
+    {
+      "epoch": 11,
+      "training_accuracy": 0.9288702928870293
+    },
+    {
+      "epoch": 12,
+      "training_accuracy": 0.9456066945606695
+    },
+    {
+      "epoch": 13,
+      "training_accuracy": 0.9414225941422594
+    },
+    {
+      "epoch": 14,
+      "training_accuracy": 0.9581589958158996
+    },
+    {
+      "epoch": 15,
+      "training_accuracy": 0.9539748953974896
+    },
+    {
+      "epoch": 16,
+      "training_accuracy": 0.9330543933054394
+    },
+    {
+      "epoch": 17,
+      "training_accuracy": 0.9497907949790795
+    },
+    {
+      "epoch": 18,
+      "training_accuracy": 0.9414225941422594
+    },
+    {
+      "epoch": 19,
+      "training_accuracy": 0.9623430962343096
+    },
+    {
+      "epoch": 20,
+      "training_accuracy": 0.9581589958158996
+    },
+    {
+      "epoch": 21,
+      "training_accuracy": 0.9539748953974896
+    },
+    {
+      "epoch": 22,
+      "training_accuracy": 0.9372384937238494
+    },
+    {
+      "epoch": 23,
+      "training_accuracy": 0.9330543933054394
+    },
+    {
+      "epoch": 24,
+      "training_accuracy": 0.9539748953974896
+    },
+    {
+      "epoch": 25,
+      "training_accuracy": 0.9581589958158996
+    },
+    {
+      "epoch": 26,
+      "training_accuracy": 0.9372384937238494
+    },
+    {
+      "epoch": 27,
+      "training_accuracy": 0.9414225941422594
+    },
+    {
+      "epoch": 28,
+      "training_accuracy": 0.9539748953974896
+    },
+    {
+      "epoch": 29,
+      "training_accuracy": 0.9497907949790795
+    }
+  ],
+  "actual_adversarial_batch_size": 64,
+  "author_commit": "f9d33289f24447fe5edd738c0394d269d4648fb1",
+  "protocol_version": 1
+}
