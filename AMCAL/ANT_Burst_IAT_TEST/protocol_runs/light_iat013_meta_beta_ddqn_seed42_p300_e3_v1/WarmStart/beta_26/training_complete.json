@@ -1,0 +1,217 @@
+{
+  "protocol": {
+    "protocol": {
+      "version": 1,
+      "dataset": "IAT",
+      "seed": 42,
+      "epochs": 3,
+      "pilot_rows": 300,
+      "test_rows": 0,
+      "training_levels": [
+        0,
+        1,
+        3
+      ],
+      "validation_levels": [
+        0,
+        1,
+        3
+      ],
+      "test_levels": [
+        5,
+        7,
+        10,
+        12,
+        15,
+        17,
+        20
+      ],
+      "cnn_architecture": "light_ps_cnn_v1",
+      "actor_checkpoint_sha256": "92bdef0cd710983dd2d21895861676de1b2e733510bb9d49346ab746f5c168ee",
+      "healthy_teacher_sha256": "13f1788791bcc89e81c0008f42f6349a02a58fa166121c75523e409f980359e9",
+      "source_models": {
+        "protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+        "initial_cnn_model.pth": "87d0f977f76767b6666f5a1dbc50a52e1740b1125270ad6435b221b7b9e270b4",
+        "enhanced_context.pth": "cfbb271c42262b5bccf43548d3c575bb05517d8aad60ddfa785efba4ce06cc4e"
+      },
+      "train_files": {
+        "0": "b45101e78c561d488742d80a119bde2198a2107c31bf3f3b10b716dea406f775",
+        "1": "bf92f8d8088d7199d1a83187c2f04079c13aa0fb115878e3649c5bd85d8a6cc6",
+        "3": "391285a6f89750c0025eb225a7d2b4beca1314852c9d630e8105108a352eaa53"
+      },
+      "train_data": {
+        "streams": {
+          "0": "654d129a8f0b10d4c15b206475bec0173350209e27e9893e3babb806c9b3025d",
+          "1": "6d2dcf24c9eee55e58a33f1554e4ef23ce6229a4bd090abc3ad9c01984e8e198",
+          "3": "8bc092c1d95b010897bdc94c548458dcde880fb776c6b39bef5a7d540cef0454"
+        },
+        "source_audit": "b8d21440b03040eeb203159a7778b3406d0978e97e0892c0dc5fef74f7c638ae"
+      },
+      "validation_data": {
+        "streams": {
+          "0": "cd43d92fecf9d1d92f73cf98bd1c648478e09ab2e5a13f602800ee7ff13fc5a9",
+          "1": "4c62939ee0a677787797c1d9e8a1f233e0effdb9eaf0d4150fb23f3d40394099",
+          "3": "892b9ff5e783a42d26612a7f5c55132eb1949daf7509b5359acccc0fd553401c"
+        },
+        "source_audit": "1ee09c7c173454645945af58e1a8136c39a5c175b23535ffe950c706cea310ae"
+      },
+      "context_lr": 0.00025,
+      "replay_weight": 0.1,
+      "budget_fraction": 0.2,
+      "implementation_sha256": {
+        "amcal_meta_beta_light_iat013.py": "6e30da960d3f140cc26283116c714a6decb067cf5bd38877a59c463057ad64f7",
+        "amcal_meta_beta_ddqn.py": "cdb6afeb485a4123f82c794bdfb0db6b23a2ea045d5f556944a01d320b72f406",
+        "amcal_two_action_paper_gain.py": "da3e71304107a6d76b4994bfa45c949ca6717a72874f53bb28712a0c7bc4c0c2",
+        "amcal_two_action_ddqn_light_iat.py": "4dd444d13772003bd9eb5d3414cc7275270aaf9a9d4d2c9f94e7121526280399",
+        "amcal_competitive_selector_light_iat.py": "883f21d13b27c053f47bf0092ff3e60a5022c3e09aa3d34e2f22576e3823005a",
+        "amcal_competitive_selector.py": "0846639ecdb811889fc93e3033579abc698d43945ba7d14670fea7ca85626042",
+        "amcal_budget_actor.py": "b7f5b399d2dc9dc7fc00eb712eef8641ae90a7ec3bdd19d5b293204368a36709",
+        "amcal_minimax_paironly.py": "471820f2797ffcc92de99ad60f42fed3c8d137512605036f83a316010d4edc4a",
+        "enhancements/cnn_variant.py": "3ca1193fdc0b2a6fc79c3f4e880f391c150a82bcc2425ae9f8f596f745280386",
+        "enhancements/meta_beta_ddqn.py": "d61b0d1978da472e6734a05856a260c79525c5bd1d8cbd907e0af9d95fcd983c",
+        "enhancements/two_action_ddqn.py": "57e8c6bfa982b2f0977d05391d0bc44cf2f4b4480cfc9cb56bc4a07685a3b634",
+        "enhancements/paper_gain_reward.py": "c3eb2bb55142faeb6b5e5ea5a4af3169c403c7dd941616a9897f51d678c14087",
+        "enhancements/query_utility_reward.py": "b58c377f4ba002638397769a6a6f5db87c2cab6023f4ee1f105a7b874747ad56",
+        "enhancements/competitive_selector.py": "4090227a3de03c30c7bd94f3335e9f42e3b8f6e70295d199e3103692721ac67d",
+        "enhancements/minimax_query.py": "a73b3c4ebe60ba1ed2d200233277e23c360b5a8feec454f55b19e05afb223691"
+      },
+      "initialization": "existing Light IAT healthy CNN/Context and paper Actor; no CNN retraining",
+      "scope": "same final-family learned-beta pipeline; TRAIN300 per known level, full eligible TEST",
+      "evaluation": "pre-feedback; fixed Context path; frozen Q/beta; reset Context/Adam/memory/budget per level",
+      "probes": {
+        "generalization": {
+          "0": {
+            "ids": [
+              125,
+              223,
+              284,
+              292,
+              491,
+              511,
+              528,
+              796,
+              1050,
+              1303,
+              1431,
+              1598,
+              1816,
+              1885,
+              2191,
+              2193,
+              2250,
+              2275,
+              2498,
+              2598,
+              2634,
+              2671,
+              2783,
+              3087
+            ],
+            "rows": 24
+          },
+          "1": {
+            "ids": [
+              15,
+              21,
+              220,
+              336,
+              363,
+              531,
+              886,
+              1131,
+              1311,
+              1327,
+              1344,
+              1364,
+              1392,
+              1422,
+              1753,
+              1798,
+              1835,
+              2125,
+              2180,
+              2225,
+              2333,
+              2545,
+              2897,
+              3032
+            ],
+            "rows": 24
+          },
+          "3": {
+            "ids": [
+              39,
+              177,
+              203,
+              337,
+              355,
+              426,
+              674,
+              1187,
+              1332,
+              1537,
+              1556,
+              1579,
+              1694,
+              1732,
+              1925,
+              2126,
+              2136,
+              2187,
+              2201,
+              2323,
+              2391,
+              2592,
+              3040,
+              3073
+            ],
+            "rows": 24
+          }
+        },
+        "retention": {
+          "ids": [
+            30,
+            234,
+            258,
+            265,
+            283,
+            338,
+            366,
+            392,
+            468,
+            509,
+            589,
+            765,
+            826,
+            1037,
+            1331,
+            1406,
+            1436,
+            1480,
+            1702,
+            2021,
+            2044,
+            2101,
+            2130,
+            2247,
+            2369,
+            2392,
+            2464,
+            2584,
+            2777,
+            2902,
+            2924,
+            2993
+          ],
+          "rows": 32
+        },
+        "excluded_anchor_rows": 72,
+        "sampling": "fixed TRAIN-only; IDs/features disjoint across probes and streams; macro CE within each level",
+        "independence": "held out from this experiment adaptive updates; not necessarily from historical pretraining"
+      }
+    },
+    "beta": 26.0
+  },
+  "selected_epoch": 1,
+  "checkpoint_sha256": "2fdb8b11f98756db79d7035f53bd6431827f0894da5a72c9fcf088922c4f8b3d"
+}
