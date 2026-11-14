@@ -1,0 +1,24 @@
+{
+  "plan_sha256": "d92607cf8e48d43573ad25fbce4fa31251478d15c952a70d3a2b2116c5b24488",
+  "evaluator_sha256": "5851084b558481f756f34fbd2fe45ff57d7b60e8d091279f2f2d8af7b7455b83",
+  "epsilon": 0.05,
+  "overall": {
+    "dataset": "PS",
+    "seeds": 5,
+    "levels": 7,
+    "epsilon": 0.05,
+    "AC_mean": 83.16746923488496,
+    "AC_sd": 1.471531789027939,
+    "PR_mean": 83.66132518561979,
+    "PR_sd": 2.6160480076856785,
+    "RC_mean": 79.1891194405426,
+    "RC_sd": 2.8957196524225073,
+    "F1_mean": 80.42924605036241,
+    "F1_sd": 3.2818261027044993,
+    "labels_percent_mean": 19.975031210986263,
+    "labels_percent_sd": 0.0,
+    "forgetting_mean": -1.0420168067226905,
+    "forgetting_sd": 4.032562888400998
+  },
+  "scope": "diagnostic TEST epsilon; not VAL-selected; original greedy results preserved"
+}

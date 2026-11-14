@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "dataset": "PS",
+  "training_seed": 48,
+  "evaluation_seed": 42,
+  "plan_sha256": "d92607cf8e48d43573ad25fbce4fa31251478d15c952a70d3a2b2116c5b24488",
+  "learned_checkpoint_sha256": "efb06ce6626c617a21908d48bec84917bb3ef2dafc859f0a7211fe01f46b8465",
+  "evaluation_epsilon": 0.05,
+  "evaluator_sha256": "5851084b558481f756f34fbd2fe45ff57d7b60e8d091279f2f2d8af7b7455b83",
+  "beta": 80.75434112548828,
+  "TEST_data": {
+    "streams": {
+      "5": "f53d10e7dc3844a09f4223f461443f566257b5d04122ca18916d197f026b9e16",
+      "7": "70ea30e1d8536fab1e16a399797b9cc45bfccd5d09dc0e7200c6f5f064f30846",
+      "10": "1c8969ccc1f07b8bcf6cf95a66b9f645d60894671401808b8d3bee39e8a2633b",
+      "12": "b19aac62720680cb96330505ecd3f98ccddb67cca1ba43b74b76f38a602c08c9",
+      "15": "a4ea582569097e385766624ee78bab381403c74742077ca23a733fa6b5e8df4c",
+      "17": "8b58c34436ffd1d23da3af2abf41c67f76e20831d59b59fd5719895ec44d37d6",
+      "20": "6706b786aab54413fe296abbd0e7087d60ad6aee10697c75e017cc6651b9d4e8"
+    },
+    "source_audit": "985b47e1b6f0d39a1f3f4465c33c286cecea4184425081a794da27526cf79ec0"
+  },
+  "test_rows": 0,
+  "budget_fraction": 0.2,
+  "reset_per_level": true,
+  "policy": "LearnedBetaDDQN_EpsilonGreedy",
+  "Q_beta": "fixed TEST; Context alone adapts",
+  "source_replay": "same canonical seed42 TRAIN pool",
+  "target_endpoints": "adaptation-stream diagnostics include acquired rows; not independent target gain"
+}

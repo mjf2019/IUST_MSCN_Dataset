@@ -1,0 +1,24 @@
+{
+  "plan_sha256": "5e98dca30f31858293ea401c701bdf2c6bf85d911f34a97a10bd35251fa06b6d",
+  "evaluator_sha256": "5851084b558481f756f34fbd2fe45ff57d7b60e8d091279f2f2d8af7b7455b83",
+  "epsilon": 0.05,
+  "overall": {
+    "dataset": "IAT",
+    "seeds": 5,
+    "levels": 7,
+    "epsilon": 0.05,
+    "AC_mean": 75.95336481700119,
+    "AC_sd": 1.8028174866628741,
+    "PR_mean": 74.57138778703917,
+    "PR_sd": 2.3298977324516983,
+    "RC_mean": 72.52101793707905,
+    "RC_sd": 3.062140850935103,
+    "F1_mean": 72.97258123620769,
+    "F1_sd": 2.9027128454576827,
+    "labels_percent_mean": 19.93801652892562,
+    "labels_percent_sd": 0.0,
+    "forgetting_mean": 1.3605442176870763,
+    "forgetting_sd": 2.6868595453240176
+  },
+  "scope": "diagnostic TEST epsilon; not VAL-selected; original greedy results preserved"
+}
