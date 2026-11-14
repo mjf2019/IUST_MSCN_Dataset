@@ -1,0 +1,28 @@
+{
+  "plan_sha256": "d92607cf8e48d43573ad25fbce4fa31251478d15c952a70d3a2b2116c5b24488",
+  "training_seeds": [
+    42,
+    48,
+    54,
+    62,
+    72
+  ],
+  "overall": {
+    "dataset": "PS",
+    "seeds": 5,
+    "levels": 7,
+    "AC_mean": 64.41947565543072,
+    "AC_sd": 26.569080273554995,
+    "PR_mean": 61.262036221752474,
+    "PR_sd": 31.871042090807816,
+    "RC_mean": 58.53631051638642,
+    "RC_sd": 29.916622480743737,
+    "F1_mean": 58.67063117735463,
+    "F1_sd": 31.83409140236889,
+    "labels_percent_mean": 11.98501872659176,
+    "labels_percent_sd": 10.940775181126913,
+    "forgetting_mean": -2.2184873949579837,
+    "forgetting_sd": 2.5472028493557075
+  },
+  "definition": "overall SD across per-training-seed seven-level means, sample SD ddof1"
+}

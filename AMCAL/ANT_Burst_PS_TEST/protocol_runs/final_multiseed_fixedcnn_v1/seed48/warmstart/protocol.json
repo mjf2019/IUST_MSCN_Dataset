@@ -1,0 +1,200 @@
+{
+  "protocol": {
+    "version": 1,
+    "dataset": "PS",
+    "seed": 48,
+    "pilot_rows": 300,
+    "epochs": 3,
+    "betas": [
+      55.0
+    ],
+    "architecture": "light_ps_cnn_v1",
+    "training_levels": [
+      0,
+      1,
+      3
+    ],
+    "actor_checkpoint_sha256": "87e681f1d30f0ad2245fcdca78530de784d2177e816994bc513f7f414a68df46",
+    "healthy_teacher_sha256": "5ccbc7e163bb9fd3672e77d4329627a317114a0cb40a1b4a9448d64ed730bc39",
+    "source_models": {
+      "protocol_preprocessing.joblib": "06dbe552fb97d4894ebd53bb7ebbbfd354ce898938bb3ad8ee2f89b8a3582663",
+      "initial_cnn_model.pth": "bd00a78d2eb5ac14325a2f33f03f9cf38f1877e18af89348f86b1e79dc815575",
+      "enhanced_context.pth": "215b20344c52775eaf2d80c28490f7b1df93f886bb04c28ec0d6acccb8a8ddca"
+    },
+    "train_files": {
+      "0": "0232a51c02cc7b91e073df3ec9c01f59db0b4824a5c9094b9c6ee126161f6c9b",
+      "1": "ea6002429f709aa139baf0766715f7616a3635c31d5a32ecba5e5d96f2b4e891",
+      "3": "4f9171df87f13230b5d8cc5efb3b2c7bd9b1a6015ee3fc4356d5fcf0f50f9fb7"
+    },
+    "train_data": {
+      "streams": {
+        "0": "1bad5f20ce87fddef3b5795ce15de14cb18b62c3e0ce6af011c7bc68d4879eae",
+        "1": "4c53025c959a14516be1e06fc4bcf027376df5d0fe6040100add885f19b709d2",
+        "3": "0c2bdf7098a3012ebe7beacbb659db347f4e9f57c82cad80a6b5ec4a90855b9d"
+      },
+      "source_audit": "b6bcda73990a3223374a2fd354ddcc54619eee0c77cb2a75b3dd808b36302743"
+    },
+    "validation_data": {
+      "streams": {
+        "0": "6ea1e740df87e24dc745759d968046826a8755673d0127d9c893f4d89f6785e6",
+        "1": "7b369a33900a7834a5a651be953e4f6ea8e8155f8988e5dc10f5d2c293db264f",
+        "3": "cb2db74549d70a1d2e8d88253fef2f30b3f359c18566fa14f57539ce78a27fa6"
+      },
+      "source_audit": "a18e575f4dd340bdb22b068c89ec32d20895134f3c9f8210bc00703f06f2f7c1"
+    },
+    "probes": {
+      "generalization": {
+        "0": {
+          "ids": [
+            187,
+            201,
+            215,
+            228,
+            433,
+            535,
+            537,
+            804,
+            911,
+            1014,
+            1056,
+            1120,
+            1141,
+            1197,
+            1458,
+            1509,
+            1751,
+            2206,
+            2231,
+            2281,
+            2532,
+            2550,
+            2648,
+            3077
+          ],
+          "rows": 24
+        },
+        "1": {
+          "ids": [
+            167,
+            197,
+            204,
+            272,
+            385,
+            400,
+            506,
+            529,
+            642,
+            663,
+            1127,
+            1403,
+            1498,
+            1726,
+            1919,
+            2103,
+            2165,
+            2215,
+            2276,
+            2438,
+            2467,
+            2695,
+            2786,
+            2951
+          ],
+          "rows": 24
+        },
+        "3": {
+          "ids": [
+            17,
+            120,
+            172,
+            382,
+            422,
+            476,
+            505,
+            508,
+            641,
+            930,
+            1342,
+            1500,
+            1772,
+            1806,
+            1931,
+            2069,
+            2121,
+            2203,
+            2471,
+            2522,
+            2749,
+            2922,
+            2960,
+            3168
+          ],
+          "rows": 24
+        }
+      },
+      "retention": {
+        "ids": [
+          4,
+          23,
+          146,
+          151,
+          245,
+          313,
+          390,
+          429,
+          683,
+          887,
+          889,
+          1024,
+          1086,
+          1134,
+          1154,
+          1721,
+          1730,
+          1741,
+          1834,
+          1860,
+          2018,
+          2052,
+          2099,
+          2199,
+          2442,
+          2454,
+          2499,
+          2521,
+          2731,
+          2859,
+          3155,
+          3203
+        ],
+        "rows": 32
+      },
+      "excluded_anchor_rows": 81,
+      "sampling": "fixed TRAIN-only; IDs/features disjoint across probes and streams; macro CE within each level",
+      "independence": "held out from this experiment adaptive updates; not necessarily from historical pretraining"
+    },
+    "context_lr": 0.00025,
+    "replay_weight": 0.1,
+    "budget_fraction": 0.2,
+    "source_CNN_fixed": true,
+    "implementation_sha256": {
+      "amcal_final_multiseed.py": "c989018c784a32fe9b091fe9407e259fde47aad1656a5397e72de2460bf90a95",
+      "amcal_final_multiseed_worker.py": "a9da7db6eb5b610f35efd7bcd43cfc332c37e67a151e786022d62fb0cd57c6cc",
+      "amcal_minimax_paironly.py": "471820f2797ffcc92de99ad60f42fed3c8d137512605036f83a316010d4edc4a",
+      "amcal_budget_actor.py": "b7f5b399d2dc9dc7fc00eb712eef8641ae90a7ec3bdd19d5b293204368a36709",
+      "amcal_competitive_selector.py": "0846639ecdb811889fc93e3033579abc698d43945ba7d14670fea7ca85626042",
+      "amcal_two_action_paper_gain.py": "da3e71304107a6d76b4994bfa45c949ca6717a72874f53bb28712a0c7bc4c0c2",
+      "amcal_meta_beta_ddqn.py": "cdb6afeb485a4123f82c794bdfb0db6b23a2ea045d5f556944a01d320b72f406",
+      "enhancements/standardized_actor.py": "eb64cf66e545c5bb18c353aafc30ae289b53e621cb5e93cd836a0c58cbc843d2",
+      "enhancements/minimax_diagnostics.py": "e5253d47d5bb391ad61caf54047ce3bc692d03bd83ff2b2497beac91710d3976",
+      "enhancements/minimax_query.py": "a73b3c4ebe60ba1ed2d200233277e23c360b5a8feec454f55b19e05afb223691",
+      "enhancements/two_action_ddqn.py": "57e8c6bfa982b2f0977d05391d0bc44cf2f4b4480cfc9cb56bc4a07685a3b634",
+      "enhancements/meta_beta_ddqn.py": "d61b0d1978da472e6734a05856a260c79525c5bd1d8cbd907e0af9d95fcd983c",
+      "enhancements/competitive_selector.py": "4090227a3de03c30c7bd94f3335e9f42e3b8f6e70295d199e3103692721ac67d",
+      "enhancements/query_utility_reward.py": "b58c377f4ba002638397769a6a6f5db87c2cab6023f4ee1f105a7b874747ad56",
+      "enhancements/paper_gain_reward.py": "c3eb2bb55142faeb6b5e5ea5a4af3169c403c7dd941616a9897f51d678c14087"
+    },
+    "scope": "same final-family DDQN fixed-beta warm start; no TEST beta selection"
+  },
+  "beta": 55.0
+}
