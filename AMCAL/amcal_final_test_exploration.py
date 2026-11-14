@@ -8,6 +8,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 
 import amcal_final_multiseed as run
