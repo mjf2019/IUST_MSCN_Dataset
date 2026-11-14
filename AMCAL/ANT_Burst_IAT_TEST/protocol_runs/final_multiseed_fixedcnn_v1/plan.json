@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "dataset": "IAT",
+  "training_seeds": [
+    42,
+    48,
+    54,
+    62,
+    72
+  ],
+  "evaluation_seed": 42,
+  "training_levels": [
+    0,
+    1,
+    3
+  ],
+  "test_levels": [
+    5,
+    7,
+    10,
+    12,
+    15,
+    17,
+    20
+  ],
+  "test_rows": 0,
+  "budget_fraction": 0.2,
+  "source": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\paironly_batch5_trainseed42\\paironly_batch5",
+  "source_sha256": {
+    "protocol_preprocessing.joblib": "279b55784ac44ba1b5e4627078cb89586181824dcddfe02456d9e5c05fb70c6b",
+    "initial_cnn_model.pth": "16b2c531add95691a04aaef7f9bd041212cb212112eb1702efbb415786b98d54",
+    "enhanced_context.pth": "b0533e8c84679bd81dcbc02bdd507c069da5557f7c37cac7668e197b27d1634c",
+    "final_enhancement.pth": "78b5c9c7df30d5d557439bce8113dddf3d1dfa0d345dfaef4d69d1d2ff49baf9"
+  },
+  "reference": "D:\\Paper_Implementation\\IUST_MSCN_Dataset\\AMCAL\\ANT_Burst_IAT_TEST\\protocol_runs\\meta_beta_ddqn_seed42_p300_e3_v1",
+  "reference_protocol_sha256": "e648573f60d733cc3de59190f4eccde0df94b2e9d48a29cb40b1a8979c1feb1c",
+  "fixed_TEST_data": {
+    "streams": {
+      "5": "1721d0aafd429136a465ceaa3073c13a782374233bfea9316639aa9e7eeba7c5",
+      "7": "5b8c61e1c1871197100fc83adf9f21d7d62363fc32815c8a350b3f3bea0051ab",
+      "10": "202cfc904c17fb3a5a901e639da6caa4169d3274440adbe18c4290d53bfbdd89",
+      "12": "bd26d2289af8b1a23143bf859bc2c9cd9421899286394ad13a9279432849ae86",
+      "15": "b891085d711c27cb67015ddf63a37b6f56e4fdc0d3def94d5c41b8bacc84aacd",
+      "17": "a9405f7a8a5d5988ccf11976dbbfc9b8251d14cf5dbace06fcfe22f87c0c8745",
+      "20": "ceec78265dc04efac84bb5121e144913e24df2cac01027bd55568b847d37c1b6"
+    },
+    "source_audit": "17bdd068d2ae0d65345df206291b2e65d1f7af6ae951a16a837eaa31fc55ab99"
+  },
+  "architecture": "legacy",
+  "context_epochs": 6,
+  "context_patience": 3,
+  "selector_rounds": 2,
+  "selector_steps": 32,
+  "ddqn_epochs": 3,
+  "meta_epochs": 3,
+  "train_rows_per_level": 300,
+  "warmstart_beta": 26.0,
+  "context_lr": 0.00025,
+  "replay_weight": 0.1,
+  "initialization": "shared pretrained CNN, scaler and pretrained Context/router warm start; independent Context development/selector/DDQN/beta fits per training seed",
+  "fixed": "CNN weights and TRAIN/VAL/TEST partition IDs; TEST observer/stream/replay pool/order seed42",
+  "uncertainty_scope": "variance of adaptive training conditional on common pretrained initialization; not independent CNN or all-stage-from-scratch training",
+  "selection": "per-seed VAL0/1/3 selection; no cross-seed or TEST model selection",
+  "implementation_sha256": {
+    "amcal_final_multiseed.py": "c989018c784a32fe9b091fe9407e259fde47aad1656a5397e72de2460bf90a95",
+    "amcal_final_multiseed_worker.py": "a9da7db6eb5b610f35efd7bcd43cfc332c37e67a151e786022d62fb0cd57c6cc",
+    "amcal_minimax_paironly.py": "471820f2797ffcc92de99ad60f42fed3c8d137512605036f83a316010d4edc4a",
+    "amcal_budget_actor.py": "b7f5b399d2dc9dc7fc00eb712eef8641ae90a7ec3bdd19d5b293204368a36709",
+    "amcal_competitive_selector.py": "0846639ecdb811889fc93e3033579abc698d43945ba7d14670fea7ca85626042",
+    "amcal_two_action_paper_gain.py": "da3e71304107a6d76b4994bfa45c949ca6717a72874f53bb28712a0c7bc4c0c2",
+    "amcal_meta_beta_ddqn.py": "cdb6afeb485a4123f82c794bdfb0db6b23a2ea045d5f556944a01d320b72f406",
+    "enhancements/standardized_actor.py": "eb64cf66e545c5bb18c353aafc30ae289b53e621cb5e93cd836a0c58cbc843d2",
+    "enhancements/minimax_diagnostics.py": "e5253d47d5bb391ad61caf54047ce3bc692d03bd83ff2b2497beac91710d3976",
+    "enhancements/minimax_query.py": "a73b3c4ebe60ba1ed2d200233277e23c360b5a8feec454f55b19e05afb223691",
+    "enhancements/two_action_ddqn.py": "57e8c6bfa982b2f0977d05391d0bc44cf2f4b4480cfc9cb56bc4a07685a3b634",
+    "enhancements/meta_beta_ddqn.py": "d61b0d1978da472e6734a05856a260c79525c5bd1d8cbd907e0af9d95fcd983c",
+    "enhancements/competitive_selector.py": "4090227a3de03c30c7bd94f3335e9f42e3b8f6e70295d199e3103692721ac67d",
+    "enhancements/query_utility_reward.py": "b58c377f4ba002638397769a6a6f5db87c2cab6023f4ee1f105a7b874747ad56",
+    "enhancements/paper_gain_reward.py": "c3eb2bb55142faeb6b5e5ea5a4af3169c403c7dd941616a9897f51d678c14087"
+  }
+}

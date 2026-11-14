@@ -1,0 +1,28 @@
+{
+  "frozen_is_route_zero": true,
+  "context_is_route_one": true,
+  "correctness_target_columns": [
+    "Frozen_correct",
+    "Context_correct"
+  ],
+  "correctness_loss_gradient_sign_ok": true,
+  "routing_and_other_heads_disjoint": true,
+  "diagnostic_logits_gradient": [
+    [
+      -0.08749999850988388,
+      0.08749999850988388
+    ],
+    [
+      0.08749999850988388,
+      -0.08749999850988388
+    ],
+    [
+      -0.0625,
+      -0.0625
+    ],
+    [
+      0.0625,
+      0.0625
+    ]
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "dataset": "IAT",
+  "training_seed": 48,
+  "evaluation_seed": 42,
+  "plan_sha256": "5e98dca30f31858293ea401c701bdf2c6bf85d911f34a97a10bd35251fa06b6d",
+  "learned_checkpoint_sha256": "0ef86cfea296fc3ff8ba1c327f4590d3883b03324909a0c3674387bd6bbf58c6",
+  "beta": 43.98902130126953,
+  "TEST_data": {
+    "streams": {
+      "5": "1721d0aafd429136a465ceaa3073c13a782374233bfea9316639aa9e7eeba7c5",
+      "7": "5b8c61e1c1871197100fc83adf9f21d7d62363fc32815c8a350b3f3bea0051ab",
+      "10": "202cfc904c17fb3a5a901e639da6caa4169d3274440adbe18c4290d53bfbdd89",
+      "12": "bd26d2289af8b1a23143bf859bc2c9cd9421899286394ad13a9279432849ae86",
+      "15": "b891085d711c27cb67015ddf63a37b6f56e4fdc0d3def94d5c41b8bacc84aacd",
+      "17": "a9405f7a8a5d5988ccf11976dbbfc9b8251d14cf5dbace06fcfe22f87c0c8745",
+      "20": "ceec78265dc04efac84bb5121e144913e24df2cac01027bd55568b847d37c1b6"
+    },
+    "source_audit": "17bdd068d2ae0d65345df206291b2e65d1f7af6ae951a16a837eaa31fc55ab99"
+  },
+  "test_rows": 0,
+  "budget_fraction": 0.2,
+  "reset_per_level": true,
+  "policy": "LearnedBetaDDQN",
+  "Q_beta": "fixed TEST; Context alone adapts",
+  "source_replay": "same canonical seed42 TRAIN pool",
+  "target_endpoints": "adaptation-stream diagnostics include acquired rows; not independent target gain"
+}

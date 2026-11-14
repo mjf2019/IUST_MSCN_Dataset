@@ -1,0 +1,28 @@
+{
+  "plan_sha256": "5e98dca30f31858293ea401c701bdf2c6bf85d911f34a97a10bd35251fa06b6d",
+  "training_seeds": [
+    42,
+    48,
+    54,
+    62,
+    72
+  ],
+  "overall": {
+    "dataset": "IAT",
+    "seeds": 5,
+    "levels": 7,
+    "AC_mean": 70.12396694214877,
+    "AC_sd": 12.749974175150372,
+    "PR_mean": 69.6793846168722,
+    "PR_sd": 10.275769482039438,
+    "RC_mean": 66.64606399611753,
+    "RC_sd": 12.686468644775358,
+    "F1_mean": 66.46995680430413,
+    "F1_sd": 13.938413915375554,
+    "labels_percent_mean": 15.950413223140496,
+    "labels_percent_sd": 8.916552059038418,
+    "forgetting_mean": 0.7891156462585024,
+    "forgetting_sd": 2.2260599006518693
+  },
+  "definition": "overall SD across per-training-seed seven-level means, sample SD ddof1"
+}
