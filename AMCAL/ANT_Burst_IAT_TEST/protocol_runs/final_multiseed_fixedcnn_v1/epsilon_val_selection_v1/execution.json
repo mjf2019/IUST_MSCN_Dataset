@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "dataset": "IAT",
+  "training_seeds": [
+    42,
+    48,
+    54,
+    62,
+    72
+  ],
+  "evaluation_seed": 42,
+  "epsilons": [
+    0.0,
+    0.01,
+    0.05
+  ],
+  "levels": [
+    0,
+    1,
+    3
+  ],
+  "rows_per_VAL_level": 300,
+  "budget_fraction": 0.2,
+  "plan_sha256": "5e98dca30f31858293ea401c701bdf2c6bf85d911f34a97a10bd35251fa06b6d",
+  "checkpoints": {
+    "42": "2a0741c92e9600433323b353c04cc9659afeef1865bca79df74243cc6507ad0f",
+    "48": "0ef86cfea296fc3ff8ba1c327f4590d3883b03324909a0c3674387bd6bbf58c6",
+    "54": "6795c55f3a8aa06491380d9f3a934970bebcfedc04ea78f6d2634f5f34712557",
+    "62": "74dd064d1de55510897665fd99138b57de0ff1c4a2381d1898dfd49ba0f7521d",
+    "72": "72ddf697a734b99711c90e63ba975b65eb6b83db0903dfe1efa5755158652336"
+  },
+  "evaluator_sha256": "cbaa48d4447838c716cdc9fe306714a2bde2e69abe527c5b0dfb4ac003ea4895",
+  "dependencies": {
+    "amcal_final_multiseed.py": "c989018c784a32fe9b091fe9407e259fde47aad1656a5397e72de2460bf90a95",
+    "amcal_final_multiseed_worker.py": "a9da7db6eb5b610f35efd7bcd43cfc332c37e67a151e786022d62fb0cd57c6cc",
+    "amcal_minimax_paironly.py": "471820f2797ffcc92de99ad60f42fed3c8d137512605036f83a316010d4edc4a",
+    "amcal_budget_actor.py": "b7f5b399d2dc9dc7fc00eb712eef8641ae90a7ec3bdd19d5b293204368a36709",
+    "amcal_competitive_selector.py": "0846639ecdb811889fc93e3033579abc698d43945ba7d14670fea7ca85626042",
+    "amcal_two_action_paper_gain.py": "da3e71304107a6d76b4994bfa45c949ca6717a72874f53bb28712a0c7bc4c0c2",
+    "amcal_meta_beta_ddqn.py": "cdb6afeb485a4123f82c794bdfb0db6b23a2ea045d5f556944a01d320b72f406",
+    "enhancements/standardized_actor.py": "eb64cf66e545c5bb18c353aafc30ae289b53e621cb5e93cd836a0c58cbc843d2",
+    "enhancements/minimax_diagnostics.py": "e5253d47d5bb391ad61caf54047ce3bc692d03bd83ff2b2497beac91710d3976",
+    "enhancements/minimax_query.py": "a73b3c4ebe60ba1ed2d200233277e23c360b5a8feec454f55b19e05afb223691",
+    "enhancements/two_action_ddqn.py": "57e8c6bfa982b2f0977d05391d0bc44cf2f4b4480cfc9cb56bc4a07685a3b634",
+    "enhancements/meta_beta_ddqn.py": "d61b0d1978da472e6734a05856a260c79525c5bd1d8cbd907e0af9d95fcd983c",
+    "enhancements/competitive_selector.py": "4090227a3de03c30c7bd94f3335e9f42e3b8f6e70295d199e3103692721ac67d",
+    "enhancements/query_utility_reward.py": "b58c377f4ba002638397769a6a6f5db87c2cab6023f4ee1f105a7b874747ad56",
+    "enhancements/paper_gain_reward.py": "c3eb2bb55142faeb6b5e5ea5a4af3169c403c7dd941616a9897f51d678c14087"
+  },
+  "reset_per_case": true,
+  "selection": "mean online AC minus positive original-domain forgetting; equal dataset/seed/domain weight; ties favor fewer labels then smaller epsilon",
+  "Q_beta": "fixed; only temporary Context adapts; no training changes",
+  "scope": "VAL-only post-hoc calibration; earlier diagnostic TEST inspection is not erased"
+}
