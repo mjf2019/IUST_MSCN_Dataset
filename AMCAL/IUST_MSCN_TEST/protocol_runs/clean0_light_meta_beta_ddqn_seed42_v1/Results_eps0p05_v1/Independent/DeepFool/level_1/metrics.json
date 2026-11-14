@@ -1,0 +1,76 @@
+{
+  "online": {
+    "AC": 89.24632352941177,
+    "PR": 94.208385649743,
+    "RC": 93.4794498334537,
+    "F1": 93.80084226258751
+  },
+  "samples": 1088,
+  "labels": 217,
+  "cap": 217,
+  "labels_percent": 19.94485294117647,
+  "source_before": {
+    "AC": 90.35792549306063,
+    "PR": 94.60592060017484,
+    "RC": 95.08335636582686,
+    "F1": 94.6709506416848
+  },
+  "source_after": {
+    "AC": 89.26223520818115,
+    "PR": 93.82513551617686,
+    "RC": 93.9996173062613,
+    "F1": 93.8536596323174
+  },
+  "original_domain_forgetting": {
+    "AC": 1.0956902848794812,
+    "PR": 0.7807850839979835,
+    "RC": 1.0837390595655592,
+    "F1": 0.8172910093673948
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 47,
+  "milliseconds_per_row": 7.219480606556103,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "evaluation_epsilon": 0.05,
+  "adaptation_stream_seen_before": {
+    "AC": 90.53308823529412,
+    "PR": 94.66660814496662,
+    "RC": 94.38285701068074,
+    "F1": 94.34851335585344
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 90.625,
+    "PR": 94.90236514790229,
+    "RC": 94.9609793497743,
+    "F1": 94.88288833421578
+  },
+  "target_before": {
+    "AC": 90.80882352941177,
+    "PR": 95.01436538786547,
+    "RC": 95.97841726618705,
+    "F1": 95.25943243067732
+  },
+  "target_after": {
+    "AC": 90.44117647058823,
+    "PR": 94.8335410361403,
+    "RC": 94.98561151079136,
+    "F1": 94.90606548577564
+  },
+  "target_holdout_rows": 272,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": -0.3676470588235361,
+    "PR": -0.18082435172516398,
+    "RC": -0.9928057553956933,
+    "F1": -0.35336694490167986
+  },
+  "labels_percent_of_all_target_rows": 15.955882352941176,
+  "target_total_rows": 1360,
+  "case": {
+    "attack": "DeepFool",
+    "strength": 0.1,
+    "level": 1
+  }
+}

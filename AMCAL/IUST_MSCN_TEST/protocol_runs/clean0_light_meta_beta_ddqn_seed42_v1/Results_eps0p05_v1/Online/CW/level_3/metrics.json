@@ -1,0 +1,55 @@
+{
+  "online": {
+    "AC": 86.1029411764706,
+    "PR": 90.13825142183352,
+    "RC": 87.6124164140552,
+    "F1": 88.75041758977758
+  },
+  "samples": 1360,
+  "labels": 272,
+  "cap": 272,
+  "labels_percent": 20.0,
+  "source_before": {
+    "AC": 90.35792549306063,
+    "PR": 94.60592060017484,
+    "RC": 95.08335636582686,
+    "F1": 94.6709506416848
+  },
+  "source_after": {
+    "AC": 88.5317750182615,
+    "PR": 93.30332769442697,
+    "RC": 91.6493235722388,
+    "F1": 92.4431958294945
+  },
+  "original_domain_forgetting": {
+    "AC": 1.8261504747991353,
+    "PR": 1.302592905747872,
+    "RC": 3.4340327935880595,
+    "F1": 2.227754812190298
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 64,
+  "milliseconds_per_row": 10.838590955844506,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "evaluation_epsilon": 0.05,
+  "adaptation_stream_seen_before": {
+    "AC": 81.47058823529412,
+    "PR": 89.31059643349519,
+    "RC": 88.44553420859327,
+    "F1": 88.80645909438198
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 88.01470588235294,
+    "PR": 91.89333454303514,
+    "RC": 88.70753577820837,
+    "F1": 90.11788088891637
+  },
+  "target_final_definition": "not reported; Online uses all TEST rows for pre-feedback scoring",
+  "case": {
+    "attack": "CW",
+    "strength": 5.0,
+    "level": 3
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "online": {
+    "AC": 95.14134275618375,
+    "PR": 92.13218546433296,
+    "RC": 91.8823397482169,
+    "F1": 91.93307998763748
+  },
+  "samples": 2264,
+  "labels": 452,
+  "cap": 452,
+  "labels_percent": 19.964664310954063,
+  "source_before": {
+    "AC": 93.5847726471625,
+    "PR": 89.06947127550202,
+    "RC": 90.71550615181687,
+    "F1": 89.3827590041607
+  },
+  "source_after": {
+    "AC": 89.39020091646105,
+    "PR": 84.2566452949234,
+    "RC": 86.0770465389957,
+    "F1": 83.83847367609701
+  },
+  "original_domain_forgetting": {
+    "AC": 4.1945717307014405,
+    "PR": 4.812825980578623,
+    "RC": 4.6384596128211655,
+    "F1": 5.544285328063694
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 237,
+  "milliseconds_per_row": 6.311564134267676,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "evaluation_epsilon": 0.05,
+  "adaptation_stream_seen_before": {
+    "AC": 78.66607773851591,
+    "PR": 76.91642195864955,
+    "RC": 77.90017011772765,
+    "F1": 75.39357819358334
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 96.33392226148409,
+    "PR": 95.20769008247704,
+    "RC": 93.92483736868773,
+    "F1": 94.41337464304111
+  },
+  "target_before": {
+    "AC": 78.23008849557522,
+    "PR": 76.37131541540418,
+    "RC": 77.74313666842099,
+    "F1": 74.65629880013442
+  },
+  "target_after": {
+    "AC": 95.75221238938053,
+    "PR": 94.4665750915751,
+    "RC": 90.97373207570037,
+    "F1": 92.10421983513157
+  },
+  "target_holdout_rows": 565,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 17.522123893805315,
+    "PR": 18.09525967617091,
+    "RC": 13.230595407279381,
+    "F1": 17.44792103499715
+  },
+  "labels_percent_of_all_target_rows": 15.977377165075998,
+  "target_total_rows": 2829,
+  "case": {
+    "attack": "PGD",
+    "strength": 0.1,
+    "level": 2
+  }
+}

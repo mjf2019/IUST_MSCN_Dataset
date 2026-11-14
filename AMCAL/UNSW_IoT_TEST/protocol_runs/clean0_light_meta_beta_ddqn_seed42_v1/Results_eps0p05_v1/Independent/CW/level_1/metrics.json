@@ -1,0 +1,76 @@
+{
+  "online": {
+    "AC": 92.92929292929293,
+    "PR": 88.69647678031612,
+    "RC": 87.16859871471017,
+    "F1": 87.77121837753299
+  },
+  "samples": 495,
+  "labels": 99,
+  "cap": 99,
+  "labels_percent": 20.0,
+  "source_before": {
+    "AC": 94.91525423728814,
+    "PR": 93.95675815305134,
+    "RC": 91.7015116552722,
+    "F1": 92.44914673702817
+  },
+  "source_after": {
+    "AC": 93.99075500770417,
+    "PR": 94.47505812228766,
+    "RC": 89.11165832431197,
+    "F1": 90.42083399762107
+  },
+  "original_domain_forgetting": {
+    "AC": 0.9244992295839722,
+    "PR": -0.5182999692363239,
+    "RC": 2.5898533309602243,
+    "F1": 2.0283127394070988
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 17,
+  "milliseconds_per_row": 13.11197656564264,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "evaluation_epsilon": 0.05,
+  "adaptation_stream_seen_before": {
+    "AC": 93.33333333333333,
+    "PR": 88.7032485058801,
+    "RC": 87.12082619552278,
+    "F1": 87.63187225612529
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 94.14141414141413,
+    "PR": 92.45291430317842,
+    "RC": 86.40185873426051,
+    "F1": 87.77594956293943
+  },
+  "target_before": {
+    "AC": 92.74193548387096,
+    "PR": 86.66666666666666,
+    "RC": 88.77289377289378,
+    "F1": 86.73198954833893
+  },
+  "target_after": {
+    "AC": 93.54838709677419,
+    "PR": 87.8000258097819,
+    "RC": 87.53968253968253,
+    "F1": 87.58701244299256
+  },
+  "target_holdout_rows": 124,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 0.8064516129032313,
+    "PR": 1.1333591431152428,
+    "RC": -1.2332112332112501,
+    "F1": 0.8550228946536294
+  },
+  "labels_percent_of_all_target_rows": 15.993537964458804,
+  "target_total_rows": 619,
+  "case": {
+    "attack": "CW",
+    "strength": 0.1,
+    "level": 1
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "online": {
+    "AC": 74.14141414141415,
+    "PR": 71.83471537438558,
+    "RC": 70.08370232184508,
+    "F1": 69.6660323750362
+  },
+  "samples": 495,
+  "labels": 99,
+  "cap": 99,
+  "labels_percent": 20.0,
+  "source_before": {
+    "AC": 94.91525423728814,
+    "PR": 93.95675815305134,
+    "RC": 91.7015116552722,
+    "F1": 92.44914673702817
+  },
+  "source_after": {
+    "AC": 86.4406779661017,
+    "PR": 83.78827506251187,
+    "RC": 84.44488201478693,
+    "F1": 83.43578105476095
+  },
+  "original_domain_forgetting": {
+    "AC": 8.474576271186436,
+    "PR": 10.168483090539468,
+    "RC": 7.256629640485272,
+    "F1": 9.01336568226722
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 36,
+  "milliseconds_per_row": 14.236496363747676,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "evaluation_epsilon": 0.05,
+  "adaptation_stream_seen_before": {
+    "AC": 64.44444444444444,
+    "PR": 64.88315719637147,
+    "RC": 62.71016859750491,
+    "F1": 62.34259546106908
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 77.97979797979798,
+    "PR": 75.64977504685041,
+    "RC": 73.51266054024757,
+    "F1": 73.42224647989714
+  },
+  "target_before": {
+    "AC": 58.06451612903226,
+    "PR": 61.03673645684149,
+    "RC": 53.48921448921449,
+    "F1": 53.00465479443827
+  },
+  "target_after": {
+    "AC": 70.16129032258065,
+    "PR": 69.63790713790713,
+    "RC": 64.22669922669922,
+    "F1": 63.01355405550198
+  },
+  "target_holdout_rows": 124,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 12.096774193548391,
+    "PR": 8.601170681065646,
+    "RC": 10.737484737484735,
+    "F1": 10.00889926106371
+  },
+  "labels_percent_of_all_target_rows": 15.993537964458804,
+  "target_total_rows": 619,
+  "case": {
+    "attack": "DeepFool",
+    "strength": 5.0,
+    "level": 3
+  }
+}

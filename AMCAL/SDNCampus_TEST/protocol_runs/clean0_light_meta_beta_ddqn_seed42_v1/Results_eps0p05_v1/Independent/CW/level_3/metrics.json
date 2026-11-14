@@ -1,0 +1,76 @@
+{
+  "online": {
+    "AC": 81.06694560669456,
+    "PR": 81.47301540280917,
+    "RC": 81.03806756362286,
+    "F1": 81.04240587849158
+  },
+  "samples": 956,
+  "labels": 191,
+  "cap": 191,
+  "labels_percent": 19.97907949790795,
+  "source_before": {
+    "AC": 88.30409356725146,
+    "PR": 88.47171254796531,
+    "RC": 88.29773869346734,
+    "F1": 88.35441783095263
+  },
+  "source_after": {
+    "AC": 80.8688387635756,
+    "PR": 80.84991587873405,
+    "RC": 80.8609715242881,
+    "F1": 80.7977466936866
+  },
+  "original_domain_forgetting": {
+    "AC": 7.435254803675861,
+    "PR": 7.621796669231259,
+    "RC": 7.436767169179234,
+    "F1": 7.556671137266022
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 69,
+  "milliseconds_per_row": 13.066121757349046,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "evaluation_epsilon": 0.05,
+  "adaptation_stream_seen_before": {
+    "AC": 81.69456066945607,
+    "PR": 82.64041736786098,
+    "RC": 81.67953719183716,
+    "F1": 81.82503343362806
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 84.8326359832636,
+    "PR": 85.26255979625694,
+    "RC": 84.80512598519226,
+    "F1": 84.84508032115849
+  },
+  "target_before": {
+    "AC": 82.84518828451883,
+    "PR": 85.06206777931983,
+    "RC": 82.87393162393163,
+    "F1": 83.0670267169123
+  },
+  "target_after": {
+    "AC": 85.35564853556485,
+    "PR": 85.64385090618782,
+    "RC": 85.36324786324786,
+    "F1": 85.45017815797137
+  },
+  "target_holdout_rows": 239,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": 2.5104602510460268,
+    "PR": 0.5817831268679896,
+    "RC": 2.4893162393162385,
+    "F1": 2.38315144105907
+  },
+  "labels_percent_of_all_target_rows": 15.98326359832636,
+  "target_total_rows": 1195,
+  "case": {
+    "attack": "CW",
+    "strength": 5.0,
+    "level": 3
+  }
+}

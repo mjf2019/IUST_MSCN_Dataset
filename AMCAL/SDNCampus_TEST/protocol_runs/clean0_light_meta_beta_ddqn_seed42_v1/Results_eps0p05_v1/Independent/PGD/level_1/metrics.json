@@ -1,0 +1,76 @@
+{
+  "online": {
+    "AC": 83.57740585774059,
+    "PR": 84.40259392857232,
+    "RC": 83.55912314571557,
+    "F1": 83.7253127784519
+  },
+  "samples": 956,
+  "labels": 191,
+  "cap": 191,
+  "labels_percent": 19.97907949790795,
+  "source_before": {
+    "AC": 88.30409356725146,
+    "PR": 88.47171254796531,
+    "RC": 88.29773869346734,
+    "F1": 88.35441783095263
+  },
+  "source_after": {
+    "AC": 85.71428571428571,
+    "PR": 86.21205967152626,
+    "RC": 85.71566164154105,
+    "F1": 85.85654437812757
+  },
+  "original_domain_forgetting": {
+    "AC": 2.5898078529657482,
+    "PR": 2.2596528764390484,
+    "RC": 2.582077051926291,
+    "F1": 2.4978734528250612
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 57,
+  "milliseconds_per_row": 14.330749477042572,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "evaluation_epsilon": 0.05,
+  "adaptation_stream_seen_before": {
+    "AC": 86.92468619246861,
+    "PR": 87.14650481781607,
+    "RC": 86.90098983626568,
+    "F1": 86.91874512962704
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 86.92468619246861,
+    "PR": 87.4564813906247,
+    "RC": 86.90754949181328,
+    "F1": 87.02875422967372
+  },
+  "target_before": {
+    "AC": 87.86610878661088,
+    "PR": 88.83310930925708,
+    "RC": 87.86324786324786,
+    "F1": 88.00042227876371
+  },
+  "target_after": {
+    "AC": 83.68200836820083,
+    "PR": 84.63887595867305,
+    "RC": 83.69658119658119,
+    "F1": 83.88807085040845
+  },
+  "target_holdout_rows": 239,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": -4.184100418410054,
+    "PR": -4.194233350584028,
+    "RC": -4.166666666666671,
+    "F1": -4.112351428355254
+  },
+  "labels_percent_of_all_target_rows": 15.98326359832636,
+  "target_total_rows": 1195,
+  "case": {
+    "attack": "PGD",
+    "strength": 0.01,
+    "level": 1
+  }
+}

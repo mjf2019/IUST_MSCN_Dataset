@@ -1,0 +1,76 @@
+{
+  "online": {
+    "AC": 92.53533568904594,
+    "PR": 87.26189751977596,
+    "RC": 89.10844900022128,
+    "F1": 87.78820461865125
+  },
+  "samples": 2264,
+  "labels": 452,
+  "cap": 452,
+  "labels_percent": 19.964664310954063,
+  "source_before": {
+    "AC": 93.5847726471625,
+    "PR": 89.06947127550202,
+    "RC": 90.71550615181687,
+    "F1": 89.3827590041607
+  },
+  "source_after": {
+    "AC": 92.56256609094113,
+    "PR": 86.89171994795961,
+    "RC": 87.94322410690212,
+    "F1": 87.29332409835652
+  },
+  "original_domain_forgetting": {
+    "AC": 1.022206556221363,
+    "PR": 2.17775132754241,
+    "RC": 2.7722820449147463,
+    "F1": 2.0894349058041826
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 59,
+  "milliseconds_per_row": 5.95565499114029,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "evaluation_epsilon": 0.05,
+  "adaptation_stream_seen_before": {
+    "AC": 93.46289752650176,
+    "PR": 89.71064103969009,
+    "RC": 91.50728198905044,
+    "F1": 89.6791659362908
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 93.1095406360424,
+    "PR": 88.20334428939653,
+    "RC": 90.24294299388957,
+    "F1": 88.80788192398434
+  },
+  "target_before": {
+    "AC": 93.09734513274336,
+    "PR": 89.91426224059738,
+    "RC": 91.47791316880705,
+    "F1": 89.32157284506552
+  },
+  "target_after": {
+    "AC": 91.50442477876106,
+    "PR": 86.06836350140739,
+    "RC": 86.77146366142713,
+    "F1": 86.09563191699938
+  },
+  "target_holdout_rows": 565,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": -1.5929203539822936,
+    "PR": -3.845898739189991,
+    "RC": -4.706449507379915,
+    "F1": -3.2259409280661373
+  },
+  "labels_percent_of_all_target_rows": 15.977377165075998,
+  "target_total_rows": 2829,
+  "case": {
+    "attack": "FGSM",
+    "strength": 0.01,
+    "level": 1
+  }
+}

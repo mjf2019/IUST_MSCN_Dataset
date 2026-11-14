@@ -1,0 +1,76 @@
+{
+  "online": {
+    "AC": 89.15441176470588,
+    "PR": 93.4955012931211,
+    "RC": 92.26730461123978,
+    "F1": 92.83977803423389
+  },
+  "samples": 1088,
+  "labels": 217,
+  "cap": 217,
+  "labels_percent": 19.94485294117647,
+  "source_before": {
+    "AC": 90.35792549306063,
+    "PR": 94.60592060017484,
+    "RC": 95.08335636582686,
+    "F1": 94.6709506416848
+  },
+  "source_after": {
+    "AC": 89.48137326515705,
+    "PR": 93.98248710904994,
+    "RC": 93.69650260444351,
+    "F1": 93.81831951961773
+  },
+  "original_domain_forgetting": {
+    "AC": 0.8765522279035878,
+    "PR": 0.6234334911248993,
+    "RC": 1.3868537613833496,
+    "F1": 0.8526311220670664
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 45,
+  "milliseconds_per_row": 7.448590625084334,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "evaluation_epsilon": 0.05,
+  "adaptation_stream_seen_before": {
+    "AC": 90.34926470588235,
+    "PR": 94.57433196434357,
+    "RC": 94.28502753258653,
+    "F1": 94.2539414401143
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 90.99264705882352,
+    "PR": 94.66753726381056,
+    "RC": 93.7122760687933,
+    "F1": 94.14811104174211
+  },
+  "target_before": {
+    "AC": 90.80882352941177,
+    "PR": 95.01436538786547,
+    "RC": 95.97841726618705,
+    "F1": 95.25943243067732
+  },
+  "target_after": {
+    "AC": 90.07352941176471,
+    "PR": 94.67270627942091,
+    "RC": 93.8794964028777,
+    "F1": 94.26263862297645
+  },
+  "target_holdout_rows": 272,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": -0.735294117647058,
+    "PR": -0.34165910844455993,
+    "RC": -2.0989208633093455,
+    "F1": -0.9967938077008682
+  },
+  "labels_percent_of_all_target_rows": 15.955882352941176,
+  "target_total_rows": 1360,
+  "case": {
+    "attack": "CW",
+    "strength": 0.1,
+    "level": 1
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "online": {
+    "AC": 92.12121212121212,
+    "PR": 87.89368046759351,
+    "RC": 86.10865320403008,
+    "F1": 86.79081022083881
+  },
+  "samples": 495,
+  "labels": 99,
+  "cap": 99,
+  "labels_percent": 20.0,
+  "source_before": {
+    "AC": 94.91525423728814,
+    "PR": 93.95675815305134,
+    "RC": 91.7015116552722,
+    "F1": 92.44914673702817
+  },
+  "source_after": {
+    "AC": 95.68567026194145,
+    "PR": 95.9084470602358,
+    "RC": 92.74963525421438,
+    "F1": 93.82949594721357
+  },
+  "original_domain_forgetting": {
+    "AC": -0.7704160246533149,
+    "PR": -1.9516889071844616,
+    "RC": -1.0481235989421833,
+    "F1": -1.3803492101854005
+  },
+  "td_updates": 0,
+  "mean_TD_loss": null,
+  "positive_paid_rewards": 18,
+  "milliseconds_per_row": 12.926738383718813,
+  "label_protocol": "prediction before feedback; zero skip reward uses no label; fixed Context path",
+  "Q_learning": "TRAIN only; actual successor at next input arrival; frozen DDQN during VAL/TEST",
+  "evaluation_epsilon": 0.05,
+  "adaptation_stream_seen_before": {
+    "AC": 92.12121212121212,
+    "PR": 88.41676205150782,
+    "RC": 85.94071866864105,
+    "F1": 86.55352671363812
+  },
+  "adaptation_stream_seen_after": {
+    "AC": 93.73737373737374,
+    "PR": 91.48799236508763,
+    "RC": 86.59900022260291,
+    "F1": 87.88707333018291
+  },
+  "target_before": {
+    "AC": 94.35483870967742,
+    "PR": 88.46153846153847,
+    "RC": 90.43956043956044,
+    "F1": 88.83704630788486
+  },
+  "target_after": {
+    "AC": 89.51612903225806,
+    "PR": 81.495411905168,
+    "RC": 81.66971916971917,
+    "F1": 81.17344841070332
+  },
+  "target_holdout_rows": 124,
+  "target_final_definition": "independent same-level holdout; no audit row used in updates",
+  "target_holdout_gain": {
+    "AC": -4.838709677419359,
+    "PR": -6.966126556370469,
+    "RC": -8.769841269841265,
+    "F1": -7.663597897181546
+  },
+  "labels_percent_of_all_target_rows": 15.993537964458804,
+  "target_total_rows": 619,
+  "case": {
+    "attack": "FGSM",
+    "strength": 0.01,
+    "level": 1
+  }
+}
